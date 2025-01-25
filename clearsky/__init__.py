@@ -1,0 +1,57 @@
+"""BlueSky: The open-source ATM simulator."""
+
+from clearsky import stack, tools
+from clearsky.core import Signal, settings, varexplorer
+from clearsky.core.settings import cache, data
+from clearsky.navdatabase import Navdatabase
+from clearsky.simulation import ConsoleIO, Runner, Simulation
+from clearsky.traffic import Traffic
+
+# Constants
+BS_OK = 0
+BS_ARGERR = 1
+BS_FUNERR = 2
+BS_CMDERR = 4
+
+# simulation states
+INIT, HOLD, OP, END = (0, 1, 2, 3)
+
+# Main singleton objects in BlueSky
+runner = None
+traf = None
+navdb = None
+sim = None
+scr = None
+navdb = None
+
+
+def init(scenario=None):
+    """Initialize clearsky modules.
+
+    Arguments:
+    - scenario: Start with a running scenario [filename]
+    """
+    global traf, sim, scr, runner
+    global navdb
+
+    # Initialise tools
+    tools.init()
+
+    navdb = Navdatabase()
+
+    # Initialize singletons
+    traf = Traffic()
+    sim = Simulation()
+    scr = ConsoleIO()
+    runner = Runner()
+
+    # Initialize remaining modules
+    varexplorer.init()
+
+    if scenario:
+        stack.stack(f"IC {scenario}")
+    else:
+        # without scenario, sim shall be up
+        runner.prevent_shutdown()
+
+    stack.init()

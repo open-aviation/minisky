@@ -1,0 +1,20 @@
+verbose: False
+
+log_path: "output"
+scenario_path: "scenario"
+cache_path: "cache"
+navdata_path: "navdata"
+perf_path_openap: "performance/OpenAP"
+
+simdt: 0.05
+performance_dt: 1.0
+fms_dt: 1.0
+
+prefer_compiled: True # geo functions
+
+asas_dtlookahead: 300.0 # ASAS lookahead time [sec]
+asas_dt: 1.0 # ASAS update interval [sec]
+asas_pzr: 5.0 # ASAS horizontal PZ margin [nm]
+asas_pzh: 1000.0 # ASAS vertical PZ margin [ft]
+asas_marh: 1.05 # ASAS protected zone factors - horizontal
+asas_marv: 1.05 # ASAS protected zone factors - vertical
