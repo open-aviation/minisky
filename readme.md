@@ -75,9 +75,9 @@ for i in range(5):
 - [x] remove GUI
 - [x] remove plugin
 - [x] remove multiple nodes
-- [ ] remove calculator
-- [ ] remove data recorder
-- [ ] remove plotter
+- [x] remove calculator
+- [x] remove data logger 
+- [x] remove plotter
 - [x] implement REST API
 - [x] implement control console
 - [ ] redo resource/cache data
