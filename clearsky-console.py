@@ -1,13 +1,12 @@
 import os
 
 import click
+import pandas as pd
 import requests
 from colorama import Fore, Style
 from prompt_toolkit import prompt
 from prompt_toolkit.completion import NestedCompleter, PathCompleter
 from prompt_toolkit.history import FileHistory
-
-import pandas as pd
 
 history_file = os.path.expanduser("/tmp/hacksky_console_history")
 path_completer = PathCompleter()
@@ -67,8 +66,8 @@ def main(server, port):
         else:
             base_url = rool_url + "/stack"
             response = requests.get(f"{base_url}/{cmd}").json()
-            if "msg" in response:
-                msg = response["msg"]
+            if "message" in response:
+                msg = response["message"]
                 print(f"{msg}\n")
             else:
                 print("no response message\n")

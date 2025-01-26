@@ -1,10 +1,9 @@
 import asyncio
 from io import StringIO
 
-from fastapi import FastAPI, File, Response, UploadFile
-
 import clearsky as cs
 import pandas as pd
+from fastapi import FastAPI, File, Response, UploadFile
 
 app = FastAPI()
 
@@ -44,6 +43,47 @@ def all():
     return df.to_dict(orient="records")
 
 
+@app.get("/conflicts")
+def conflicts():
+    if not hasattr(cs.traf.cd, "confpairs") or not len(cs.traf.cd.confpairs):
+        return {"msg": "No conflicts detected"}
+
+    # Ensure there's a structure to hold TCPA for each conflict pair
+    if not hasattr(cs.traf.cd, "tcpa") or len(cs.traf.cd.tcpa) == 0:
+        return {"msg": "No TCPA data available"}
+
+    print(cs.traf.cd.confpairs)
+    print(cs.traf.cd.tcpa)
+    print(cs.traf.cd.qdr)
+    print(cs.traf.cd.dist)
+    print(cs.traf.cd.dcpa)
+    print(cs.traf.cd.tLOS)
+
+    processed_pairs = []
+    conflict_info = []
+
+    for i, pair in enumerate(cs.traf.cd.confpairs):
+        if set(pair) in processed_pairs:
+            continue
+
+        processed_pairs.append(set(pair))
+
+        conflict_info.append(
+            {
+                "pair": pair,
+                "distance": {"value": cs.traf.cd.dist[i], "unit": "meters"},
+                "qdr": {"value": cs.traf.cd.qdr[i], "unit": "degrees"},
+                "tlos": {
+                    "value": cs.traf.cd.tLOS[i],
+                    "unit": "seconds",
+                },
+                "dcpa": {"value": cs.traf.cd.dcpa[i], "unit": "meters"},
+                "tcpa": {"value": cs.traf.cd.tcpa[i], "unit": "seconds"},
+            }
+        )
+    return conflict_info
+
+
 @app.get("/stack/{cmd}")
 async def stack(cmd: str):
     """Execute a stack command and return the output"""
@@ -52,7 +92,7 @@ async def stack(cmd: str):
     await cs.scr.event.wait()
     msg = cs.scr.read_output_buffer()
     cs.scr.event.clear()
-    return {"cmd": cmd, "msg": msg}
+    return {"command_sent": cmd, "message": msg}
 
 
 @app.get("/scn")
