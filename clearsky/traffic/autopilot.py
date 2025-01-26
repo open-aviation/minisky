@@ -6,8 +6,9 @@ from collections.abc import Collection
 from inspect import stack as callstack
 from math import atan, sqrt
 
-import clearsky as cs
 import numpy as np
+
+import clearsky as cs
 from clearsky import stack
 from clearsky.core import Entity, timed_function
 from clearsky.tools import geo
@@ -824,6 +825,7 @@ class Autopilot(Entity, replaceable=True):
             )
 
             cs.traf.selvs[idx[oppositevs]] = 0.0
+        return True, f"altitude set to {alt} ft"
 
     @stack.command(name="VS")
     def selvspdcmd(self, idx: "acid", vspd: "vspd"):
@@ -833,6 +835,7 @@ class Autopilot(Entity, replaceable=True):
         cs.traf.selvs[idx] = vspd  # [fpm]
         # cs.traf.vs[idx] = vspd
         cs.traf.swvnav[idx] = False
+        return True, f"vertical speed set to {vspd} ft/min"
 
     @stack.command(name="HDG", aliases=("HEADING", "TURN"))
     def selhdgcmd(self, idx: "acid", hdg: "hdg"):  # HDG command
@@ -863,8 +866,7 @@ class Autopilot(Entity, replaceable=True):
             self.trk[idx] = hdg
 
         cs.traf.swlnav[idx] = False
-        # Everything went ok!
-        return True
+        return True, f"heading set to {hdg} deg"
 
     @stack.command(name="SPD", aliases=("SPEED",))
     def selspdcmd(self, idx: "acid", casmach: "spd"):  # SPD command
@@ -878,7 +880,7 @@ class Autopilot(Entity, replaceable=True):
 
         # Used to be: Switch off VNAV: SPD command overrides
         cs.traf.swvnavspd[idx] = False
-        return True
+        return True, f"speed set to {casmach}"
 
     @stack.command(name="DEST")
     def setdest(self, acidx: "acid", wpname: "wpt" = None):
@@ -928,6 +930,8 @@ class Autopilot(Entity, replaceable=True):
         elif iwp < 0:
             return False, ("DEST position" + self.dest[acidx] + " not found.")
 
+        return True, f"destination set to {wpname}"
+
     @stack.command(name="ORIG")
     def setorig(self, acidx: "acid", wpname: "wpt" = None):
         """ORIG acid, latlon/airport
@@ -963,6 +967,8 @@ class Autopilot(Entity, replaceable=True):
         )
         if iwp < 0:
             return False, (self.orig[acidx] + " not found.")
+
+        return True, f"origin set to {wpname}"
 
     @stack.command(name="VNAV")
     def setVNAV(self, idx: "acid", flag: "bool" = None):
@@ -1022,6 +1028,8 @@ class Autopilot(Entity, replaceable=True):
         if flag == None:
             return True, "\n".join(output)
 
+        return True, f"VNAV {'ON' if flag else 'OFF'}"
+
     @stack.command(name="LNAV")
     def setLNAV(self, idx: "acid", flag: "bool" = None):
         """LNAV acid,[ON/OFF]
@@ -1061,6 +1069,8 @@ class Autopilot(Entity, replaceable=True):
         if flag is None:
             return True, "\n".join(output)
 
+        return True, f"LNAV {'ON' if flag else 'OFF'}"
+
     @stack.command(name="SWTOC")
     def setswtoc(self, idx: "acid", flag: "bool" = None):
         """SWTOC acid,[ON/OFF]
@@ -1090,6 +1100,8 @@ class Autopilot(Entity, replaceable=True):
         if flag is None:
             return True, "\n".join(output)
 
+        return True, f"SWTOC {'ON' if flag else 'OFF'}"
+
     @stack.command(name="SWTOD")
     def setswtod(self, idx: "acid", flag: "bool" = None):
         """SWTOD acid,[ON/OFF]
@@ -1117,6 +1129,8 @@ class Autopilot(Entity, replaceable=True):
                 self.swtod[i] = False
         if flag is None:
             return True, "\n".join(output)
+
+        return True, f"SWTOD {'ON' if flag else 'OFF'}"
 
 
 def calcvrta(v0, dx, deltime, trafax):
