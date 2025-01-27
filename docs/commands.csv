@@ -44,7 +44,6 @@ INSEDIT,Insert text op edit line in command window,INSEDIT txt,['string'], Scree
 LINE,Draw a line on the radar screen,"LINE name,lat,lon,lat,lon","['txt', 'latlon', 'latlon']",
 LISTRTE,Show list of route in window per page of 5 waypoints,"LISTRTE acid, [pagenr]","['acid', 'int']",
 LNAV,LNAV (lateral FMS mode) switch for autopilot,"LNAV acid,[ON/OFF]","['acid', 'onoff']", Autopilot.setLNAV of bluesky.traffic.autopilot.Autopilot object
-MAKEDOC,Make markdown templates for all stack functions that don't have a doc page yet.,MAKEDOC,[],function makedoc
 MCRE,Multiple random create of n aircraft in current view,"MCRE n, [type/*, alt/*, spd/*, dest/*]","['int', 'txt', 'alt', 'spd', 'txt']", Traffic.mcreate of bluesky.traffic.traffic.Traffic object
 MOVE,Move an aircraft to a new position,"MOVE acid,lat,lon,[alt,hdg,spd,vspd]","['acid', 'latlon', 'alt', 'hdg', 'spd', 'vspd']", Traffic.move of bluesky.traffic.traffic.Traffic object
 ND,Show navigation display with CDTI,ND acid,['txt'],

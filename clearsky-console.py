@@ -1,4 +1,5 @@
 import os
+from pprint import pprint
 
 import click
 import pandas as pd
@@ -11,15 +12,7 @@ from prompt_toolkit.history import FileHistory
 history_file = os.path.expanduser("/tmp/hacksky_console_history")
 path_completer = PathCompleter()
 
-completer = NestedCompleter.from_nested_dict(
-    {
-        "/ic": path_completer,
-        "ic": path_completer,
-        "/all": None,
-        "/exit": None,
-        "/clear": None,
-    }
-)
+completer = NestedCompleter.from_nested_dict({"ic": path_completer})
 
 
 @click.command()
@@ -38,39 +31,26 @@ def main(server, port):
         if cmd == "":
             continue
 
-        elif cmd in ["/exit", "exit"]:
+        elif cmd == "exit":
             break
 
-        elif cmd in ["/clear", "clear"]:
+        elif cmd == "clear":
             os.system("clear")
 
-        elif cmd in ["/all", "all"]:
-            base_url = rool_url
-            response = requests.get(f"{base_url}/all").json()
-            if response:
-                print(pd.DataFrame(response))
-            print()
-
-        elif cmd.startswith("/ic ") or cmd.startswith("ic "):
-            base_url = rool_url
+        elif cmd.startswith("ic "):
             file_path = cmd.split(" ")[1]
 
             if os.path.isfile(file_path):
                 with open(file_path, "rb") as f:
                     files = {"file": (os.path.basename(file_path), f)}
-                    response = requests.post(f"{base_url}/scn", files=files)
+                    response = requests.post(f"{rool_url}/scn", files=files)
                     print(response.json())
             else:
                 print("File does not exist\n")
 
         else:
-            base_url = rool_url + "/stack"
-            response = requests.get(f"{base_url}/{cmd}").json()
-            if "message" in response:
-                msg = response["message"]
-                print(f"{msg}\n")
-            else:
-                print("no response message\n")
+            response = requests.get(f"{rool_url}/{cmd}").json()
+            pprint(response)
 
 
 if __name__ == "__main__":

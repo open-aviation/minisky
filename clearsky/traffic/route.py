@@ -3,18 +3,20 @@
 import math
 from weakref import WeakValueDictionary
 
-import clearsky as cs
 import numpy as np
+
+import clearsky as cs
 from clearsky import stack
-from clearsky.core import Replaceable
-from clearsky.stack.cmdparser import Command, command, commandgroup
+
+# from clearsky.core import Replaceable
+from clearsky.stack import Command
 from clearsky.tools import geo
 from clearsky.tools.aero import casormach2tas, ft, g0, kts, mach2cas, nm
 from clearsky.tools.misc import degto180, txt2alt, txt2spd, txt2tim
 from clearsky.tools.position import txt2pos
 
 
-class Route(Replaceable):
+class Route:
     """
     Route class definition   : Route data for an aircraft
     (basic FMS functionality)
@@ -109,7 +111,6 @@ class Route(Replaceable):
             name_ = name_[:-len_] + fmt_.format(appi)
         return name_
 
-    @stack.command(name="ADDWPTMODE", annotations="acid, [wpt,alt]")
     @staticmethod
     def addwptMode(acidx, mode=None, value=None):
         """Changes the mode of the ADDWPT command to add waypoints of type 'mode'.
@@ -152,11 +153,6 @@ class Route(Replaceable):
                 cs.scr.echo("Current ADDWPT mode is FLYTURN.")
                 return True
 
-    @stack.command(
-        name="ADDWPT",
-        annotations="acid,wpt,[alt,spd,wpinroute,wpinroute]",
-        aliases=("WPTYPE",),
-    )
     @staticmethod
     def addwptStack(acidx, *args):  # args: all arguments of addwpt
         """ADDWPT acid, (wpname/lat,lon),[alt],[spd],[afterwp],[beforewp]"""
@@ -416,79 +412,6 @@ class Route(Replaceable):
         else:
             return True
 
-    @stack.command
-    def addwaypoints(acidx: "acid", *args):
-        # Args come in this order: lat, lon, alt, spd, TURNSPD/TURNRAD/FLYBY, turnspeed or turnrad value
-        # If turn is '0', then ignore turnspeed
-        if len(args) % 6 != 0:
-            cs.scr.echo(
-                "You missed a waypoint value, arguement number must be a multiple of 6."
-            )
-            return
-
-        wpidx = -1
-        name = ""
-
-        acid = cs.traf.id[acidx]
-        acrte = Route._routes[acid]
-
-        args = np.reshape(args, (int(len(args) / 6), 6))
-
-        for wpdata in args:
-            # Get needed values
-            lat = float(wpdata[0])  # deg
-            lon = float(wpdata[1])  # deg
-            if wpdata[2]:
-                alt = txt2alt(wpdata[2])  # comes in feet, convert
-            else:
-                alt = -999
-            if wpdata[3]:
-                spd = txt2spd(wpdata[3])
-            else:
-                spd = -999
-
-            # Do flyby or flyturn processing
-            if wpdata[4] in ["TURNSPD", "TURNSPEED"]:  #
-                if wpdata[4] == "OFF":
-                    acrte.turnspd = -999.0
-                else:
-                    acrte.turnspd = txt2spd(wpdata[5])
-                acrte.swflyby = False
-                acrte.swflyturn = True
-
-            elif wpdata[4] in ["TURNRAD", "TURNRADIUS"]:
-                if wpdata[4] == "OFF":
-                    acrte.turnrad = -999.0
-                else:
-                    acrte.turnrad = float(wpdata[5]) * nm
-                acrte.swflyby = False
-                acrte.swflyturn = True
-
-            elif wpdata[4] in ["TURNHDG", "TURNHDGR", "TURNHDGRATE"]:
-                if wpdata[4] == "OFF":
-                    acrte.turnhdgr = -999.0
-                else:
-                    acrte.turnhdgr = float(wpdata[5])
-                acrte.swflyby = False
-                acrte.swflyturn = True
-
-            else:
-                # Either it's a flyby, or a typo.
-                acrte.swflyby = True
-                acrte.swflyturn = False
-
-            name = acid
-            wptype = Route.wplatlon
-
-            wpidx = acrte.addwpt_simple(acidx, name, wptype, lat, lon, alt, spd)
-
-        # Calculate flight plan
-        acrte.calcfp()
-
-        # Check for success by checking inserted location in flight plan >= 0
-        if wpidx < 0:
-            return False, "Waypoint " + name + " not added."
-
     def addwpt_simple(self, iac, name, wptype, lat, lon, alt=-999.0, spd=-999.0):
         """Adds waypoint in the most simple way possible"""
         # For safety
@@ -518,7 +441,6 @@ class Route(Replaceable):
 
         return idx
 
-    @stack.command
     @staticmethod
     def before(
         acidx: "acid",
@@ -534,7 +456,6 @@ class Route(Replaceable):
         """
         return Route.addwptStack(acidx, waypoint, alt, spd, None, beforewp)
 
-    @stack.command
     @staticmethod
     def after(
         acidx: "acid",
@@ -550,7 +471,6 @@ class Route(Replaceable):
         """
         return Route.addwptStack(acidx, waypoint, alt, spd, afterwp)
 
-    @stack.command
     @staticmethod
     def at(acidx: "acid", atwp: "wpinroute", *args):
         """AT acid, wpinroute [DEL] ALT/SPD/DO alt/spd/stack command"""
@@ -953,7 +873,6 @@ class Route(Replaceable):
 
         return idx
 
-    @stack.command(aliases=("DIRECTTO", "DIRTO"))
     @staticmethod
     def direct(acidx: "acid", wpname: "wpinroute"):
         """DIRECT acid wpname
@@ -1074,7 +993,6 @@ class Route(Replaceable):
         cs.traf.swlnav[acidx] = True
         return True
 
-    @stack.command(name="RTA")
     @staticmethod
     def SetRTA(
         acidx: "acid", wpname: "wpinroute", time: "time"
@@ -1092,7 +1010,6 @@ class Route(Replaceable):
 
         return True
 
-    @stack.command
     @staticmethod
     def listrte(acidx: "acid", ipagetxt="0"):
         """LISTRTE acid, [pagenr]
@@ -1285,7 +1202,6 @@ class Route(Replaceable):
             # stack.stack("ECHO "+self.acid+" AT "+self.wpname[self.iactwp]+" command issued:"+cmdline)
         return
 
-    @stack.command(aliases=("DELROUTE",))
     @staticmethod
     def delrte(acidx: "acid" = None):
         """DELRTE acid
@@ -1308,7 +1224,6 @@ class Route(Replaceable):
 
         return True
 
-    @stack.command(aliases=("DELWP",))
     @staticmethod
     def delwpt(acidx: "acid", wpname: "wpinroute"):
         """DELWPT acid,wpname
@@ -1545,7 +1460,6 @@ class Route(Replaceable):
 
         return iwpnear
 
-    @stack.command
     @staticmethod
     def dumprte(acidx: "acid"):
         """DUMPRTE acid

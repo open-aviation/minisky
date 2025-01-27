@@ -1,9 +1,9 @@
 """Conflict resolution base class."""
 
-import clearsky as cs
 import numpy as np
+
+import clearsky as cs
 from clearsky.core import Entity
-from clearsky.stack import command
 from clearsky.tools.aero import ft, nm
 
 
@@ -211,7 +211,6 @@ class ConflictResolution(Entity, replaceable=True):
         # Remove pairs from the list that are past CPA or have deleted aircraft
         self.resopairs -= delpairs
 
-    @command(name="PRIORULES")
     def setprio(self, flag: bool = None, priocode=""):
         """Define priority rules (right of way) for conflict resolution."""
         if flag is None:
@@ -226,7 +225,6 @@ class ConflictResolution(Entity, replaceable=True):
         self.priocode = priocode
         return True
 
-    @command(name="NORESO")
     def setnoreso(self, *idx: "acid"):
         """ADD or Remove aircraft that nobody will avoid.
         Multiple aircraft can be sent to this function at once."""
@@ -241,7 +239,6 @@ class ConflictResolution(Entity, replaceable=True):
         self.noresoac[idx] = np.logical_not(self.noresoac[idx])
         return True
 
-    @command(name="RESOOFF")
     def setresooff(self, *idx: "acid"):
         """ADD or Remove aircraft that will not avoid anybody else.
         Multiple aircraft can be sent to this function at once."""
@@ -257,7 +254,6 @@ class ConflictResolution(Entity, replaceable=True):
             self.resooffac[idx] = np.logical_not(self.resooffac[idx])
             return True
 
-    @command(name="RFACH", aliases=("RESOFACH", "HRFAC", "HRESOFAC"))
     def setresofach(self, factor: float = None):
         """Set resolution factor horizontal
         (to maneuver only a fraction of a resolution vector)
@@ -274,7 +270,6 @@ class ConflictResolution(Entity, replaceable=True):
             )
             return True, f"Horizontal resolution factor set to {self.resofach}"
 
-    @command(name="RFACV", aliases=("RESOFACV",))
     def setresofacv(self, factor: float = None):
         """Set resolution factor vertical (to maneuver only a fraction of a resolution vector)."""
         if factor is None:
@@ -287,7 +282,6 @@ class ConflictResolution(Entity, replaceable=True):
         self.resodhrelative = True
         return True, f"Vertical resolution factor set to {self.resofacv}"
 
-    @command(name="RSZONER", aliases=("RESOZONER",))
     def setresozoner(self, zoner: float = None):
         """Set resolution factor horizontal, but then with absolute value
         (to maneuver only a fraction of a resolution vector)
@@ -301,7 +295,7 @@ class ConflictResolution(Entity, replaceable=True):
         if zoner is None:
             return (
                 True,
-                f"RSZONER [radiusnm]\nCurrent horizontal resolution factor is: {self.resofach}, resulting in radius: {self.resofach*cs.traf.cd.rpz_def/nm} nm",
+                f"RSZONER [radiusnm]\nCurrent horizontal resolution factor is: {self.resofach}, resulting in radius: {self.resofach * cs.traf.cd.rpz_def / nm} nm",
             )
 
         self.resofach = zoner / cs.traf.cd.rpz_def * nm
@@ -312,7 +306,6 @@ class ConflictResolution(Entity, replaceable=True):
             f"Horizontal resolution factor updated to {self.resofach}, resulting in radius: {zoner} nm",
         )
 
-    @command(name="RSZONEDH", aliases=("RESOZONEDH",))
     def setresozonedh(self, zonedh: float = None):
         """
         Set resolution factor vertical (to maneuver only a fraction of a resolution vector),
@@ -327,7 +320,7 @@ class ConflictResolution(Entity, replaceable=True):
         if zonedh is None:
             return (
                 True,
-                f"RSZONEDH [zonedhft]\nCurrent vertical resolution factor is: {self.resofacv}, resulting in height: {self.resofacv*cs.traf.cd.hpz_def/ft} ft",
+                f"RSZONEDH [zonedhft]\nCurrent vertical resolution factor is: {self.resofacv}, resulting in height: {self.resofacv * cs.traf.cd.hpz_def / ft} ft",
             )
 
         self.resofacv = zonedh / cs.traf.cd.hpz_def * ft
@@ -339,7 +332,6 @@ class ConflictResolution(Entity, replaceable=True):
         )
 
     @staticmethod
-    @command(name="RESO")
     def setmethod(name: "txt" = ""):
         """Select a Conflict Resolution method."""
         # Get a dict of all registered CR methods
@@ -355,7 +347,7 @@ class ConflictResolution(Entity, replaceable=True):
             return (
                 True,
                 f"Current CR method: {curname}"
-                + f'\nAvailable CR methods: {", ".join(names)}',
+                + f"\nAvailable CR methods: {', '.join(names)}",
             )
         # Check if the requested method exists
         if name == "OFF":
@@ -366,7 +358,7 @@ class ConflictResolution(Entity, replaceable=True):
             return (
                 False,
                 f"{name} doesn't exist.\n"
-                + f'Available CR methods: {", ".join(names)}',
+                + f"Available CR methods: {', '.join(names)}",
             )
 
         # Select the requested method

@@ -1,9 +1,10 @@
 import asyncio
 from io import StringIO
 
-import clearsky as cs
 import pandas as pd
 from fastapi import FastAPI, File, Response, UploadFile
+
+import clearsky as cs
 
 app = FastAPI()
 
@@ -112,5 +113,5 @@ async def scn(file: UploadFile = File(...)):
     cs.scr.event.clear()
     contents = await file.read()
     scenario = StringIO(contents.decode("utf-8"))
-    cs.stack.simstack.ic_from_string(scenario, file.filename)
+    cs.stack.ic_StringIO(scenario, file.filename)
     return {"msg": f"scenario {file.filename} loaded"}

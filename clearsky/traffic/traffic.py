@@ -7,11 +7,11 @@ from math import *
 from random import randint
 from typing import Iterable
 
-import clearsky as cs
 import numpy as np
+
+import clearsky as cs
 from clearsky.core import Entity, timed_function
-from clearsky.stack import refdata
-from clearsky.stack.recorder import savecmd
+from clearsky.stack.argparser import refdata
 from clearsky.tools import geo
 from clearsky.tools.aero import (
     Rearth,
@@ -323,22 +323,22 @@ class Traffic(Entity):
 
         # Record as individual CRE commands for repeatability
         # print(self.ntraf-n,self.ntraf)
-        for j in range(self.ntraf - n, self.ntraf):
-            # Reconstruct CRE command
-            line = "CRE " + ",".join(
-                [
-                    self.id[j],
-                    self.type[j],
-                    str(self.lat[j]),
-                    str(self.lon[j]),
-                    str(round(self.trk[j])),
-                    str(round(self.alt[j] / ft)),
-                    str(round(self.cas[j] / kts)),
-                ]
-            )
-            # Savecmd(cmd,line): line is saved, cmd is used to prevent recording PAN & ZOOM commands and CRE
-            # So insert a dummy command to record the line
-            savecmd("---", line)
+        # for j in range(self.ntraf - n, self.ntraf):
+        #     # Reconstruct CRE command
+        #     line = "CRE " + ",".join(
+        #         [
+        #             self.id[j],
+        #             self.type[j],
+        #             str(self.lat[j]),
+        #             str(self.lon[j]),
+        #             str(round(self.trk[j])),
+        #             str(round(self.alt[j] / ft)),
+        #             str(round(self.cas[j] / kts)),
+        #         ]
+        #     )
+        #     # Savecmd(cmd,line): line is saved, cmd is used to prevent recording PAN & ZOOM commands and CRE
+        #     # So insert a dummy command to record the line
+        #     savecmd("---", line)
 
         # Check for crecmdlist: contains commands to be issued for this a/c
         # If any are there, then stack them for all aircraft
@@ -827,7 +827,7 @@ class Traffic(Entity):
 
         # In case no value is given, show it
         tlvl = int(round(self.translvl / ft))
-        return True, f"Transition level = {tlvl}/FL{int(round(tlvl/100.))}"
+        return True, f"Transition level = {tlvl}/FL{int(round(tlvl / 100.0))}"
 
     def setbanklim(self, idx, bankangle=None):
         """Set bank limit for given aircraft."""

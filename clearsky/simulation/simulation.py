@@ -4,12 +4,12 @@ import datetime
 import time
 from random import seed
 
+import numpy as np
+
 # Local imports
 import clearsky as cs
 import clearsky.core as core
-import numpy as np
 from clearsky.core import simtime
-from clearsky.stack import recorder, simstack
 from clearsky.tools import areafilter
 
 # Minimum sleep interval
@@ -66,7 +66,7 @@ class Simulation:
                 self.op()
 
         # Always update stack
-        simstack.process()
+        cs.stack.process()
 
         if self.state == cs.OP:
             simtime.preupdate()
@@ -133,10 +133,6 @@ class Simulation:
         self.state = cs.END
         cs.runner.stop()
 
-    def quit(self):
-        # Close savefile which may be open for recording
-        recorder.saveclose()  # Close reording file if it is on
-
     def op(self):
         """Set simulation state to OPERATE."""
         self.syst = time.time() + self.simdt
@@ -167,10 +163,10 @@ class Simulation:
         self.ffmode = False
         self.set_dtmult(1.0)
         simtime.reset()
-        core.reset()
+        # core.reset()
         cs.navdb.reset()
         cs.traf.reset()
-        simstack.reset()
+        cs.stack.reset()
         areafilter.reset()
         cs.scr.reset()
         cs.scr.echo("Simulation reset")
@@ -196,7 +192,7 @@ class Simulation:
         """Run a simulation benchmark.
         Use scenario given by fname.
         Run for <dt> seconds."""
-        simstack.ic(fname)
+        cs.stack.ic(fname)
         self.bencht = 0.0  # Start time will be set at next sim cycle
         self.benchdt = dt
 

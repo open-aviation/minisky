@@ -14,8 +14,9 @@ except ImportError:
 
 import re
 
-import clearsky as cs
 import numpy as np
+
+import clearsky as cs
 from clearsky.core import TrafficArrays
 from clearsky.core.entity import getproxied
 

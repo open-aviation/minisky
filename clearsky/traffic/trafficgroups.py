@@ -1,6 +1,7 @@
 # Logic for group commands
-import clearsky as cs
 import numpy as np
+
+import clearsky as cs
 from clearsky.core import TrafficArrays
 from clearsky.tools import areafilter
 
@@ -54,7 +55,7 @@ class TrafficGroups(TrafficArrays):
             )
 
         # Add aircraft to group
-        if areafilter.hasArea(args[0]):
+        if areafilter.has_area(args[0]):
             inside = areafilter.checkInside(
                 args[0], cs.traf.lat, cs.traf.lon, cs.traf.alt
             )

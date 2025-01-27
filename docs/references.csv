@@ -2,7 +2,6 @@ SIMULATION CONTROL,,,
 Command,Description,Usage,Argument types
 HELP,"Show help on a command, show pdf or write list of commands to file",HELP [command]/pdf/ >filename,['txt']
 DOC,"Show extended help window for given command, or the main documentation page if no command is given.",DOC [command],['txt']
-MAKEDOC,Make markdown templates for all stack functions that don't have a doc page yet.,MAKEDOC,[]
 IC,Initial condition: (re)start simulation and open scenario file,IC [IC/filename],['string']
 OP,Start/Run simulation or continue after pause,OP,[]
 HOLD,Pause(hold) simulation,HOLD,[]

@@ -45,6 +45,11 @@ def setdt(newdt=None, target="simdt"):
     return timer.setdt(newdt)
 
 
+def setdt_ui(*args):
+    """user input for setdt, with arguments in reverse order"""
+    return setdt(*reversed(args))
+
+
 def step(recovery_time=0):
     """Increment the time of this clock with one timestep, plus a possible
     recovery time increment if the simulation is lagging and real-time

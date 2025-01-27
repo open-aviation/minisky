@@ -41,12 +41,12 @@ from clearsky.tools.geo import kwikdist
 basic_shapes = dict()
 
 
-def hasArea(areaname):
+def has_area(areaname):
     """Check if area with name 'areaname' exists."""
     return areaname in basic_shapes
 
 
-def defineArea(areaname, areatype, coordinates, top=1e9, bottom=-1e9):
+def define_area(areaname, areatype, coordinates, top=1e9, bottom=-1e9):
     """Define a new area"""
     if areaname == "LIST":
         if not basic_shapes:
@@ -68,6 +68,30 @@ def defineArea(areaname, areatype, coordinates, top=1e9, bottom=-1e9):
         basic_shapes[areaname] = Line(areaname, coordinates)
 
     return True, f"Created {areatype} {areaname}"
+
+
+def define_box_area(name, *coords):
+    return define_area(name, "BOX", coords[:4], *coords[4:])
+
+
+def define_circle_area(name, *coords):
+    return define_area(name, "CIRCLE", coords[:3], *coords[3:])
+
+
+def define_line_area(name, *coords):
+    return define_area(name, "LINE", coords)
+
+
+def define_poly_area(name, *coords):
+    return define_area(name, "POLY", coords)
+
+
+def define_polyalt_area(name, top, bottom, *coords):
+    return define_area(name, "POLYALT", coords, top, bottom)
+
+
+def define_polyline_area(name, *coords):
+    return define_area(name, "LINE", coords)
 
 
 def checkInside(areaname, lat, lon, alt):
@@ -173,7 +197,7 @@ class Shape:
 
     def __str__(self):
         return (
-            f'{self.name} is a {self.raw["shape"]} with coordinates '
+            f"{self.name} is a {self.raw['shape']} with coordinates "
             + ", ".join(str(c) for c in self.coordinates)
             + self._str_vrange()
         )

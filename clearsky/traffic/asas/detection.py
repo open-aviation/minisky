@@ -1,9 +1,9 @@
 """This module provides the Conflict Detection base class."""
 
-import clearsky as cs
 import numpy as np
+
+import clearsky as cs
 from clearsky.core import Entity
-from clearsky.stack import command
 from clearsky.tools.aero import ft, nm
 
 
@@ -88,7 +88,6 @@ class ConflictDetection(Entity, replaceable=True):
         self.global_dtlook = self.global_dtnolook = True
 
     @staticmethod
-    @command(name="CDMETHOD", aliases=("ASAS",))
     def setmethod(name: "txt" = ""):
         """Select a Conflict Detection (CD) method."""
         # Get a dict of all registered CD methods
@@ -103,7 +102,7 @@ class ConflictDetection(Entity, replaceable=True):
             return (
                 True,
                 f"Current CD method: {curname}"
-                + f'\nAvailable CD methods: {", ".join(names)}',
+                + f"\nAvailable CD methods: {', '.join(names)}",
             )
         # Check if the requested method exists
         if name == "OFF":
@@ -119,7 +118,7 @@ class ConflictDetection(Entity, replaceable=True):
             return (
                 False,
                 f"{name} doesn't exist.\n"
-                + f'Available CD methods: {", ".join(names)}',
+                + f"Available CD methods: {', '.join(names)}",
             )
 
         # Select the requested method
@@ -127,7 +126,6 @@ class ConflictDetection(Entity, replaceable=True):
         ConflictDetection.instance().clearconfdb()
         return True, f"Selected {method.__name__} as CD method."
 
-    @command(name="ZONER", aliases=("PZR", "RPZ", "PZRADIUS"))
     def setrpz(self, radius: float = -1.0, *acidx: "acid"):
         """Set the horizontal separation distance (i.e., the radius of the
         protected zone) in nautical miles.
@@ -153,10 +151,9 @@ class ConflictDetection(Entity, replaceable=True):
             self.rpz[:] = self.rpz_def
         # Adjust factors for reso zone if those were set with an absolute value
         if not cs.traf.cr.resorrelative:
-            cs.stack.stack(f"RSZONER {cs.traf.cr.resofach*oldradius/nm}")
+            cs.stack.stack(f"RSZONER {cs.traf.cr.resofach * oldradius / nm}")
         return True, f"Setting default PZ radius to {radius} NM"
 
-    @command(name="ZONEDH", aliases=("PZDH", "DHPZ", "PZHEIGHT"))
     def sethpz(self, height: float = -1.0, *acidx: "acid"):
         """Set the vertical separation distance (i.e., half of the protected
         zone height) in feet.
@@ -182,10 +179,9 @@ class ConflictDetection(Entity, replaceable=True):
             self.hpz[:] = self.hpz_def
         # Adjust factors for reso zone if those were set with an absolute value
         if not cs.traf.cr.resodhrelative:
-            cs.stack.stack(f"RSZONEDH {cs.traf.cr.resofacv*oldhpz/ft}")
+            cs.stack.stack(f"RSZONEDH {cs.traf.cr.resofacv * oldhpz / ft}")
         return True, f"Setting default PZ height to {height} ft"
 
-    @command(name="DTLOOK")
     def setdtlook(self, time: "time" = -1.0, *acidx: "acid"):
         """Set the lookahead time (in [hh:mm:]sec) for conflict detection."""
         if time < 0.0:
@@ -201,7 +197,6 @@ class ConflictDetection(Entity, replaceable=True):
             self.dtlookahead[:] = time
         return True, f"Setting default CD lookahead to {time} sec"
 
-    @command(name="DTNOLOOK")
     def setdtnolook(self, time: "time" = -1.0, *acidx: "acid"):
         """Set the interval (in [hh:mm:]sec) in which conflict detection
         is skipped after a conflict resolution."""

@@ -1,6 +1,7 @@
 """Conflict resolution based on the Modified Voltage Potential algorithm."""
 
 import numpy as np
+
 from clearsky import stack
 from clearsky.traffic.asas import ConflictResolution
 
@@ -43,7 +44,6 @@ class MVP(ConflictResolution):
             )
         return super().setprio(flag, priocode)
 
-    @stack.command(name="RMETHH")
     def setresometh(self, value: "txt" = ""):
         """Processes the RMETHH command. Sets swresovert = False"""
         # Acceptable arguments for this command
@@ -87,7 +87,6 @@ class MVP(ConflictResolution):
                 self.swresohdg = True
                 self.swresovert = False
 
-    @stack.command(name="RMETHV")
     def setresometv(self, value: "txt" = ""):
         """Processes the RMETHV command. Sets swresohoriz = False."""
         # Acceptable arguments for this command

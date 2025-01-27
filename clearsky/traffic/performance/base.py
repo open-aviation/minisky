@@ -3,8 +3,8 @@ performance implementations.
 """
 
 import numpy as np
+
 from clearsky.core import Entity, settings, timed_function
-from clearsky.stack import command
 
 
 class PerfBase(Entity, replaceable=True):
@@ -60,38 +60,3 @@ class PerfBase(Entity, replaceable=True):
         """implement this method"""
         # Get current kinematic performance envelop of all aircraft
         pass
-
-    @staticmethod
-    @command(name="PERF")
-    def setmethod(name: "txt" = ""):
-        """Select a Performance implementation."""
-        # Get a dict of all registered Performance models
-        methods = PerfBase.derived()
-        names = ["OFF" if n == "PERFBASE" else n for n in methods]
-
-        if not name:
-            curname = (
-                "OFF"
-                if PerfBase.selected() is PerfBase
-                else PerfBase.selected().__name__
-            )
-            return (
-                True,
-                f"Current Performance model: {curname}"
-                + f'\nAvailable performance models: {", ".join(names)}',
-            )
-        # Check if the requested method exists
-        if name == "OFF":
-            PerfBase.select()
-            return True, "Performance model turned off."
-        method = methods.get(name, None)
-        if method is None:
-            return (
-                False,
-                f"{name} doesn't exist.\n"
-                + f'Available performance models: {", ".join(names)}',
-            )
-
-        # Select the requested method
-        method.select()
-        return True, f"Selected {method.__name__} as performance model."
