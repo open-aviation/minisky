@@ -149,7 +149,7 @@ wheels = [
 ]
 
 [[package]]
-name = "clearsky"
+name = "minisky"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [

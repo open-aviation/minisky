@@ -1,8 +1,8 @@
 [project]
-name = "clearsky"
+name = "minisky"
 version = "0.1.0"
-description = "Light-weight and hackable air traffic simulator"
-readme = "README.md"
+description = "A minimal command line air traffic simulator with REST API (a BlueSky fork)"
+readme = "readme.md"
 requires-python = ">=3.11"
 dependencies = [
     "click>=8.1.8",
@@ -19,6 +19,4 @@ dependencies = [
 ]
 
 [dependency-groups]
-dev = [
-    "ipykernel>=6.29.5",
-]
+dev = ["ipykernel>=6.29.5"]

@@ -1,0 +1,111 @@
+import asyncio
+from io import StringIO
+
+import pandas as pd
+from fastapi import FastAPI, File, Response, UploadFile
+
+import minisky
+from minisky.tools import aero
+
+app = FastAPI()
+
+minisky.init()
+
+
+async def start_simulation():
+    asyncio.create_task(minisky.runner.run())
+
+
+app.add_event_handler("startup", start_simulation)
+
+
+@app.get("/")
+def root():
+    return {"msg": "MiniSky API endpoint ready"}
+
+
+@app.get("/all")
+def all():
+    """Get all aircraft states"""
+    df = pd.DataFrame(
+        {
+            "callsign": minisky.traf.id,
+            "typecode": minisky.traf.type,
+            "latitude": minisky.traf.lat,
+            "longitude": minisky.traf.lon,
+            "altitude (feet)": (minisky.traf.alt / aero.ft).astype(int),
+            "heading (degrees)": minisky.traf.hdg.astype(int),
+            "track (degrees)": minisky.traf.trk,
+            "TAS (knots)": (minisky.traf.tas / aero.kts).astype(int),
+            "groundspeed (knots)": (minisky.traf.gs / aero.kts).astype(int),
+            "CAS (knots)": (minisky.traf.cas / aero.kts).astype(int),
+            "mach": minisky.traf.M,
+            "vertical_rate (feet/minute)": (minisky.traf.vs / aero.fpm).astype(int),
+        }
+    )
+
+    return df.to_dict(orient="records")
+
+
+@app.get("/conflicts")
+def conflicts():
+    if not hasattr(minisky.traf.cd, "confpairs") or not len(minisky.traf.cd.confpairs):
+        return {"msg": "No conflicts detected"}
+
+    # Ensure there's a structure to hold TCPA for each conflict pair
+    if not hasattr(minisky.traf.cd, "tcpa") or len(minisky.traf.cd.tcpa) == 0:
+        return {"msg": "No TCPA data available"}
+
+    processed_pairs = []
+    conflict_info = []
+
+    for i, pair in enumerate(minisky.traf.cd.confpairs):
+        if set(pair) in processed_pairs:
+            continue
+
+        processed_pairs.append(set(pair))
+
+        conflict_info.append(
+            {
+                "pair": pair,
+                "distance (nautical miles)": (minisky.traf.cd.dist[i] / aero.nm),
+                "altitude difference (feet)": (minisky.traf.cd.dalt[i] / aero.ft),
+                "qdr (degrees)": minisky.traf.cd.qdr[i],
+                "tlos (seconds)": minisky.traf.cd.tLOS[i],
+                "dcpa (meters)": minisky.traf.cd.dcpa[i],
+                "tcpa (seconds)": minisky.traf.cd.tcpa[i],
+            }
+        )
+    return conflict_info
+
+
+@app.get("/stack/{cmd}")
+async def stack(cmd: str):
+    """Execute a stack command and return the output"""
+    minisky.scr.event.clear()
+    minisky.stack.stack(f"{cmd}")
+    await minisky.scr.event.wait()
+    msg = minisky.scr.read_output_buffer()
+    minisky.scr.event.clear()
+    return {"command_sent": cmd, "message": msg}
+
+
+@app.get("/scn")
+def upload_form():
+    content = """
+    upload a scenario file<hr>
+    <form method="post" enctype="multipart/form-data">
+        <input type="file" name="file">
+        <input type="submit" value="submit">
+    </form>
+    """
+    return Response(content=content, media_type="text/html")
+
+
+@app.post("/scn")
+async def scn(file: UploadFile = File(...)):
+    minisky.scr.event.clear()
+    contents = await file.read()
+    scenario = StringIO(contents.decode("utf-8"))
+    minisky.stack.ic_StringIO(scenario, file.filename)
+    return {"msg": f"scenario {file.filename} loaded"}

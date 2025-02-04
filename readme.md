@@ -1,10 +1,10 @@
-# ClearSky - A hackable air traffic control simulator
+# MiniSky - A minimal command line air traffic simulator with REST API
 
-ClearSky is a hackable air traffic control simulator that originated from [BlueSky](https://github.com/TUDelft-CNS-ATM/bluesky).
+MiniSky is a hackable air traffic control simulator, a fork of [BlueSky](https://github.com/TUDelft-CNS-ATM/bluesky).
 
 It is designed to be a minimal tool for coders. There will be no integrated graphical interface, no complex network architecture, and no support for plugins. Uncommon commands and features will be slowly removed to reach a bare minimum simulator.
 
-ClearSky is being optimized for:
+MiniSky is being optimized for:
 
 - use in command-line
 - interact with the simulator through REST API
@@ -17,7 +17,7 @@ ClearSky is being optimized for:
 Run the simulator with a scenario file:
 
 ```bash
-$ python clearsky-run.py --scenario scenario/kl204.scn
+$ python minisky-run.py --scenario scenario/kl204.scn
 ```
 
 ### 2. Run simulator with REST API server
@@ -25,7 +25,7 @@ $ python clearsky-run.py --scenario scenario/kl204.scn
 Start the simulator with a REST API endpoint for interactions:
 
 ```bash
-$ fastapi run clearsky-api.py
+$ fastapi run minisky-api.py
 ```
 
 #### Interaction with API
@@ -41,7 +41,7 @@ $ curl http://localhost:8000/stack/POS%20EHAM
 You can also use the control console to interact with the API server:
 
 ```bash
-$ python clearsky-console.py
+$ python minisky-console.py
 
 # example commands
 > POS EHAM                     # run any stack command
@@ -54,15 +54,15 @@ $ python clearsky-console.py
 Use the simulator in your Python code:
 
 ```python
-import clearsky
+import minisky
 
-clearsky.init()
+minisky.init()
 
-clearsky.traf.cre('KL315', lat=52.0, lon=4.0, hdg=45, alt=10000, spd=250)
+minisky.traf.cre('KL315', lat=52.0, lon=4.0, hdg=45, alt=10000, spd=250)
 
 for i in range(5):
-    clearsky.sim.step(10)
-    print(f"step-{i} positions: {clearsky.traf.lat} {clearsky.traf.lon}")
+    minisky.sim.step(10)
+    print(f"step-{i} positions: {minisky.traf.lat} {minisky.traf.lon}")
 ```
 
 ## To-do list
