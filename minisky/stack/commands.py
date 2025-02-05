@@ -430,8 +430,8 @@ def get_commands():
         ],
         "WIND": [
             minisky.traf.wind.add,
-            "lat, lon, float...",
-            "WIND lat, lon, winddata...",
+            "latlon,[alt,float,float]...",
+            "WIND lat,lon,alt,dir,spd,[alt,dir,spd,alt,...]",
             "Define a wind vector as part of the 2D or 3D wind field.",
         ],
         "ZONEDH": [

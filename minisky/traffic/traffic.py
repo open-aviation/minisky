@@ -41,7 +41,7 @@ from .trafficgroups import TrafficGroups
 from .trails import Trails
 from .turbulence import Turbulence
 from .uncertainty import SurveillanceUncertainty
-from .windsim import WindSim
+from .wind import Wind
 
 
 class Traffic(TrafficArrays):
@@ -70,7 +70,7 @@ class Traffic(TrafficArrays):
         self.ntraf = 0
 
         self.cond = Condition()  # Conditional commands list
-        self.wind = WindSim()
+        self.wind = Wind()
         self.turbulence = Turbulence()
         self.translvl = 5000.0 * ft  # [m] Default transition level
 
