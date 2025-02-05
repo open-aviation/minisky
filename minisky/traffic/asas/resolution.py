@@ -22,8 +22,8 @@ class ConflictResolution(TrafficArrays):
         # Resolution factors:
         # set < 1 to maneuver only a fraction of the resolution
         # set > 1 to add a margin to separation values
-        self.resofach = minisky.settings.asas_marh
-        self.resofacv = minisky.settings.asas_marv
+        self.resofach = minisky.core.settings.asas_marh
+        self.resofacv = minisky.core.settings.asas_marv
 
         # Switches to guarantee last reso zone commands keep valid if cd zone changes
         self.resodhrelative = (
@@ -51,8 +51,8 @@ class ConflictResolution(TrafficArrays):
         self.swprio = False
         self.priocode = ""
         self.resopairs.clear()
-        self.resofach = minisky.settings.asas_marh
-        self.resofacv = minisky.settings.asas_marv
+        self.resofach = minisky.core.settings.asas_marh
+        self.resofacv = minisky.core.settings.asas_marv
         self.resodhrelative = True
         self.resorrelative = True
 

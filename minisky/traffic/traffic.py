@@ -371,8 +371,8 @@ class Traffic(TrafficArrays):
         tasref = self.tas[targetidx]  # m/s
         vsref = self.vs[targetidx]  # m/s
         cpa = dcpa * nm
-        pzr = minisky.settings.asas_pzr * nm
-        pzh = minisky.settings.asas_pzh * ft
+        pzr = minisky.core.settings.asas_pzr * nm
+        pzh = minisky.core.settings.asas_pzh * ft
         trk = trkref + radians(dpsi)
 
         if dH is None:
@@ -474,7 +474,7 @@ class Traffic(TrafficArrays):
         # ---------- Aftermath ---------------------------------
         self.trails.update()
 
-    @timed_function(name="asas", dt=minisky.settings.asas_dt, manual=True)
+    @timed_function(name="asas", dt=minisky.core.settings.asas_dt, manual=True)
     def update_asas(self):
         # Conflict detection and resolution
         self.cd.update(self, self)

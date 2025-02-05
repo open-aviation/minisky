@@ -544,7 +544,7 @@ def initdecl_data():
     # Lon: -180 ... 179
     global decl_read, decl_lat_lon
     dec_table = np.genfromtxt(
-        minisky.data(minisky.settings.navdata_path) / "geo_declination_data.csv",
+        minisky.data(minisky.core.settings.navdata_path) / "geo_declination_data.csv",
         comments="#",
         delimiter=",",
     )

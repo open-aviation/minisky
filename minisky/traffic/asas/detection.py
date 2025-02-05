@@ -15,16 +15,17 @@ class ConflictDetection(TrafficArrays):
         super().__init__()
         ## Default values
         # [m] Horizontal separation minimum for detection
-        self.rpz_def = minisky.settings.asas_pzr * nm
+        self.rpz_def = minisky.core.settings.asas_pzr * nm
         self.global_rpz = True
         # [m] Vertical separation minimum for detection
-        self.hpz_def = minisky.settings.asas_pzh * ft
+        self.hpz_def = minisky.core.settings.asas_pzh * ft
         self.global_hpz = True
         # [s] lookahead time
-        self.dtlookahead_def = minisky.settings.asas_dtlookahead
+        self.dtlookahead_def = minisky.core.settings.asas_dtlookahead
         self.global_dtlook = True
         self.dtnolook_def = 0.0
         self.global_dtnolook = True
+        self.activate = True
 
         # Conflicts and LoS detected in the current timestep (used for resolving)
         self.confpairs = list()
@@ -83,9 +84,11 @@ class ConflictDetection(TrafficArrays):
         self.clearconfdb()
         self.confpairs_all.clear()
         self.lospairs_all.clear()
-        self.rpz_def = minisky.settings.asas_pzr * nm
-        self.hpz_def = (minisky.settings.asas_pzh - 1) * ft  # -1 for rounding margins
-        self.dtlookahead_def = minisky.settings.asas_dtlookahead
+        self.rpz_def = minisky.core.settings.asas_pzr * nm
+        self.hpz_def = (
+            minisky.core.settings.asas_pzh - 1
+        ) * ft  # -1 for rounding margins
+        self.dtlookahead_def = minisky.core.settings.asas_dtlookahead
         self.dtnolook_def = 0.0
         self.global_rpz = self.global_hpz = True
         self.global_dtlook = self.global_dtnolook = True
@@ -96,11 +99,11 @@ class ConflictDetection(TrafficArrays):
 
         if name == "OFF":
             self.clearconfdb()
-            self.active = False
+            self.activate = False
             return True, "Conflict Detection turned off."
 
         if name == "ON":
-            self.active = True
+            self.activate = True
             return True, "Conflict Detection is on."
 
     def setrpz(self, radius: float = -1.0, *acidx: "acid"):
@@ -192,7 +195,7 @@ class ConflictDetection(TrafficArrays):
 
     def update(self, ownship, intruder):
         """Perform an update step of the Conflict Detection implementation."""
-        if not self.active:
+        if not self.activate:
             return
 
         (

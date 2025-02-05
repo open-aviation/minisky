@@ -1,6 +1,6 @@
 import pickle
 
-import minisky as bs
+import minisky
 
 
 def openfile(*args):
@@ -17,7 +17,7 @@ class CacheFile:
     """Convenience class for loading and saving pickle cache files."""
 
     def __init__(self, fname, version_ref="1"):
-        self.fname = bs.cache(bs.settings.cache_path).joinpath(fname)
+        self.fname = minisky.cache(minisky.core.settings.cache_path).joinpath(fname)
         self.version_ref = version_ref
         self.file = None
 

@@ -1471,7 +1471,9 @@ class Route:
         acid = minisky.traf.id[acidx]
         acrte = Route._routes[acid]
         # Open file in append mode, write header
-        with open(minisky.data(minisky.settings.log_path) / "routelog.txt", "a") as f:
+        with open(
+            minisky.data(minisky.core.settings.log_path) / "routelog.txt", "a"
+        ) as f:
             f.write("\nRoute " + acid + ":\n")
             f.write("(name,type,lat,lon,alt,spd,toalt,xtoalt)  ")
             f.write("type: 0=latlon 1=navdb  2=orig  3=dest  4=calwp\n")

@@ -34,7 +34,7 @@ class Simulation:
         self.simt = 0.0
 
         # Simulation timestep [seconds]
-        self.simdt = minisky.settings.simdt
+        self.simdt = minisky.core.settings.simdt
 
         # Simulation timestep multiplier: run sim at n x speed
         self.dtmult = 1.0
@@ -155,7 +155,7 @@ class Simulation:
         self.state = minisky.INIT
         self.syst = -1.0
         self.simt = 0.0
-        self.simdt = minisky.settings.simdt
+        self.simdt = minisky.core.settings.simdt
         simtime.reset()
         self.utc = datetime.datetime.utcnow().replace(
             hour=0, minute=0, second=0, microsecond=0

@@ -1,7 +1,7 @@
 """BlueSky: The open-source ATM simulator."""
 
 from minisky import stack, tools
-from minisky.core import Signal, settings, varexplorer
+from minisky.core import varexplorer
 from minisky.core.settings import cache, data
 from minisky.navdatabase import Navdatabase
 from minisky.simulation import ConsoleIO, Runner, Simulation
