@@ -10,7 +10,8 @@ from typing import Iterable
 import numpy as np
 
 import minisky
-from minisky.core import Entity, timed_function
+from minisky.core import timed_function
+from minisky.core.trafficarrays import TrafficArrays
 from minisky.stack.argparser import refdata
 from minisky.tools import geo
 from minisky.tools.aero import (
@@ -43,7 +44,7 @@ from .turbulence import Turbulence
 from .windsim import WindSim
 
 
-class Traffic(Entity):
+class Traffic(TrafficArrays):
     """
     Traffic class definition    : Traffic data
     Methods:

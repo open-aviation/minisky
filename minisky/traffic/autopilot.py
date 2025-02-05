@@ -6,8 +6,7 @@ from math import atan, sqrt
 import numpy as np
 
 import minisky
-from minisky import stack
-from minisky.core import Entity
+from minisky.core.trafficarrays import TrafficArrays
 from minisky.tools import geo
 from minisky.tools.aero import (
     cas2tas,
@@ -26,7 +25,7 @@ from minisky.tools.position import txt2pos
 from .route import Route
 
 
-class Autopilot(Entity, replaceable=True):
+class Autopilot(TrafficArrays):
     """BlueSky Autopilot implementation."""
 
     def __init__(self):

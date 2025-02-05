@@ -18,7 +18,6 @@ import numpy as np
 
 import minisky
 from minisky.core import TrafficArrays
-from minisky.core.entity import getproxied
 
 # Globals
 # The variable lists and their corresponding sources
@@ -155,4 +154,3 @@ class Variable:
         if self.index:
             v = getattr(self.parent, self.varname)
             return [v[i] for i in self.index]
-        return getproxied(getattr(self.parent, self.varname))

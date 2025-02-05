@@ -3,11 +3,11 @@
 import numpy as np
 
 import minisky
-from minisky.core import Entity
+from minisky.core.trafficarrays import TrafficArrays
 from minisky.tools.aero import ft
 
 
-class ADSB(Entity, replaceable=True):
+class ADSB(TrafficArrays):
     """ADS-B model. Implements real-life limitations of ADS-B communication."""
 
     def __init__(self):

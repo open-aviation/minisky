@@ -4,10 +4,11 @@ performance implementations.
 
 import numpy as np
 
-from minisky.core import Entity, settings, timed_function
+from minisky.core import settings, timed_function
+from minisky.core.trafficarrays import TrafficArrays
 
 
-class PerfBase(Entity, replaceable=True):
+class PerfBase(TrafficArrays):
     """Base class for BlueSky aircraft performance implementations."""
 
     def __init__(self):

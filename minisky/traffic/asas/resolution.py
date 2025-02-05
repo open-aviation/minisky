@@ -3,15 +3,17 @@
 import numpy as np
 
 import minisky
-from minisky.core import Entity
+from minisky.core.trafficarrays import TrafficArrays
 from minisky.tools.aero import ft, nm
 
 
-class ConflictResolution(Entity, replaceable=True):
+class ConflictResolution(TrafficArrays):
     """Base class for Conflict Resolution implementations."""
 
     def __init__(self):
         super().__init__()
+        self.activate = False
+
         # [-] switch to activate priority rules for conflict resolution
         self.swprio = False  # switch priority on/off
         self.priocode = ""  # select priority mode
@@ -40,6 +42,9 @@ class ConflictResolution(Entity, replaceable=True):
             self.tas = np.array([])  # speed provided by the ASAS (eas) [m/s]
             self.alt = np.array([])  # alt provided by the ASAS [m]
             self.vs = np.array([])  # vspeed provided by the ASAS [m/s]
+
+    def switch(self, flag: bool = None):
+        self.activate = flag
 
     def reset(self):
         super().reset()
@@ -101,8 +106,7 @@ class ConflictResolution(Entity, replaceable=True):
 
     def update(self, conf, ownship, intruder):
         """Perform an update step of the Conflict Resolution implementation."""
-        if ConflictResolution.selected() is not ConflictResolution:
-            # Only perform CR when an actual method is selected
+        if self.activate:
             if conf.confpairs:
                 self.trk, self.tas, self.vs, self.alt = self.resolve(
                     conf, ownship, intruder

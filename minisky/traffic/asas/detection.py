@@ -3,12 +3,12 @@
 import numpy as np
 
 import minisky
-from minisky.core import Entity
+from minisky.core.trafficarrays import TrafficArrays
 from minisky.tools import geo
 from minisky.tools.aero import ft, nm
 
 
-class ConflictDetection(Entity, replaceable=True):
+class ConflictDetection(TrafficArrays):
     """Base class for Conflict Detection implementations."""
 
     def __init__(self):

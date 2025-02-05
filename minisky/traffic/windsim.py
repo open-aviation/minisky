@@ -2,13 +2,13 @@
 
 from numpy import arctan2, array, degrees, sqrt
 
-from minisky.core import Entity
+from minisky.core.trafficarrays import TrafficArrays
 from minisky.tools.aero import ft, kts
 
 from .windfield import Windfield
 
 
-class WindSim(Entity, Windfield, replaceable=True):
+class WindSim(TrafficArrays, Windfield):
     def add(self, lat: "lat", lon: "lon", *winddata: "float"):
         """Define a wind vector as part of the 2D or 3D wind field.
 

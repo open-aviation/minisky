@@ -3,11 +3,11 @@
 import numpy as np
 
 import minisky
-from minisky.core import Entity
+from minisky.core.trafficarrays import TrafficArrays
 from minisky.tools.aero import Rearth
 
 
-class Turbulence(Entity, replaceable=True):
+class Turbulence(TrafficArrays):
     """Simple turbulence implementation."""
 
     def __init__(self):

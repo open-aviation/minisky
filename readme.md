@@ -80,9 +80,10 @@ for i in range(5):
 - [x] remove plotter
 - [x] implement REST API
 - [x] implement control console
+- [x] removed metaclass and replaceable classes
+- [x] remove datalog
 - [ ] redo resource/cache data
 - [ ] remove cachefile, load data from parquet instead
 - [ ] check all echo, ensure print and scr.echo are consistent
-- [ ] refactor datalog with pandas
 - [ ] write new tests
 - [ ] refactor code so import and simulation is easier

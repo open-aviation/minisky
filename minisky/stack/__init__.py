@@ -124,16 +124,7 @@ class Command:
         return f"<Stack Command {self.name} (invalid), callback=unbound method {self.callback}"
 
     def notimplemented(self, *args, **kwargs):
-        """Stub for stack functions based on Entity methods, when a currently
-        selected Entity implementation doesn't provide the stack function of
-        this command.
-        """
-        impl = self.impl or inspect.getmodule(self.callback).__name__
-        return (
-            False,
-            f"The current {self.name} implementation doesn't"
-            + f"provide this function (function was originally declared in {impl})",
-        )
+        pass
 
     @property
     def callback(self):
