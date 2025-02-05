@@ -84,50 +84,24 @@ class ConflictDetection(Entity, replaceable=True):
         self.confpairs_all.clear()
         self.lospairs_all.clear()
         self.rpz_def = minisky.settings.asas_pzr * nm
-        self.hpz_def = minisky.settings.asas_pzh * ft
+        self.hpz_def = (minisky.settings.asas_pzh - 1) * ft  # -1 for rounding margins
         self.dtlookahead_def = minisky.settings.asas_dtlookahead
         self.dtnolook_def = 0.0
         self.global_rpz = self.global_hpz = True
         self.global_dtlook = self.global_dtnolook = True
 
-    @staticmethod
-    def setmethod(name: "txt" = ""):
-        """Select a Conflict Detection (CD) method."""
-        # Get a dict of all registered CD methods
-        methods = ConflictDetection.derived()
-        names = ["OFF" if n == "CONFLICTDETECTION" else n for n in methods]
-        if not name:
-            curname = (
-                "OFF"
-                if ConflictDetection.selected() is ConflictDetection
-                else ConflictDetection.selected().__name__
-            )
-            return (
-                True,
-                f"Current CD method: {curname}"
-                + f"\nAvailable CD methods: {', '.join(names)}",
-            )
-        # Check if the requested method exists
-        if name == "OFF":
-            # Select the base method and clear the conflict database
-            ConflictDetection.select()
-            ConflictDetection.instance().clearconfdb()
-            return True, "Conflict Detection turned off."
-        if name == "ON":
-            # Just select the first CD method in the list
-            name = next(n for n in names if n != "OFF")
-        method = methods.get(name, None)
-        if method is None:
-            return (
-                False,
-                f"{name} doesn't exist.\n"
-                + f"Available CD methods: {', '.join(names)}",
-            )
+    def switch(self, name: "txt" = "ON"):
+        """Turn Conflict Detection (CD) ON / OFF."""
+        assert name in ["ON", "OFF"], f"Invalid CD method: {name}"
 
-        # Select the requested method
-        method.select()
-        ConflictDetection.instance().clearconfdb()
-        return True, f"Selected {method.__name__} as CD method."
+        if name == "OFF":
+            self.clearconfdb()
+            self.active = False
+            return True, "Conflict Detection turned off."
+
+        if name == "ON":
+            self.active = True
+            return True, "Conflict Detection is on."
 
     def setrpz(self, radius: float = -1.0, *acidx: "acid"):
         """Set the horizontal separation distance (i.e., the radius of the
@@ -218,6 +192,9 @@ class ConflictDetection(Entity, replaceable=True):
 
     def update(self, ownship, intruder):
         """Perform an update step of the Conflict Detection implementation."""
+        if not self.active:
+            return
+
         (
             self.confpairs,
             self.lospairs,

@@ -51,6 +51,12 @@ def get_commands():
             "ALT acid, alt, [vspd]",
             "Select autopilot altitude command.",
         ],
+        "ASAS": [
+            minisky.traf.cd.switch,
+            "[txt]",
+            "ASAS [ON/OFF]",
+            "Select a Conflict Detection method.",
+        ],
         "ATALT": [
             minisky.traf.cond.ataltcmd,
             "acid,alt,string",
@@ -547,10 +553,10 @@ def get_commands():
     # Command synonym dictionary
     synonyms = {
         "ADDAWY": ["ADDAIRWAY"],
+        "ASAS": ["CD", "CDMETHOD"],
         "POS": ["AWY", "AIRPORT", "RUNWAYS"],
         "AIRWAY": ["AIRWAYS"],
         "BANK": ["BANKLIM"],
-        "CD": ["CHDIR"],
         "COLOUR": ["COL", "COLOR"],
         "OP": ["CONTINUE", "RUN", "START"],
         "CRE": ["CREATE"],
@@ -567,7 +573,6 @@ def get_commands():
         "ECHO": ["PRINT"],
         "REALTIME": ["RT"],
         "DTMULT": ["RTF"],
-        "SAVEIC": ["SAVE"],
         "TRAIL": ["TRAILS"],
     }
 
