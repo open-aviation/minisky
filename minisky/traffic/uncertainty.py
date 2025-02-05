@@ -7,7 +7,7 @@ from minisky.core.trafficarrays import TrafficArrays
 from minisky.tools.aero import ft
 
 
-class ADSB(TrafficArrays):
+class SurveillanceUncertainty(TrafficArrays):
     """ADS-B model. Implements real-life limitations of ADS-B communication."""
 
     def __init__(self):

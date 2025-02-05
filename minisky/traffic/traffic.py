@@ -33,7 +33,6 @@ from minisky.tools.misc import latlon2txt
 from minisky.traffic.asas import ConflictDetection, ConflictResolution
 
 from .activewpdata import ActiveWaypoint
-from .adsbmodel import ADSB
 from .aporasas import APorASAS
 from .autopilot import Autopilot
 from .conditional import Condition
@@ -41,6 +40,7 @@ from .performance.base import PerfBase
 from .trafficgroups import TrafficGroups
 from .trails import Trails
 from .turbulence import Turbulence
+from .uncertainty import SurveillanceUncertainty
 from .windsim import WindSim
 
 
@@ -128,7 +128,7 @@ class Traffic(TrafficArrays):
             self.cr = ConflictResolution()
             self.ap = Autopilot()
             self.aporasas = APorASAS()
-            self.adsb = ADSB()
+            self.noise = SurveillanceUncertainty()
             self.trails = Trails()
             self.actwp = ActiveWaypoint()
             self.perf = PerfBase()
@@ -177,7 +177,7 @@ class Traffic(TrafficArrays):
         # Build new modules for turbulence
         self.turbulence.reset()
 
-        # Noise (turbulence, ADBS-transmission noise, ADSB-truncated effect)
+        # Trajectory noise (turbulence, navigation uncertainties)
         self.setnoise(False)
 
         # Reset transition level to default value
@@ -444,8 +444,8 @@ class Traffic(TrafficArrays):
         # ---------- Atmosphere --------------------------------
         self.p, self.rho, self.Temp = vatmos(self.alt)
 
-        # ---------- ADSB Update -------------------------------
-        self.adsb.update()
+        # ---------- Trajectory Noise Update -------------------------------
+        self.noise.update()
 
         # ---------- Fly the Aircraft --------------------------
         self.ap.update()  # Autopilot logic
@@ -617,7 +617,7 @@ class Traffic(TrafficArrays):
             )
 
         self.turbulence.setnoise(noise)
-        self.adsb.setnoise(noise)
+        self.noise.setnoise(noise)
         return True
 
     def engchange(self, acid, engid):
