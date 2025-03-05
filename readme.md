@@ -17,7 +17,7 @@ MiniSky is being optimized for:
 Run the simulator with a scenario file:
 
 ```bash
-$ python minisky-run.py --scenario scenario/kl204.scn
+python minisky-run.py --scenario scenario/kl204.scn
 ```
 
 ### 2. Run simulator with REST API server
@@ -25,28 +25,47 @@ $ python minisky-run.py --scenario scenario/kl204.scn
 Start the simulator with a REST API endpoint for interactions:
 
 ```bash
-$ fastapi run minisky-api.py
+fastapi dev minisky-api.py
 ```
 
 #### Interaction with API
 
-Once the fastapi server is running, A simple stack command example through API:
+Once the fastapi server is running, some simple examples:
 
 ```bash
-$ curl http://localhost:8000/stack/POS%20EHAM
+httpx "http://localhost:8000/stack/POS EHAM"
+
+httpx "http://localhost:8000/stack/mcre 3"
+
+httpx "http://localhost:8000/all"
+
+httpx "http://localhost:8000/conflicts"
+
 ```
+
+In summary:
+
+- `stack/CMD` is the endpoint for any bluesky stack commands
+- `all` is the endpoint to show all aircraft
+- `conflicts` is the endpoint to show all conflicts
+
 
 #### Console interaction
 
 You can also use the control console to interact with the API server:
 
 ```bash
-$ python minisky-console.py
+python minisky-console.py
 
-# example commands
-> POS EHAM                     # run any stack command
-> /ic scenario/kl204.scn       # load scenario
-> /all                         # show all aircraft
+# bluesky stack commands, with prefix "/"
+> /POS EHAM                     # show all aircraft in EHAM
+> /mcre 3                       # create 3 aircraft
+
+# miniscky specific commands, without prefix
+> load scenario/kl204.scn       # load a local scenario file with POST
+> all                           # show all aircraft
+> conflicts                     # show all conflicts
+> exit                          # exit the console
 ```
 
 ### 3. Use the simulation in a package

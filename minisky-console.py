@@ -37,7 +37,7 @@ def main(server, port):
         elif cmd == "clear":
             os.system("clear")
 
-        elif cmd.startswith("ic "):
+        elif cmd.startswith("load "):
             file_path = cmd.split(" ")[1]
 
             if os.path.isfile(file_path):
