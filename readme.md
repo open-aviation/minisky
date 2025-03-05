@@ -82,8 +82,8 @@ for i in range(5):
 - [x] implement control console
 - [x] removed metaclass and replaceable classes
 - [x] remove datalog
-- [ ] redo resource/cache data
-- [ ] remove cachefile, load data from parquet instead
+- [x] redo resource/cache data
+- [x] remove cachefile, load data from parquet instead
 - [ ] check all echo, ensure print and scr.echo are consistent
 - [ ] write new tests
 - [ ] refactor code so import and simulation is easier

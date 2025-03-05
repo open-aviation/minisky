@@ -1,10 +1,8 @@
 verbose: False
 
-log_path: "output"
 scenario_path: "scenario"
-cache_path: "cache"
-navdata_path: "navdata"
-perf_path_openap: "performance/OpenAP"
+navdata_path: "navigation"
+perf_path_openap: "performance/openap"
 
 simdt: 0.05
 performance_dt: 1.0

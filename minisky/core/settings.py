@@ -14,7 +14,3 @@ for key, value in data.items():
 
 def data(path: str):
     return Path(__file__).parent.parent / "data" / path
-
-
-def cache(path: str):
-    return Path(__file__).parent.parent.parent / path

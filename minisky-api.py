@@ -67,7 +67,7 @@ def conflicts():
 
         conflict_info.append(
             {
-                "pair": pair,
+                "conflict pairs": pair,
                 "distance (nautical miles)": (minisky.traf.cd.dist[i] / aero.nm),
                 "altitude difference (feet)": (minisky.traf.cd.dalt[i] / aero.ft),
                 "qdr (degrees)": minisky.traf.cd.qdr[i],

@@ -2,9 +2,9 @@
 
 from minisky import stack, tools
 from minisky.core import varexplorer
-from minisky.core.settings import cache, data
-from minisky.navdatabase import Navdatabase
+from minisky.core.settings import data
 from minisky.simulation import ConsoleIO, Runner, Simulation
+from minisky.tools.navdata import Navdatabase
 from minisky.traffic import Traffic
 
 # Constants
