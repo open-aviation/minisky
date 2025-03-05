@@ -4,7 +4,6 @@ import asyncio
 import os
 
 import minisky
-from minisky.core.walltime import Timer
 
 
 class Runner:
@@ -21,7 +20,6 @@ class Runner:
         print("staring simulation")
         self.running = True
         while self.running:
-            Timer.update_timers()
             minisky.sim.step()
             await asyncio.sleep(0.01)
         print("simulation completed")

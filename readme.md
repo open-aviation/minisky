@@ -65,7 +65,7 @@ for i in range(5):
     print(f"step-{i} positions: {minisky.traf.lat} {minisky.traf.lon}")
 ```
 
-## To-do list
+## Tasks
 
 - [x] remove discoverable mode
 - [x] remove server and client mode
@@ -78,12 +78,13 @@ for i in range(5):
 - [x] remove calculator
 - [x] remove data logger 
 - [x] remove plotter
-- [x] implement REST API
-- [x] implement control console
 - [x] removed metaclass and replaceable classes
 - [x] remove datalog
-- [x] redo resource/cache data
 - [x] remove cachefile, load data from parquet instead
+- [x] remove signals and wall-time events
+- [x] refactor resource/cache data
+- [x] implement REST API
+- [x] implement control console
 - [ ] check all echo, ensure print and scr.echo are consistent
-- [ ] write new tests
+- [ ] add new tests
 - [ ] refactor code so import and simulation is easier
