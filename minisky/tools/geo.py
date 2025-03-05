@@ -4,6 +4,7 @@ easy use in BlueSky."""
 from math import *
 
 import numpy as np
+import pandas as pd
 
 import minisky
 
@@ -479,7 +480,7 @@ def magdec(latd, lond):
     """
     global decl_read, decl_lat_lon
     if not decl_read:
-        initdecl_data()
+        load_magnetic_declination()
         decl_read = True
 
     # Use fact that whole degrees are used as ticks on both lat & lon axis
@@ -503,7 +504,7 @@ def magdec(latd, lond):
     return d_hdg
 
 
-def initdecl_data():
+def load_magnetic_declination():
     """
     Called by Init
     Read magnetic declination (also called magnetic variation) datafile
@@ -543,27 +544,25 @@ def initdecl_data():
     # lat : 89 ... -90
     # Lon: -180 ... 179
     global decl_read, decl_lat_lon
-    dec_table = np.genfromtxt(
-        minisky.data(minisky.core.settings.navdata_path) / "geo_declination_data.csv",
-        comments="#",
-        delimiter=",",
+
+    file_path = (
+        minisky.data(minisky.core.settings.navdata_path) / "geo_declination_data.csv"
     )
+    df = pd.read_csv(file_path, comment="#", header=None)
 
-    decl = dec_table[:, 4]
+    # Extract the declination column (index 4) as a NumPy array
+    decl = df[4].values
 
-    #          <----lon ---->
-    #   lat1    ..  ..   ..  ..
-    #   lat2    .. ..
-
-    # Correct and adapt table
+    # Reshape the declination data into a 180x360 grid
     decl_lat_lon = decl.reshape((180, 360))
-    # For intpol, add lat = 90 row (same as at 89 degrees for interpolation)
-    # even though it is in blackout zone around pole
+
+    # Add a row for latitude = 90 degrees (same as latitude = 89 degrees)
     decl_lat_lon = np.vstack((decl_lat_lon[0:1, :], decl_lat_lon))
-    # Add lon = +180 column
+
+    # Add a column for longitude = 180 degrees (same as longitude = -180 degrees)
     decl_lat_lon = np.hstack((decl_lat_lon, decl_lat_lon[:, 0:1]))
 
-    # Result is table 181 rows x 361 columns table for
+    # Result is a 181x361 table for
     # lat = 90 ... -90 (rows)
     # lon = -180 ... 180 (columns)
     decl_read = True

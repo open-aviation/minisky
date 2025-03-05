@@ -5,7 +5,7 @@ import re
 from types import SimpleNamespace
 
 import minisky
-from minisky.tools.misc import (
+from minisky.tools.convert import (
     txt2alt,
     txt2bool,
     txt2hdg,

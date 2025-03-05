@@ -12,7 +12,7 @@ from minisky import stack
 from minisky.stack import Command
 from minisky.tools import geo
 from minisky.tools.aero import casormach2tas, ft, g0, kts, mach2cas, nm
-from minisky.tools.misc import degto180, txt2alt, txt2spd, txt2tim
+from minisky.tools.convert import degto180, txt2alt, txt2spd, txt2tim
 from minisky.tools.position import txt2pos
 
 

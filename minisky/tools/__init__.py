@@ -15,9 +15,7 @@ else:
 
     print("Using Python-based geo functions")
 
-from . import cachefile
-
 
 def init():
     # print("Reading magnetic variation data")
-    geo.initdecl_data()
+    geo.load_magnetic_declination()

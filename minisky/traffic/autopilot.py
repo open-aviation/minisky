@@ -19,7 +19,7 @@ from minisky.tools.aero import (
     vcas2tas,
     vcasormach2tas,
 )
-from minisky.tools.misc import degto180
+from minisky.tools.convert import degto180
 from minisky.tools.position import txt2pos
 
 from .route import Route

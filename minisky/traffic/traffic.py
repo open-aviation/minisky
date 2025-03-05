@@ -29,7 +29,7 @@ from minisky.tools.aero import (
     vtas2cas,
     vtas2mach,
 )
-from minisky.tools.misc import latlon2txt
+from minisky.tools.convert import latlon2txt
 from minisky.traffic.asas import ConflictDetection, ConflictResolution
 
 from .activewpdata import ActiveWaypoint

@@ -6,9 +6,22 @@ import pandas as pd
 import minisky
 from minisky.tools import geo
 from minisky.tools.aero import nm
-from minisky.tools.misc import findall
 
-# from .loadnavdata import load_navdata
+
+def findall(lst, x):
+    """Find indices of multiple occurences of x in lst."""
+    idx = []
+    i = 0
+    found = True
+    while i < len(lst) and found:
+        try:
+            i = lst[i:].index(x) + i
+            idx.append(i)
+            i = i + 1
+            found = True
+        except ValueError:
+            found = False
+    return idx
 
 
 class Navdatabase:

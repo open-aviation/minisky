@@ -3,7 +3,7 @@ import numpy as np
 import minisky
 from minisky.core.trafficarrays import TrafficArrays
 from minisky.tools.aero import g0, nm
-from minisky.tools.misc import degto180
+from minisky.tools.convert import degto180
 
 
 class ActiveWaypoint(TrafficArrays):

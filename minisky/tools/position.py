@@ -2,7 +2,7 @@
 
 import minisky
 
-from .misc import txt2lat, txt2lon
+from .convert import txt2lat, txt2lon
 
 
 def txt2pos(name, reflat, reflon):
