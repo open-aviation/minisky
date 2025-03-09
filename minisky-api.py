@@ -1,13 +1,21 @@
 import asyncio
+import os
 from io import StringIO
 
 import pandas as pd
-from fastapi import FastAPI, File, Response, UploadFile
+from fastapi import FastAPI, File, HTTPException, Response, UploadFile
+from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 
 import minisky
 from minisky.tools import aero
 
 app = FastAPI()
+
+# Mount static files directory
+static_dir = os.path.join(os.path.dirname(__file__), "static")
+os.makedirs(static_dir, exist_ok=True)  # Create static directory if it doesn't exist
+app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 minisky.init()
 
@@ -109,3 +117,9 @@ async def scn(file: UploadFile = File(...)):
     scenario = StringIO(contents.decode("utf-8"))
     minisky.stack.ic_StringIO(scenario, file.filename)
     return {"msg": f"scenario {file.filename} loaded"}
+
+
+@app.get("/map")
+def show_map():
+    """Display the aircraft map viewer"""
+    return RedirectResponse(url="/static/aircraft_map.html")

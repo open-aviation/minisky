@@ -1,0 +1,612 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MiniSky Aircraft Map</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        body,
+        html {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            width: 100%;
+        }
+
+        #map {
+            height: 100%;
+            width: 100%;
+        }
+
+        .label-row {
+            display: flex;
+            justify-content: space-between;
+            margin: 2px 0;
+        }
+
+        .label-left {
+            text-align: left;
+            flex: 1;
+        }
+
+        .label-right {
+            text-align: right;
+            flex: 1;
+        }
+
+
+        .aircraft-dot {
+            border: 1px solid white;
+            position: relative;
+        }
+
+        /* Info box styles */
+        .aircraft-info-box {
+            position: absolute;
+            background: rgba(255, 255, 255, 0.7);
+            border-radius: 5px;
+            padding: 5px;
+            min-width: 100px;
+            font-family: monospace;
+            font-size: 10px;
+            pointer-events: auto;
+            cursor: grab;
+            z-index: 1000;
+            box-shadow: 0 0 15px rgba(0, 0, 0, 0.2);
+        }
+
+        .aircraft-info-box:active {
+            cursor: grabbing;
+        }
+
+        #toggleButton {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            padding: 5px 10px;
+            background-color: white;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            cursor: pointer;
+            z-index: 1000;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="map"></div>
+    <button id="toggleButton">Hide Info</button>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        // Initialize the map with a temporary view that will be updated
+        const map = L.map('map').setView([52.3, 4.75], 5); // Default view will be overridden
+
+        // Add grayscale tile layer from CartoDB
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+            subdomains: 'abcd',
+            maxZoom: 19
+        }).addTo(map);
+
+        // Store aircraft markers and heading lines
+        const aircraftMarkers = {};
+        const headingLines = {};
+        let activeTooltip = null; // Track currently open tooltip
+        let showInfo = true; // Initial state: show info boxes
+        const infoLines = {}; // Store lines connecting aircraft and info boxes
+        let isFirstLoad = true; // Flag to track if this is the first load
+
+        // Function to toggle visibility of info boxes
+        function toggleInfoBoxes() {
+            showInfo = !showInfo;
+            const buttonText = showInfo ? 'Hide Info' : 'Show Info';
+            document.getElementById('toggleButton').textContent = buttonText;
+
+            // Iterate through existing aircraft markers and update visibility
+            Object.keys(aircraftMarkers).forEach(callsign => {
+                const marker = aircraftMarkers[callsign];
+                const infoBox = marker.infoBox;
+                if (infoBox) {
+                    infoBox.style.display = showInfo ? 'block' : 'none';
+                }
+
+                if (showInfo) {
+                    // If showing info boxes, ensure the connecting line exists and is visible
+                    if (!infoLines[callsign] && infoBox && infoBox.offsetWidth > 0) {
+                        // Recreate the dashed line if it doesn't exist
+                        const position = marker.getLatLng();
+                        const mapOffset = map.latLngToContainerPoint(position);
+                        const infoBoxCenter = {
+                            x: mapOffset.x + marker.offsetX + infoBox.offsetWidth / 2,
+                            y: mapOffset.y + marker.offsetY + infoBox.offsetHeight / 2
+                        };
+                        const infoBoxLatLng = map.containerPointToLatLng(L.point(infoBoxCenter.x, infoBoxCenter.y));
+                        const line = L.polyline(
+                            [position, infoBoxLatLng], {
+                            color: '#333',
+                            weight: 1,
+                            dashArray: '4, 4',
+                            opacity: 0.7
+                        }
+                        ).addTo(map);
+                        infoLines[callsign] = line;
+                    } else if (infoLines[callsign]) {
+                        // Make existing line visible
+                        infoLines[callsign].setStyle({ opacity: 0.7 });
+                    }
+                } else if (infoLines[callsign]) {
+                    // Hide line when hiding info boxes
+                    infoLines[callsign].setStyle({ opacity: 0 });
+                }
+            });
+        }
+
+        // Add event listener to the toggle button
+        document.getElementById('toggleButton').addEventListener('click', toggleInfoBoxes);
+
+        // Function to calculate marker size based on zoom level
+        function calculateMarkerSize(zoomLevel) {
+            // Base size at zoom level 5
+            const baseSize = 8;
+
+            // Scale factor increases as zoom increases
+            // Adjust these values to get desired scaling behavior
+            if (zoomLevel <= 5) {
+                return baseSize;
+            } else if (zoomLevel <= 8) {
+                return baseSize + (zoomLevel - 5) * 1.5;
+            } else if (zoomLevel <= 12) {
+                return baseSize + 4.5 + (zoomLevel - 8) * 2;
+            } else {
+                return baseSize + 12.5 + (zoomLevel - 12) * 3;
+            }
+        }
+
+        // Function to create aircraft icon with dynamic size and color
+        function createAircraftIcon(zoomLevel, inConflict = false) {
+            const dotSize = calculateMarkerSize(zoomLevel);
+            const totalSize = dotSize;
+            const color = inConflict ? 'red' : 'blue';
+
+            return L.divIcon({
+                html: `<div class="aircraft-dot" style="width: ${dotSize}px; height: ${dotSize}px; background-color: ${color};"></div>`,
+                className: '',
+                iconSize: [totalSize, totalSize],
+                iconAnchor: [totalSize / 2, totalSize / 2]
+            });
+        }
+
+        // Event handler for zoom changes to update all aircraft markers
+        map.on('zoomend', function () {
+            const newZoom = map.getZoom();
+            Object.keys(aircraftMarkers).forEach(callsign => {
+                const marker = aircraftMarkers[callsign];
+                const position = marker.getLatLng();
+                marker.setIcon(createAircraftIcon(newZoom));
+            });
+        });
+
+        // Calculate endpoint for heading line (5 minutes of flight)
+        function calculateEndpoint(lat, lon, speed, heading) {
+            // Convert heading from degrees to radians
+            const headingRad = (heading * Math.PI) / 180;
+
+            // Calculate distance traveled in 5 minutes (speed is in knots)
+            // 1 knot = 1.852 km/h = 0.0309 km/min
+            const distanceKm = (speed * 0.0309) * 5; // 5 minutes of flight
+
+            // Earth's radius in km
+            const R = 6371;
+
+            // Calculate new position
+            const latRad = (lat * Math.PI) / 180;
+            const lonRad = (lon * Math.PI) / 180;
+
+            const newLatRad = Math.asin(
+                Math.sin(latRad) * Math.cos(distanceKm / R) +
+                Math.cos(latRad) * Math.sin(distanceKm / R) * Math.cos(headingRad)
+            );
+
+            const newLonRad = lonRad + Math.atan2(
+                Math.sin(headingRad) * Math.sin(distanceKm / R) * Math.cos(latRad),
+                Math.cos(distanceKm / R) - Math.sin(latRad) * Math.sin(newLatRad)
+            );
+
+            // Convert back to degrees
+            const newLat = (newLatRad * 180) / Math.PI;
+            const newLon = (newLonRad * 180) / Math.PI;
+
+            return [newLat, newLon];
+        }
+
+        // Create info content for aircraft with new format
+        function createInfoContent(aircraft) {
+            // Convert altitude to flight level (FL)
+            const altitudeFeet = aircraft['altitude (feet)'] || 0;
+            const flightLevel = Math.round(altitudeFeet / 100);
+
+            // Extract or set default values for fields
+            const callsign = aircraft.callsign || '';
+            const typecode = aircraft.typecode || '';
+            const groundSpeed = Math.round(aircraft['groundspeed (knots)']) || 0;
+            const heading = Math.round(aircraft['heading (degrees)']) || 0;
+            const verticalRate = Math.round(aircraft['vertical_rate (feet/minute)']) || 0;
+
+            // Create arrow indicator for vertical rate
+            let verticalRateDisplay = verticalRate;
+            if (verticalRate > 0) {
+                verticalRateDisplay = `${verticalRate} <span style="color:red">▲</span>`;
+            } else if (verticalRate < 0) {
+                verticalRateDisplay = `${verticalRate} <span style="color:red"></span>`;
+            }
+
+            // These fields might not be available in the current data
+            // Using placeholders if not present
+            const efl = aircraft.efl || '--';
+            const assignedSpeed = aircraft.aspd || '--';
+            const assignedHeading = aircraft.ahdg || '--';
+
+            return `
+                
+                    <div class="label-row">
+                        <div class="label-left">${callsign}</div>
+                        <div class="label-right">${typecode}</div>
+                    </div>
+                    <div class="label-row">
+                        <div class="label-left">FL${flightLevel}</div>
+                        <div class="label-right">EFL${efl}</div>
+                    </div>
+                    <div class="label-row">
+                        <div class="label-left">${groundSpeed}</div>
+                        <div class="label-right">${verticalRateDisplay}</div>
+                    </div>
+                    <div class="label-row">
+                        <div class="label-left">ASPD${assignedSpeed}</div>
+                        <div class="label-right">AHDG${assignedHeading}</div>
+                    </div>
+                
+            `;
+        }
+
+        // Function to update info box and connecting line positions
+        function updateInfoBoxPosition(marker) {
+            if (marker && marker.infoBox) {
+                const position = marker.getLatLng();
+                const mapOffset = map.latLngToContainerPoint(position);
+                marker.infoBox.style.left = (mapOffset.x + marker.offsetX) + 'px';
+                marker.infoBox.style.top = (mapOffset.y + marker.offsetY) + 'px';
+
+                // Update the connecting line
+                if (infoLines[marker.callsign] && marker.infoBox) {
+                    // Ensure infoBox has dimensions before calculating center
+                    if (marker.infoBox.offsetWidth > 0 && marker.infoBox.offsetHeight > 0) {
+                        const infoBoxCenter = {
+                            x: mapOffset.x + marker.offsetX + marker.infoBox.offsetWidth / 2,
+                            y: mapOffset.y + marker.offsetY + marker.infoBox.offsetHeight / 2
+                        };
+                        const infoBoxLatLng = map.containerPointToLatLng(L.point(infoBoxCenter.x, infoBoxCenter.y));
+                        if (infoLines[marker.callsign]) {
+                            infoLines[marker.callsign].setLatLngs([position, infoBoxLatLng]);
+                        }
+                    } else {
+                        // If dimensions are not available, remove the line
+                        if (infoLines[marker.callsign]) {
+                            map.removeLayer(infoLines[marker.callsign]);
+                            delete infoLines[marker.callsign];
+                        }
+                    }
+                }
+            }
+        }
+
+        // Update info box positions on map move and zoom
+        map.on('moveend', function () {
+            Object.keys(aircraftMarkers).forEach(callsign => {
+                const marker = aircraftMarkers[callsign];
+                updateInfoBoxPosition(marker);
+            });
+        });
+
+        // Update info box positions on map move and zoom
+        map.on('move', function () {
+            Object.keys(aircraftMarkers).forEach(callsign => {
+                const marker = aircraftMarkers[callsign];
+                updateInfoBoxPosition(marker);
+            });
+        });
+
+        // Function to fetch conflicts data
+        async function getConflicts() {
+            try {
+                const response = await fetch('/conflicts');
+                const data = await response.json();
+
+                // If there are no conflicts, the API returns a specific message
+                if (data.msg && data.msg === "No conflicts detected") {
+                    return new Set();
+                }
+
+                // Create a set of all aircraft callsigns involved in conflicts
+                const conflictingAircraft = new Set();
+
+                // Process conflict data
+                if (Array.isArray(data)) {
+                    data.forEach(conflict => {
+                        if (Array.isArray(conflict['conflict pairs'])) {
+                            conflict['conflict pairs'].forEach(callsign => {
+                                conflictingAircraft.add(callsign);
+                            });
+                        }
+                    });
+                }
+
+                return conflictingAircraft;
+            } catch (error) {
+                console.error('Error fetching conflicts data:', error);
+                return new Set();
+            }
+        }
+
+        // Function to calculate bounds for all aircraft
+        function calculateAircraftBounds(aircraftList) {
+            if (!aircraftList || aircraftList.length === 0) {
+                return null;
+            }
+
+            // Initialize with the first aircraft's position
+            let minLat = aircraftList[0].latitude;
+            let maxLat = aircraftList[0].latitude;
+            let minLng = aircraftList[0].longitude;
+            let maxLng = aircraftList[0].longitude;
+
+            // Find min/max coordinates for all aircraft
+            aircraftList.forEach(ac => {
+                minLat = Math.min(minLat, ac.latitude);
+                maxLat = Math.max(maxLat, ac.latitude);
+                minLng = Math.min(minLng, ac.longitude);
+                maxLng = Math.max(maxLng, ac.longitude);
+            });
+
+            // Add padding (10%)
+            const latPadding = (maxLat - minLat) * 0.2;
+            const lngPadding = (maxLng - minLng) * 0.2;
+
+            return L.latLngBounds(
+                [minLat - latPadding, minLng - lngPadding],
+                [maxLat + latPadding, maxLng + lngPadding]
+            );
+        }
+
+        // Function to update aircraft positions
+        async function updateAircraft() {
+            try {
+                // Get conflicts data first
+                const conflictingAircraft = await getConflicts();
+
+                const response = await fetch('/all');
+                const aircraft = await response.json();
+
+                // If this is the first load and there are aircraft, center the map on them
+                if (isFirstLoad && aircraft.length > 0) {
+                    const bounds = calculateAircraftBounds(aircraft);
+                    if (bounds) {
+                        map.fitBounds(bounds);
+                    }
+                    isFirstLoad = false;
+                }
+
+                // Track existing callsigns to remove aircraft that no longer exist
+                const existingCallsigns = new Set();
+                const currentZoom = map.getZoom();
+
+                aircraft.forEach(ac => {
+                    existingCallsigns.add(ac.callsign);
+
+                    const position = [ac.latitude, ac.longitude];
+                    const heading = ac['heading (degrees)'];
+                    const speed = ac['groundspeed (knots)'];
+
+                    // Check if aircraft is in conflict
+                    const isInConflict = conflictingAircraft.has(ac.callsign);
+
+                    // Calculate endpoint for the heading line (5 minutes of flight)
+                    const endpoint = calculateEndpoint(
+                        ac.latitude,
+                        ac.longitude,
+                        speed,
+                        heading
+                    );
+
+                    // Create or update marker and heading line
+                    if (ac.callsign in aircraftMarkers) {
+                        // Update existing marker
+                        const marker = aircraftMarkers[ac.callsign];
+                        marker.setLatLng(position);
+                        marker.setIcon(createAircraftIcon(currentZoom, isInConflict));
+
+                        // Update info box content
+                        if (marker.infoBox) {
+                            marker.infoBox.innerHTML = createInfoContent(ac);
+                        }
+
+                        // Update heading line
+                        if (headingLines[ac.callsign]) {
+                            map.removeLayer(headingLines[ac.callsign]);
+                        }
+
+                        // Create new heading line with color based on conflict status
+                        const lineColor = isInConflict ? 'red' : 'blue';
+                        const line = L.polyline([position, endpoint], {
+                            color: lineColor,
+                            weight: 2,
+                            opacity: 0.7
+                        }).addTo(map);
+
+                        headingLines[ac.callsign] = line;
+
+                        // Update info box position and connecting line
+                        updateInfoBoxPosition(marker);
+
+                    } else {
+                        // Create new marker with square dot icon scaled to current zoom
+                        const marker = L.marker(position, {
+                            icon: createAircraftIcon(currentZoom, isInConflict),
+                            bubblingMouseEvents: false
+                        }).addTo(map);
+
+                        aircraftMarkers[ac.callsign] = marker;
+
+                        // Create heading line with color based on conflict status
+                        const lineColor = isInConflict ? 'red' : 'blue';
+                        const line = L.polyline([position, endpoint], {
+                            color: lineColor,
+                            weight: 2,
+                            opacity: 0.7
+                        }).addTo(map);
+
+                        headingLines[ac.callsign] = line;
+
+                        // Create info box
+                        const infoBox = document.createElement('div');
+                        infoBox.className = 'aircraft-info-box';
+                        infoBox.innerHTML = createInfoContent(ac);
+                        infoBox.style.display = showInfo ? 'block' : 'none'; // Respect toggle state
+
+                        // Initially position the info box relative to the marker
+                        const mapOffset = map.latLngToContainerPoint(position);
+                        infoBox.style.left = mapOffset.x + 'px';
+                        infoBox.style.top = mapOffset.y + 'px';
+
+                        // Add to map container
+                        map.getContainer().appendChild(infoBox);
+                        marker.infoBox = infoBox;
+
+                        // Store initial offset
+                        marker.offsetX = 0;
+                        marker.offsetY = 0;
+
+                        // Store callsign in marker for easy reference
+                        marker.callsign = ac.callsign;
+
+                        // Make info box draggable
+                        let isDragging = false;
+                        let dragStartX = 0;
+                        let dragStartY = 0;
+                        let activeMarker = null; // Track which marker's info box is being dragged
+
+                        infoBox.addEventListener('mousedown', (e) => {
+                            isDragging = true;
+                            activeMarker = marker; // Store reference to the active marker
+                            dragStartX = e.clientX - infoBox.offsetLeft;
+                            dragStartY = e.clientY - infoBox.offsetTop;
+                            infoBox.style.cursor = 'grabbing';
+                            map.dragging.disable(); // Disable map dragging
+                        });
+
+                        document.addEventListener('mousemove', (e) => {
+                            if (!isDragging) return;
+                            e.preventDefault();
+                            const x = e.clientX - dragStartX;
+                            const y = e.clientY - dragStartY;
+                            infoBox.style.left = x + 'px';
+                            infoBox.style.top = y + 'px';
+
+                            // Update connecting line during drag
+                            if (activeMarker && infoLines[activeMarker.callsign]) {
+                                const markerPos = activeMarker.getLatLng();
+                                const infoBoxCenter = {
+                                    x: x + infoBox.offsetWidth / 2,
+                                    y: y + infoBox.offsetHeight / 2
+                                };
+                                const infoBoxLatLng = map.containerPointToLatLng(L.point(infoBoxCenter.x, infoBoxCenter.y));
+                                infoLines[activeMarker.callsign].setLatLngs([markerPos, infoBoxLatLng]);
+                            }
+                        });
+
+                        document.addEventListener('mouseup', () => {
+                            if (isDragging) {
+                                isDragging = false;
+                                infoBox.style.cursor = 'grab';
+                                map.dragging.enable(); // Re-enable map dragging
+
+                                // Calculate and store the relative offset
+                                const mapOffset = map.latLngToContainerPoint(marker.getLatLng());
+                                marker.offsetX = parseInt(infoBox.style.left) - mapOffset.x;
+                                marker.offsetY = parseInt(infoBox.style.top) - mapOffset.y;
+
+                                activeMarker = null; // Clear active marker reference
+                            }
+                        });
+
+                        // Create dashed line - delay until infoBox has dimensions
+                        const createDashedLine = () => {
+                            if (infoBox.offsetWidth > 0 && infoBox.offsetHeight > 0) {
+                                const mapOffset = map.latLngToContainerPoint(position);
+                                const infoBoxCenter = {
+                                    x: mapOffset.x + marker.offsetX + infoBox.offsetWidth / 2,
+                                    y: mapOffset.y + marker.offsetY + infoBox.offsetHeight / 2
+                                };
+                                const infoBoxLatLng = map.containerPointToLatLng(L.point(infoBoxCenter.x, infoBoxCenter.y));
+                                const line = L.polyline(
+                                    [position, infoBoxLatLng], {
+                                    color: '#333',
+                                    weight: 1,
+                                    dashArray: '4, 4',
+                                    opacity: 0.7
+                                }
+                                ).addTo(map);
+                                infoLines[ac.callsign] = line;
+                            } else {
+                                // Try again shortly if dimensions are not available yet
+                                setTimeout(createDashedLine, 50);
+                            }
+                        };
+
+                        createDashedLine();
+                    }
+                });
+
+                // Remove aircraft that no longer exist
+                Object.keys(aircraftMarkers).forEach(callsign => {
+                    if (!existingCallsigns.has(callsign)) {
+                        // Remove the info box
+                        if (aircraftMarkers[callsign].infoBox) {
+                            map.getContainer().removeChild(aircraftMarkers[callsign].infoBox);
+                        }
+
+                        map.removeLayer(aircraftMarkers[callsign]);
+                        delete aircraftMarkers[callsign];
+
+                        // Also remove the heading line
+                        if (headingLines[callsign]) {
+                            map.removeLayer(headingLines[callsign]);
+                            delete headingLines[callsign];
+                        }
+
+                        // Remove the connecting line
+                        if (infoLines[callsign]) {
+                            map.removeLayer(infoLines[callsign]);
+                            delete infoLines[callsign];
+                        }
+                    }
+                });
+
+            } catch (error) {
+                console.error('Error fetching aircraft data:', error);
+                // If there's an error on first load, make sure we retry
+                if (isFirstLoad) {
+                    isFirstLoad = true;
+                }
+            }
+        }
+
+        // Update aircraft positions every 2 seconds
+        updateAircraft();
+        setInterval(updateAircraft, 2000);
+    </script>
+</body>
+
+</html>
