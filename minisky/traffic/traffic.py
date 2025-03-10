@@ -641,19 +641,16 @@ class Traffic(TrafficArrays):
             self.vs[idx] = vspd
             self.swvnav[idx] = False
 
-    def poscommand(self, id_or_name):
-        """POS command: Show info or an aircraft, airport, waypoint or navaid"""
+    def position(self, id_or_name):
+        """Show info or an aircraft, airport, waypoint or navaid"""
 
-        # Aircraft index
-        if type(id_or_name) == int:
+        if isinstance(id_or_name, int):
             return self.position_aircraft(id_or_name)
-
-        # Waypoint: airport, navaid or fix
         else:
             return self.position_by_name(id_or_name)
 
     def position_aircraft(self, idx: int):
-        """POS command: Show info or an aircraft, airport, waypoint or navaid"""
+        """Show info or an aircraft, airport, waypoint or navaid"""
 
         acid = self.id[idx]
 
@@ -739,6 +736,11 @@ class Traffic(TrafficArrays):
 
             return True, lines
 
+        # try aircraft
+        idx_ac = self.id2idx(name)
+        if idx_ac >= 0:
+            return self.position_aircraft(idx_ac)
+
         # Not found as airport, try waypoints & navaids
         else:
             idx_waypoints = minisky.navdb.getwpindices(name)
@@ -818,7 +820,7 @@ class Traffic(TrafficArrays):
                     return True, lines
 
         # nothing matched
-        return False, f"{name} not found as a/c, airport, navaid, or waypoint"
+        return False, f"{name} not found as aircraft, airport, navaid, or waypoint"
 
         # Show what we found on airport and navaid/waypoint
 
