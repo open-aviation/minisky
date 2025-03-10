@@ -4,7 +4,7 @@ scenario_path: "scenario"
 navdata_path: "navigation"
 perf_path_openap: "performance/openap"
 
-simdt: 0.05
+simdt: 1
 performance_dt: 1.0
 fms_dt: 1.0
 

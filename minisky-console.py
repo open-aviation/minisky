@@ -12,7 +12,9 @@ from prompt_toolkit.history import FileHistory
 history_file = os.path.expanduser("/tmp/hacksky_console_history")
 path_completer = PathCompleter()
 
-completer = NestedCompleter.from_nested_dict({"ic": path_completer})
+completer = NestedCompleter.from_nested_dict(
+    {"load": path_completer, "/load": path_completer}
+)
 
 
 @click.command()
@@ -31,13 +33,13 @@ def main(server, port):
         if cmd == "":
             continue
 
-        elif cmd == "exit":
+        elif cmd == "/exit" or cmd == "exit":
             break
 
-        elif cmd == "clear":
+        elif cmd == "/clear" or cmd == "clear":
             os.system("clear")
 
-        elif cmd.startswith("load "):
+        elif cmd.startswith("/load ") or cmd.startswith("load "):
             file_path = cmd.split(" ")[1]
 
             if os.path.isfile(file_path):
@@ -48,7 +50,7 @@ def main(server, port):
             else:
                 print("File does not exist\n")
 
-        elif cmd.startswith("/"):
+        elif not cmd.startswith("/"):
             response = requests.get(f"{rool_url}/stack/{cmd.strip('/')}").json()
             pprint(response)
         else:

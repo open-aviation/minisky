@@ -43,16 +43,32 @@ def all():
             "longitude": minisky.traf.lon,
             "altitude (feet)": (minisky.traf.alt / aero.ft).astype(int),
             "heading (degrees)": minisky.traf.hdg.astype(int),
+            "assigned heading (degrees)": minisky.traf.aporasas.hdg.astype(int),
             "track (degrees)": minisky.traf.trk,
             "TAS (knots)": (minisky.traf.tas / aero.kts).astype(int),
             "groundspeed (knots)": (minisky.traf.gs / aero.kts).astype(int),
             "CAS (knots)": (minisky.traf.cas / aero.kts).astype(int),
             "mach": minisky.traf.M,
             "vertical_rate (feet/minute)": (minisky.traf.vs / aero.fpm).astype(int),
+            "target altitude (feet)": (minisky.traf.selalt / aero.ft).astype(int),
+            "assigned speed (knots)": (minisky.traf.selspd / aero.kts).astype(int),
         }
     )
 
     return df.to_dict(orient="records")
+
+
+@app.get("/simtime")
+def simtime():
+    """Get the simulation time"""
+    return {"simulation time (seconds)": minisky.sim.simt}
+
+
+@app.get("/speedup/{speed}")
+def speedup(speed: float):
+    """Speed up the simulation"""
+    minisky.sim.dtmult = speed
+    return {"msg": f"simulation speed set to {speed}x"}
 
 
 @app.get("/conflicts")
@@ -95,7 +111,7 @@ async def stack(cmd: str):
     await minisky.scr.event.wait()
     msg = minisky.scr.read_output_buffer()
     minisky.scr.event.clear()
-    return {"command_sent": cmd, "message": msg}
+    return {"command to minisky": cmd, "message": msg}
 
 
 @app.get("/scn")
@@ -122,4 +138,4 @@ async def scn(file: UploadFile = File(...)):
 @app.get("/map")
 def show_map():
     """Display the aircraft map viewer"""
-    return RedirectResponse(url="/static/aircraft_map.html")
+    return RedirectResponse(url="/static/display.html")

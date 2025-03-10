@@ -19,9 +19,19 @@ class Runner:
     async def run(self):
         print("staring simulation")
         self.running = True
+
         while self.running:
+            target_dt = minisky.sim.simdt / minisky.sim.dtmult
+            next_time = asyncio.get_event_loop().time() + target_dt
+
             minisky.sim.step()
-            await asyncio.sleep(0.01)
+
+            # Calculate sleep time to compensate for processing time
+            current_time = asyncio.get_event_loop().time()
+            sleep_time = max(0, next_time - current_time)
+            next_time = next_time + target_dt  # Schedule next step
+
+            await asyncio.sleep(sleep_time)
         print("simulation completed")
 
     def stop(self):

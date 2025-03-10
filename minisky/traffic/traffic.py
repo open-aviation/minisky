@@ -3,7 +3,6 @@
 from __future__ import print_function
 
 from collections.abc import Collection
-from math import *
 from random import randint
 from typing import Iterable
 
@@ -366,14 +365,14 @@ class Traffic(TrafficArrays):
         latref = self.lat[targetidx]  # deg
         lonref = self.lon[targetidx]  # deg
         altref = self.alt[targetidx]  # m
-        trkref = radians(self.trk[targetidx])
+        trkref = np.radians(self.trk[targetidx])
         gsref = self.gs[targetidx]  # m/s
         tasref = self.tas[targetidx]  # m/s
         vsref = self.vs[targetidx]  # m/s
         cpa = dcpa * nm
         pzr = minisky.core.settings.asas_pzr * nm
         pzh = minisky.core.settings.asas_pzh * ft
-        trk = trkref + radians(dpsi)
+        trk = trkref + np.radians(dpsi)
 
         if dH is None:
             acalt = altref
@@ -387,26 +386,26 @@ class Traffic(TrafficArrays):
             # CAS or Mach provided: convert to groundspeed, assuming that
             # wind at intruder position is similar to wind at ownship position
             tas = tasref if spd is None else casormach2tas(spd, acalt)
-            tasn, tase = tas * cos(trk), tas * sin(trk)
+            tasn, tase = tas * np.cos(trk), tas * np.sin(trk)
             wn, we = self.wind.getdata(latref, lonref, acalt)
             gsn, gse = tasn + wn, tase + we
         else:
             # Groundspeed is the same as ownship
-            gsn, gse = gsref * cos(trk), gsref * sin(trk)
+            gsn, gse = gsref * np.cos(trk), gsref * np.sin(trk)
 
         # Horizontal relative velocity vector
-        vreln, vrele = gsref * cos(trkref) - gsn, gsref * sin(trkref) - gse
+        vreln, vrele = gsref * np.cos(trkref) - gsn, gsref * np.sin(trkref) - gse
         # Relative velocity magnitude
-        vrel = sqrt(vreln * vreln + vrele * vrele)
+        vrel = np.sqrt(vreln * vreln + vrele * vrele)
         # Relative travel distance to closest point of approach
-        drelcpa = tlosh * vrel + (0 if cpa > pzr else sqrt(pzr * pzr - cpa * cpa))
+        drelcpa = tlosh * vrel + (0 if cpa > pzr else np.sqrt(pzr * pzr - cpa * cpa))
         # Initial intruder distance
-        dist = sqrt(drelcpa * drelcpa + cpa * cpa)
+        dist = np.sqrt(drelcpa * drelcpa + cpa * cpa)
         # Rotation matrix diagonal and cross elements for distance vector
         rd = drelcpa / dist
         rx = cpa / dist
         # Rotate relative velocity vector to obtain intruder bearing
-        brn = degrees(atan2(-rx * vreln + rd * vrele, rd * vreln + rx * vrele))
+        brn = np.degrees(np.atan2(-rx * vreln + rd * vrele, rd * vreln + rx * vrele))
 
         # Calculate intruder lat/lon
         aclat, aclon = geo.kwikpos(latref, lonref, brn, dist / nm)
@@ -414,8 +413,8 @@ class Traffic(TrafficArrays):
         # intruder position
         wn, we = self.wind.getdata(aclat, aclon, acalt)
         tasn, tase = gsn - wn, gse - we
-        acspd = tas2cas(sqrt(tasn * tasn + tase * tase), acalt)
-        achdg = degrees(atan2(tase, tasn))
+        acspd = tas2cas(np.sqrt(tasn * tasn + tase * tase), acalt)
+        achdg = np.degrees(np.atan2(tase, tasn))
 
         # Create and, when necessary, set vertical speed
         self.cre(acid, actype, aclat, aclon, achdg, acalt, acspd)

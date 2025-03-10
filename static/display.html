@@ -28,11 +28,13 @@
 
         .label-left {
             text-align: left;
+            padding: 0 5px;
             flex: 1;
         }
 
         .label-right {
             text-align: right;
+            padding: 0 5px;
             flex: 1;
         }
 
@@ -48,7 +50,7 @@
             background: rgba(255, 255, 255, 0.7);
             border-radius: 5px;
             padding: 5px;
-            min-width: 100px;
+            min-width: 120px;
             font-family: monospace;
             font-size: 10px;
             pointer-events: auto;
@@ -61,23 +63,40 @@
             cursor: grabbing;
         }
 
-        #toggleButton {
+        #top-right-info {
             position: absolute;
+            text-align: right;
+            font-family: monospace;
             top: 10px;
             right: 10px;
+            border-radius: 5px;
+            padding: 5px 10px;
+            z-index: 1000;
+        }
+
+        #simTime {
+            margin-right: 10px;
+            background-color: white;
+            border: 1px solid #ccc;
+            padding: 5px 10px;
+        }
+
+        #toggleButton {
             padding: 5px 10px;
             background-color: white;
             border: 1px solid #ccc;
             border-radius: 5px;
             cursor: pointer;
-            z-index: 1000;
         }
     </style>
 </head>
 
 <body>
     <div id="map"></div>
-    <button id="toggleButton">Hide Info</button>
+    <div id="top-right-info">
+        <span id="simTime"> </span>
+        <button id="toggleButton">Hide Labels</button>
+    </div>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
@@ -102,7 +121,7 @@
         // Function to toggle visibility of info boxes
         function toggleInfoBoxes() {
             showInfo = !showInfo;
-            const buttonText = showInfo ? 'Hide Info' : 'Show Info';
+            const buttonText = showInfo ? 'Hide Labels' : 'Show Labels';
             document.getElementById('toggleButton').textContent = buttonText;
 
             // Iterate through existing aircraft markers and update visibility
@@ -226,49 +245,60 @@
         function createInfoContent(aircraft) {
             // Convert altitude to flight level (FL)
             const altitudeFeet = aircraft['altitude (feet)'] || 0;
-            const flightLevel = Math.round(altitudeFeet / 100);
 
             // Extract or set default values for fields
             const callsign = aircraft.callsign || '';
             const typecode = aircraft.typecode || '';
             const groundSpeed = Math.round(aircraft['groundspeed (knots)']) || 0;
-            const heading = Math.round(aircraft['heading (degrees)']) || 0;
-            const verticalRate = Math.round(aircraft['vertical_rate (feet/minute)']) || 0;
 
-            // Create arrow indicator for vertical rate
-            let verticalRateDisplay = verticalRate;
+            let verticalRate = Math.round(aircraft['vertical_rate (feet/minute)']) || 0;
             if (verticalRate > 0) {
-                verticalRateDisplay = `${verticalRate} <span style="color:red">▲</span>`;
+                verticalRate = `${verticalRate}<span style="color:red">▲</span>`;
             } else if (verticalRate < 0) {
-                verticalRateDisplay = `${verticalRate} <span style="color:red"></span>`;
+                verticalRate = `${-verticalRate}<span style="color:red">▼</span>`;
             }
 
-            // These fields might not be available in the current data
-            // Using placeholders if not present
-            const efl = aircraft.efl || '--';
-            const assignedSpeed = aircraft.aspd || '--';
-            const assignedHeading = aircraft.ahdg || '--';
+            let FL = Math.round(altitudeFeet / 100);
+            let EFL = Math.round(aircraft["target altitude (feet)"] / 100);
+            if (EFL != FL) {
+                FL = `<span style="color:red">${FL}</span>`;
+            }
+
+            let CAS = Math.round(aircraft['CAS (knots)']) || 0;
+            let assignedCAS = Math.round(aircraft["assigned speed (knots)"]) || 0;
+            if (Math.abs(assignedCAS - CAS) > 2) {
+                CAS = `<span style="color:red">${CAS}</span>`;
+            }
+
+            let track = Math.round(aircraft["track (degrees)"]) || 0;
+            let heading = Math.round(aircraft['heading (degrees)']) || 0;
+            let assignedHeading = Math.round(aircraft["assigned heading (degrees)"]) || 0;
+            if (assignedHeading != heading) {
+                heading = `<span style="color:red">${heading}</span>`;
+            }
 
             return `
-                
                     <div class="label-row">
                         <div class="label-left">${callsign}</div>
                         <div class="label-right">${typecode}</div>
                     </div>
                     <div class="label-row">
-                        <div class="label-left">FL${flightLevel}</div>
-                        <div class="label-right">EFL${efl}</div>
+                        <div class="label-left">FL${FL}</div>
+                        <div class="label-left">EFL${EFL}</div>
+                        <div class="label-right">VS:${verticalRate}</div>
                     </div>
                     <div class="label-row">
-                        <div class="label-left">${groundSpeed}</div>
-                        <div class="label-right">${verticalRateDisplay}</div>
+                        <div class="label-left">SPD:${CAS}</div>
+                        <div class="label-left">ASPD:${assignedCAS}</div>
+                        <div class="label-right"></div>
+
                     </div>
                     <div class="label-row">
-                        <div class="label-left">ASPD${assignedSpeed}</div>
-                        <div class="label-right">AHDG${assignedHeading}</div>
-                    </div>
-                
-            `;
+                        <div class="label-left">HDG:${heading}</div>
+                        <div class="label-left">AHDG:${assignedHeading}</div>
+                        <div class="label-right">TRK:${track}</div>
+                    </div>          
+                    `;
         }
 
         // Function to update info box and connecting line positions
@@ -370,9 +400,8 @@
                 maxLng = Math.max(maxLng, ac.longitude);
             });
 
-            // Add padding (10%)
-            const latPadding = (maxLat - minLat) * 0.2;
-            const lngPadding = (maxLng - minLng) * 0.2;
+            const latPadding = 1;
+            const lngPadding = 2;
 
             return L.latLngBounds(
                 [minLat - latPadding, minLng - lngPadding],
@@ -386,8 +415,17 @@
                 // Get conflicts data first
                 const conflictingAircraft = await getConflicts();
 
-                const response = await fetch('/all');
-                const aircraft = await response.json();
+                // Fetch aircraft data
+                const aircraftResponse = await fetch('/all');
+                const aircraft = await aircraftResponse.json();
+
+                // Fetch simulation time
+                const simTimeResponse = await fetch('/simtime');
+                const simTimeData = await simTimeResponse.json();
+                const simTime = simTimeData["simulation time (seconds)"];
+
+                // Update the simTime div
+                document.getElementById('simTime').textContent = 'Simulation time: ' + simTime + ' s';
 
                 // If this is the first load and there are aircraft, center the map on them
                 if (isFirstLoad && aircraft.length > 0) {
@@ -603,9 +641,9 @@
             }
         }
 
-        // Update aircraft positions every 2 seconds
+        // Update aircraft positions every second
         updateAircraft();
-        setInterval(updateAircraft, 2000);
+        setInterval(updateAircraft, 1000);
     </script>
 </body>
 
