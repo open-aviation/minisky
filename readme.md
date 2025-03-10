@@ -57,15 +57,17 @@ You can also use the control console to interact with the API server:
 ```bash
 python minisky-console.py
 
-# bluesky stack commands, with prefix "/"
-> /POS EHAM                     # show all aircraft in EHAM
-> /mcre 3                       # create 3 aircraft
+# bluesky stack commands, without prefix "/"
+> POS EHAM                     # show all aircraft in EHAM
+> mcre 3                       # create 3 aircraft
 
-# miniscky specific commands, without prefix
-> load scenario/kl204.scn       # load a local scenario file with POST
-> all                           # show all aircraft
-> conflicts                     # show all conflicts
-> exit                          # exit the console
+# miniscky specific commands, works also without prefix "/"
+> /load scenario/kl204.scn       # load a local scenario file with POST
+> /all                           # show all aircraft
+> /conflicts                     # show all conflicts
+> /exit                          # exit the console
+> /speed/10                      # set simulation speed to 10
+> /forward/30                    # forward simulation 30 seconds
 ```
 
 ### 3. Use the simulation in a package
@@ -77,11 +79,14 @@ import minisky
 
 minisky.init()
 
+minisky.sim.reset()
 minisky.traf.cre('KL315', lat=52.0, lon=4.0, hdg=45, alt=10000, spd=250)
 
+minisky.sim.simdt = 10
+
 for i in range(5):
-    minisky.sim.step(10)
-    print(f"step-{i} positions: {minisky.traf.lat} {minisky.traf.lon}")
+    minisky.sim.step()
+    print(f"time-{minisky.sim.simt}s, positions: {minisky.traf.lat} {minisky.traf.lon}")
 ```
 
 ## Tasks
@@ -104,6 +109,7 @@ for i in range(5):
 - [x] refactor resource/cache data
 - [x] implement REST API
 - [x] implement control console
+- [x] better time and simulation speed control
 - [ ] check all echo, ensure print and scr.echo are consistent
 - [ ] add new tests
 - [ ] refactor code so import and simulation is easier

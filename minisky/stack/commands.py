@@ -81,12 +81,6 @@ def get_commands():
             "BANK acid bankangle[deg]",
             "Set or show bank limit for this vehicle",
         ],
-        "BENCHMARK": [
-            minisky.sim.benchmark,
-            "[string,time]",
-            "BENCHMARK [scenfile,time]",
-            "Run benchmark",
-        ],
         "BOX": [
             minisky.tools.areafilter.define_box_area,
             "txt,latlon,latlon,[alt,alt]",
@@ -155,23 +149,11 @@ def get_commands():
             "DEST acid, latlon/airport",
             "Set destination of aircraft, aircraft will fly to this airport.",
         ],
-        "DT": [
-            minisky.core.simtime.setdt_ui,
-            "[float/txt,float]",
-            "DT [dt] OR [target,dt]",
-            "Set simulation time step",
-        ],
         "DTLOOK": [
             minisky.traf.cd.setdtlook,
             "[time, acid...]",
             "DTLOOK [time, acid...]",
             "Set the lookahead time (in [hh:mm:]sec) for conflict detection.",
-        ],
-        "DTMULT": [
-            minisky.sim.set_dtmult,
-            "float",
-            "DTMULT multiplier",
-            "Sel multiplication factor for fast-time simulation",
         ],
         "DTNOLOOK": [
             minisky.traf.cd.setdtnolook,
@@ -184,12 +166,6 @@ def get_commands():
             "string",
             "ECHO txt",
             "Show a text in command window for user to read",
-        ],
-        "FF": [
-            minisky.sim.fastforward,
-            "[time]",
-            "FF [timeinsec]",
-            "Fast forward the simulation",
         ],
         "GETWIND": [
             minisky.traf.wind.get,
@@ -564,7 +540,6 @@ def get_commands():
         "CALC": ["DEBUG"],
         "DEL": ["DELETE"],
         "SWRAD": ["DISP"],
-        "FF": ["FWD"],
         "IMPLEMENTATION": ["IMPL", "IMPLEMENT"],
         "POLYLINE": ["LINES", "POLYLINES"],
         "MAGVAR": ["MAGDEC", "MAGDECL", "VAR"],

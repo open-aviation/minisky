@@ -18,10 +18,13 @@ def coroutine(f):
 
 @click.command()
 @click.option("--scenario", required=True, help="scenario file for simulation")
+@click.option("--speed", default=1, help="simulation speed")
 @coroutine
-async def main(scenario):
+async def main(scenario, speed):
     """Main function to start BlueSky"""
     minisky.init(scenario=scenario)
+    minisky.runner.speed = speed
+
     await minisky.runner.run()
 
 

@@ -4,7 +4,6 @@ performance implementations.
 
 import numpy as np
 
-from minisky.core import settings, timed_function
 from minisky.core.trafficarrays import TrafficArrays
 
 
@@ -48,8 +47,7 @@ class PerfBase(TrafficArrays):
         self.vsmin[-n:] = -1e6
         self.vsmax[-n:] = 1e6
 
-    @timed_function(name="performance", dt=settings.performance_dt, manual=True)
-    def update(self, dt=settings.performance_dt):
+    def update(self, dt=1):
         """implement this method"""
         pass
 

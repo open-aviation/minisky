@@ -9,7 +9,6 @@ from typing import Iterable
 import numpy as np
 
 import minisky
-from minisky.core import timed_function
 from minisky.core.trafficarrays import TrafficArrays
 from minisky.stack.argparser import refdata
 from minisky.tools import geo
@@ -473,7 +472,6 @@ class Traffic(TrafficArrays):
         # ---------- Aftermath ---------------------------------
         self.trails.update()
 
-    @timed_function(name="asas", dt=minisky.core.settings.asas_dt, manual=True)
     def update_asas(self):
         # Conflict detection and resolution
         self.cd.update(self, self)

@@ -64,11 +64,18 @@ def simtime():
     return {"simulation time (seconds)": minisky.sim.simt}
 
 
-@app.get("/speedup/{speed}")
+@app.get("/speed/{speed}")
 def speedup(speed: float):
     """Speed up the simulation"""
-    minisky.sim.dtmult = speed
+    minisky.runner.speed = speed
     return {"msg": f"simulation speed set to {speed}x"}
+
+
+@app.get("/forward/{seconds}")
+def forward(seconds: float):
+    """Jump to a specific simulation time"""
+    minisky.runner.forward(seconds)
+    return {"msg": f"simulation time jump forward {seconds} seconds"}
 
 
 @app.get("/conflicts")
