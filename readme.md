@@ -61,7 +61,7 @@ python minisky-console.py
 > POS EHAM                     # show all aircraft in EHAM
 > mcre 3                       # create 3 aircraft
 
-# miniscky specific commands, works also without prefix "/"
+# miniscky specific commands, with prefix "/"
 > /load scenario/kl204.scn       # load a local scenario file with POST
 > /all                           # show all aircraft
 > /conflicts                     # show all conflicts
@@ -69,6 +69,8 @@ python minisky-console.py
 > /speed/10                      # set simulation speed to 10
 > /forward/30                    # forward simulation 30 seconds
 ```
+
+Note that commands are case-insensitive.
 
 ### 3. Use the simulation in a package
 
@@ -110,6 +112,7 @@ for i in range(5):
 - [x] implement REST API
 - [x] implement control console
 - [x] better time and simulation speed control
+- [ ] change settings to .env
 - [ ] check all echo, ensure print and scr.echo are consistent
-- [ ] add new tests
 - [ ] refactor code so import and simulation is easier
+- [ ] add new tests

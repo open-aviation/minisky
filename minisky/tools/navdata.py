@@ -65,7 +65,7 @@ class Navdatabase:
         # print("Loading global navigation database...")
         # wptdata, aptdata, awydata, firdata, codata, rwythresholds = load_navdata()
 
-        nav_data_path = minisky.data(minisky.core.settings.navdata_path)
+        nav_data_path = minisky.data("navigation")
 
         wptdata = pd.read_parquet(nav_data_path / "waypoint.parquet")
         aptdata = pd.read_parquet(nav_data_path / "airport.parquet")

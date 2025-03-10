@@ -545,9 +545,7 @@ def load_magnetic_declination():
     # Lon: -180 ... 179
     global decl_read, decl_lat_lon
 
-    file_path = (
-        minisky.data(minisky.core.settings.navdata_path) / "geo_declination_data.csv"
-    )
+    file_path = minisky.data("navigation") / "geo_declination_data.csv"
     df = pd.read_csv(file_path, comment="#", header=None)
 
     # Extract the declination column (index 4) as a NumPy array

@@ -83,9 +83,9 @@ class Simulation:
     def reset(self):
         """Reset all simulation objects."""
         self.state = minisky.INIT
-        self.syst = -1.0
-        self.simt = 0.0
-        self.simdt = minisky.core.settings.simdt
+        self.syst = 0
+        self.simt = 0
+        self.simdt = 1
         self.utc = datetime.datetime.utcnow().replace(
             hour=0, minute=0, second=0, microsecond=0
         )

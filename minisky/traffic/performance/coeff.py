@@ -13,14 +13,14 @@ ENG_TYPE_TF = 1  # turbofan, fixwing
 ENG_TYPE_TP = 2  # turboprop, fixwing
 ENG_TYPE_TS = 3  # turboshlft, rotor
 
+OPENAP_DIR = minisky.data("perfo_rmance/openap")
+
 
 class Coefficient:
     def __init__(self):
         # Load synonyms.dat text file into dictionary
         self.synodict = {}
-        with open(
-            minisky.data(minisky.core.settings.perf_path_openap) / "synonym.dat", "r"
-        ) as f_syno:
+        with open(OPENAP_DIR / "synonym.dat", "r") as f_syno:
             for line in f_syno.readlines():
                 if line.count("#") > 0:
                     dataline, comment = line.split("#")
@@ -36,8 +36,7 @@ class Coefficient:
 
         self.acs_fixwing = self._load_all_fixwing_flavor()
         self.engines_fixwing = pd.read_csv(
-            minisky.data(minisky.core.settings.perf_path_openap)
-            / "fixwing/engines.csv",
+            OPENAP_DIR / "fixwing/engines.csv",
             encoding="utf-8",
         )
         self.limits_fixwing = self._load_all_fixwing_envelop()
@@ -49,8 +48,7 @@ class Coefficient:
         self.actypes_rotor = list(self.acs_rotor.keys())
 
         df = pd.read_csv(
-            minisky.data(minisky.core.settings.perf_path_openap)
-            / "fixwing/dragpolar.csv",
+            OPENAP_DIR / "fixwing/dragpolar.csv",
             index_col="mdl",
         )
         self.dragpolar_fixwing = df.to_dict(orient="index")
@@ -63,15 +61,13 @@ class Coefficient:
 
         # read fixwing aircraft and engine files
         allengines = pd.read_csv(
-            minisky.data(minisky.core.settings.perf_path_openap)
-            / "fixwing/engines.csv",
+            OPENAP_DIR / "fixwing/engines.csv",
             encoding="utf-8",
         )
         allengines["name"] = allengines["name"].str.upper()
         acs = json.load(
             open(
-                minisky.data(minisky.core.settings.perf_path_openap)
-                / "fixwing/aircraft.json",
+                OPENAP_DIR / "fixwing/aircraft.json",
                 "r",
             )
         )
@@ -97,8 +93,7 @@ class Coefficient:
         # read rotor aircraft
         acs = json.load(
             open(
-                minisky.data(minisky.core.settings.perf_path_openap)
-                / "rotor/aircraft.json",
+                OPENAP_DIR / "rotor/aircraft.json",
                 "r",
             )
         )
@@ -115,7 +110,7 @@ class Coefficient:
         limits_fixwing = {}
         for mdl, ac in self.acs_fixwing.items():
             fenv = (
-                minisky.data(minisky.core.settings.perf_path_openap)
+                minisky.data("performance/openap")
                 / "fixwing/wrap"
                 / (mdl.lower() + ".txt")
             )
