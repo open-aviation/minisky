@@ -177,23 +177,6 @@ class AcidArg(Parser):
         return idx, argstring
 
 
-class WpinrouteArg(Parser):
-    """Argument parser for waypoints in an aircraft route."""
-
-    def parse(self, argstring):
-        arg, argstring = re_getarg.match(argstring).groups()
-        wpname = arg.upper()
-        if (
-            refdata.acidx >= 0
-            and wpname in minisky.traf.ap.route[refdata.acidx].wpname
-            or wpname == "*"
-        ):
-            return wpname, argstring
-        raise ArgumentError(
-            f"{wpname} not found in the route of {minisky.traf.id[refdata.acidx]}"
-        )
-
-
 class WptArg(Parser):
     """Argument parser for waypoints.
     Makes 1 or 2 argument(s) into 1 position text to be used as waypoint
@@ -303,7 +286,6 @@ argparsers = {
     "onoff": Parser(txt2bool),
     "bool": Parser(txt2bool),
     "acid": AcidArg(),
-    "wpinroute": WpinrouteArg(),
     "wpt": WptArg(),
     "latlon": PosArg(),
     "lat": PosArg(),

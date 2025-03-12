@@ -111,20 +111,23 @@ class Autopilot(TrafficArrays):
 
         # VNAV Variables
         self.dist2vs[-n:] = -999.0
-        self.dist2accel[
-            -n:
-        ] = (
-            -999.0
-        )  # Distance to go to acceleration(deceleration) for turn next waypoint [nm]
+
+        # Distance to go to acceleration(deceleration) for turn next waypoint [nm]
+        self.dist2accel[-n:] = -999.0
 
         # LNAV variables
-        self.qdr2wp[
-            -n:
-        ] = -999.0  # Direction to waypoint from the last time passing was checked
-        self.dist2wp[-n:] = -999.0  # Distance to go to next waypoint [nm]
+
+        # Direction to waypoint from the last time passing was checked
+        self.qdr2wp[-n:] = -999.0
+
+        # Distance to go to next waypoint [nm]
+        self.dist2wp[-n:] = -999.0
 
         # Traffic performance data (temporarily default values)
-        self.vsdef[-n:] = 1500.0 * fpm  # default vertical speed of autopilot
+
+        # default vertical speed of autopilot
+        self.vsdef[-n:] = 1500.0 * fpm
+
         self.bankdef[-n:] = np.radians(25.0)
 
         # Route objects
@@ -164,10 +167,6 @@ class Autopilot(TrafficArrays):
 
         # For the aircraft that have reached their active waypoint, update vectorized leg data for guidance
         for i in self.idxreached:
-            # debug commands to check VNAV state while passing waypoint
-            # print("Passing waypoint",minisky.traf.ap.route[i].wpname[minisky.traf.ap.route[i].iactwp])
-            # print("dist2wp,dist2vs",self.dist2wp[i]/nm,self.dist2vs[i]/nm) # distance to wp & distance to ToD/ToC
-
             # Save current waypoint speed for use on next leg when we pass this waypoint
             # VNAV speeds are always FROM-speeds, so we accelerate/decelerate at the waypoint
             # where this speed is specified, so we need to save it for use now
@@ -199,9 +198,8 @@ class Autopilot(TrafficArrays):
                     turnhdgr,
                     minisky.traf.actwp.next_qdr[i],
                     minisky.traf.actwp.swlastwp[i],
-                ) = self.route[
-                    i
-                ].getnextwp()  # [m] note: xtoalt,nextaltco are in meters
+                ) = self.route[i].getnextwp()
+                # [m] note: xtoalt,nextaltco are in meters
 
                 (
                     minisky.traf.actwp.nextturnlat[i],
@@ -365,8 +363,8 @@ class Autopilot(TrafficArrays):
         for iac in np.where(
             (minisky.traf.actwp.torta > -99.0) * (minisky.traf.actwp.spdcon < 0.0)
         )[0]:
-            iwp = minisky.traf.ap.route[iac].iactwp
-            if minisky.traf.ap.route[iac].wprta[iwp] > -99.0:
+            iwp = self.route[iac].iactwp
+            if self.route[iac].wprta[iwp] > -99.0:
                 # For all aircraft flying to an RTA waypoint, recalculate speed more often
                 dist2go4rta = (
                     geo.kwikdist(
@@ -376,7 +374,7 @@ class Autopilot(TrafficArrays):
                         minisky.traf.actwp.lon[iac],
                     )
                     * nm
-                    + minisky.traf.ap.route[iac].wpxtorta[iwp]
+                    + self.route[iac].wpxtorta[iwp]
                 )  # last term zero for active waypoint RTA
 
                 # Set minisky.traf.actwp.spd to RTA speed, if necessary
@@ -480,6 +478,7 @@ class Autopilot(TrafficArrays):
             vcas2tas(minisky.traf.actwp.nextturnspd, minisky.traf.alt),
             -1.0 + 0.0 * minisky.traf.tas,
         )
+
         # Switch is now whether the aircraft has any turn waypoints
         swturnspd = minisky.traf.actwp.nextturnidx > 0
         turntasdiff = np.maximum(0.0, (minisky.traf.tas - turntas) * (turntas > 0.0))
@@ -708,8 +707,6 @@ class Autopilot(TrafficArrays):
                 # print("xtoalt =",xtoalt/nm,"nm descdist =",descdist/nm,"nm")
 
                 # Exceptions: Descend now?
-                # print("Active WP:",minisky.traf.ap.route[idx].wpname[minisky.traf.ap.route[idx].iactwp])
-                # print("dist2wp,turndist, dist2vs= ",self.dist2wp[idx],minisky.traf.actwp.turndist[idx],self.dist2vs[idx])
                 if (
                     self.dist2wp[idx] - 1.02 * minisky.traf.actwp.turndist[idx]
                     < self.dist2vs[idx]
@@ -909,12 +906,14 @@ class Autopilot(TrafficArrays):
         Set destination of aircraft, aircraft wil fly to this airport."""
         if wpname is None:
             return True, "DEST " + minisky.traf.id[acidx] + ": " + self.dest[acidx]
+
         route = self.route[acidx]
+
         apidx = minisky.navdb.getaptidx(wpname)
         if apidx < 0:
-            if minisky.traf.ap.route[acidx].nwp > 0:
-                reflat = minisky.traf.ap.route[acidx].wplat[-1]
-                reflon = minisky.traf.ap.route[acidx].wplon[-1]
+            if len(route.wpname) > 0:
+                reflat = route.wplat[-1]
+                reflon = route.wplon[-1]
             else:
                 reflat = minisky.traf.lat[acidx]
                 reflon = minisky.traf.lon[acidx]
@@ -931,11 +930,11 @@ class Autopilot(TrafficArrays):
             lon = minisky.navdb.aptlon[apidx]
 
         self.dest[acidx] = wpname
-        iwp = route.addwpt(
+        iwp = route.add_waypoint(
             acidx, self.dest[acidx], route.dest, lat, lon, 0.0, minisky.traf.cas[acidx]
         )
         # If only waypoint: activate
-        if (iwp == 0) or (self.orig[acidx] != "" and route.nwp == 2):
+        if (iwp == 0) or (self.orig[acidx] != "" and len(route.wpname) == 2):
             minisky.traf.actwp.lat[acidx] = route.wplat[iwp]
             minisky.traf.actwp.lon[acidx] = route.wplon[iwp]
             minisky.traf.actwp.nextaltco[acidx] = route.wpalt[iwp]
@@ -944,7 +943,7 @@ class Autopilot(TrafficArrays):
             minisky.traf.swlnav[acidx] = True
             minisky.traf.swvnav[acidx] = True
             route.iactwp = iwp
-            route.direct(acidx, route.wpname[iwp])
+            minisky.traffic.route.direct(acidx, route.wpname[iwp])
 
         # If not found, say so
         elif iwp < 0:
@@ -958,12 +957,15 @@ class Autopilot(TrafficArrays):
         Set origin of aircraft."""
         if wpname is None:
             return True, "ORIG " + minisky.traf.id[acidx] + ": " + self.orig[acidx]
+
         route = self.route[acidx]
+
         apidx = minisky.navdb.getaptidx(wpname)
+
         if apidx < 0:
-            if minisky.traf.ap.route[acidx].nwp > 0:
-                reflat = minisky.traf.ap.route[acidx].wplat[-1]
-                reflon = minisky.traf.ap.route[acidx].wplon[-1]
+            if len(route.wpname) > 0:
+                reflat = route.wplat[-1]
+                reflon = route.wplon[-1]
             else:
                 reflat = minisky.traf.lat[acidx]
                 reflon = minisky.traf.lon[acidx]
@@ -981,7 +983,7 @@ class Autopilot(TrafficArrays):
 
         # Origin: bookkeeping only for now, store in route as origin
         self.orig[acidx] = wpname
-        iwp = route.addwpt(
+        iwp = route.add_waypoint(
             acidx, self.orig[acidx], route.orig, lat, lon, 0.0, minisky.traf.cas[acidx]
         )
         if iwp < 0:
@@ -1026,7 +1028,7 @@ class Autopilot(TrafficArrays):
                     )
 
                 route = self.route[i]
-                if route.nwp > 0:
+                if len(route.wpname) > 0:
                     minisky.traf.swvnav[i] = True
                     minisky.traf.swvnavspd[i] = True
                     self.route[i].calcfp()
@@ -1078,7 +1080,7 @@ class Autopilot(TrafficArrays):
 
             elif flag:
                 route = self.route[i]
-                if route.nwp <= 0:
+                if len(route.wpname) <= 0:
                     return False, (
                         "LNAV "
                         + minisky.traf.id[i]

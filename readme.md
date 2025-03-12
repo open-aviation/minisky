@@ -112,7 +112,7 @@ for i in range(5):
 - [x] implement REST API
 - [x] implement control console
 - [x] better time and simulation speed control
-- [ ] change settings to .env
+- [x] refactor route functions
 - [ ] check all echo, ensure print and scr.echo are consistent
 - [ ] refactor code so import and simulation is easier
 - [ ] add new tests

@@ -677,7 +677,7 @@ class Traffic(TrafficArrays):
         )
 
         # FMS AP modes
-        if self.swlnav[idx] and route.nwp > 0 and route.iactwp >= 0:
+        if self.swlnav[idx] and len(route.wpname) > 0 and route.iactwp >= 0:
             if self.swvnav[idx]:
                 if self.swvnavspd[idx]:
                     info = info + "VNAV (incl.VNAVSPD), "

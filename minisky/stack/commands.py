@@ -33,7 +33,6 @@
 #   latlon    = converts acid, wpt, airport etc => lat,lon (deg) so 2 args!
 #   wpt       = converts postext or lat,lon into a text string,
 #               to be used as named waypoint
-#   wpinroute = text string with name of waypoint in route
 #   pandir    = text with LEFT, RIGHT, UP/ABOVE or DOWN
 #
 # Below this dictionary also a dictionary of synonym commands is given
@@ -46,21 +45,21 @@ def get_commands():
 
     cmddict = {
         "ADDWPT": [
-            minisky.traffic.route.Route.addwptStack,
-            "acid,wpt,[alt,spd,wpinroute,wpinroute]",
-            "ADDWPT acid, wpt, [alt, spd, wpinroute, wpinroute]",
+            minisky.traffic.route.addwpt_stack,
+            "acid,wpt,[alt,spd,wpt,wpt]",
+            "ADDWPT acid, wpt, [alt, spd, wpt, wpt]",
             "Add a waypoint to the route.",
         ],
         "ADDWPTMODE": [
-            minisky.traffic.route.Route.addwptMode,
+            minisky.traffic.route.change_wpt_mode,
             "acid, [wpt,alt]",
             "ADDWPTMODE acid, [wpt,alt]",
             "Changes the mode of the ADDWPT command to add waypoints of type 'mode'.",
         ],
         "AFTER": [
-            minisky.traffic.route.Route.after,
-            "acid, wpinroute, addwpt, waypoint, [alt, spd]",
-            "AFTER acid, wpinroute, addwpt, waypoint, [alt, spd]",
+            minisky.traffic.route.addwpt_after,
+            "acid, wpt, addwpt, waypoint, [alt, spd]",
+            "AFTER acid, wpt, addwpt, waypoint, [alt, spd]",
             "Add a waypoint after another waypoint in the route.",
         ],
         "ALT": [
@@ -76,9 +75,9 @@ def get_commands():
             "Select a Conflict Detection method.",
         ],
         "AT": [
-            minisky.traffic.route.Route.at,
-            "acid, wpinroute, [DEL] ALT/SPD/DO alt/spd/stack command",
-            "AT acid, wpinroute, [DEL] ALT/SPD/DO alt/spd/stack command",
+            minisky.traffic.route.at_wpt,
+            "acid, wpt, [DEL] ALT/SPD/DO alt/spd/stack command",
+            "AT acid, wpt, [DEL] ALT/SPD/DO alt/spd/stack command",
             "Set or show altitude and/or speed constraints at a waypoint.",
         ],
         "ATALT": [
@@ -106,9 +105,9 @@ def get_commands():
             "Set or show bank limit for this vehicle",
         ],
         "BEFORE": [
-            minisky.traffic.route.Route.before,
-            "acid, wpinroute, addwpt, waypoint, [alt, spd]",
-            "BEFORE acid, wpinroute, addwpt, waypoint, [alt, spd]",
+            minisky.traffic.route.addwpt_before,
+            "acid, wpt, addwpt, waypoint, [alt, spd]",
+            "BEFORE acid, wpt, addwpt, waypoint, [alt, spd]",
             "Add a waypoint before another waypoint in the route.",
         ],
         "BOX": [
@@ -180,15 +179,15 @@ def get_commands():
             "Delay a stack command until a specific simulation time.",
         ],
         "DELRTE": [
-            minisky.traffic.route.Route.delrte,
+            minisky.traffic.route.delrte,
             "acid",
             "DELRTE acid",
             "Delete the complete route for an aircraft.",
         ],
-        "DELWP": [
-            minisky.traffic.route.Route.delwpt,
-            "acid, wpinroute",
-            "DELWP acid, wpinroute",
+        "DELWPT": [
+            minisky.traffic.route.delwpt,
+            "acid,wpt",
+            "DELWPT acid,wpt",
             "Delete a waypoint from a route.",
         ],
         "DEST": [
@@ -198,9 +197,9 @@ def get_commands():
             "Set destination of aircraft, aircraft will fly to this airport.",
         ],
         "DIRECT": [
-            minisky.traffic.route.Route.direct,
-            "acid, wpinroute",
-            "DIRECT acid, wpinroute",
+            minisky.traffic.route.direct,
+            "acid, wpt",
+            "DIRECT acid, wpt",
             "Go direct to a specified waypoint in the route.",
         ],
         "DTLOOK": [
@@ -214,12 +213,6 @@ def get_commands():
             "[time, acid...]",
             "DTNOLOOK [time, acid...]",
             "Set the interval (in [hh:mm:]sec) in which conflict detection is skipped after a conflict resolution.",
-        ],
-        "DUMPRTE": [
-            minisky.traffic.route.Route.dumprte,
-            "acid",
-            "DUMPRTE acid",
-            "Write route to output/routelog.txt.",
         ],
         "ECHO": [
             minisky.scr.echo,
@@ -273,7 +266,7 @@ def get_commands():
             "Draw a line on the radar screen",
         ],
         "LISTRTE": [
-            minisky.traffic.route.Route.listrte,
+            minisky.traffic.route.listrte,
             "acid, [pagenr]",
             "LISTRTE acid, [pagenr]",
             "Show list of route in window per page of 5 waypoints.",
@@ -405,9 +398,9 @@ def get_commands():
             "Set resolution factor vertical.",
         ],
         "RTA": [
-            minisky.traffic.route.Route.SetRTA,
-            "acid, wpinroute, time",
-            "RTA acid, wpinroute, time",
+            minisky.traffic.route.set_rta,
+            "acid, wpt, time",
+            "RTA acid, wpt, time",
             "Add RTA to waypoint record.",
         ],
         "RSZONEDH": [
