@@ -37,8 +37,8 @@ def all():
     """Get all aircraft states"""
     df = pd.DataFrame(
         {
-            "callsign": minisky.traf.id,
-            "typecode": minisky.traf.type,
+            "callsign": minisky.traf.callsign,
+            "typecode": minisky.traf.typecode,
             "latitude": minisky.traf.lat,
             "longitude": minisky.traf.lon,
             "altitude (feet)": (minisky.traf.alt / aero.ft).astype(int),

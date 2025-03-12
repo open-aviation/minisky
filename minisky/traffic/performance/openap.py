@@ -59,7 +59,7 @@ class OpenAP(PerfBase):
         # cautious! considering multiple created aircraft with same type
         super().create(n)
 
-        actype = minisky.traf.type[-1].upper()
+        actype = minisky.traf.typecode[-1].upper()
 
         # Check synonym file if not in open ap actypes
         if (actype not in self.coeff.actypes_rotor) and (

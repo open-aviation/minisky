@@ -72,7 +72,7 @@ class Trails(TrafficArrays):
         self.lastlon[-1] = minisky.traf.lon[-1]
 
     def update(self):
-        self.acid = minisky.traf.id
+        self.acid = minisky.traf.callsign
         if not self.active:
             self.lastlat = minisky.traf.lat
             self.lastlon = minisky.traf.lon

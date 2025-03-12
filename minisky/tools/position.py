@@ -87,8 +87,8 @@ class Position:
             self.type = "nav"
 
         # aircraft id?
-        elif name in minisky.traf.id:
-            idx = minisky.traf.id2idx(name)
+        elif name in minisky.traf.callsign:
+            idx = minisky.traf.idx(name)
             self.name = ""
             self.type = "latlon"
             self.lat = minisky.traf.lat[idx]

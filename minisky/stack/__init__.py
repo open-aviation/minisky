@@ -303,7 +303,7 @@ def process():
         cmdobj = Command.cmddict.get(cmdu)
 
         # If no function is found for 'cmd', check if cmd is actually an aircraft id
-        if not cmdobj and cmdu in minisky.traf.id:
+        if not cmdobj and cmdu in minisky.traf.callsign:
             cmd, argstring = argparser.getnextarg(argstring)
             argstring = cmdu + " " + argstring
             # When no other args are parsed, command is POS

@@ -17,7 +17,7 @@
 #
 # Argtypes = syntax parsing (see below in this module for parsing):
 #
-#   acid      = aircraft id (text => index)
+#   callsign  = callsign (text will be converted to index)
 #   alt       = altitude (FL250, 25000  ft+. meters)
 #   spd       = CAS or Mach (when <1)   => m/s
 #   hdg       = heading in degrees, True or Magnetic
@@ -25,12 +25,12 @@
 #   float     = plain float
 #   int       = integer
 #   txt       = text will be converted to upper case
-#               (for keywords, navaids, flags, waypoints,acid etc)
+#               (for keywords, navaids, flags, waypoints, callsign etc)
 #   word      = single, case sensitive word
 #   string    = case sensitive string
 #   on/off    = text => boolean
 #
-#   latlon    = converts acid, wpt, airport etc => lat,lon (deg) so 2 args!
+#   latlon    = converts callsign, wpt, airport etc => lat,lon (deg) so 2 args!
 #   wpt       = converts postext or lat,lon into a text string,
 #               to be used as named waypoint
 #   pandir    = text with LEFT, RIGHT, UP/ABOVE or DOWN
@@ -46,26 +46,26 @@ def get_commands():
     cmddict = {
         "ADDWPT": [
             minisky.traffic.route.addwpt_stack,
-            "acid,wpt,[alt,spd,wpt,wpt]",
-            "ADDWPT acid, wpt, [alt, spd, wpt, wpt]",
+            "callsign,wpt,[alt,spd,wpt,wpt]",
+            "ADDWPT callsign, wpt, [alt, spd, wpt, wpt]",
             "Add a waypoint to the route.",
         ],
         "ADDWPTMODE": [
             minisky.traffic.route.change_wpt_mode,
-            "acid, [wpt,alt]",
-            "ADDWPTMODE acid, [wpt,alt]",
+            "callsign, [wpt,alt]",
+            "ADDWPTMODE callsign, [wpt,alt]",
             "Changes the mode of the ADDWPT command to add waypoints of type 'mode'.",
         ],
         "AFTER": [
             minisky.traffic.route.addwpt_after,
-            "acid, wpt, addwpt, waypoint, [alt, spd]",
-            "AFTER acid, wpt, addwpt, waypoint, [alt, spd]",
+            "callsign, wpt, addwpt, waypoint, [alt, spd]",
+            "AFTER callsign, wpt, addwpt, waypoint, [alt, spd]",
             "Add a waypoint after another waypoint in the route.",
         ],
         "ALT": [
             minisky.traf.ap.selaltcmd,
-            "acid,alt,[vspd]",
-            "ALT acid, alt, [vspd]",
+            "callsign,alt,[vspd]",
+            "ALT callsign, alt, [vspd]",
             "Select autopilot altitude command.",
         ],
         "ASAS": [
@@ -76,38 +76,38 @@ def get_commands():
         ],
         "AT": [
             minisky.traffic.route.at_wpt,
-            "acid, wpt, [DEL] ALT/SPD/DO alt/spd/stack command",
-            "AT acid, wpt, [DEL] ALT/SPD/DO alt/spd/stack command",
+            "callsign, wpt, [DEL] ALT/SPD/DO alt/spd/stack command",
+            "AT callsign, wpt, [DEL] ALT/SPD/DO alt/spd/stack command",
             "Set or show altitude and/or speed constraints at a waypoint.",
         ],
         "ATALT": [
             minisky.traf.cond.ataltcmd,
-            "acid,alt,string",
-            "acid ATALT alt cmd ",
+            "callsign,alt,string",
+            "callsign ATALT alt cmd ",
             "When aircraft at given altitude , execute the command",
         ],
         "ATDIST": [
             minisky.traf.cond.atdistcmd,
-            "acid,latlon,float,string",
-            "acid ATDIST pos dist cmd ",
+            "callsign,latlon,float,string",
+            "callsign ATDIST pos dist cmd ",
             "When aircraft passing this distance (in nm) to position, execute the command",
         ],
         "ATSPD": [
             minisky.traf.cond.atspdcmd,
-            "acid,spd,string",
-            "acid ATSPD spd cmd ",
+            "callsign,spd,string",
+            "callsign ATSPD spd cmd ",
             "When aircraft reaches given speed, execute the command",
         ],
         "BANK": [
             minisky.traf.setbanklim,
-            "acid,[float]",
-            "BANK acid bankangle[deg]",
+            "callsign,[float]",
+            "BANK callsign bankangle[deg]",
             "Set or show bank limit for this vehicle",
         ],
         "BEFORE": [
             minisky.traffic.route.addwpt_before,
-            "acid, wpt, addwpt, waypoint, [alt, spd]",
-            "BEFORE acid, wpt, addwpt, waypoint, [alt, spd]",
+            "callsign, wpt, addwpt, waypoint, [alt, spd]",
+            "BEFORE callsign, wpt, addwpt, waypoint, [alt, spd]",
             "Add a waypoint before another waypoint in the route.",
         ],
         "BOX": [
@@ -139,7 +139,7 @@ def get_commands():
         "CRE": [
             minisky.traf.cre,
             "txt,txt,float,float,[hdg,alt,spd]",
-            "CRE acid,type,lat,lon,hdg,alt,spd",
+            "CRE callsign,type,lat,lon,hdg,alt,spd",
             "Create an aircraft",
         ],
         "CRECMD": [
@@ -150,7 +150,7 @@ def get_commands():
         ],
         "CRECONFS": [
             minisky.traf.creconfs,
-            "txt,txt,acid,hdg,float,time,[alt,time,spd]",
+            "txt,txt,callsign,hdg,float,time,[alt,time,spd]",
             "CRECONFS id, type, targetid, dpsi, cpa, tlos_hor, dH, tlos_ver, spd",
             "Create an aircraft that is in conflict with 'targetid'",
         ],
@@ -168,8 +168,8 @@ def get_commands():
         ],
         "DEL": [
             minisky.stack.delete_element,
-            "acid/txt,...",
-            "DEL acid/ALL/WIND/shape",
+            "callsign/txt,...",
+            "DEL callsign/ALL/WIND/shape",
             "Delete command (aircraft, wind, area)",
         ],
         "DELAY": [
@@ -180,38 +180,38 @@ def get_commands():
         ],
         "DELRTE": [
             minisky.traffic.route.delrte,
-            "acid",
-            "DELRTE acid",
+            "callsign",
+            "DELRTE callsign",
             "Delete the complete route for an aircraft.",
         ],
         "DELWPT": [
             minisky.traffic.route.delwpt,
-            "acid,wpt",
-            "DELWPT acid,wpt",
+            "callsign,wpt",
+            "DELWPT callsign,wpt",
             "Delete a waypoint from a route.",
         ],
         "DEST": [
             minisky.traf.ap.setdest,
-            "acid,wpt",
-            "DEST acid, latlon/airport",
+            "callsign,wpt",
+            "DEST callsign, latlon/airport",
             "Set destination of aircraft, aircraft will fly to this airport.",
         ],
         "DIRECT": [
             minisky.traffic.route.direct,
-            "acid, wpt",
-            "DIRECT acid, wpt",
+            "callsign, wpt",
+            "DIRECT callsign, wpt",
             "Go direct to a specified waypoint in the route.",
         ],
         "DTLOOK": [
             minisky.traf.cd.setdtlook,
-            "[time, acid...]",
-            "DTLOOK [time, acid...]",
+            "[time, callsign...]",
+            "DTLOOK [time, callsign...]",
             "Set the lookahead time (in [hh:mm:]sec) for conflict detection.",
         ],
         "DTNOLOOK": [
             minisky.traf.cd.setdtnolook,
-            "[time, acid...]",
-            "DTNOLOOK [time, acid...]",
+            "[time, callsign...]",
+            "DTNOLOOK [time, callsign...]",
             "Set the interval (in [hh:mm:]sec) in which conflict detection is skipped after a conflict resolution.",
         ],
         "ECHO": [
@@ -228,8 +228,8 @@ def get_commands():
         ],
         "GROUP": [
             minisky.traf.groups.group,
-            "[txt,acid/txt,...]",
-            "GROUP [grname, (areaname OR acid,...) ]",
+            "[txt,callsign/txt,...]",
+            "GROUP [grname, (areaname OR callsign,...) ]",
             "Add aircraft to a group. OR all aircraft in given area.\n"
             + "Returns list of groups when no argument is passed.\n"
             + "Returns list of aircraft in group when only a groupname is passed.\n"
@@ -237,8 +237,8 @@ def get_commands():
         ],
         "HDG": [
             minisky.traf.ap.selhdgcmd,
-            "acid,hdg",
-            "HDG acid,hdg (deg,True or Magnetic)",
+            "callsign,hdg",
+            "HDG callsign,hdg (deg,True or Magnetic)",
             "Autopilot select heading command.",
         ],
         "HELP": [
@@ -267,14 +267,14 @@ def get_commands():
         ],
         "LISTRTE": [
             minisky.traffic.route.listrte,
-            "acid, [pagenr]",
-            "LISTRTE acid, [pagenr]",
+            "callsign, [pagenr]",
+            "LISTRTE callsign, [pagenr]",
             "Show list of route in window per page of 5 waypoints.",
         ],
         "LNAV": [
             minisky.traf.ap.setLNAV,
-            "acid,[bool]",
-            "LNAV acid,[ON/OFF]",
+            "callsign,[bool]",
+            "LNAV callsign,[ON/OFF]",
             "LNAV (lateral FMS mode) switch for autopilot.",
         ],
         "LSVAR": [
@@ -297,8 +297,8 @@ def get_commands():
         ],
         "MOVE": [
             minisky.traf.move,
-            "acid,latlon,[alt,hdg,spd,vspd]",
-            "MOVE acid,lat,lon,[alt,hdg,spd,vspd]",
+            "callsign,latlon,[alt,hdg,spd,vspd]",
+            "MOVE callsign,lat,lon,[alt,hdg,spd,vspd]",
             "Move an aircraft to a new position",
         ],
         "NOISE": [
@@ -309,8 +309,8 @@ def get_commands():
         ],
         "NORESO": [
             minisky.traf.cr.setnoreso,
-            "acid...",
-            "NORESO acid...",
+            "callsign...",
+            "NORESO callsign...",
             "ADD or Remove aircraft that nobody will avoid.",
         ],
         "OP": [
@@ -321,8 +321,8 @@ def get_commands():
         ],
         "ORIG": [
             minisky.traf.ap.setorig,
-            "acid,wpt",
-            "ORIG acid, latlon/airport",
+            "callsign,wpt",
+            "ORIG callsign, latlon/airport",
             "Set origin of aircraft.",
         ],
         "POLY": [
@@ -345,8 +345,8 @@ def get_commands():
         ],
         "POS": [
             minisky.traf.position,
-            "acid/wpt",
-            "POS acid/waypoint",
+            "callsign/wpt",
+            "POS callsign/waypoint",
             "Get info on aircraft, airport or waypoint",
         ],
         "PRIORULES": [
@@ -381,8 +381,8 @@ def get_commands():
         ],
         "RESOOFF": [
             minisky.traf.cr.setresooff,
-            "acid...",
-            "RESOOFF acid...",
+            "callsign...",
+            "RESOOFF callsign...",
             "ADD or Remove aircraft that will not avoid anybody else.",
         ],
         "RFACH": [
@@ -399,8 +399,8 @@ def get_commands():
         ],
         "RTA": [
             minisky.traffic.route.set_rta,
-            "acid, wpt, time",
-            "RTA acid, wpt, time",
+            "callsign, wpt, time",
+            "RTA callsign, wpt, time",
             "Add RTA to waypoint record.",
         ],
         "RSZONEDH": [
@@ -435,26 +435,26 @@ def get_commands():
         ],
         "SPD": [
             minisky.traf.ap.selspdcmd,
-            "acid,spd",
-            "SPD acid,casmach (= CASkts/Mach)",
+            "callsign,spd",
+            "SPD callsign,casmach (= CASkts/Mach)",
             "Select autopilot speed.",
         ],
         "SWTOC": [
             minisky.traf.ap.setswtoc,
-            "acid,[bool]",
-            "SWTOC acid,[ON/OFF]",
+            "callsign,[bool]",
+            "SWTOC callsign,[ON/OFF]",
             "Switch ToC logic (=climb early) on/off.",
         ],
         "SWTOD": [
             minisky.traf.ap.setswtod,
-            "acid,[bool]",
-            "SWTOD acid,[ON/OFF]",
+            "callsign,[bool]",
+            "SWTOD callsign,[ON/OFF]",
             "Switch ToD logic (=climb early) on/off.",
         ],
         "THR": [
             minisky.traf.setthrottle,
-            "acid[,txt]",
-            "THR acid, IDLE/0.0/throttlesetting/1.0/AUTO(default)",
+            "callsign[,txt]",
+            "THR callsign, IDLE/0.0/throttlesetting/1.0/AUTO(default)",
             "Set throttle or autotothrottle(default)",
         ],
         "TIME": [
@@ -465,26 +465,26 @@ def get_commands():
         ],
         "TRAIL": [
             minisky.traf.trails.setTrails,
-            "[acid/bool],[float/txt]",
-            "TRAIL ON/OFF, [dt] OR TRAIL acid colour",
+            "[callsign/bool],[float/txt]",
+            "TRAIL ON/OFF, [dt] OR TRAIL callsign colour",
             "Toggle aircraft trails on/off",
         ],
         "UNGROUP": [
             minisky.traf.groups.ungroup,
-            "txt,acid,...",
-            "UNGROUP grname, acid",
+            "txt,callsign,...",
+            "UNGROUP grname, callsign",
             "Remove aircraft from a group",
         ],
         "VNAV": [
             minisky.traf.ap.setVNAV,
-            "acid,[bool]",
-            "VNAV acid,[ON/OFF]",
+            "callsign,[bool]",
+            "VNAV callsign,[ON/OFF]",
             "Switch on/off VNAV mode, the vertical FMS mode (autopilot).",
         ],
         "VS": [
             minisky.traf.ap.selvspdcmd,
-            "acid,vspd",
-            "VS acid,vspd (ft/min)",
+            "callsign,vspd",
+            "VS callsign,vspd (ft/min)",
             "Vertical speed command (autopilot).",
         ],
         "WIND": [
@@ -495,14 +495,14 @@ def get_commands():
         ],
         "ZONEDH": [
             minisky.traf.cd.sethpz,
-            "[float, acid...]",
-            "ZONEDH [height, acid...]",
+            "[float, callsign...]",
+            "ZONEDH [height, callsign...]",
             "Set the vertical separation distance (i.e., half of the protected zone height) in feet.",
         ],
         "ZONER": [
             minisky.traf.cd.setrpz,
-            "[float, acid...]",
-            "ZONER [radius, acid...]",
+            "[float, callsign...]",
+            "ZONER [radius, callsign...]",
             "Set the horizontal separation distance (i.e., the radius of the protected zone) in nautical miles.",
         ],
     }

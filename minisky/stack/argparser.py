@@ -157,18 +157,18 @@ class StringArg(Parser):
         return argstring, ""
 
 
-class AcidArg(Parser):
+class CallsignArg(Parser):
     """Argument parser for aircraft callsigns and group ids."""
 
     def parse(self, argstring):
         arg, argstring = re_getarg.match(argstring).groups()
-        acid = arg.upper()
-        if acid in minisky.traf.groups:
-            idx = minisky.traf.groups.listgroup(acid)
+        callsign = arg.upper()
+        if callsign in minisky.traf.groups:
+            idx = minisky.traf.groups.listgroup(callsign)
         else:
-            idx = minisky.traf.id2idx(acid)
+            idx = minisky.traf.idx(callsign)
             if idx < 0:
-                raise ArgumentError(f"Aircraft with callsign {acid} not found")
+                raise ArgumentError(f"Aircraft with callsign {callsign} not found")
 
             # Update ref position for navdb lookup
             refdata.lat = minisky.traf.lat[idx]
@@ -194,7 +194,7 @@ class WptArg(Parser):
         name = arg.upper()
 
         # Try aircraft first: translate a/c id into a valid position text with a lat,lon
-        idx = minisky.traf.id2idx(name)
+        idx = minisky.traf.idx(name)
         if idx >= 0:
             name = f"{minisky.traf.lat[idx]},{minisky.traf.lon[idx]}"
 
@@ -232,7 +232,7 @@ class PosArg(Parser):
         argu = arg.upper()
 
         # Try aircraft first: translate a/c id into a valid position text with a lat,lon
-        idx = minisky.traf.id2idx(argu)
+        idx = minisky.traf.idx(argu)
         if idx >= 0:
             return minisky.traf.lat[idx], minisky.traf.lon[idx], argstring
 
@@ -285,7 +285,7 @@ argparsers = {
     "int": Parser(int),
     "onoff": Parser(txt2bool),
     "bool": Parser(txt2bool),
-    "acid": AcidArg(),
+    "callsign": CallsignArg(),
     "wpt": WptArg(),
     "latlon": PosArg(),
     "lat": PosArg(),

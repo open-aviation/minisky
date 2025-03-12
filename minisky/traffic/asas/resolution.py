@@ -138,7 +138,7 @@ class ConflictResolution(TrafficArrays):
 
         # Look at all conflicts, also the ones that are solved but CPA is yet to come
         for conflict in self.resopairs:
-            idx1, idx2 = minisky.traf.id2idx(conflict)
+            idx1, idx2 = minisky.traf.idx(conflict)
             # If the ownship aircraft is deleted remove its conflict from the list
             if idx1 < 0:
                 delpairs.add(conflict)
@@ -229,7 +229,7 @@ class ConflictResolution(TrafficArrays):
         self.priocode = priocode
         return True
 
-    def setnoreso(self, *idx: "acid"):
+    def setnoreso(self, *idx):
         """ADD or Remove aircraft that nobody will avoid.
         Multiple aircraft can be sent to this function at once."""
         if not idx:
@@ -237,13 +237,13 @@ class ConflictResolution(TrafficArrays):
                 True,
                 "NORESO [ACID, ... ] OR NORESO [GROUPID]"
                 + "\nCurrent list of aircraft nobody will avoid:"
-                + ", ".join(np.array(minisky.traf.id)[self.noresoac]),
+                + ", ".join(np.array(minisky.traf.callsign)[self.noresoac]),
             )
         idx = list(idx)
         self.noresoac[idx] = np.logical_not(self.noresoac[idx])
         return True
 
-    def setresooff(self, *idx: "acid"):
+    def setresooff(self, *idx):
         """ADD or Remove aircraft that will not avoid anybody else.
         Multiple aircraft can be sent to this function at once."""
         if not idx:
@@ -251,7 +251,7 @@ class ConflictResolution(TrafficArrays):
                 True,
                 "NORESO [ACID, ... ] OR NORESO [GROUPID]"
                 + "\nCurrent list of aircraft will not avoid anybody:"
-                + ", ".join(np.array(minisky.traf.id)[self.resooffac]),
+                + ", ".join(np.array(minisky.traf.callsign)[self.resooffac]),
             )
         else:
             idx = list(idx)

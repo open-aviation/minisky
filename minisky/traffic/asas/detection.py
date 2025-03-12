@@ -106,7 +106,7 @@ class ConflictDetection(TrafficArrays):
             self.activate = True
             return True, "Conflict Detection is on."
 
-    def setrpz(self, radius: float = -1.0, *acidx: "acid"):
+    def setrpz(self, radius: float = -1.0, *acidx):
         """Set the horizontal separation distance (i.e., the radius of the
         protected zone) in nautical miles.
 
@@ -134,7 +134,7 @@ class ConflictDetection(TrafficArrays):
             minisky.stack.stack(f"RSZONER {minisky.traf.cr.resofach * oldradius / nm}")
         return True, f"Setting default PZ radius to {radius} NM"
 
-    def sethpz(self, height: float = -1.0, *acidx: "acid"):
+    def sethpz(self, height: float = -1.0, *acidx):
         """Set the vertical separation distance (i.e., half of the protected
         zone height) in feet.
 
@@ -162,7 +162,7 @@ class ConflictDetection(TrafficArrays):
             minisky.stack.stack(f"RSZONEDH {minisky.traf.cr.resofacv * oldhpz / ft}")
         return True, f"Setting default PZ height to {height} ft"
 
-    def setdtlook(self, time: "time" = -1.0, *acidx: "acid"):
+    def setdtlook(self, time: "time" = -1.0, *acidx):
         """Set the lookahead time (in [hh:mm:]sec) for conflict detection."""
         if time < 0.0:
             return True, f"DTLOOK[time]\nCurrent value: {self.dtlookahead_def: .1f} sec"
@@ -177,7 +177,7 @@ class ConflictDetection(TrafficArrays):
             self.dtlookahead[:] = time
         return True, f"Setting default CD lookahead to {time} sec"
 
-    def setdtnolook(self, time: "time" = -1.0, *acidx: "acid"):
+    def setdtnolook(self, time: "time" = -1.0, *acidx):
         """Set the interval (in [hh:mm:]sec) in which conflict detection
         is skipped after a conflict resolution."""
         if time < 0.0:

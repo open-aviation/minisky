@@ -52,7 +52,7 @@ class Traffic(TrafficArrays):
         delete(acid)         : delete an aircraft from traffic data
         deletall()           : delete all traffic
         update(sim)          : do a numerical integration step
-        id2idx(name)         : return index in traffic database of given call sign
+        idx(callsign)         : return index in traffic database of given call sign
         engchange(i,engtype) : change engine type of an aircraft
         setnoise(A)          : Add turbulence
     Members: see create
@@ -77,8 +77,8 @@ class Traffic(TrafficArrays):
 
         with self.settrafarrays():
             # Aircraft Info
-            self.id = []  # identifier (string)
-            self.type = []  # aircaft type (string)
+            self.callsign = []  # identifier (string)
+            self.typecode = []  # aircaft type (string)
 
             # Positions
             self.lat = np.array([])  # latitude [deg]
@@ -183,7 +183,7 @@ class Traffic(TrafficArrays):
 
     def cre(
         self,
-        acid: str,
+        callsign: str,
         actype: str = "A320",
         lat: float = 53.0,
         lon: float = 4.0,
@@ -193,11 +193,11 @@ class Traffic(TrafficArrays):
     ):
         """Create one or more aircraft."""
 
-        if acid in self.id:
-            return False, f"aircraft {acid} already exists"
+        if callsign in self.callsign:
+            return False, f"aircraft {callsign} already exists"
 
         # covert to array with 1 element
-        acid_ = np.array([acid.upper()])
+        acid_ = np.array([callsign.upper()])
         actype = np.array([actype])
         lat = np.array([lat])
         lon = np.array([lon])
@@ -207,7 +207,7 @@ class Traffic(TrafficArrays):
 
         self.__create_aircraft(acid_, actype, lat, lon, hdg, alt, spd)
 
-        return True, f"arcraft {acid} created"
+        return True, f"arcraft {callsign} created"
 
     def mcre(
         self,
@@ -226,8 +226,8 @@ class Traffic(TrafficArrays):
         """
 
         # Generate random callsigns
-        idtmp = chr(randint(65, 90)) + chr(randint(65, 90)) + "{:>05}"
-        acid = [idtmp.format(i) for i in range(n)]
+        idtmp = chr(randint(65, 90)) + chr(randint(65, 90)) + "{:>03}"
+        callsign = [idtmp.format(i) for i in range(n)]
 
         actype = [actype] * n
 
@@ -238,7 +238,7 @@ class Traffic(TrafficArrays):
         acalt = acalt or np.random.randint(2000, 39000, n) * ft
         acspd = acspd or np.random.randint(250, 450, n) * kts
 
-        self.__create_aircraft(acid, actype, aclat, aclon, achdg, acalt, acspd)
+        self.__create_aircraft(callsign, actype, aclat, aclon, achdg, acalt, acspd)
 
         return True, f"{n} aircraft created"
 
@@ -267,8 +267,8 @@ class Traffic(TrafficArrays):
         hdg = (refdata.hdg or 0.0) if hdg is None else hdg
 
         # Aircraft Info
-        self.id[-n:] = acid
-        self.type[-n:] = actype
+        self.callsign[-n:] = acid
+        self.typecode[-n:] = actype
 
         # Positions
         self.lat[-n:] = lat
@@ -343,15 +343,24 @@ class Traffic(TrafficArrays):
         # If any are there, then stack them for all aircraft
         for j in range(self.ntraf - n, self.ntraf):
             for cmdtxt in self.crecmdlist:
-                minisky.stack.stack(self.id[j] + " " + cmdtxt)
+                minisky.stack.stack(self.callsign[j] + " " + cmdtxt)
 
     def creconfs(
-        self, acid, actype, targetidx, dpsi, dcpa, tlosh, dH=None, tlosv=None, spd=None
+        self,
+        callsign,
+        actype,
+        targetidx,
+        dpsi,
+        dcpa,
+        tlosh,
+        dH=None,
+        tlosv=None,
+        spd=None,
     ):
         """Create an aircraft in conflict with target aircraft.
 
         Arguments:
-        - acid: callsign of new aircraft
+        - callsign: callsign of new aircraft
         - actype: aircraft type of new aircraft
         - targetidx: id (callsign) of target aircraft
         - dpsi: Conflict angle (angle between tracks of ownship and intruder) (deg)
@@ -416,7 +425,7 @@ class Traffic(TrafficArrays):
         achdg = np.degrees(np.atan2(tase, tasn))
 
         # Create and, when necessary, set vertical speed
-        self.cre(acid, actype, aclat, aclon, achdg, acalt, acspd)
+        self.cre(callsign, actype, aclat, aclon, achdg, acalt, acspd)
         self.ap.selaltcmd(len(self.lat) - 1, altref, acvs)
         self.vs[-1] = acvs
 
@@ -588,21 +597,20 @@ class Traffic(TrafficArrays):
         )
         self.distflown += self.gs * minisky.sim.simdt
 
-    def id2idx(self, acid):
-        # print(acid)
+    def idx(self, callsign: str | Iterable[str]):
         """Find index of aircraft id"""
-        if not isinstance(acid, str):
-            # id2idx is called for multiple id's
+        if not isinstance(callsign, str):
+            # for multiple callsigns
             # Fast way of finding indices of all ACID's in a given list
-            tmp = dict((v, i) for i, v in enumerate(self.id))
-            return [tmp.get(acidi, -1) for acidi in acid]
+            tmp = dict((v, i) for i, v in enumerate(self.callsign))
+            return [tmp.get(acidi, -1) for acidi in callsign]
         else:
             # Catch last created id (* or # symbol)
-            if acid in ("#", "*"):
+            if callsign in ("#", "*"):
                 return self.ntraf - 1
 
             try:
-                return self.id.index(acid.upper())
+                return self.callsign.index(callsign.upper())
             except:
                 return -1
 
@@ -652,9 +660,9 @@ class Traffic(TrafficArrays):
     def position_aircraft(self, idx: int):
         """Show info or an aircraft, airport, waypoint or navaid"""
 
-        acid = self.id[idx]
+        acid = self.callsign[idx]
 
-        actype = self.type[idx]
+        actype = self.typecode[idx]
         latlon = latlon2txt(self.lat[idx], self.lon[idx])
         alt = round(self.alt[idx] / ft)
         hdg = round(self.hdg[idx])
@@ -737,7 +745,7 @@ class Traffic(TrafficArrays):
             return True, lines
 
         # try aircraft
-        idx_ac = self.id2idx(name)
+        idx_ac = self.idx(name)
         if idx_ac >= 0:
             return self.position_aircraft(idx_ac)
 
@@ -844,7 +852,7 @@ class Traffic(TrafficArrays):
             return True
         return (
             True,
-            f"Banklimit of {self.id[idx]} is {int(np.degrees(self.ap.bankdef[idx]))} deg",
+            f"Banklimit of {self.callsign[idx]} is {int(np.degrees(self.ap.bankdef[idx]))} deg",
         )
 
     def setthrottle(self, idx, throttle=""):
@@ -887,8 +895,10 @@ class Traffic(TrafficArrays):
             return True
 
         if self.swats[idx]:
-            return True, "ATS of " + self.id[idx] + " is ON"
-        return True, "ATS of " + self.id[idx] + " is OFF. THR is " + str(self.thr[idx])
+            return True, "ATS of " + self.callsign[idx] + " is ON"
+        return True, "ATS of " + self.callsign[idx] + " is OFF. THR is " + str(
+            self.thr[idx]
+        )
 
     def crecmd(self, cmdline):
         """CRECMD command: list of commands to be issued for each aircraft after creation

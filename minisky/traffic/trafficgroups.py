@@ -49,7 +49,7 @@ class TrafficGroups(TrafficArrays):
                     break
 
         elif not args:
-            acnames = np.array(minisky.traf.id)[self.listgroup(groupname)]
+            acnames = np.array(minisky.traf.callsign)[self.listgroup(groupname)]
             return True, "Aircraft in group {}:\n{}".format(
                 groupname, ", ".join(acnames)
             )
@@ -60,11 +60,11 @@ class TrafficGroups(TrafficArrays):
                 args[0], minisky.traf.lat, minisky.traf.lon, minisky.traf.alt
             )
             self.ingroup[inside] |= self.groups[groupname]
-            acnames = np.array(minisky.traf.id)[inside]
+            acnames = np.array(minisky.traf.callsign)[inside]
         else:
             idx = list(args)
             self.ingroup[idx] |= self.groups[groupname]
-            acnames = np.array(minisky.traf.id)[idx]
+            acnames = np.array(minisky.traf.callsign)[idx]
         return True, "Aircraft added to group {}:\n{}".format(
             groupname, ", ".join(acnames)
         )

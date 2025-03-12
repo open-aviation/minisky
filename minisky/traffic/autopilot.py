@@ -131,7 +131,7 @@ class Autopilot(TrafficArrays):
         self.bankdef[-n:] = np.radians(25.0)
 
         # Route objects
-        for ridx, acid in enumerate(minisky.traf.id[-n:]):
+        for ridx, acid in enumerate(minisky.traf.callsign[-n:]):
             self.route[ridx - n] = Route(acid)
 
     def wppassingcheck(self, qdr, dist):
@@ -824,7 +824,7 @@ class Autopilot(TrafficArrays):
         else:
             return False
 
-    def selaltcmd(self, idx: "acid", alt: "alt", vspd: "vspd" = None):
+    def selaltcmd(self, idx: int, alt: "alt", vspd: "vspd" = None):
         """ALT acid, alt, [vspd]
 
         Select autopilot altitude command."""
@@ -848,7 +848,7 @@ class Autopilot(TrafficArrays):
             minisky.traf.selvs[idx[oppositevs]] = 0.0
         return True, f"altitude set to {alt / ft} ft"
 
-    def selvspdcmd(self, idx: "acid", vspd: "vspd"):
+    def selvspdcmd(self, idx: int, vspd: "vspd"):
         """VS acid,vspd (ft/min)
 
         Vertical speed command (autopilot)"""
@@ -856,7 +856,7 @@ class Autopilot(TrafficArrays):
         minisky.traf.swvnav[idx] = False
         return True, f"vertical speed set to {vspd / fpm} ft/min"
 
-    def selhdgcmd(self, idx: "acid", hdg: "hdg"):  # HDG command
+    def selhdgcmd(self, idx: int, hdg: "hdg"):  # HDG command
         """HDG acid,hdg (deg,True or Magnetic)
 
         Autopilot select heading command."""
@@ -881,7 +881,7 @@ class Autopilot(TrafficArrays):
         minisky.traf.swlnav[idx] = False
         return True, f"heading set to {hdg} deg"
 
-    def selspdcmd(self, idx: "acid", casmach: "spd"):  # SPD command
+    def selspdcmd(self, idx: int, casmach: "spd"):  # SPD command
         """SPD acid, casmach (= CASkts/Mach)
 
         Select autopilot speed."""
@@ -900,12 +900,14 @@ class Autopilot(TrafficArrays):
 
         return True, msg
 
-    def setdest(self, acidx: "acid", wpname: "wpt" = None):
+    def setdest(self, acidx: int, wpname: "wpt" = None):
         """DEST acid, latlon/airport
 
         Set destination of aircraft, aircraft wil fly to this airport."""
         if wpname is None:
-            return True, "DEST " + minisky.traf.id[acidx] + ": " + self.dest[acidx]
+            return True, "DEST " + minisky.traf.callsign[acidx] + ": " + self.dest[
+                acidx
+            ]
 
         route = self.route[acidx]
 
@@ -951,12 +953,14 @@ class Autopilot(TrafficArrays):
 
         return True, f"destination set to {wpname}"
 
-    def setorig(self, acidx: "acid", wpname: "wpt" = None):
+    def setorig(self, acidx: int, wpname: "wpt" = None):
         """ORIG acid, latlon/airport
 
         Set origin of aircraft."""
         if wpname is None:
-            return True, "ORIG " + minisky.traf.id[acidx] + ": " + self.orig[acidx]
+            return True, "ORIG " + minisky.traf.callsign[acidx] + ": " + self.orig[
+                acidx
+            ]
 
         route = self.route[acidx]
 
@@ -991,7 +995,7 @@ class Autopilot(TrafficArrays):
 
         return True, f"origin set to {wpname}"
 
-    def setVNAV(self, idx: "acid", flag: "bool" = None):
+    def setVNAV(self, idx: int, flag: "bool" = None):
         """VNAV acid,[ON/OFF]
 
         Switch on/off VNAV mode, the vertical FMS mode (autopilot)"""
@@ -1009,7 +1013,7 @@ class Autopilot(TrafficArrays):
         for i in idx:
             if flag is None:
                 msg = (
-                    minisky.traf.id[i] + ": VNAV is " + "ON"
+                    minisky.traf.callsign[i] + ": VNAV is " + "ON"
                     if minisky.traf.swvnav[i]
                     else "OFF"
                 )
@@ -1024,7 +1028,7 @@ class Autopilot(TrafficArrays):
             elif flag:
                 if not minisky.traf.swlnav[i]:
                     return False, (
-                        minisky.traf.id[i] + ": VNAV ON requires LNAV to be ON"
+                        minisky.traf.callsign[i] + ": VNAV ON requires LNAV to be ON"
                     )
 
                 route = self.route[i]
@@ -1045,7 +1049,7 @@ class Autopilot(TrafficArrays):
                 else:
                     return False, (
                         "VNAV "
-                        + minisky.traf.id[i]
+                        + minisky.traf.callsign[i]
                         + ": no waypoints or destination specified"
                     )
             else:
@@ -1056,7 +1060,7 @@ class Autopilot(TrafficArrays):
 
         return True, f"VNAV {'ON' if flag else 'OFF'}"
 
-    def setLNAV(self, idx: "acid", flag: "bool" = None):
+    def setLNAV(self, idx: int, flag: "bool" = None):
         """LNAV acid,[ON/OFF]
 
         LNAV (lateral FMS mode) switch for autopilot"""
@@ -1073,7 +1077,7 @@ class Autopilot(TrafficArrays):
         for i in idx:
             if flag is None:
                 output.append(
-                    minisky.traf.id[i]
+                    minisky.traf.callsign[i]
                     + ": LNAV is "
                     + ("ON" if minisky.traf.swlnav[i] else "OFF")
                 )
@@ -1083,7 +1087,7 @@ class Autopilot(TrafficArrays):
                 if len(route.wpname) <= 0:
                     return False, (
                         "LNAV "
-                        + minisky.traf.id[i]
+                        + minisky.traf.callsign[i]
                         + ": no waypoints or destination specified"
                     )
                 elif not minisky.traf.swlnav[i]:
@@ -1096,7 +1100,7 @@ class Autopilot(TrafficArrays):
 
         return True, f"LNAV {'ON' if flag else 'OFF'}"
 
-    def setswtoc(self, idx: "acid", flag: "bool" = None):
+    def setswtoc(self, idx: int, flag: "bool" = None):
         """SWTOC acid,[ON/OFF]
 
         Switch ToC logic (=climb early) on/off"""
@@ -1114,7 +1118,7 @@ class Autopilot(TrafficArrays):
         for i in idx:
             if flag is None:
                 output.append(
-                    minisky.traf.id[i]
+                    minisky.traf.callsign[i]
                     + ": SWTOC is "
                     + ("ON" if self.swtoc[i] else "OFF")
                 )
@@ -1128,7 +1132,7 @@ class Autopilot(TrafficArrays):
 
         return True, f"SWTOC {'ON' if flag else 'OFF'}"
 
-    def setswtod(self, idx: "acid", flag: "bool" = None):
+    def setswtod(self, idx: int, flag: "bool" = None):
         """SWTOD acid,[ON/OFF]
 
         Switch ToD logic (=climb early) on/off"""
@@ -1145,7 +1149,7 @@ class Autopilot(TrafficArrays):
         for i in idx:
             if flag is None:
                 output.append(
-                    minisky.traf.id[i]
+                    minisky.traf.callsign[i]
                     + ": SWTOD is "
                     + ("ON" if self.swtoc[i] else "OFF")
                 )

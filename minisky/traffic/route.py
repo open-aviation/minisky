@@ -142,7 +142,7 @@ class Route:
             wpidx = 0 if orig else -1
             suffix = "ORIG" if orig else "DEST"
 
-            if not name == minisky.traf.id[iac] + suffix:  # published identifier
+            if not name == minisky.traf.callsign[iac] + suffix:  # published identifier
                 i = minisky.navdb.getaptidx(name)
                 if i >= 0:
                     wplat = minisky.navdb.aptlat[i]
@@ -470,7 +470,7 @@ class Route:
         # Also add "from direction" as to directions so no need to shift for actwpdata
         # direction to will be overwritten in actwpdata in case of a direct to
         # Add current pos to first waypoint as default value for direction to 1st waypoint
-        iac = minisky.traf.id2idx(self.acid)
+        iac = minisky.traf.idx(self.acid)
         qdr, dist = geo.qdrdist(
             minisky.traf.lat[iac], minisky.traf.lon[iac], self.wplat[0], self.wplon[0]
         )
@@ -632,7 +632,7 @@ def get_available_name(data, name_, len_=2):
     fmt_ = "{:0" + str(len_) + "d}"
 
     # Avoid using call sign without number
-    if minisky.traf.id.count(name_) > 0:
+    if minisky.traf.callsign.count(name_) > 0:
         appi = 1
         name_ = name_ + fmt_.format(appi)
 
@@ -647,7 +647,7 @@ def change_wpt_mode(acidx, mode=None, value=None):
     Available modes: FLYBY, FLYOVER, FLYTURN. Also used to specify
     TURNSPEED or TURNRADIUS."""
     # Get aircraft route
-    acid = minisky.traf.id[acidx]
+    acid = minisky.traf.callsign[acidx]
     acrte = minisky.traf.ap.route[acidx]
     # First, we want to check what 'mode' is, and then call addwpt_stack
     # accordingly.
@@ -688,7 +688,7 @@ def addwpt_stack(acidx, *args):  # args: all arguments of addwpt
     """ADDWPT acid, (wpname/lat,lon),[alt],[spd],[afterwp],[beforewp]"""
 
     # First get the appropriate ac route
-    acid = minisky.traf.id[acidx]
+    acid = minisky.traf.callsign[acidx]
     acrte = minisky.traf.ap.route[acidx]
 
     # Check FLYBY or FLYOVER switch, instead of adding a waypoint
@@ -940,7 +940,7 @@ def addwpt_stack(acidx, *args):  # args: all arguments of addwpt
 
 
 def addwpt_before(
-    acidx: "acid",
+    acidx: int,
     beforewp: "wpt",
     addwpt,
     waypoint,
@@ -955,7 +955,7 @@ def addwpt_before(
 
 
 def addwpt_after(
-    acidx: "acid",
+    acidx: int,
     afterwp: "wpt",
     addwpt,
     waypoint,
@@ -969,9 +969,9 @@ def addwpt_after(
     return addwpt_stack(acidx, waypoint, alt, spd, afterwp)
 
 
-def at_wpt(acidx: "acid", atwp: "wpt", *args):
+def at_wpt(acidx: int, atwp: "wpt", *args):
     """AT acid, wpt [DEL] ALT/SPD/DO alt/spd/stack command"""
-    acid = minisky.traf.id[acidx]
+    acid = minisky.traf.callsign[acidx]
     acrte = minisky.traf.ap.route[acidx]
     if atwp in acrte.wpname:
         wpidx = acrte.wpname.index(atwp)
@@ -1105,7 +1105,7 @@ def at_wpt(acidx: "acid", atwp: "wpt", *args):
 
                 # IF command starts with aircraft id, it is not missing
                 cmd = args[1].upper()
-                if not (cmd in minisky.traf.id):
+                if not (cmd in minisky.traf.callsign):
                     # Look up arg types
                     try:
                         cmdobj = Command.cmddict[cmd]
@@ -1115,9 +1115,10 @@ def at_wpt(acidx: "acid", atwp: "wpt", *args):
 
                         if (
                             len(argtypes) > 0
-                            and argtypes[0] == "acid"
+                            and argtypes[0] == int
                             and not (
-                                len(args) > 2 and args[2].upper() in minisky.traf.id
+                                len(args) > 2
+                                and args[2].upper() in minisky.traf.callsign
                             )
                         ):
                             # missing acid, so add ownship acid
@@ -1169,11 +1170,11 @@ def at_wpt(acidx: "acid", atwp: "wpt", *args):
     return True
 
 
-def direct(acidx: "acid", wpname: "wpt"):
+def direct(acidx: int, wpname: "wpt"):
     """DIRECT acid wpname
 
     Go direct to specified waypoint in route (FMS)"""
-    acid = minisky.traf.id[acidx]
+    acid = minisky.traf.callsign[acidx]
     acrte = minisky.traf.ap.route[acidx]
     wpidx = acrte.wpname.index(wpname)
 
@@ -1287,11 +1288,11 @@ def direct(acidx: "acid", wpname: "wpt"):
     return True
 
 
-def set_rta(acidx: "acid", wpname: "wpt", time: "time"):  # all arguments of setRTA
+def set_rta(acidx: int, wpname: "wpt", time: "time"):  # all arguments of setRTA
     """RTA acid, wpname, time
 
     Add RTA to waypoint record"""
-    acid = minisky.traf.id[acidx]
+    acid = minisky.traf.callsign[acidx]
     acrte = minisky.traf.ap.route[acidx]
     wpidx = acrte.wpname.index(wpname)
     acrte.wprta[wpidx] = time
@@ -1302,7 +1303,7 @@ def set_rta(acidx: "acid", wpname: "wpt", time: "time"):  # all arguments of set
     return True
 
 
-def listrte(acidx: "acid", ipagetxt="0"):
+def listrte(acidx: int, ipagetxt="0"):
     """LISTRTE acid, [pagenr]
 
     Show list of route in window per page of 5 waypoints/"""
@@ -1358,7 +1359,7 @@ def listrte(acidx: "acid", ipagetxt="0"):
             minisky.scr.echo(txt)
 
 
-def delrte(acidx: "acid" = None):
+def delrte(acidx: int = None):
     """DELRTE acid
     Delete for this a/c the complete route/dest/orig (FMS)."""
     if acidx is None:
@@ -1368,7 +1369,7 @@ def delrte(acidx: "acid" = None):
             return False, "Specify callsign of aircraft to delete route of"
         acidx = 0
     # Simple re-initialize this route as empty
-    acid = minisky.traf.id[acidx]
+    acid = minisky.traf.callsign[acidx]
     acrte = minisky.traf.ap.route[acidx]
     acrte.__init__(acid)
 
@@ -1380,7 +1381,7 @@ def delrte(acidx: "acid" = None):
     return True
 
 
-def delwpt(acidx: "acid", wpname: "wpt"):
+def delwpt(acidx: int, wpname: "wpt"):
     """DELWPT acid,wpname
     Delete a waypoint from a route (FMS)."""
 

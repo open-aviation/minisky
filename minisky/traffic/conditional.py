@@ -29,7 +29,7 @@ class Condition:
             return
 
         # Update indices based on list of id's
-        acidxlst = np.array(minisky.traf.id2idx(self.id))
+        acidxlst = np.array(minisky.traf.idx(self.id))
         if len(acidxlst) > 0:
             idelcond = sorted(list(np.where(acidxlst < 0)[0]))
             for i in idelcond[::-1]:
@@ -43,7 +43,7 @@ class Condition:
             self.ncond = len(self.id)
             if self.ncond == 0:
                 return
-            acidxlst = np.array(minisky.traf.id2idx(self.id))
+            acidxlst = np.array(minisky.traf.idx(self.id))
 
         # Check condition types
         actdist = (
@@ -127,7 +127,7 @@ class Condition:
         # print ("addcondition:", acidx, icondtype, target, actual, cmdtxt, latlon)
 
         # Add condition to arrays
-        self.id.append(minisky.traf.id[acidx])
+        self.id.append(minisky.traf.callsign[acidx])
 
         self.condtype = np.append(self.condtype, icondtype)
         self.target = np.append(self.target, target)
