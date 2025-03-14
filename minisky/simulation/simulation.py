@@ -72,7 +72,7 @@ class Simulation:
         """Set simulation state to OPERATE."""
         self.syst = time.time() + self.simdt
         self.state = minisky.OP
-        minisky.scr.echo("Simulation running in real-time mode")
+        minisky.scr.echo("Simulation running")
 
     def hold(self):
         """Set simulation state to HOLD."""

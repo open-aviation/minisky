@@ -82,7 +82,8 @@ import minisky
 minisky.init()
 
 minisky.sim.reset()
-minisky.traf.cre('KL315', lat=52.0, lon=4.0, hdg=45, alt=10000, spd=250)
+minisky.traf.cre('KL315', lat=52.0, lon=4.0, hdg=45, alt=5000, spd=250)
+minisky.stack.stack('KL315 ADDWPT HELEN FL100 250')
 
 minisky.sim.simdt = 10
 
@@ -113,6 +114,7 @@ for i in range(5):
 - [x] implement control console
 - [x] better time and simulation speed control
 - [x] refactor route functions
+- [x] refactor acid to callsign
 - [ ] check all echo, ensure print and scr.echo are consistent
 - [ ] refactor code so import and simulation is easier
 - [ ] add new tests

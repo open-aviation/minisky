@@ -653,7 +653,7 @@ def change_wpt_mode(acidx, mode=None, value=None):
     # accordingly.
     if mode in ["FLYBY", "FLYOVER", "FLYTURN"]:
         # We're just changing addwpt mode, call the appropriate function.
-        addwpt_stack(acidx, mode)
+        addwpt(acidx, mode)
         return True
 
     elif mode in [
@@ -666,7 +666,7 @@ def change_wpt_mode(acidx, mode=None, value=None):
         "TURNHDGR",
     ]:
         # We're changing the turn speed or radius
-        addwpt_stack(acidx, mode, value)
+        addwpt(acidx, mode, value)
         return True
 
     elif mode == None:
@@ -684,11 +684,17 @@ def change_wpt_mode(acidx, mode=None, value=None):
             return True
 
 
-def addwpt_stack(acidx, *args):  # args: all arguments of addwpt
+def addwpt(ac: str | int, *args):  # args: all arguments of addwpt
     """ADDWPT acid, (wpname/lat,lon),[alt],[spd],[afterwp],[beforewp]"""
 
     # First get the appropriate ac route
-    acid = minisky.traf.callsign[acidx]
+    if isinstance(ac, str):
+        acidx = minisky.traf.callsign.idx(ac)
+        callsign = ac
+    else:
+        acidx = ac
+        callsign = minisky.traf.callsign[acidx]
+
     acrte = minisky.traf.ap.route[acidx]
 
     # Check FLYBY or FLYOVER switch, instead of adding a waypoint
@@ -807,7 +813,7 @@ def addwpt_stack(acidx, *args):  # args: all arguments of addwpt
                 wptype = Route.runway
 
             else:  # treat as lat/lon
-                name = acid
+                name = callsign
                 wptype = Route.wplatlon
 
             if len(args) > 1 and args[1]:
@@ -904,7 +910,7 @@ def addwpt_stack(acidx, *args):  # args: all arguments of addwpt
             # Assume we're called before other waypoints are added
             afterwp = ""
 
-        name = "T/O-" + acid  # Use lat/lon naming convention
+        name = "T/O-" + callsign  # Use lat/lon naming convention
 
     # Add waypoint
     wpidx = acrte.add_waypoint(
@@ -951,7 +957,7 @@ def addwpt_before(
 
     Before waypoint, add a waypoint to route of aircraft (FMS).
     """
-    return addwpt_stack(acidx, waypoint, alt, spd, None, beforewp)
+    return addwpt(acidx, waypoint, alt, spd, None, beforewp)
 
 
 def addwpt_after(
@@ -966,7 +972,7 @@ def addwpt_after(
 
     After waypoint, add a waypoint to route of aircraft (FMS).
     """
-    return addwpt_stack(acidx, waypoint, alt, spd, afterwp)
+    return addwpt(acidx, waypoint, alt, spd, afterwp)
 
 
 def at_wpt(acidx: int, atwp: "wpt", *args):

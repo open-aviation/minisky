@@ -45,7 +45,7 @@ def get_commands():
 
     cmddict = {
         "ADDWPT": [
-            minisky.traffic.route.addwpt_stack,
+            minisky.traffic.route.addwpt,
             "callsign,wpt,[alt,spd,wpt,wpt]",
             "ADDWPT callsign, wpt, [alt, spd, wpt, wpt]",
             "Add a waypoint to the route.",
