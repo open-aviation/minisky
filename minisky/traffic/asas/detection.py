@@ -329,9 +329,14 @@ class ConflictDetection(TrafficArrays):
         tcpamax = np.max(tcpa * swconfl, 1)
 
         # Select conflicting pairs: each a/c gets their own record
-        confpairs = [(ownship.id[i], ownship.id[j]) for i, j in zip(*np.where(swconfl))]
+        confpairs = [
+            (ownship.callsign[i], ownship.callsign[j])
+            for i, j in zip(*np.where(swconfl))
+        ]
         swlos = (dist < rpz) * (np.abs(dalt) < hpz)
-        lospairs = [(ownship.id[i], ownship.id[j]) for i, j in zip(*np.where(swlos))]
+        lospairs = [
+            (ownship.callsign[i], ownship.callsign[j]) for i, j in zip(*np.where(swlos))
+        ]
 
         return (
             confpairs,
