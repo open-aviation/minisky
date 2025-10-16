@@ -6,7 +6,6 @@ import minisky
 from minisky.core.trafficarrays import TrafficArrays
 from minisky.tools.aero import ft, nm
 
-
 class ConflictResolution(TrafficArrays):
     """Base class for Conflict Resolution implementations."""
 
@@ -338,33 +337,25 @@ class ConflictResolution(TrafficArrays):
     @staticmethod
     def setmethod(name: "txt" = ""):
         """Select a Conflict Resolution method."""
-        # Get a dict of all registered CR methods
-        methods = ConflictResolution.derived()
-        names = ["OFF" if n == "CONFLICTRESOLUTION" else n for n in methods]
+
+        names = ["OFF", "MVP"]
 
         if not name:
-            curname = (
-                "OFF"
-                if ConflictResolution.selected() is ConflictResolution
-                else ConflictResolution.selected().__name__
-            )
             return (
                 True,
-                f"Current CR method: {curname}"
+                f"Current CR method: "
                 + f"\nAvailable CR methods: {', '.join(names)}",
             )
-        # Check if the requested method exists
-        if name == "OFF":
-            ConflictResolution.select()
-            return True, "Conflict Resolution turned off."
-        method = methods.get(name, None)
-        if method is None:
-            return (
-                False,
-                f"{name} doesn't exist.\n"
-                + f"Available CR methods: {', '.join(names)}",
-            )
 
-        # Select the requested method
-        method.select()
-        return True, f"Selected {method.__name__} as CR method."
+        if name == "OFF":
+            ConflictResolution.switch(False)
+            return True, "Conflict Resolution turned off."
+
+        if name == "MVP":
+            from minisky.traffic.asas.mvp import MVP
+            # Replace the current conflict resolution instance with MVP
+            minisky.traf.cr = MVP()
+            minisky.traf.cr.switch(True)
+            return True, "Selected MVP as Conflict Resolution method."
+
+        return False, f"Unknown method: {name}. Available: {', '.join(names)}"

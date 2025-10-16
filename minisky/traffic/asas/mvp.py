@@ -192,8 +192,8 @@ class MVP(ConflictResolution):
         for (ac1, ac2), qdr, dist, tcpa, tLOS in zip(
             conf.confpairs, conf.qdr, conf.dist, conf.tcpa, conf.tLOS
         ):
-            idx1 = ownship.id.index(ac1)
-            idx2 = intruder.id.index(ac2)
+            idx1 = ownship.callsign.index(ac1)
+            idx2 = intruder.callsign.index(ac2)
 
             # If A/C indexes are found, then apply MVP on this conflict pair
             # Because ADSB is ON, this is done for each aircraft separately
