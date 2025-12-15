@@ -8,4 +8,4 @@ asas_marv: 1.05 # ASAS protected zone factors - vertical
 
 # Plugin settings
 plugin_path: example_plugins # Directory to search for plugins
-enabled_plugins: ['CUSTOMAUTOPILOT'] # Plugins to load at startup (e.g., ['EXAMPLE'])
+# enabled_plugins: ['CUSTOMAUTOPILOT', 'EXAMPLE'] # Plugins to load at startup (e.g., ['EXAMPLE'])
