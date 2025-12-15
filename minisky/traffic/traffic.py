@@ -34,7 +34,7 @@ from .activewpdata import ActiveWaypoint
 from .aporasas import APorASAS
 from .autopilot import Autopilot
 from .conditional import Condition
-from .performance.openap import OpenAP
+from .performance.perfoap import OpenAP
 from .trafficgroups import TrafficGroups
 from .trails import Trails
 from .turbulence import Turbulence
