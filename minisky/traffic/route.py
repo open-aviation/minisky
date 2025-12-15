@@ -1416,7 +1416,6 @@ def delwpt(acidx: int, wpname: "wpt"):
     del acrte.wptype[wpidx]
     del acrte.wpflyby[wpidx]
     del acrte.wpflyturn[wpidx]
-    del acrte.wpturnbank[wpidx]
     del acrte.wpturnrad[wpidx]
     del acrte.wpturnspd[wpidx]
     del acrte.wpturnhdgr[wpidx]
