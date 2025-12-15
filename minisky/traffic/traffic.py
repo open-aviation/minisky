@@ -34,7 +34,7 @@ from .activewpdata import ActiveWaypoint
 from .aporasas import APorASAS
 from .autopilot import Autopilot
 from .conditional import Condition
-from .performance.base import PerfBase
+from .performance.openap import OpenAP
 from .trafficgroups import TrafficGroups
 from .trails import Trails
 from .turbulence import Turbulence
@@ -129,7 +129,7 @@ class Traffic(TrafficArrays):
             self.noise = SurveillanceUncertainty()
             self.trails = Trails()
             self.actwp = ActiveWaypoint()
-            self.perf = PerfBase()
+            self.perf = OpenAP()
 
             # Group Logic
             self.groups = TrafficGroups()

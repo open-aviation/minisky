@@ -27,6 +27,30 @@ class OpenAP(PerfBase):
         self.coeff = coeff.Coefficient()
 
         with self.settrafarrays():
+            
+            # --- fixed parameters ---
+            self.actype = np.array([], dtype=str)  # aircraft type
+            self.Sref = np.array([])  # wing reference surface area [m^2]
+            self.engtype = np.array([])  # integer, aircraft.ENG_TF...
+
+            # --- dynamic parameters ---
+            self.mass = np.array([])  # effective mass [kg]
+            self.phase = np.array([])
+            self.cd0 = np.array([])
+            self.k = np.array([])
+            self.bank = np.array([])
+            self.thrust = np.array([])  # thrust
+            self.drag = np.array([])  # drag
+            self.fuelflow = np.array([])  # fuel flow
+
+            # Envelope limits per aircraft
+            self.hmax = np.array([])  # Flight ceiling [m]
+            self.vmin = np.array([])  # Minimum operating speed [m/s]
+            self.vmax = np.array([])  # Maximum operating speed [m/s]
+            self.vsmin = np.array([])  # Maximum descent speed [m/s]
+            self.vsmax = np.array([])  # Maximum climb speed [m/s]
+            self.axmax = np.array([])  # Max/min acceleration [m/s2]
+            
             self.lifttype = np.array([])  # lift type, fixwing [1] or rotor [2]
             self.engnum = np.array([], dtype=int)  # number of engines
             self.engthrmax = np.array([])  # static engine thrust
@@ -60,7 +84,9 @@ class OpenAP(PerfBase):
         super().create(n)
 
         actype = minisky.traf.typecode[-1].upper()
-
+        print('--------------------')
+        print(actype)
+        print('--------------------')
         # Check synonym file if not in open ap actypes
         if (actype not in self.coeff.actypes_rotor) and (
             actype not in self.coeff.dragpolar_fixwing
@@ -83,6 +109,8 @@ class OpenAP(PerfBase):
             # convert to known aircraft type
             if actype not in self.coeff.actypes_fixwing:
                 actype = "B744"
+
+            print(actype)
 
             # populate fuel flow model
             es = self.coeff.acs_fixwing[actype]["engines"]
@@ -170,7 +198,7 @@ class OpenAP(PerfBase):
         mask[-n:] = True
         self.vmin[-n:], self.vmax[-n:] = self._construct_v_limits(mask)
 
-    def update(self, dt):
+    def update(self, dt=1):
         """Periodic update function for performance calculations."""
         # update phase, infer from spd, roc, alt
         lenph1 = len(self.phase)
