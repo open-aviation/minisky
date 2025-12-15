@@ -13,7 +13,7 @@ ENG_TYPE_TF = 1  # turbofan, fixwing
 ENG_TYPE_TP = 2  # turboprop, fixwing
 ENG_TYPE_TS = 3  # turboshlft, rotor
 
-OPENAP_DIR = minisky.data("perfo_rmance/openap")
+OPENAP_DIR = minisky.data("performance/openap")
 
 
 class Coefficient:
