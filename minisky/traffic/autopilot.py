@@ -900,7 +900,7 @@ class Autopilot(TrafficArrays):
 
         return True, msg
 
-    def setdest(self, acidx: int, wpname: "wpt" = None):
+    def setdest(self, acidx: 'acid', wpname:'wpt' = None, casmach: 'spd'= None):
         """DEST acid, latlon/airport
 
         Set destination of aircraft, aircraft wil fly to this airport."""
@@ -931,9 +931,12 @@ class Autopilot(TrafficArrays):
             lat = minisky.navdb.aptlat[apidx]
             lon = minisky.navdb.aptlon[apidx]
 
+        # Check if a speed constraint was given at destination
+        dest_spd = -999 if casmach is None else casmach
+
         self.dest[acidx] = wpname
         iwp = route.add_waypoint(
-            acidx, self.dest[acidx], route.dest, lat, lon, 0.0, minisky.traf.cas[acidx]
+            acidx, self.dest[acidx], route.dest, lat, lon, 0.0, dest_spd
         )
         # If only waypoint: activate
         if (iwp == 0) or (self.orig[acidx] != "" and len(route.wpname) == 2):

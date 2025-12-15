@@ -192,8 +192,8 @@ def get_commands():
         ],
         "DEST": [
             minisky.traf.ap.setdest,
-            "callsign,wpt",
-            "DEST callsign, latlon/airport",
+            "callsign,wpt,[spd]",
+            "DEST callsign, latlon/airport, casmach (= CASkts/Mach)",
             "Set destination of aircraft, aircraft will fly to this airport.",
         ],
         "DIRECT": [
