@@ -17,7 +17,7 @@ MiniSky is being optimized for:
 Run the simulator with a scenario file:
 
 ```bash
-python minisky-run.py --scenario scenario/kl204.scn
+python minisky-run.py --scenario scenarios/kl204.scn
 ```
 
 ### 2. Run simulator with REST API server
