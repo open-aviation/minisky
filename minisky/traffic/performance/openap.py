@@ -3,13 +3,13 @@ import numpy as np
 import minisky
 from minisky.tools import aero
 from minisky.tools.aero import fpm, ft, kts
-from minisky.traffic.performance.base import PerfBase
+from minisky.core.trafficarrays import TrafficArrays
 
 from . import coeff, thrust
 from . import phase as ph
 
 
-class OpenAP(PerfBase):
+class OpenAP(TrafficArrays):
     """
     Open-source Aircraft Performance (OpenAP) Model
 
@@ -27,6 +27,30 @@ class OpenAP(PerfBase):
         self.coeff = coeff.Coefficient()
 
         with self.settrafarrays():
+            
+            # --- fixed parameters ---
+            self.actype = np.array([], dtype=str)  # aircraft type
+            self.Sref = np.array([])  # wing reference surface area [m^2]
+            self.engtype = np.array([])  # integer, aircraft.ENG_TF...
+
+            # --- dynamic parameters ---
+            self.mass = np.array([])  # effective mass [kg]
+            self.phase = np.array([])
+            self.cd0 = np.array([])
+            self.k = np.array([])
+            self.bank = np.array([])
+            self.thrust = np.array([])  # thrust
+            self.drag = np.array([])  # drag
+            self.fuelflow = np.array([])  # fuel flow
+
+            # Envelope limits per aircraft
+            self.hmax = np.array([])  # Flight ceiling [m]
+            self.vmin = np.array([])  # Minimum operating speed [m/s]
+            self.vmax = np.array([])  # Maximum operating speed [m/s]
+            self.vsmin = np.array([])  # Maximum descent speed [m/s]
+            self.vsmax = np.array([])  # Maximum climb speed [m/s]
+            self.axmax = np.array([])  # Max/min acceleration [m/s2]
+            
             self.lifttype = np.array([])  # lift type, fixwing [1] or rotor [2]
             self.engnum = np.array([], dtype=int)  # number of engines
             self.engthrmax = np.array([])  # static engine thrust
@@ -170,7 +194,7 @@ class OpenAP(PerfBase):
         mask[-n:] = True
         self.vmin[-n:], self.vmax[-n:] = self._construct_v_limits(mask)
 
-    def update(self, dt):
+    def update(self, dt=1):
         """Periodic update function for performance calculations."""
         # update phase, infer from spd, roc, alt
         lenph1 = len(self.phase)
@@ -261,15 +285,6 @@ class OpenAP(PerfBase):
             self.bank,
         )
 
-        # ----- debug statements -----
-        # print(minisky.traf.id)
-        # print(self.phase)
-        # print(self.thrust.astype(int))
-        # print(np.round(self.fuelflow, 2))
-        # print(self.drag.astype(int))
-        # print(self.currentlimits())
-        # print()
-
     def limits(self, intent_v_tas, intent_vs, intent_h, ax):
         """apply limits on indent speed, vertical speed, and altitude (called in pilot module)
 
@@ -294,11 +309,12 @@ class OpenAP(PerfBase):
         )  # maximum cannot exceed MMO
 
         vs_max_with_acc = (1 - ax / self.axmax) * self.vsmax
+        vs_min_with_acc = (1 - ax / self.axmax) * self.vsmin
         allow_vs = np.where(
             (intent_vs > 0) & (intent_vs > self.vsmax), vs_max_with_acc, intent_vs
         )  # for climb with vs larger than vsmax
         allow_vs = np.where(
-            (intent_vs < 0) & (intent_vs < self.vsmin), vs_max_with_acc, allow_vs
+            (intent_vs < 0) & (intent_vs < self.vsmin), vs_min_with_acc, allow_vs
         )  # for descent with vs smaller than vsmin (negative)
         allow_vs = np.where(
             (self.phase == ph.GD) & (minisky.traf.tas < self.vminto), 0, allow_vs
@@ -425,10 +441,10 @@ class OpenAP(PerfBase):
         return (
             True,
             f"Flight phase: {ph.readable_phase(self.phase[acid])}\n"
-            f"Thrust: {self.thrust[acid] / 1000:d} kN\n"
-            f"Drag: {self.drag[acid] / 1000:d} kN\n"
+            f"Thrust: {self.thrust[acid] / 1000:.0f} kN\n"
+            f"Drag: {self.drag[acid] / 1000:.0f} kN\n"
             f"Fuel flow: {self.fuelflow[acid]:.2f} kg/s\n"
-            f"Speed envelope: [{self.vmin[acid] / kts:d}, {self.vmax[acid] / kts:d}] kts\n"
-            f"Vertical speed envelope: [{self.vsmin[acid] / fpm:d}, {self.vsmax[acid] / fpm:d}] fpm\n"
-            f"Ceiling: {self.hmax[acid] / ft:d} ft",
+            f"Speed envelope: [{self.vmin[acid] / kts:.0f}, {self.vmax[acid] / kts:.0f}] kts\n"
+            f"Vertical speed envelope: [{self.vsmin[acid] / fpm:.0f}, {self.vsmax[acid] / fpm:.0f}] fpm\n"
+            f"Ceiling: {self.hmax[acid] / ft:.0f} ft",
         )
