@@ -8,6 +8,8 @@ import numpy as np
 
 # Local imports
 import minisky
+from minisky.core.trafficarrays import reset_replaceables
+from minisky.plugin import PluginManager
 from minisky.tools import areafilter
 
 # Minimum sleep interval
@@ -61,7 +63,13 @@ class Simulation:
             # Update UTC time
             self.utc += datetime.timedelta(seconds=self.simdt)
 
+            # Plugin pre-update (timers + preupdate hooks)
+            PluginManager.preupdate()
+
             minisky.traf.update()
+
+            # Plugin post-update hooks
+            PluginManager.update()
 
     def stop(self):
         """Stack stop/quit command."""
@@ -78,6 +86,7 @@ class Simulation:
         """Set simulation state to HOLD."""
         self.syst = time.time() + self.simdt
         self.state = minisky.HOLD
+        PluginManager.hold()
         minisky.scr.echo("Simulation paused")
 
     def reset(self):
@@ -94,6 +103,10 @@ class Simulation:
         minisky.stack.reset()
         areafilter.reset()
         minisky.scr.reset()
+        # Reset replaceables (Autopilot, PerfBase, etc.) to defaults
+        reset_replaceables()
+        # Reset plugins (timers + reset hooks)
+        PluginManager.reset()
         minisky.scr.echo("Simulation reset")
 
     def realtime(self, flag=None):
