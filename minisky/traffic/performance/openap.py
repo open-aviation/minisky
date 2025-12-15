@@ -84,9 +84,7 @@ class OpenAP(PerfBase):
         super().create(n)
 
         actype = minisky.traf.typecode[-1].upper()
-        print('--------------------')
-        print(actype)
-        print('--------------------')
+
         # Check synonym file if not in open ap actypes
         if (actype not in self.coeff.actypes_rotor) and (
             actype not in self.coeff.dragpolar_fixwing
@@ -109,8 +107,6 @@ class OpenAP(PerfBase):
             # convert to known aircraft type
             if actype not in self.coeff.actypes_fixwing:
                 actype = "B744"
-
-            print(actype)
 
             # populate fuel flow model
             es = self.coeff.acs_fixwing[actype]["engines"]
@@ -288,15 +284,6 @@ class OpenAP(PerfBase):
             35,
             self.bank,
         )
-
-        # ----- debug statements -----
-        # print(minisky.traf.id)
-        # print(self.phase)
-        # print(self.thrust.astype(int))
-        # print(np.round(self.fuelflow, 2))
-        # print(self.drag.astype(int))
-        # print(self.currentlimits())
-        # print()
 
     def limits(self, intent_v_tas, intent_vs, intent_h, ax):
         """apply limits on indent speed, vertical speed, and altitude (called in pilot module)
