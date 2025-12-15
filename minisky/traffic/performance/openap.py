@@ -3,13 +3,13 @@ import numpy as np
 import minisky
 from minisky.tools import aero
 from minisky.tools.aero import fpm, ft, kts
-from minisky.traffic.performance.base import PerfBase
+from minisky.core.trafficarrays import TrafficArrays
 
 from . import coeff, thrust
 from . import phase as ph
 
 
-class OpenAP(PerfBase):
+class OpenAP(TrafficArrays):
     """
     Open-source Aircraft Performance (OpenAP) Model
 
