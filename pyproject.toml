@@ -10,6 +10,7 @@ dependencies = [
     "fastapi[standard]>=0.115.7",
     "matplotlib>=3.10.0",
     "numpy>=2.2.2",
+    "openap>=2.4",
     "pandas>=2.2.3",
     "prompt-toolkit>=3.0.50",
     "pyarrow>=19.0.1",
