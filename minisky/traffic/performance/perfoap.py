@@ -1,4 +1,5 @@
 import numpy as np
+from openap import Drag, FuelFlow
 
 import minisky
 from minisky.tools import aero
@@ -85,13 +86,6 @@ class OpenAP(TrafficArrays):
 
         actype = minisky.traf.typecode[-1].upper()
 
-        # Check synonym file if not in open ap actypes
-        if (actype not in self.coeff.actypes_rotor) and (
-            actype not in self.coeff.dragpolar_fixwing
-        ):
-            if actype in self.coeff.synodict.keys():
-                actype = self.coeff.synodict[actype]
-
         # initialize aircraft / engine performance parameters
         # check fixwing or rotor, default to fixwing
         if actype in self.coeff.actypes_rotor:
@@ -104,8 +98,9 @@ class OpenAP(TrafficArrays):
             self.engpower[-n:] = self.coeff.acs_rotor[actype]["engines"][0][1]
 
         else:
+            
             # convert to known aircraft type
-            if actype not in self.coeff.actypes_fixwing:
+            if actype.lower() not in self.coeff.actypes_fixwing:
                 actype = "B744"
 
             # populate fuel flow model
@@ -117,13 +112,13 @@ class OpenAP(TrafficArrays):
 
             self.lifttype[-n:] = coeff.LIFT_FIXWING
 
-            self.Sref[-n:] = self.coeff.acs_fixwing[actype]["wa"]
+            self.Sref[-n:] = self.coeff.acs_fixwing[actype]["wing"]['area']
             self.mass[-n:] = 0.5 * (
                 self.coeff.acs_fixwing[actype]["oew"]
                 + self.coeff.acs_fixwing[actype]["mtow"]
             )
 
-            self.engnum[-n:] = int(self.coeff.acs_fixwing[actype]["n_engines"])
+            self.engnum[-n:] = int(self.coeff.acs_fixwing[actype]["engine"]["number"])
 
             self.ff_coeff_a[-n:] = coeff_a
             self.ff_coeff_b[-n:] = coeff_b
@@ -132,7 +127,7 @@ class OpenAP(TrafficArrays):
             all_ac_engs = list(self.coeff.acs_fixwing[actype]["engines"].keys())
             self.engthrmax[-n:] = self.coeff.acs_fixwing[actype]["engines"][
                 all_ac_engs[0]
-            ]["thr"]
+            ]["max_thrust"]
             self.engbpr[-n:] = self.coeff.acs_fixwing[actype]["engines"][
                 all_ac_engs[0]
             ]["bpr"]
@@ -158,6 +153,7 @@ class OpenAP(TrafficArrays):
             self.delta_cd_gear[-n:] = np.nan
 
         else:
+
             if actype not in self.coeff.limits_fixwing.keys():
                 actype = "B744"
 
@@ -260,7 +256,7 @@ class OpenAP(TrafficArrays):
             + self.mass[idx_fixwing] * minisky.traf.ax[idx_fixwing]
         )
 
-        # ----- compute duel flow -----
+        # ----- compute fuel flow -----
         thrustratio_fixwing = self.thrust[idx_fixwing] / (
             self.engnum[idx_fixwing] * self.engthrmax[idx_fixwing]
         )
