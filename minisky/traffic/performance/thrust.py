@@ -1,7 +1,7 @@
 import numpy as np
 
 from minisky.tools import aero
-from minisky.traffic.performance.openap import phase as ph
+from minisky.traffic.performance import phase as ph
 
 
 def compute_max_thr_ratio(phase, bpr, v, h, vs, thr0):
