@@ -319,6 +319,12 @@ def get_commands():
             "OP",
             "Start/Run simulation or continue after hold",
         ],
+        "PERFSTATS": [
+            minisky.traf.perf.show_performance,
+            "callsign",
+            "PERFSTATS callsign",
+            "Show the performace information of an aircraft.",
+        ],
         "ORIG": [
             minisky.traf.ap.setorig,
             "callsign,wpt",
@@ -530,6 +536,7 @@ def get_commands():
         "REALTIME": ["RT"],
         "DTMULT": ["RTF"],
         "TRAIL": ["TRAILS"],
+        "PERFSTATS": ["PERFINFO", "PERFDATA"]
     }
 
     return cmddict, synonyms
