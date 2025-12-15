@@ -5,5 +5,3 @@ asas_pzr: 5 # ASAS horizontal PZ margin [nm]
 asas_pzh: 1000 # ASAS vertical PZ margin [ft]
 asas_marh: 1.05 # ASAS protected zone factors - horizontal
 asas_marv: 1.05 # ASAS protected zone factors - vertical
-
-perf_base: openap
