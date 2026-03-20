@@ -23,6 +23,7 @@ def coroutine(f):
 async def main(scenario, speed):
     """Main function to start BlueSky"""
     minisky.init(scenario=scenario)
+    minisky.load_plugins()
     minisky.runner.speed = speed
 
     await minisky.runner.run()

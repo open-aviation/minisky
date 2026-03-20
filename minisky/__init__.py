@@ -1,6 +1,6 @@
 """BlueSky: The open-source ATM simulator."""
 
-from minisky import stack, tools
+from minisky import stack, tools, core, plugin
 from minisky.core import varexplorer
 from minisky.core.settings import data
 from minisky.simulation import ConsoleIO, Runner, Simulation
@@ -55,3 +55,11 @@ def init(scenario=None):
         runner.prevent_shutdown()
 
     stack.init()
+
+    # Discover available plugins (AST parsing only, no imports)
+    plugin.discover()
+
+
+def load_plugins():
+    """Load enabled plugins. Call after init()."""
+    plugin.load_enabled()

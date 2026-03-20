@@ -10,6 +10,7 @@ from typing import Dict
 import minisky
 from minisky.stack import argparser, commands
 from minisky.stack.argparser import ArgumentError, Parameter, getnextarg
+from minisky.plugin.plugin_decorators import command, append_commands
 
 
 def init():

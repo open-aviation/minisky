@@ -18,6 +18,7 @@ os.makedirs(static_dir, exist_ok=True)  # Create static directory if it doesn't 
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 minisky.init()
+minisky.load_plugins()
 
 
 async def start_simulation():
@@ -146,3 +147,15 @@ async def scn(file: UploadFile = File(...)):
 def show_map():
     """Display the aircraft map viewer"""
     return RedirectResponse(url="/static/display.html")
+
+
+@app.get("/plugins")
+def list_plugins():
+    """List available and loaded plugins"""
+    return minisky.plugin.manage_plugins('LIST')
+
+
+@app.get("/plugins/load/{name}")
+def load_plugin(name: str):
+    """Load a plugin by name"""
+    return minisky.plugin.manage_plugins('LOAD', name)

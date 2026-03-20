@@ -331,6 +331,12 @@ def get_commands():
             "ORIG callsign, latlon/airport",
             "Set origin of aircraft.",
         ],
+        "PLUGINS": [
+            minisky.plugin.manage_plugins,
+            "[txt,txt]",
+            "PLUGINS [LIST/LOAD, plugin_name]",
+            "List available plugins or load a plugin",
+        ],
         "POLY": [
             minisky.tools.areafilter.define_poly_area,
             "txt,[latlon,...]",
@@ -439,6 +445,12 @@ def get_commands():
             "SEED value",
             "Set seed for all functions using a randomizer (e.g.mcre,noise)",
         ],
+        "SELECTIMPL": [
+            minisky.core.trafficarrays.select_implementation,
+            "[txt,txt]",
+            "SELECTIMPL [classname, implname]",
+            "Select implementation for a replaceable class (e.g., SELECTIMPL AUTOPILOT MYAUTOPILOT)",
+        ],
         "SPD": [
             minisky.traf.ap.selspdcmd,
             "callsign,spd",
@@ -527,7 +539,7 @@ def get_commands():
         "CALC": ["DEBUG"],
         "DEL": ["DELETE"],
         "SWRAD": ["DISP"],
-        "IMPLEMENTATION": ["IMPL", "IMPLEMENT"],
+        "SELECTIMPL": ["IMPL", "IMPLEMENTATION", "IMPLEMENT"],
         "POLYLINE": ["LINES", "POLYLINES"],
         "MAGVAR": ["MAGDEC", "MAGDECL", "VAR"],
         "HOLD": ["PAUSE"],
@@ -536,7 +548,8 @@ def get_commands():
         "REALTIME": ["RT"],
         "DTMULT": ["RTF"],
         "TRAIL": ["TRAILS"],
-        "PERFSTATS": ["PERFINFO", "PERFDATA"]
+        "PERFSTATS": ["PERFINFO", "PERFDATA"],
+        "PLUGINS": ["PLUGIN"],
     }
 
     return cmddict, synonyms
