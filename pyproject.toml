@@ -21,4 +21,15 @@ dependencies = [
 ]
 
 [dependency-groups]
-dev = ["ipykernel>=6.29.5"]
+dev = [
+    "ipykernel>=6.29.5",
+    "pytest>=9.1.1",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-ra -m 'not api'"
+markers = [
+    "api: FastAPI endpoint tests, run separately: uv run pytest -m api tests/test_api.py",
+]
