@@ -1,6 +1,12 @@
 """BlueSky variable explorer
 
 Provide flexible access to simulation data in BlueSky.
+
+Data sources (by default the simulation and traffic objects) are
+registered in a module-level variable list, after which any of their
+attributes can be inspected by name or dotted path (optionally with an
+index, e.g. "traf.lat[0]"). This backs the LSVAR stack command, which
+prints variable type, size, and parent information to the console.
 """
 
 from collections import OrderedDict
@@ -37,6 +43,12 @@ def init():
 
 
 def register_data_parent(obj, name):
+    """Register an object as a searchable data source of the variable explorer.
+
+    Args:
+        obj: The object whose attributes should become inspectable.
+        name: Top-level name under which the object is registered.
+    """
     varlist[name] = (obj, getvarsfromobj(obj))
 
 
@@ -82,6 +94,14 @@ def findvar(varname):
     Variables can be searched in two ways:
     By name only: e.g., varname lat returns (traf, lat)
     By object: e.g., varname traf.lat returns (traf, lat)
+
+    An optional integer index may be appended, e.g. "traf.lat[0]".
+
+    Args:
+        varname: Variable name or dotted object path, with optional index.
+
+    Returns:
+        Variable: A Variable wrapper object, or None when not found.
     """
     try:
         # Find a string matching 'a.b.c[d]', where everything except a is optional
@@ -121,7 +141,15 @@ def findvar(varname):
 
 class Variable:
     """Wrapper class for variable explorer.
-    Keeps reference to parent object, parent name, and variable name."""
+    Keeps reference to parent object, parent name, and variable name.
+
+    Attributes:
+        parent: Object that holds the variable.
+        parentname: Registered name of the parent object.
+        varname: Attribute name of the variable on the parent object.
+        index: List of integer indices selected from the variable
+            (empty when the whole variable is referenced).
+    """
 
     def __init__(self, parent, parentname, varname, index):
         self.parent = parent

@@ -1,4 +1,11 @@
-"""Pilot logic."""
+"""Pilot logic.
+
+Selects, per aircraft and per control channel, whether the aircraft
+follows the autopilot/FMS command or the conflict-resolution (ASAS)
+command. The resulting desired states are the setpoints that
+:class:`~minisky.traffic.traffic.Traffic` flies towards each time step
+(after being limited by the performance model).
+"""
 
 import numpy as np
 
@@ -7,6 +14,22 @@ from minisky.core import TrafficArrays
 
 
 class APorASAS(TrafficArrays):
+    """Selection between autopilot (AP) and conflict resolution (ASAS).
+
+    For each control channel (track, speed, altitude, vertical speed) the
+    ASAS command is used when the corresponding conflict-resolution channel
+    is active, otherwise the autopilot command is used. The desired heading
+    is derived from the desired track with a wind-drift correction.
+    Available at runtime as ``minisky.traf.aporasas``.
+
+    Attributes:
+        alt (ndarray): Desired altitude [m].
+        hdg (ndarray): Desired heading [deg].
+        trk (ndarray): Desired track angle [deg].
+        vs (ndarray): Desired vertical speed (magnitude) [m/s].
+        tas (ndarray): Desired true airspeed [m/s].
+    """
+
     def __init__(self):
         super().__init__()
         with self.settrafarrays():
@@ -18,6 +41,14 @@ class APorASAS(TrafficArrays):
             self.tas = np.array([])  # desired speed [m/s]
 
     def create(self, n=1):
+        """Initialize desired states for n newly created aircraft.
+
+        The desired altitude, speed, heading and track are copied from the
+        current traffic state so new aircraft start in steady flight.
+
+        Args:
+            n: Number of aircraft that were appended to the traffic arrays.
+        """
         super().create(n)
         self.alt[-n:] = minisky.traf.alt[-n:]
         self.tas[-n:] = minisky.traf.tas[-n:]
@@ -25,6 +56,17 @@ class APorASAS(TrafficArrays):
         self.trk[-n:] = minisky.traf.trk[-n:]
 
     def update(self):
+        """Select the desired aircraft states from autopilot or ASAS.
+
+        Called every simulation step, after conflict resolution and before
+        the traffic state integration. Per channel (track, speed, altitude,
+        vertical speed) the conflict-resolution command is selected when
+        that resolution channel is active, otherwise the autopilot command.
+        The ASAS speed advisory (a ground speed) is converted to TAS using
+        the local wind, the vertical speed is stored as a magnitude, and
+        the desired heading is computed from the desired track with a
+        wind-drift correction.
+        """
         # --------- Input to Autopilot settings to follow: destination or ASAS ----------
         # Convert the ASAS commanded speed from ground speed to TAS
         if minisky.traf.wind.winddim > 0:

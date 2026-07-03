@@ -1,3 +1,13 @@
+"""Active waypoint data for FMS guidance.
+
+Holds, as per-aircraft numpy arrays, all data of the waypoint each aircraft
+is currently flying towards. The :class:`ActiveWaypoint` arrays form the
+interface between the per-aircraft :class:`~minisky.traffic.route.Route`
+objects (event-driven, scalar waypoint switching) and the vectorized
+LNAV/VNAV guidance in :class:`~minisky.traffic.autopilot.Autopilot`.
+Available at runtime as ``minisky.traf.actwp``.
+"""
+
 import numpy as np
 
 import minisky
@@ -7,6 +17,54 @@ from minisky.tools.convert import degto180
 
 
 class ActiveWaypoint(TrafficArrays):
+    """Per-aircraft data of the active (and next) waypoint.
+
+    The autopilot copies waypoint data from the route into these arrays
+    upon waypoint switching (see Autopilot.wppassingcheck() and
+    route.direct()), so the continuous guidance can be vectorized. In most
+    arrays a negative sentinel value (-999) means "not specified".
+
+    Attributes:
+        lat (ndarray): Active waypoint latitude [deg].
+        lon (ndarray): Active waypoint longitude [deg].
+        nextturnlat (ndarray): Next turn waypoint latitude [deg].
+        nextturnlon (ndarray): Next turn waypoint longitude [deg].
+        nextturnspd (ndarray): Next turn waypoint turn speed (CAS) [m/s].
+        nextturnrad (ndarray): Next turn waypoint turn radius [m].
+        nextturnhdgr (ndarray): Next turn waypoint heading rate [deg/s].
+        nextturnidx (ndarray): Route index of the next turn waypoint.
+        nextaltco (ndarray): Next altitude constraint [m].
+        xtoalt (ndarray): Distance to the next altitude constraint [m].
+        nextspd (ndarray): Speed for the next leg, from the current
+            waypoint: CAS [m/s] or Mach [-].
+        spd (ndarray): Active speed command (constraint or computed):
+            CAS [m/s] or Mach [-].
+        spdcon (ndarray): Active waypoint speed constraint:
+            CAS [m/s] or Mach [-].
+        vs (ndarray): Vertical speed to use in VNAV climb/descent [m/s].
+        turndist (ndarray): Distance before the waypoint at which to start
+            the turn [m].
+        flyby (ndarray): Fly-by switch; when False, fly-over (turndist 0).
+        flyturn (ndarray): Fly-turn switch (use specified turn parameters).
+        turnrad (ndarray): Turn radius at the active waypoint [m].
+        turnspd (ndarray): Turn speed (CAS) at the active waypoint [m/s].
+        turnhdgr (ndarray): Turn heading rate at the active waypoint
+            [deg/s].
+        oldturnspd (ndarray): Turn speed of the previous turn (TAS) [m/s].
+        turnfromlastwp (ndarray): In fly-turn mode from the last waypoint
+            (old turn, beginning of leg).
+        turntonextwp (ndarray): In fly-turn mode towards the next waypoint
+            (new turn, end of leg).
+        torta (ndarray): Next required time of arrival [s] (-999 = none).
+        xtorta (ndarray): Distance to the next RTA waypoint [m].
+        next_qdr (ndarray): Track angle of the next leg [deg].
+        swlastwp (ndarray): Bool switch: active waypoint is the last one.
+        curlegdir (ndarray): Direction of the current leg, set when the
+            waypoint was activated [deg].
+        curleglen (ndarray): Length of the current leg, set when the
+            waypoint was activated [m].
+    """
+
     def __init__(self):
         super().__init__()
         with self.settrafarrays():
@@ -71,6 +129,14 @@ class ActiveWaypoint(TrafficArrays):
             )  # [deg] direction to active waypoint upon activation
 
     def create(self, n=1):
+        """Initialize active-waypoint data for n newly created aircraft.
+
+        All values are set to their "not specified" sentinels (-999) or
+        neutral defaults until a route waypoint is activated.
+
+        Args:
+            n: Number of aircraft that were appended to the traffic arrays.
+        """
         super().create(n)
         # LNAV route navigation
         self.lat[-n:] = 0.0  # [deg]Active WP latitude
@@ -121,6 +187,28 @@ class ActiveWaypoint(TrafficArrays):
         self.curleglen[-n:] = -999.0  # [nm] distance to active waypoint upon activation
 
     def reached(self, qdr, dist, flyby, flyturn, turnrad, turnhdgr, swlastwp):
+        """Determine which aircraft have reached their active waypoint.
+
+        Vectorized over all aircraft. A waypoint counts as reached when the
+        aircraft is within the turn distance for the upcoming heading
+        change, or when it has passed the waypoint (bearing to the waypoint
+        differs more than 90 deg from the current leg direction, or the
+        aircraft is within 4 s flying time while heading away). Only
+        aircraft with LNAV engaged are considered. Also updates turndist.
+
+        Args:
+            qdr: Bearing from each aircraft to its active waypoint [deg].
+            dist: Distance to the active waypoint [m].
+            flyby: Fly-by switch per aircraft.
+            flyturn: Fly-turn switch per aircraft.
+            turnrad: Specified turn radius [m] (<0 = not specified).
+            turnhdgr: Specified turn heading rate [deg/s]
+                (<0 = not specified).
+            swlastwp: Switch: active waypoint is the last waypoint.
+
+        Returns:
+            ndarray: Indices of the aircraft that reached their waypoint.
+        """
         # Calculate distance before waypoint where to start the turn
         # Note: this is a vectorized function, called with numpy traffic arrays
         # It returns the indices where the Reached criterion is True
@@ -183,7 +271,28 @@ class ActiveWaypoint(TrafficArrays):
         turnhdgr=-999.0,
         flyturn=False,
     ):
-        """Calculate distance to wp where to start turn and turn radius in meters"""
+        """Calculate the turn-initiation distance and turn radius.
+
+        Works on scalars as well as numpy arrays. The turn radius follows,
+        in order of priority, from a user-specified radius (fly-turn mode),
+        a specified heading rate, or the bank-angle limit with the given
+        speed. The turn distance is the distance before the waypoint at
+        which the turn must start to roll out on the next leg:
+        R * tan(delta_hdg / 2).
+
+        Args:
+            tas: True airspeed [m/s].
+            bank: Bank angle limit [rad].
+            wpqdr: Bearing to the active waypoint [deg].
+            next_wpqdr: Bearing of the next leg [deg].
+            turnrad: Specified turn radius [m] (<0 = not specified).
+            turnhdgr: Specified turn heading rate [deg/s]
+                (<0 = not specified).
+            flyturn: Fly-turn switch (use the specified turn parameters).
+
+        Returns:
+            tuple: (turn distance [m], turn radius [m]).
+        """
 
         # Tas is also used ti
 

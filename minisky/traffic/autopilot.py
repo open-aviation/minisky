@@ -1,4 +1,18 @@
-"""Autopilot Implementation."""
+"""Autopilot Implementation.
+
+Contains the :class:`Autopilot` class, which combines classic autopilot
+modes (selected heading, altitude, vertical speed and speed) with FMS
+guidance along the aircraft route: LNAV (lateral navigation towards the
+active waypoint, including fly-by/fly-over/fly-turn logic) and VNAV
+(Top-of-Climb/Top-of-Descent logic, altitude and speed constraints, and
+required-time-of-arrival (RTA) speed scheduling).
+
+The autopilot output (commanded track, speed, altitude and vertical speed)
+is combined with conflict-resolution commands in
+:class:`~minisky.traffic.aporasas.APorASAS` before being flown by
+:class:`~minisky.traffic.traffic.Traffic`. Many methods implement stack
+commands (ALT, VS, HDG, SPD, DEST, ORIG, LNAV, VNAV, SWTOC, SWTOD).
+"""
 
 from collections.abc import Collection
 from math import atan, sqrt
@@ -26,7 +40,45 @@ from .route import Route
 
 
 class Autopilot(TrafficArrays):
-    """BlueSky Autopilot implementation."""
+    """BlueSky Autopilot implementation.
+
+    Computes, per aircraft, the commanded track, altitude, vertical speed
+    and speed from the selected (pilot) values and, when LNAV/VNAV are
+    engaged, from the route stored in the per-aircraft :class:`Route`
+    objects. Waypoint switching is event driven (see wppassingcheck()),
+    while the continuous guidance in update() is fully vectorized over all
+    aircraft. Accessible at runtime as ``minisky.traf.ap``.
+
+    Attributes:
+        trk (ndarray): Commanded track angle [deg].
+        spd (ndarray): Commanded speed, CAS [m/s] or Mach [-].
+        tas (ndarray): Commanded true airspeed [m/s].
+        alt (ndarray): Commanded altitude [m].
+        vs (ndarray): Commanded vertical speed [m/s].
+        swtoc (ndarray): Switch: Top-of-Climb logic (climb early) enabled.
+        swtod (ndarray): Switch: Top-of-Descent logic (descend late) enabled.
+        dist2vs (ndarray): Distance to the active waypoint at which the
+            VNAV climb/descent should start [m].
+        dist2accel (ndarray): Distance needed for a speed change before the
+            next waypoint [nm].
+        swvnavvs (ndarray): Switch: use the VNAV-computed vertical speed.
+        vnavvs (ndarray): Vertical speed used in VNAV mode [m/s].
+        qdr2wp (ndarray): Bearing to the active waypoint [deg].
+        dist2wp (ndarray): Distance to the active waypoint [m].
+        qdrturn (ndarray): Bearing to the next turn waypoint [deg].
+        dist2turn (ndarray): Distance to the next turn waypoint [m].
+        inturn (ndarray): Switch: aircraft is currently in a turn.
+        orig (list): Origin airport identifier per aircraft.
+        dest (list): Destination airport identifier per aircraft.
+        bankdef (ndarray): Default bank angle limit [rad].
+        vsdef (ndarray): Default vertical speed [m/s].
+        turnphi (ndarray): Bank angle used in the current turn [rad].
+        route (list): Per-aircraft :class:`Route` (flight plan) objects.
+        steepness (float): Default climb/descent gradient [-]
+            (3000 ft per 10 nm).
+        idxreached (list): Indices of aircraft that reached their active
+            waypoint during the last update.
+    """
 
     def __init__(self):
         super().__init__()
@@ -97,6 +149,16 @@ class Autopilot(TrafficArrays):
         self.idxreached = []  # Indices of aircraft that have reached their active waypoint
 
     def create(self, n=1):
+        """Initialize autopilot state for n newly created aircraft.
+
+        Copies the initial track, speed and altitude from the traffic
+        arrays, enables ToC/ToD logic, sets the default vertical speed
+        (1500 fpm) and bank limit (25 deg), and creates an empty Route
+        object for each new aircraft.
+
+        Args:
+            n: Number of aircraft that were appended to the traffic arrays.
+        """
         super().create(n)
 
         # FMS directions
@@ -151,6 +213,11 @@ class Autopilot(TrafficArrays):
         - Shift waypoint (last, next etc.) data for aircraft where necessary
         - Shift and maintain data (see last- and next- prefix in variable name) e.g. to continue a special turn
         - Prepare some VNAV triggers along the new leg for the VNAV profile (where to start descent/climb)
+
+        Args:
+            qdr: Bearing from each aircraft to its active waypoint [deg];
+                updated in place for aircraft that switch waypoint.
+            dist: Distance from each aircraft to its active waypoint [m].
         """
 
         # Get list of indices of aircraft which have reached their active waypoint
@@ -384,6 +451,23 @@ class Autopilot(TrafficArrays):
                     minisky.traf.selspd[iac] = minisky.traf.actwp.spd[iac]
 
     def update(self):
+        """Run the continuous FMS/autopilot guidance for all aircraft.
+
+        Called every simulation step. Recomputes bearing and distance to the
+        active waypoints, performs the event-driven waypoint switching via
+        wppassingcheck(), and then applies the vectorized guidance:
+
+        - VNAV altitude guidance: engage climb/descent when within dist2vs
+          of the active waypoint (using the vertical speed prepared by
+          ComputeVNAV()).
+        - LNAV track guidance: command the bearing to the active waypoint.
+        - FMS speed guidance: anticipate deceleration for upcoming turn
+          waypoints and acceleration/deceleration for speed constraints on
+          the next leg, and select the appropriate CAS/Mach command.
+
+        The results are stored in the commanded-state arrays (trk, alt, vs,
+        tas) and in the traffic selected-state arrays where applicable.
+        """
         # FMS LNAV mode:
         # qdr[deg],distinnm[nm]
         qdr, distinnm = geo.qdrdist(
@@ -610,6 +694,15 @@ class Autopilot(TrafficArrays):
         Output if this function:
         self.dist2vs = distance 2 next waypoint where climb/descent needs to activated
         minisky.traf.actwp.vs =  V/S to be used during climb/descent part, so when dist2wp<dist2vs [m] (to next waypoint)
+
+        Args:
+            idx: Aircraft index (scalar).
+            toalt: Next altitude constraint [m] (negative = none).
+            xtoalt: Distance from the active waypoint to that altitude
+                constraint [m].
+            torta: Next required time of arrival (RTA) as simulation time
+                [s] (-999 = none).
+            xtorta: Distance from the active waypoint to the RTA waypoint [m].
         """
 
         # print ("ComputeVNAV for",minisky.traf.id[idx],":",toalt/ft,"ft  ",xtoalt/nm,"nm")
@@ -792,6 +885,24 @@ class Autopilot(TrafficArrays):
         return
 
     def setspeedforRTA(self, idx, torta, xtorta):
+        """Compute and set the speed required to meet an RTA constraint.
+
+        Calculates the ground speed needed to cover the remaining distance
+        to the RTA waypoint exactly at the required time (see calcvrta()),
+        corrects for the tailwind component and converts to CAS. When no
+        explicit speed constraint is active and VNAV speed guidance is on,
+        the result is stored as the active waypoint speed command.
+
+        Args:
+            idx: Aircraft index (scalar).
+            torta: Required time of arrival as simulation time [s]
+                (-999 = no RTA).
+            xtorta: Distance to go to the RTA waypoint [m].
+
+        Returns:
+            float or bool: Required CAS [m/s], or False when there is no
+            (feasible) RTA.
+        """
         # debug print("setspeedforRTA called, torta,xtorta =",torta,xtorta/nm)
 
         # Calculate required CAS to meet RTA
@@ -824,9 +935,22 @@ class Autopilot(TrafficArrays):
             return False
 
     def selaltcmd(self, idx: int, alt: "alt", vspd: "vspd" = None):
-        """ALT acid, alt, [vspd]
+        """Select the autopilot altitude, optionally with a vertical speed.
 
-        Select autopilot altitude command."""
+        Implements the ALT stack command: ``ALT acid, alt, [vspd]``.
+        Selecting an altitude disengages VNAV for this aircraft. When no
+        vertical speed is given and the currently selected vertical speed
+        opposes the required climb/descent direction, it is reset so the
+        default vertical speed is used.
+
+        Args:
+            idx: Aircraft index (or collection of indices).
+            alt: Selected altitude [m] (stack input in ft/FL).
+            vspd: Optional vertical speed [m/s] (stack input in fpm).
+
+        Returns:
+            tuple: (True, confirmation message).
+        """
         minisky.traf.selalt[idx] = alt
         minisky.traf.swvnav[idx] = False
 
@@ -848,17 +972,38 @@ class Autopilot(TrafficArrays):
         return True, f"altitude set to {alt / ft} ft"
 
     def selvspdcmd(self, idx: int, vspd: "vspd"):
-        """VS acid,vspd (ft/min)
+        """Select the autopilot vertical speed.
 
-        Vertical speed command (autopilot)"""
+        Implements the VS stack command: ``VS acid, vspd (ft/min)``.
+        Setting a vertical speed disengages VNAV for this aircraft.
+
+        Args:
+            idx: Aircraft index.
+            vspd: Selected vertical speed [m/s] (stack input in fpm).
+
+        Returns:
+            tuple: (True, confirmation message).
+        """
         minisky.traf.selvs[idx] = vspd
         minisky.traf.swvnav[idx] = False
         return True, f"vertical speed set to {vspd / fpm} ft/min"
 
     def selhdgcmd(self, idx: int, hdg: "hdg"):  # HDG command
-        """HDG acid,hdg (deg,True or Magnetic)
+        """Select the autopilot heading.
 
-        Autopilot select heading command."""
+        Implements the HDG stack command: ``HDG acid, hdg (deg)``. When a
+        wind field is defined and the aircraft is airborne (above 50 ft),
+        the commanded track is computed from the given heading and the local
+        wind; otherwise track equals heading. Selecting a heading disengages
+        LNAV for this aircraft.
+
+        Args:
+            idx: Aircraft index.
+            hdg: Selected heading [deg].
+
+        Returns:
+            tuple: (True, confirmation message).
+        """
 
         if minisky.traf.wind.winddim > 0:
             if minisky.traf.alt[idx] > 50.0 * ft:
@@ -881,9 +1026,21 @@ class Autopilot(TrafficArrays):
         return True, f"heading set to {hdg} deg"
 
     def selspdcmd(self, idx: int, casmach: "spd"):  # SPD command
-        """SPD acid, casmach (= CASkts/Mach)
+        """Select the autopilot speed.
 
-        Select autopilot speed."""
+        Implements the SPD stack command: ``SPD acid, casmach``. Switches
+        off VNAV speed guidance, as a manually selected speed overrides the
+        FMS speed. Whether CAS or Mach is held during altitude changes
+        depends on the position relative to the crossover altitude.
+
+        Args:
+            idx: Aircraft index.
+            casmach: Selected speed: CAS [m/s] or Mach [-] (values above 1.0
+                are interpreted as CAS; stack input in kts or Mach).
+
+        Returns:
+            tuple: (True, confirmation message).
+        """
         # Depending on or position relative to crossover altitude,
         # we will maintain CAS or Mach when altitude changes
         # We will convert values when needed
@@ -900,9 +1057,24 @@ class Autopilot(TrafficArrays):
         return True, msg
 
     def setdest(self, acidx: 'acid', wpname:'wpt' = None, casmach: 'spd'= None):
-        """DEST acid, latlon/airport
+        """Set (or show) the destination of an aircraft.
 
-        Set destination of aircraft, aircraft wil fly to this airport."""
+        Implements the DEST stack command: ``DEST acid, latlon/airport``.
+        The destination is looked up in the airport database (or parsed as a
+        position) and appended to the route as its final waypoint. If it is
+        the only route waypoint it is immediately activated, engaging LNAV
+        and VNAV.
+
+        Args:
+            acidx: Aircraft index.
+            wpname: Airport identifier or position text; when omitted, the
+                current destination is reported.
+            casmach: Optional speed constraint at the destination, CAS [m/s]
+                or Mach [-].
+
+        Returns:
+            tuple: (success flag, message).
+        """
         if wpname is None:
             return True, "DEST " + minisky.traf.callsign[acidx] + ": " + self.dest[
                 acidx
@@ -956,9 +1128,20 @@ class Autopilot(TrafficArrays):
         return True, f"destination set to {wpname}"
 
     def setorig(self, acidx: int, wpname: "wpt" = None):
-        """ORIG acid, latlon/airport
+        """Set (or show) the origin of an aircraft.
 
-        Set origin of aircraft."""
+        Implements the ORIG stack command: ``ORIG acid, latlon/airport``.
+        The origin is stored as the first waypoint of the route; it is
+        bookkeeping only and does not activate guidance.
+
+        Args:
+            acidx: Aircraft index.
+            wpname: Airport identifier or position text; when omitted, the
+                current origin is reported.
+
+        Returns:
+            tuple: (success flag, message).
+        """
         if wpname is None:
             return True, "ORIG " + minisky.traf.callsign[acidx] + ": " + self.orig[
                 acidx
@@ -998,9 +1181,21 @@ class Autopilot(TrafficArrays):
         return True, f"origin set to {wpname}"
 
     def setVNAV(self, idx: int, flag: "bool" = None):
-        """VNAV acid,[ON/OFF]
+        """Switch VNAV (vertical FMS guidance) on or off, or show its state.
 
-        Switch on/off VNAV mode, the vertical FMS mode (autopilot)"""
+        Implements the VNAV stack command: ``VNAV acid, [ON/OFF]``. VNAV can
+        only be engaged when LNAV is on and a route with waypoints exists;
+        engaging it recalculates the flight plan and the VNAV profile for
+        the active leg. Switching VNAV also switches VNAV speed guidance.
+
+        Args:
+            idx: Aircraft index, collection of indices, or None for all
+                aircraft.
+            flag: True/False to switch on/off; None to report the state.
+
+        Returns:
+            tuple: (success flag, status message).
+        """
         if not isinstance(idx, Collection):
             if idx is None:
                 # All aircraft are targeted
@@ -1063,9 +1258,21 @@ class Autopilot(TrafficArrays):
         return True, f"VNAV {'ON' if flag else 'OFF'}"
 
     def setLNAV(self, idx: int, flag: "bool" = None):
-        """LNAV acid,[ON/OFF]
+        """Switch LNAV (lateral FMS guidance) on or off, or show its state.
 
-        LNAV (lateral FMS mode) switch for autopilot"""
+        Implements the LNAV stack command: ``LNAV acid, [ON/OFF]``. LNAV can
+        only be engaged when the aircraft has a route; engaging it selects
+        the best waypoint to fly to (see Route.findact()) and issues a
+        direct-to towards it.
+
+        Args:
+            idx: Aircraft index, collection of indices, or None for all
+                aircraft.
+            flag: True/False to switch on/off; None to report the state.
+
+        Returns:
+            tuple: (success flag, status message).
+        """
         if not isinstance(idx, Collection):
             if idx is None:
                 # All aircraft are targeted
@@ -1103,9 +1310,21 @@ class Autopilot(TrafficArrays):
         return True, f"LNAV {'ON' if flag else 'OFF'}"
 
     def setswtoc(self, idx: int, flag: "bool" = None):
-        """SWTOC acid,[ON/OFF]
+        """Switch the Top-of-Climb logic on or off, or show its state.
 
-        Switch ToC logic (=climb early) on/off"""
+        Implements the SWTOC stack command: ``SWTOC acid, [ON/OFF]``. With
+        ToC logic on (default) the aircraft climbs as early as possible with
+        the default steepness; with it off, the climb angle is chosen to
+        arrive at the altitude constraint exactly at its waypoint.
+
+        Args:
+            idx: Aircraft index, collection of indices, or None for all
+                aircraft.
+            flag: True/False to switch on/off; None to report the state.
+
+        Returns:
+            tuple: (True, status message).
+        """
 
         if not isinstance(idx, Collection):
             if idx is None:
@@ -1135,9 +1354,21 @@ class Autopilot(TrafficArrays):
         return True, f"SWTOC {'ON' if flag else 'OFF'}"
 
     def setswtod(self, idx: int, flag: "bool" = None):
-        """SWTOD acid,[ON/OFF]
+        """Switch the Top-of-Descent logic on or off, or show its state.
 
-        Switch ToD logic (=climb early) on/off"""
+        Implements the SWTOD stack command: ``SWTOD acid, [ON/OFF]``. With
+        ToD logic on (default) the aircraft descends as late as possible
+        with the default steepness; with it off, the descent angle is chosen
+        to arrive at the altitude constraint exactly at its waypoint.
+
+        Args:
+            idx: Aircraft index, collection of indices, or None for all
+                aircraft.
+            flag: True/False to switch on/off; None to report the state.
+
+        Returns:
+            tuple: (True, status message).
+        """
         if not isinstance(idx, Collection):
             if idx is None:
                 # All aircraft are targeted
@@ -1167,6 +1398,22 @@ class Autopilot(TrafficArrays):
 
 
 def calcvrta(v0, dx, deltime, trafax):
+    """Calculate the target ground speed needed to meet an RTA on a leg.
+
+    Solves for the end speed of a constant-acceleration speed change
+    followed by a constant-speed segment, such that the remaining leg
+    distance is covered exactly in the remaining time. Falls back to the
+    simple average speed dx/deltime when no physical solution exists.
+
+    Args:
+        v0: Current ground speed [m/s].
+        dx: Remaining leg distance [m].
+        deltime: Remaining time until the RTA [s].
+        trafax: Available longitudinal acceleration [m/s2].
+
+    Returns:
+        float: Required target ground speed [m/s].
+    """
     # Calculate required target ground speed v1 [m/s]
     # to meet an RTA at this leg
     #
@@ -1233,9 +1480,20 @@ def calcvrta(v0, dx, deltime, trafax):
 
 
 def distaccel(v0, v1, axabs):
-    """Calculate distance travelled during acceleration/deceleration
-    v0 = start speed, v1 = endspeed, axabs = magnitude of accel/decel
-    accel/decel is detemremind by sign of v1-v0
-    axabs is acceleration/deceleration of which absolute value will be used
-    solve for x: x = vo*t + 1/2*a*t*t    v = v0 + a*t"""
+    """Calculate the distance travelled during an acceleration/deceleration.
+
+    Uses the uniform-acceleration relation dx = |v1^2 - v0^2| / (2 |a|),
+    which follows from x = v0*t + 1/2*a*t^2 and v = v0 + a*t. Whether it is
+    an acceleration or a deceleration is determined by the sign of v1 - v0.
+    Works on scalars as well as numpy arrays.
+
+    Args:
+        v0: Start speed [m/s].
+        v1: End speed [m/s].
+        axabs: Acceleration/deceleration of which the absolute value is
+            used [m/s2].
+
+    Returns:
+        Distance travelled during the speed change [m].
+    """
     return 0.5 * np.abs(v1 * v1 - v0 * v0) / np.maximum(0.001, np.abs(axabs))

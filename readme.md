@@ -92,6 +92,23 @@ for i in range(5):
     print(f"time-{minisky.sim.simt}s, positions: {minisky.traf.lat} {minisky.traf.lon}")
 ```
 
+## Documentation
+
+The documentation lives in `docs/` and is built with MkDocs Material; the API reference
+is generated from the docstrings with mkdocstrings.
+
+```bash
+uv sync --group docs
+uv run --group docs mkdocs serve     # live preview at http://localhost:8000
+uv run --group docs mkdocs build     # static site in site/
+```
+
+Regenerate the stack command reference after adding or changing commands:
+
+```bash
+uv run python scripts/gen_command_docs.py
+```
+
 ## Tests
 
 Run the test suite with pytest:
@@ -128,3 +145,6 @@ uv run pytest -m api tests/test_api.py   # REST API smoke tests (separate proces
 - [ ] check all echo, ensure print and scr.echo are consistent
 - [ ] refactor code so import and simulation is easier
 - [x] add new tests
+- [x] add docstrings and documentation website (mkdocs)
+- [ ] remove stale `docs/commands.csv` and `docs/tutorial.pdf` (superseded by the generated command reference)
+- [ ] fix latent bugs found during the documentation pass (see [docs/known-issues.md](docs/known-issues.md))

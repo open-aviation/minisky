@@ -1,6 +1,13 @@
 """Conditional commands:
 KL204 ATSPD 250 KL204 LNAV ON
 KL204 ATALT FL100 KL204 SPD 350
+
+Implements the ATALT, ATSPD and ATDIST stack commands: a command line is
+stored together with a trigger condition on an aircraft's altitude, speed
+or distance to a position. The :class:`Condition` instance owned by
+``minisky.traf`` is checked every simulation step; when the monitored
+value crosses its target, the stored command is issued on the stack and
+the condition is removed.
 """
 
 import numpy as np
@@ -14,6 +21,27 @@ alttype, spdtype, postype = 0, 1, 2
 
 
 class Condition:
+    """Administration of pending conditional (ATALT/ATSPD/ATDIST) commands.
+
+    Each condition couples an aircraft to a target value (altitude, speed
+    or distance to a reference position) and a command line. A condition
+    triggers when the sign of (target - actual) changes compared to the
+    previous update, i.e. when the aircraft crosses the target value.
+    Triggered and orphaned (deleted-aircraft) conditions are removed.
+
+    Attributes:
+        ncond (int): Number of pending conditions.
+        id (list): Callsign of the aircraft per condition.
+        condtype (ndarray): Condition type (0 = altitude, 1 = speed,
+            2 = position/distance).
+        target (ndarray): Target value: altitude [m], speed (CAS) [m/s]
+            or distance [nm].
+        lastdif (ndarray): Difference target - actual at the last update.
+        posdata (list): For distance conditions: (lat [deg], lon [deg]) of
+            the reference position, else None.
+        cmd (list): Command line to stack when the condition triggers.
+    """
+
     def __init__(self):
         self.ncond = 0  # Number of conditions
 
@@ -25,6 +53,14 @@ class Condition:
         self.cmd = []  # Commands to be issued
 
     def update(self):
+        """Check all pending conditions and execute triggered commands.
+
+        Called every simulation step. Conditions of deleted aircraft are
+        removed first. Then the actual value (altitude [m], CAS [m/s] or
+        distance to the reference position [nm]) is compared with the
+        target: when the difference changes sign, the stored command is
+        stacked and the condition is deleted.
+        """
         if self.ncond == 0:
             return
 
@@ -107,16 +143,58 @@ class Condition:
         return
 
     def ataltcmd(self, acidx, targalt, cmdtxt):
+        """Schedule a command for when an aircraft crosses an altitude.
+
+        Implements the ATALT stack command:
+        ``acid ATALT alt cmd`` (e.g. ``KL204 ATALT FL100 KL204 SPD 350``).
+
+        Args:
+            acidx: Aircraft index.
+            targalt: Trigger altitude [m] (stack input in ft/FL).
+            cmdtxt: Command line to stack when the altitude is crossed.
+
+        Returns:
+            bool: True (the condition is always added).
+        """
         actalt = minisky.traf.alt[acidx]
         self.addcondition(acidx, alttype, targalt, actalt, cmdtxt)
         return True
 
     def atspdcmd(self, acidx, targspd, cmdtxt):
+        """Schedule a command for when an aircraft crosses a speed.
+
+        Implements the ATSPD stack command:
+        ``acid ATSPD spd cmd`` (e.g. ``KL204 ATSPD 250 KL204 LNAV ON``).
+
+        Args:
+            acidx: Aircraft index.
+            targspd: Trigger speed, CAS [m/s] (stack input in kts/Mach).
+            cmdtxt: Command line to stack when the speed is crossed.
+
+        Returns:
+            bool: True (the condition is always added).
+        """
         actspd = minisky.traf.tas[acidx]
         self.addcondition(acidx, spdtype, targspd, actspd, cmdtxt)
         return True
 
     def atdistcmd(self, acidx, lat, lon, targdist, cmdtxt):
+        """Schedule a command for a distance from a reference position.
+
+        Implements the ATDIST stack command: ``acid ATDIST lat lon dist
+        cmd``. The command triggers when the aircraft's distance to the
+        given position crosses the target distance.
+
+        Args:
+            acidx: Aircraft index.
+            lat: Reference latitude [deg].
+            lon: Reference longitude [deg].
+            targdist: Trigger distance to the reference position [nm].
+            cmdtxt: Command line to stack when the distance is crossed.
+
+        Returns:
+            bool: True (the condition is always added).
+        """
         qdr, actdist = qdrdist(
             minisky.traf.lat[acidx], minisky.traf.lon[acidx], lat, lon
         )
@@ -124,6 +202,21 @@ class Condition:
         return True
 
     def addcondition(self, acidx, icondtype, target, actual, cmdtxt, latlon=None):
+        """Append a condition to the internal condition arrays.
+
+        Args:
+            acidx: Aircraft index; stored as callsign so the condition
+                survives index shifts when other aircraft are deleted.
+            icondtype: Condition type (0 = altitude, 1 = speed,
+                2 = position/distance).
+            target: Target value (altitude [m], speed [m/s] or
+                distance [nm]).
+            actual: Current value, used to initialize the sign of the
+                difference.
+            cmdtxt: Command line to stack when the condition triggers.
+            latlon: Optional (lat [deg], lon [deg]) reference position for
+                distance conditions.
+        """
         # print ("addcondition:", acidx, icondtype, target, actual, cmdtxt, latlon)
 
         # Add condition to arrays
@@ -141,6 +234,16 @@ class Condition:
         return
 
     def renameac(self, oldid, newid):
+        """Update stored callsigns after an aircraft has been renamed.
+
+        Conditions are stored per callsign, so this must be called when an
+        aircraft is renamed (e.g. by a future RENAME command) to keep the
+        pending conditions attached to the right aircraft.
+
+        Args:
+            oldid: Previous callsign.
+            newid: New callsign.
+        """
         # Continonal commands are stored per id (ac name)
         # When renamed, call this method to update list
         # rename ids in list of ids

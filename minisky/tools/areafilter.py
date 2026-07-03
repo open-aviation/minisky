@@ -1,4 +1,13 @@
-"""Area filter module"""
+"""Area filter module
+
+Defines named geometric shapes - boxes, circles, polygons, and lines - on
+the map, optionally bounded by a top and bottom altitude, and provides
+point-inside-shape tests for (vectors of) aircraft positions. This backs
+the BOX, CIRCLE, POLY, POLYALT, LINE, and POLYLINE stack commands, and is
+used by plugins and traffic logic that need to know which aircraft are
+inside an area. All defined shapes are stored by name in ``basic_shapes``
+and indexed in an R-tree for fast geospatial queries.
+"""
 
 from weakref import WeakValueDictionary
 
@@ -47,7 +56,20 @@ def has_area(areaname):
 
 
 def define_area(areaname, areatype, coordinates, top=1e9, bottom=-1e9):
-    """Define a new area"""
+    """Define a new area, or list/inspect existing areas.
+
+    Args:
+        areaname: Name of the area, or "LIST" to list all defined shapes.
+        areatype: Shape type: "BOX", "CIRCLE", "POLY"/"POLYALT", or "LINE".
+        coordinates: Flat sequence of lat/lon pairs [deg]; for a circle:
+            (lat [deg], lon [deg], radius [nm]). When empty, information
+            about the existing area with the given name is returned.
+        top: Top altitude bound [m] (default: effectively unbounded).
+        bottom: Bottom altitude bound [m] (default: effectively unbounded).
+
+    Returns:
+        tuple: (success (bool), message (str)).
+    """
     if areaname == "LIST":
         if not basic_shapes:
             return True, "No shapes are currently defined."
@@ -71,32 +93,82 @@ def define_area(areaname, areatype, coordinates, top=1e9, bottom=-1e9):
 
 
 def define_box_area(name, *coords):
+    """BOX: Define a box-shaped area.
+
+    Args:
+        name: Area name.
+        *coords: lat1, lon1, lat2, lon2 [deg] of two opposite corners,
+            optionally followed by top and bottom altitude [m].
+    """
     return define_area(name, "BOX", coords[:4], *coords[4:])
 
 
 def define_circle_area(name, *coords):
+    """CIRCLE: Define a circle-shaped area.
+
+    Args:
+        name: Area name.
+        *coords: lat, lon [deg] of the center and radius [nm], optionally
+            followed by top and bottom altitude [m].
+    """
     return define_area(name, "CIRCLE", coords[:3], *coords[3:])
 
 
 def define_line_area(name, *coords):
+    """LINE: Draw a line between two positions on the radar screen.
+
+    Args:
+        name: Line name.
+        *coords: lat1, lon1, lat2, lon2 [deg] of the two end points.
+    """
     return define_area(name, "LINE", coords)
 
 
 def define_poly_area(name, *coords):
+    """POLY: Define a polygon-shaped area.
+
+    Args:
+        name: Area name.
+        *coords: lat, lon pairs [deg] of the polygon vertices.
+    """
     return define_area(name, "POLY", coords)
 
 
 def define_polyalt_area(name, top, bottom, *coords):
+    """POLYALT: Define a polygon-shaped area in 3D, between two altitudes.
+
+    Args:
+        name: Area name.
+        top: Top altitude bound [m].
+        bottom: Bottom altitude bound [m].
+        *coords: lat, lon pairs [deg] of the polygon vertices.
+    """
     return define_area(name, "POLYALT", coords, top, bottom)
 
 
 def define_polyline_area(name, *coords):
+    """POLYLINE: Draw a multi-segment line on the radar screen.
+
+    Args:
+        name: Line name.
+        *coords: lat, lon pairs [deg] of the line points.
+    """
     return define_area(name, "LINE", coords)
 
 
 def checkInside(areaname, lat, lon, alt):
     """Check if points with coordinates lat, lon, alt are inside area with name 'areaname'.
-    Returns an array of booleans. True ==  Inside"""
+
+    Args:
+        areaname: Name of the area to test against.
+        lat: Latitude(s) [deg].
+        lon: Longitude(s) [deg].
+        alt: Altitude(s) [m].
+
+    Returns:
+        Array of booleans, True == Inside. All False when no area with
+        the given name exists.
+    """
     if areaname not in basic_shapes:
         return np.zeros(len(lat), dtype=bool)
     area = basic_shapes[areaname]
@@ -135,6 +207,21 @@ def get_knearest(lat0, lon0, lat1, lon1, k=1):
 class Shape:
     """
     Base class of BlueSky shapes
+
+    Handles the naming, altitude bounds, bounding box, and R-tree
+    registration common to all shape types. Derived classes implement
+    checkInside() for their specific geometry.
+
+    Attributes:
+        name: Area name.
+        coordinates: Flat list of lat/lon coordinates in deg defining the
+            shape (plus radius in nm for circles).
+        top: Upper altitude bound [m].
+        bottom: Lower altitude bound [m].
+        bbox: Bounding box (latmin, lonmin, latmax, lonmax) in deg.
+        area_id: Unique numeric id of this shape in the R-tree.
+        raw: Dictionary with the raw shape definition (name, kind,
+            coordinates).
     """
 
     # Global counter to keep track of used shape ids
@@ -209,7 +296,10 @@ class Shape:
 
 
 class Line(Shape):
-    """A line shape"""
+    """A line shape between two lat/lon positions [deg].
+
+    Purely graphical: the inherited checkInside() always returns False.
+    """
 
     def __init__(self, name, coordinates):
         super().__init__(name, coordinates)
@@ -223,7 +313,11 @@ class Line(Shape):
 
 
 class Box(Shape):
-    """A box shape"""
+    """A lat/lon-aligned box shape.
+
+    Defined by two opposite corner points [deg] (sorted at construction)
+    and optional altitude bounds [m].
+    """
 
     def __init__(self, name, coordinates, top=1e9, bottom=-1e9):
         super().__init__(name, coordinates, top, bottom)
@@ -234,6 +328,7 @@ class Box(Shape):
         self.lon1 = max(coordinates[1], coordinates[3])
 
     def checkInside(self, lat, lon, alt):
+        """Return whether points (lat [deg], lon [deg], alt [m]) lie inside this box."""
         return (
             ((self.lat0 <= lat) & (lat <= self.lat1))
             & ((self.lon0 <= lon) & (lon <= self.lon1))
@@ -242,7 +337,11 @@ class Box(Shape):
 
 
 class Circle(Shape):
-    """A circle shape"""
+    """A circle shape.
+
+    Defined by a center position [deg], a radius [nm], and optional
+    altitude bounds [m].
+    """
 
     def __init__(self, name, coordinates, top=1e9, bottom=-1e9):
         super().__init__(name, coordinates, top, bottom)
@@ -251,6 +350,8 @@ class Circle(Shape):
         self.r = coordinates[2]
 
     def checkInside(self, lat, lon, alt):
+        """Return whether points (lat [deg], lon [deg], alt [m]) lie within
+        the circle radius [nm] and altitude bounds."""
         distance = kwikdist(self.clat, self.clon, lat, lon)  # [NM]
         inside = (distance <= self.r) & (self.bottom <= alt) & (alt <= self.top)
         return inside
@@ -264,13 +365,20 @@ class Circle(Shape):
 
 
 class Poly(Shape):
-    """A polygon shape"""
+    """A polygon shape.
+
+    Defined by a sequence of lat/lon vertices [deg] and optional altitude
+    bounds [m]; the border is stored as a matplotlib Path for fast
+    point-in-polygon tests.
+    """
 
     def __init__(self, name, coordinates, top=1e9, bottom=-1e9):
         super().__init__(name, coordinates, top, bottom)
         self.border = Path(np.reshape(coordinates, (len(coordinates) // 2, 2)))
 
     def checkInside(self, lat, lon, alt):
+        """Return whether points (lat [deg], lon [deg], alt [m]) lie inside
+        the polygon border and altitude bounds."""
         points = np.vstack((lat, lon)).T
         inside = np.all(
             (self.border.contains_points(points), self.bottom <= alt, alt <= self.top),

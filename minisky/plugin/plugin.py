@@ -1,6 +1,14 @@
 """MiniSky plugin system.
 
 Provides plugin discovery, loading, and management.
+
+Discovery (:func:`discover`) scans the plugins directory and parses each
+Python file's AST — without importing it — looking for an ``init_plugin()``
+function, from which the plugin name, docstring and stack commands are
+extracted. Loading (:meth:`Plugin.load`) then imports the module, calls its
+``init_plugin()``, and registers the returned update hooks and stack
+commands with the simulation. The :func:`manage_plugins` function backs the
+in-simulator ``PLUGINS`` stack command.
 """
 import ast
 import importlib
@@ -17,7 +25,23 @@ from minisky.plugin import plugin_decorators
 class Plugin:
     """MiniSky plugin class.
 
-    Stores information about plugins found in the plugins directory.
+    Stores information about plugins found in the plugins directory. One
+    instance is created per discovered plugin module; the class additionally
+    keeps registries of all discovered and all loaded plugins.
+
+    Attributes:
+        plugins: Class-level dict mapping upper-case plugin name to its
+            :class:`Plugin` instance, for all discovered plugins.
+        loaded_plugins: Class-level dict of plugins that have been loaded.
+        fullname: Importable module name of the plugin (dotted path).
+        filepath: Path to the plugin's source file.
+        plugin_doc: Module docstring of the plugin, extracted during discovery.
+        plugin_name: Name of the plugin as declared in its config dict
+            (falls back to the file stem in upper case).
+        plugin_stack: List of (command name, help text) tuples of the stack
+            commands the plugin declares.
+        loaded: True once the plugin module has been imported and initialized.
+        imp: The imported plugin module (None until loaded).
     """
 
     # Dictionary of all available plugins
@@ -27,6 +51,12 @@ class Plugin:
     loaded_plugins = {}
 
     def __init__(self, fullname, filepath):
+        """Create a plugin record for a discovered plugin module.
+
+        Args:
+            fullname: Importable (dotted) module name of the plugin.
+            filepath: Path to the plugin's Python source file.
+        """
         self.fullname = fullname
         self.filepath = filepath
         self.plugin_doc = ''
@@ -36,7 +66,17 @@ class Plugin:
         self.imp = None
 
     def _load(self):
-        """Load this plugin."""
+        """Import and initialize this plugin.
+
+        Imports the plugin module, calls its ``init_plugin()`` function, and
+        registers the returned ``preupdate``/``update``/``reset`` hooks as
+        timed functions (with the declared ``update_interval`` in seconds,
+        never smaller than the simulation timestep), registers the module
+        with the variable explorer, and appends any declared stack commands.
+
+        Returns:
+            Tuple of (success flag, status message).
+        """
         if self.loaded:
             return False, f'Plugin {self.plugin_name} already loaded'
 
@@ -84,7 +124,15 @@ class Plugin:
 
     @classmethod
     def load(cls, name):
-        """Load a plugin by name."""
+        """Load a previously discovered plugin by name.
+
+        Args:
+            name: Plugin name (case-insensitive) as found during discovery.
+
+        Returns:
+            Tuple of (success flag, status message). Fails when the plugin is
+            unknown, already loaded, or raises during import/initialization.
+        """
         plugin = cls.plugins.get(name.upper())
         if plugin is None:
             return False, f'Error loading plugin: plugin {name} not found.'
@@ -96,7 +144,15 @@ class Plugin:
 
     @classmethod
     def find_plugins(cls):
-        """Discover plugins in the plugins directory using AST parsing."""
+        """Discover plugins in the plugins directory using AST parsing.
+
+        Resolves the plugin directory from the ``plugin_path`` setting
+        (default ``plugins``, looked up relative to the package root and then
+        the current working directory), adds it to ``sys.path``, and scans
+        all ``*.py`` files (skipping names starting with an underscore). Any
+        module whose AST contains a top-level ``init_plugin`` function is
+        registered in :attr:`plugins` without being imported.
+        """
         # Get plugin path from settings or use default
         plugin_path = Path(getattr(settings, 'plugin_path', 'plugins'))
 
@@ -156,7 +212,22 @@ class Plugin:
 
     @classmethod
     def _parse_init_plugin(cls, func_node, tree):
-        """Parse the init_plugin function to extract config."""
+        """Parse an ``init_plugin`` AST node to extract the plugin config.
+
+        Walks the function body backwards from its return statement to find
+        the returned config dict (and optional stack-functions dict), reading
+        literal keys and values without executing any plugin code.
+
+        Args:
+            func_node: ``ast.FunctionDef`` node of the ``init_plugin`` function.
+            tree: Parsed AST of the full plugin module.
+
+        Returns:
+            Dict with the literal config values (e.g. ``plugin_name``,
+            ``update_interval``) plus a ``stack_functions`` list of
+            (command name, help text) tuples, or None if no return value
+            could be found.
+        """
         ret_dicts = []
         ret_names = ['', '']
 
@@ -229,12 +300,22 @@ class Plugin:
 
 
 def discover():
-    """Discover available plugins (AST parsing only, no imports)."""
+    """Discover available plugins (AST parsing only, no imports).
+
+    Convenience wrapper around :meth:`Plugin.find_plugins`; called once from
+    :func:`minisky.init` so that the ``PLUGINS`` command can list what is
+    available without importing anything.
+    """
     Plugin.find_plugins()
 
 
 def load_enabled():
-    """Load enabled plugins from settings."""
+    """Load enabled plugins from settings.
+
+    Loads every plugin listed under ``enabled_plugins`` in the settings and
+    prints the resulting status message for each. Called from
+    :func:`minisky.load_plugins` after the simulator has been initialized.
+    """
     enabled = getattr(settings, 'enabled_plugins', [])
     for plugin_name in enabled:
         success, msg = Plugin.load(plugin_name)

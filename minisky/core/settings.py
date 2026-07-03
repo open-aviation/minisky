@@ -1,3 +1,11 @@
+"""MiniSky settings loader.
+
+Reads settings.yml from the project root at import time and exposes every
+key/value pair as a module-level attribute (e.g.,
+``minisky.core.settings.prefer_compiled``). Also provides the data()
+helper that resolves paths inside the package data directory.
+"""
+
 # %%
 from pathlib import Path
 
@@ -13,4 +21,13 @@ for key, value in data.items():
 
 
 def data(path: str):
+    """Return the absolute path of a file or folder in the package data directory.
+
+    Args:
+        path: Path relative to the minisky/data directory
+            (e.g., "navigation").
+
+    Returns:
+        Path: Absolute path to minisky/data/<path>.
+    """
     return Path(__file__).parent.parent / "data" / path

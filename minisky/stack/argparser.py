@@ -1,4 +1,19 @@
-"""Stack argument parsers."""
+"""Stack argument parsers.
+
+Converts the text arguments of stack commands into typed Python values.
+Every argument type that can appear in a command's argument specification
+(e.g., "alt", "spd", "latlon", "callsign") maps to a Parser object in the
+module-level ``argparsers`` dictionary. For each function parameter of a
+stack command a Parameter object is created, which selects the applicable
+parsers based on the command's annotation string; when multiple types are
+allowed (separated by "/"), each parser is tried in turn.
+
+The module-level ``refdata`` namespace stores reference data (position,
+aircraft index, heading, speed) taken from previously parsed arguments, so
+that context-dependent arguments - such as a bare waypoint name resolved to
+the closest occurrence, or a magnetic heading - can be interpreted relative
+to the last parsed position or aircraft.
+"""
 
 import inspect
 import re
@@ -32,12 +47,26 @@ refdata = SimpleNamespace(lat=None, lon=None, alt=None, acidx=-1, hdg=None, cas=
 
 
 def getnextarg(cmdstring):
-    """Return first argument and remainder of command string from cmdstring."""
+    """Return first argument and remainder of command string from cmdstring.
+
+    Arguments are separated by whitespace and/or a comma; quoted arguments
+    may contain separators and are returned without the quotes.
+
+    Args:
+        cmdstring: (Partial) command-line text.
+
+    Returns:
+        tuple: (first argument (str), remaining command string (str)).
+    """
     return re_getarg.match(cmdstring).groups()
 
 
 def reset():
-    """Reset reference data."""
+    """Reset reference data.
+
+    Clears the stored reference position, aircraft index, heading, and
+    speed used to resolve context-dependent arguments.
+    """
     refdata.lat = None
     refdata.lon = None
     refdata.alt = None
@@ -47,7 +76,24 @@ def reset():
 
 
 class Parameter:
-    """Wrapper class for stack function parameters."""
+    """Wrapper class for stack function parameters.
+
+    Combines a parameter from the function signature of a stack command
+    with the argument type annotation from the command definition, and
+    builds the list of Parser objects that convert argument text into
+    values. Calling a Parameter with an argument string returns the parsed
+    value(s) followed by the remaining argument string.
+
+    Attributes:
+        name: Parameter name in the function signature.
+        default: Default value, or inspect._empty when there is none.
+        optional: True when the argument may be omitted.
+        gobble: True when this parameter consumes all remaining arguments
+            (variable-length argument without annotation).
+        annotation: Argument type annotation (e.g., "alt", "latlon").
+        parsers: Parser objects tried in order when parsing this parameter.
+        valid: False for keyword-only or unparsable parameters.
+    """
 
     def __init__(self, param, annotation="", isopt=None):
         self.name = param.name
@@ -86,6 +132,20 @@ class Parameter:
         self.valid = bool(self.parsers) and self.canwrap(param)
 
     def __call__(self, argstring):
+        """Parse the next argument(s) for this parameter from argstring.
+
+        Args:
+            argstring: Remaining command-line text.
+
+        Returns:
+            tuple: Parsed value(s) followed by the remaining argument
+            string. When the argument is omitted the default value (or
+            None for optional arguments) is returned instead.
+
+        Raises:
+            ArgumentError: When a required argument is missing, or when
+                all available parsers fail.
+        """
         # First check if argument is omitted and default value is needed
         if not argstring or argstring[0] == ",":
             _, argstring = re_getarg.match(argstring).groups()
@@ -136,6 +196,16 @@ class ArgumentError(Exception):
 class Parser:
     """Base implementation of argument parsers
     that are used to parse arguments to stack commands.
+
+    The base implementation extracts one argument from the argument string
+    and passes it to a conversion function (e.g., float, txt2alt). Derived
+    classes implement more complex parsing, such as positions that consume
+    one or two arguments.
+
+    Attributes:
+        size: Class attribute; the (maximum) number of values this parser
+            returns (e.g., 2 for a lat/lon position).
+        parsefun: Function that converts one argument string to a value.
     """
 
     # Output size of this parser
@@ -145,7 +215,14 @@ class Parser:
         self.parsefun = parsefun
 
     def parse(self, argstring):
-        """Parse the next argument from argstring."""
+        """Parse the next argument from argstring.
+
+        Args:
+            argstring: Remaining command-line text.
+
+        Returns:
+            tuple: (parsed value, remaining argument string).
+        """
         curarg, argstring = re_getarg.match(argstring).groups()
         return self.parsefun(curarg), argstring
 
@@ -154,6 +231,7 @@ class StringArg(Parser):
     """Argument parser that simply consumes the entire remaining text string."""
 
     def parse(self, argstring):
+        """Return the complete remaining text as a single string argument."""
         return argstring, ""
 
 
@@ -161,6 +239,15 @@ class CallsignArg(Parser):
     """Argument parser for aircraft callsigns and group ids."""
 
     def parse(self, argstring):
+        """Parse a callsign or group name into traffic index/indices.
+
+        For an aircraft callsign the traffic index is returned and the
+        parser reference position is updated to the aircraft position;
+        for a group name the list of member indices is returned.
+
+        Raises:
+            ArgumentError: When no aircraft with the given callsign exists.
+        """
         arg, argstring = re_getarg.match(argstring).groups()
         callsign = arg.upper()
         if callsign in minisky.traf.groups:
@@ -190,6 +277,11 @@ class WptArg(Parser):
     """
 
     def parse(self, argstring):
+        """Combine one or two arguments into a single waypoint position text.
+
+        Aircraft ids are translated to a "lat,lon" text; lat/lon pairs and
+        airport/runway combinations are joined into one string.
+        """
         arg, argstring = re_getarg.match(argstring).groups()
         name = arg.upper()
 
@@ -228,6 +320,17 @@ class PosArg(Parser):
     size = 2
 
     def parse(self, argstring):
+        """Parse one or two arguments into a lat/lon position.
+
+        Also updates the parser reference position to the parsed location.
+
+        Returns:
+            tuple: (lat [deg], lon [deg], remaining argument string).
+
+        Raises:
+            ArgumentError: When the text is not a valid waypoint, airport,
+                runway, or aircraft id.
+        """
         arg, argstring = re_getarg.match(argstring).groups()
         argu = arg.upper()
 
@@ -269,6 +372,11 @@ class PandirArg(Parser):
     """Parse pan direction commands."""
 
     def parse(self, argstring):
+        """Parse a screen pan direction (LEFT, RIGHT, UP/ABOVE, or DOWN).
+
+        Raises:
+            ArgumentError: When the text is not a valid pan direction.
+        """
         arg, argstring = re_getarg.match(argstring).groups()
         pandir = arg.upper()
         if pandir not in ("LEFT", "RIGHT", "UP", "ABOVE", "RIGHT", "DOWN"):

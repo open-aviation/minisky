@@ -1,4 +1,21 @@
-"""BlueSky: The open-source ATM simulator."""
+"""MiniSky: a minimal fork of BlueSky, the open-source ATM simulator.
+
+This package is the top-level entry point of the simulator. It exposes the
+main singleton objects that together make up a running simulation:
+
+- ``traf``: the :class:`~minisky.traffic.Traffic` object holding all aircraft states
+- ``sim``: the :class:`~minisky.simulation.Simulation` object controlling sim time and state
+- ``scr``: the :class:`~minisky.simulation.ConsoleIO` object buffering console output
+- ``runner``: the :class:`~minisky.simulation.Runner` driving the asyncio simulation loop
+- ``navdb``: the :class:`~minisky.tools.navdata.Navdatabase` with navaids, airports, and airways
+
+It also defines the shared return codes for stack commands (``BS_OK``,
+``BS_ARGERR``, ``BS_FUNERR``, ``BS_CMDERR``) and the simulation state
+constants (``INIT``, ``HOLD``, ``OP``, ``END``).
+
+Call :func:`init` once to construct these singletons, then optionally
+:func:`load_plugins` to activate the plugins enabled in the settings.
+"""
 
 from minisky import stack, tools, core, plugin
 from minisky.core import varexplorer
@@ -26,10 +43,21 @@ navdb = None
 
 
 def init(scenario=None):
-    """Initialize minisky modules.
+    """Initialize all MiniSky modules and singletons.
 
-    Arguments:
-    - scenario: Start with a running scenario [filename]
+    Constructs the navigation database, traffic, simulation, console I/O and
+    runner singletons, initializes the tools and variable explorer, and
+    discovers available plugins (via AST parsing, without importing them).
+    Must be called once before the simulation is stepped or run.
+
+    If a scenario filename is given it is loaded onto the command stack with
+    the ``IC`` command; otherwise the runner is configured to stay alive even
+    when a ``QUIT``/``STOP`` command is issued, so an idle simulator keeps
+    accepting commands.
+
+    Args:
+        scenario: Optional path to a scenario (.scn) file to load at startup.
+            When omitted, the simulator starts empty and shutdown is prevented.
     """
     global traf, sim, scr, runner
     global navdb
@@ -61,5 +89,11 @@ def init(scenario=None):
 
 
 def load_plugins():
-    """Load enabled plugins. Call after init()."""
+    """Load the plugins enabled in the settings.
+
+    Imports and initializes every plugin listed under ``enabled_plugins`` in
+    the settings, registering their timed functions and stack commands.
+    Must be called after :func:`init`, since plugins may rely on the traffic
+    and simulation singletons during initialization.
+    """
     plugin.load_enabled()

@@ -1,4 +1,21 @@
-"""The stack parses all text-based commands in the simulation."""
+"""The stack parses all text-based commands in the simulation.
+
+The stack is MiniSky's text-command interpreter. Every instruction to the
+simulator - typed by a user, read from a scenario (.scn) file, or issued by
+a plugin - enters as a line of text such as ``CRE KL204 B744 52.0 4.0 90
+FL300 250``. Command lines are queued with :func:`stack` and executed once
+per simulation step by :func:`process`.
+
+Each available command is represented by a :class:`Command` object, which
+couples the command name to the Python function that implements it and to
+the argument parsers that convert argument text into typed values (see
+:mod:`minisky.stack.argparser`). The base command set is defined in
+:mod:`minisky.stack.commands` and registered in :func:`init`.
+
+This module also implements scenario handling: :func:`ic` loads a scenario
+file, whose timestamped command lines are buffered and moved onto the stack
+by :func:`checkscen` when the simulation time passes their timestamps.
+"""
 
 import inspect
 import os
@@ -33,14 +50,47 @@ def init():
 
 
 class Command:
-    """Stack command object."""
+    """Stack command object.
+
+    A Command wraps a Python callback function and makes it available as a
+    text command in the simulator. It stores the command name, help texts,
+    and aliases, and builds a list of Parameter objects that convert the
+    raw argument text of a command line into typed Python arguments for
+    the callback. Calling a Command instance with an argument string parses
+    the arguments and executes the callback.
+
+    All commands are stored in the class-level ``cmddict`` dictionary,
+    which maps command names (and aliases) to Command instances.
+
+    Attributes:
+        name: Command name in upper case (e.g., "CRE").
+        help: Full help text shown by the HELP command.
+        brief: Brief usage text (command name plus argument list).
+        aliases: Tuple of alternative names for this command.
+        callback: The function that implements this command.
+        params: List of Parameter objects used to parse arguments.
+        valid: False when the callback is an unbound class/instance method.
+    """
 
     # Dictionary with all command objects
     cmddict: Dict[str, "Command"] = dict()
 
     @classmethod
     def addcommand(cls, func, parent=None, name="", **kwargs):
-        """Add 'func' as a stack command."""
+        """Add 'func' as a stack command.
+
+        Creates a Command object for the given function and registers it
+        (and its aliases) in Command.cmddict. When a command with the same
+        name already exists, the existing Command object is kept.
+
+        Args:
+            func: Function (or static/class method) implementing the command.
+            parent: Optional parent command when this is a subcommand.
+            name: Command name. Defaults to the function name, upper-cased.
+            **kwargs: Command options: ``arguments`` (argument type
+                specification string, e.g. "callsign,alt,[vspd]"),
+                ``brief``, ``help``, and ``aliases``.
+        """
         # Get function object if it's decorated as static or classmethod
         func = func.__func__ if isinstance(func, (staticmethod, classmethod)) else func
         # Stack command name
@@ -83,6 +133,21 @@ class Command:
         self.callback = func
 
     def __call__(self, argstring):
+        """Parse an argument string and execute this command.
+
+        The command's Parameter objects convert the argument text into
+        typed values, which are passed to the callback function.
+
+        Args:
+            argstring: The command-line text following the command name.
+
+        Returns:
+            tuple: (success (bool), echotext (str)) describing the result.
+
+        Raises:
+            ArgumentError: When argument parsing fails, or when more
+                arguments are given than the command accepts.
+        """
         args = []
         param = None
         # Use callback-specified parameter parsers to generate param list from strings
@@ -125,6 +190,7 @@ class Command:
         return f"<Stack Command {self.name} (invalid), callback=unbound method {self.callback}"
 
     def notimplemented(self, *args, **kwargs):
+        """Placeholder callback for commands without an implementation."""
         pass
 
     @property
@@ -235,7 +301,20 @@ class Command:
 
 
 class Stack:
-    """Stack static-only namespace."""
+    """Stack static-only namespace.
+
+    Holds the queue of pending command lines, as well as the commands and
+    timestamps loaded from a scenario file. This class is never
+    instantiated; all state is kept in class attributes.
+
+    Attributes:
+        current: Command line currently being processed.
+        cmdstack: List of (cmdline, sender route) tuples awaiting processing.
+        scenname: Name of the currently loaded scenario.
+        scentime: Execution times [s] of the buffered scenario commands.
+        scencmd: Buffered scenario command lines.
+        sender_rte: Network route to the sender of the current command.
+    """
 
     # Stack data
     current = ""
@@ -267,10 +346,25 @@ class Stack:
 
     @classmethod
     def clear(cls):
+        """Remove all commands from the command stack."""
         cls.cmdstack.clear()
 
 
 def delete_element(*arg):
+    """DEL: Delete an element (aircraft, wind field, area shape, or group).
+
+    Dispatches based on the first argument: the string "WIND" clears the
+    wind field, any other string deletes the area with that name, a traffic
+    group object deletes that group, and anything else is treated as
+    aircraft indices to delete.
+
+    Args:
+        *arg: Element(s) to delete: "WIND", an area name, a traffic group,
+            or one or more aircraft indices.
+
+    Returns:
+        The result of the dispatched delete function.
+    """
     if isinstance(arg[0], str) and arg[0] == "WIND":
         return minisky.traf.wind.clear()
     elif isinstance(arg[0], str):
@@ -282,13 +376,26 @@ def delete_element(*arg):
 
 
 def reset():
-    """Reset the stack."""
+    """Reset the stack.
+
+    Clears the command queue and buffered scenario data, and resets the
+    argument-parser reference data (position, heading, speed).
+    """
     Stack.reset()
     argparser.reset()
 
 
 def process():
-    """Sim-side stack processing."""
+    """Sim-side stack processing; called once per simulation step.
+
+    First moves due scenario commands onto the stack (see checkscen), then
+    parses and executes every queued command line: the first word is looked
+    up in Command.cmddict (an aircraft callsign may also be used as prefix,
+    in which case the second word is the command, defaulting to POS), the
+    remaining text is passed to the Command object for argument parsing and
+    execution, and any resulting message is echoed to the screen. The
+    command stack is cleared afterwards.
+    """
     # First check for commands in scenario file
     checkscen()
 
@@ -358,7 +465,22 @@ def process():
 
 
 def readscn(scn):
-    """Read a scenario file from absolute path or file object."""
+    """Read a scenario file and yield its timestamped commands.
+
+    Parses lines of the form ``HH:MM:SS.hh>CMDLINE``, skipping comments
+    (lines starting with "#") and short lines, and supporting line
+    continuation with a trailing backslash.
+
+    Args:
+        scn: Scenario source: path to a .scn file (str or Path; the .scn
+            suffix is added when missing), or a StringIO object.
+
+    Yields:
+        tuple: (command time [s] (float), command line (str)).
+
+    Raises:
+        TypeError: When scn is neither a path nor a StringIO object.
+    """
     if isinstance(scn, str) or isinstance(scn, Path):
         # ensure .scn suffix if necessary
         scn_path = Path(scn).with_suffix(".scn")
@@ -402,10 +524,17 @@ def readscn(scn):
 
 
 def ic(scn: str):
-    """IC: Load a scenario filename.
+    """IC: Load a scenario file.
 
-    Arguments:
-    - scn: The filename of the scenario.
+    Resets the simulation, reads the scenario file, and buffers its
+    timestamped commands for execution when the simulation time passes
+    their timestamps (see checkscen).
+
+    Args:
+        scn: The filename of the scenario, relative to the project root.
+
+    Returns:
+        tuple: (success (bool), message (str)).
     """
 
     minisky.sim.reset()
@@ -425,11 +554,17 @@ def ic(scn: str):
 
 
 def ic_StringIO(scn: StringIO, scn_name: str = None):
-    """IC: Load a scenario as StringIO.
+    """IC: Load a scenario from a StringIO object.
 
-    Arguments:
-    - scn: StringIO object
-    - scn_name: The name of the scenario (optional).
+    Resets the simulation, reads scenario lines from the StringIO object,
+    and buffers the timestamped commands for execution (see checkscen).
+
+    Args:
+        scn: StringIO object containing scenario lines.
+        scn_name: The name of the scenario (optional).
+
+    Returns:
+        tuple: (success (bool), message (str)).
     """
 
     # reset sim always
@@ -446,20 +581,32 @@ def ic_StringIO(scn: StringIO, scn_name: str = None):
 
 
 def scenario(name: "string"):
-    """SCENARIO sets the scenario name for the current simulation.
+    """SCENARIO: Set the scenario name for the current simulation.
 
-    Arguments:
-    - name: The name to give the scenario"""
+    Args:
+        name: The name to give the scenario.
+
+    Returns:
+        tuple: (True, confirmation message).
+    """
     Stack.scenname = name
     return True, "Starting scenario " + name
 
 
 def schedule(time: "time", cmdline: "string"):
-    """SCHEDULE a stack command at a specific simulation time.
+    """SCHEDULE: Schedule a stack command at a specific simulation time.
 
-    Arguments:
-    - time: the time at which the command should be executed
-    - cmdline: the command line to be executed"""
+    The command is inserted into the scenario buffer, keeping the buffer
+    sorted by execution time.
+
+    Args:
+        time: Absolute simulation time [s] at which the command should
+            be executed.
+        cmdline: The command line to be executed.
+
+    Returns:
+        bool: True (the command is always scheduled).
+    """
     # Get index of first scentime greater than 'time' as insert position
     idx = next(
         (i for i, t in enumerate(Stack.scentime) if t > time), len(Stack.scentime)
@@ -470,11 +617,18 @@ def schedule(time: "time", cmdline: "string"):
 
 
 def delay(time: "time", cmdline: "string"):
-    """DELAY a stack command until a specific simulation time.
+    """DELAY: Delay a stack command by a time interval.
 
-    Arguments:
-    - time: the time with which the command should be delayed
-    - cmdline: the command line to be executed after the delay"""
+    Like schedule(), but the given time is relative to the current
+    simulation time.
+
+    Args:
+        time: Time interval [s] by which the command should be delayed.
+        cmdline: The command line to be executed after the delay.
+
+    Returns:
+        bool: True (the command is always scheduled).
+    """
     # Get index of first scentime greater than 'time' as insert position
     time += minisky.sim.simt
     idx = next(
@@ -489,10 +643,14 @@ def showhelp(cmd: "txt" = "", subcmd: "txt" = ""):
     """HELP: Display general help text or help text for a specific command,
     or dump command reference in file when command is >filename.
 
-    Arguments:
-    - cmd: Argument can refer to:
-        - Command name to display help for.
-        - Call HELP >filename to generate a CSV file with help text for all commands.
+    Args:
+        cmd: Command name to display help for, or ">filename" to write a
+            tab-delimited command reference for all commands to a file
+            in the docs directory.
+        subcmd: Optional subcommand to display help for.
+
+    Returns:
+        tuple: (success (bool), help text or status message (str)).
     """
 
     # Check if help is asked for a specific command
@@ -532,7 +690,12 @@ def showhelp(cmd: "txt" = "", subcmd: "txt" = ""):
 
 
 def checkscen():
-    """Check if commands from the scenario buffer need to be stacked."""
+    """Check if commands from the scenario buffer need to be stacked.
+
+    All buffered scenario commands with a timestamp at or before the
+    current simulation time are moved onto the command stack and removed
+    from the scenario buffer.
+    """
     if Stack.scencmd:
         # Find index of first timestamp exceeding minisky.sim.simt
         idx = next(
@@ -545,7 +708,15 @@ def checkscen():
 
 
 def stack(*cmdlines, sender_id=None):
-    """Stack one or more commands separated by ";" """
+    """Stack one or more commands separated by ";".
+
+    The queued commands are executed on the next call to process().
+
+    Args:
+        *cmdlines: Command line strings; each may contain multiple
+            commands separated by ";".
+        sender_id: Optional network route/id of the command sender.
+    """
     for cmdline in cmdlines:
         cmdline = cmdline.strip()
         if cmdline:
@@ -575,7 +746,12 @@ def get_scenname():
 
 
 def get_scendata():
-    """Return the scenario data that was loaded from a scenario file."""
+    """Return the scenario data that was loaded from a scenario file.
+
+    Returns:
+        tuple: (scentime, scencmd), the lists of command times [s] and
+        command lines still buffered for execution.
+    """
     return Stack.scentime, Stack.scencmd
 
 

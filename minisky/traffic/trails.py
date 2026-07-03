@@ -1,4 +1,10 @@
-"""Create aircraft trails on the radar display."""
+"""Create aircraft trails on the radar display.
+
+Maintains, per aircraft, the history of flown line segments so the GUI can
+draw fading trails behind each aircraft. Trails are switched on/off and
+colored with the TRAIL stack command. Segments are added at a fixed time
+resolution and fade to the "old" color after a configurable time.
+"""
 
 from math import *
 
@@ -9,15 +15,35 @@ from minisky.core import TrafficArrays, settings
 
 
 class Trails(TrafficArrays):
-    """
-    Traffic trails class definition    : Data for trails
+    """Data for the aircraft trails shown on the radar display.
 
-    Methods:
-        Trails()            :  constructor
+    Every ``dt`` seconds of simulation time a line segment (from the last
+    recorded position to the current position) is appended per aircraft.
+    Segments are kept in a foreground buffer for drawing and can be moved
+    to a background buffer with buffer(). Segment colors fade towards the
+    "old" color over ``tcol0`` seconds. Available at runtime as
+    ``minisky.traf.trails``.
 
-    Members: see create
+    Attributes:
+        active (bool): Whether trails are recorded and shown.
+        dt (float): Time resolution of trail segments [s].
+        tcol0 (float): Time after which a segment gets the old color [s].
+        defcolor (ndarray): Default trail color (RGB, 0-255).
+        lat0, lon0 (ndarray): Segment start positions [deg].
+        lat1, lon1 (ndarray): Segment end positions [deg].
+        time (ndarray): Simulation time at which each segment was added [s].
+        col (list): Color per segment (RGB).
+        fcol (ndarray): Color fading factor per segment (1.0 = new,
+            0.0 = old).
+        bglat0, bglon0, bglat1, bglon1, bgtime, bgcol: Background copies of
+            the segment data.
+        accolor (list): Current trail color per aircraft (RGB).
+        lastlat, lastlon (ndarray): Last recorded position per aircraft
+            [deg].
+        lasttim (ndarray): Simulation time of the last recorded position
+            per aircraft [s].
 
-    Created by  : Jacco M. Hoekstra
+    Created by: Jacco M. Hoekstra
     """
 
     def __init__(self, dttrail=10.0):
@@ -65,6 +91,14 @@ class Trails(TrafficArrays):
         return
 
     def create(self, n=1):
+        """Initialize trail data for newly created aircraft.
+
+        Sets the default trail color and records the creation position as
+        the starting point of the first trail segment.
+
+        Args:
+            n: Number of aircraft that were appended to the traffic arrays.
+        """
         super().create(n)
 
         self.accolor[-1] = self.defcolor
@@ -72,6 +106,15 @@ class Trails(TrafficArrays):
         self.lastlon[-1] = minisky.traf.lon[-1]
 
     def update(self):
+        """Add new trail segments for aircraft that moved long enough.
+
+        Called every simulation step. When trails are inactive, only the
+        last-known positions are refreshed. Otherwise, for each aircraft
+        whose last recorded segment is older than ``dt`` seconds, a new
+        line segment from the last recorded position to the current
+        position is appended to the drawing buffers, and the color fading
+        factors of all segments are updated.
+        """
         self.acid = minisky.traf.callsign
         if not self.active:
             self.lastlat = minisky.traf.lat
@@ -141,7 +184,11 @@ class Trails(TrafficArrays):
         return
 
     def buffer(self):
-        """Buffer trails: Move current stack to background"""
+        """Move the current foreground trail segments to the background.
+
+        Background segments keep being drawn (in the old color) but are no
+        longer updated; the foreground buffers are cleared afterwards.
+        """
 
         self.bglat0 = np.append(self.bglat0, self.lat0)
         self.bglon0 = np.append(self.bglon0, self.lon0)
@@ -162,6 +209,7 @@ class Trails(TrafficArrays):
         return
 
     def clearnew(self):
+        """Clear the pipeline of new line segments used for the QtGL GUI."""
         # Clear new lines pipeline used for QtGL
         self.newlat0 = []
         self.newlon0 = []
@@ -169,7 +217,7 @@ class Trails(TrafficArrays):
         self.newlon1 = []
 
     def clearfg(self):  # Foreground
-        """Clear trails foreground"""
+        """Clear the foreground trail segment buffers."""
         self.lat0 = np.array([])
         self.lon0 = np.array([])
         self.lat1 = np.array([])
@@ -179,7 +227,7 @@ class Trails(TrafficArrays):
         return
 
     def clearbg(self):  # Background
-        """Clear trails background"""
+        """Clear the background trail segment buffers."""
         self.bglat0 = np.array([])
         self.bglon0 = np.array([])
         self.bglat1 = np.array([])
@@ -189,7 +237,7 @@ class Trails(TrafficArrays):
         return
 
     def clear(self):
-        """Clear all data, Foreground and background"""
+        """Clear all trail data: foreground, background and new-line buffers."""
         self.lastlon = np.array([])
         self.lastlat = np.array([])
         self.clearfg()
@@ -198,7 +246,21 @@ class Trails(TrafficArrays):
         return
 
     def setTrails(self, *args):
-        """Set trails on/off, or change trail color of aircraft"""
+        """Switch trails on/off, or change the trail color of an aircraft.
+
+        Implements the TRAIL stack command:
+        ``TRAIL ON/OFF, [dt]`` or ``TRAIL acid color``. Without arguments,
+        the current on/off state is reported. Switching trails off clears
+        all recorded segments.
+
+        Args:
+            *args: Either a bool (on/off) optionally followed by the
+                segment time resolution [s], or an aircraft index followed
+                by a color name (BLUE/RED/YELLOW).
+
+        Returns:
+            bool or tuple: True on success, or (success flag, message).
+        """
         if len(args) == 0:
             msg = "TRAIL ON/OFF, [dt] / TRAIL acid color\n"
 
@@ -231,11 +293,18 @@ class Trails(TrafficArrays):
         return True
 
     def changeTrailColor(self, color, idx):
-        """Change color of aircraft trail"""
+        """Change the trail color of one aircraft.
+
+        Args:
+            color: Color name; must be a key of colorList
+                (BLUE/CYAN/RED/YELLOW).
+            idx: Aircraft index.
+        """
         self.accolor[idx] = self.colorList[color]
         return
 
     def reset(self):
+        """Clear all trail data and switch trails off upon simulation reset."""
         # This ensures that the traffic arrays (which size is dynamic)
         # are all reset as well, so all lat,lon,sdp etc but also objects adsb
         super().reset()

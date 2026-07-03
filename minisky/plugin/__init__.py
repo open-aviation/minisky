@@ -1,5 +1,10 @@
 """Plugin system for MiniSky.
 
+Plugins are Python modules in the plugins directory that define an
+``init_plugin()`` function. They are discovered without being imported (AST
+parsing only) and loaded on demand, at which point their periodic update
+functions and stack commands are hooked into the simulation loop.
+
 This module provides the plugin infrastructure including:
 - Entity: Base class for singleton plugins with TrafficArrays
 - Plugin: Plugin discovery and loading

@@ -1,3 +1,12 @@
+"""Interactive console client for a running MiniSky REST API server.
+
+Provides a prompt (with history and path completion) that forwards input to the server:
+lines without a leading ``/`` are sent as stack commands via the ``stack/`` endpoint;
+lines starting with ``/`` are sent as raw API request paths (e.g. ``/all``,
+``/speed/10``). ``/load path.scn`` uploads a local scenario file, ``/exit`` quits.
+
+    python minisky-console.py [--server http://host] [--port 8000]
+"""
 import os
 from pprint import pprint
 
@@ -21,6 +30,12 @@ completer = NestedCompleter.from_nested_dict(
 @click.option("--server", default="http://localhost", help="API server")
 @click.option("--port", default=8000, help="API Port")
 def main(server, port):
+    """Run the interactive prompt loop against the given API server.
+
+    Args:
+        server: Base URL of the MiniSky API server (default ``http://localhost``).
+        port: TCP port the server listens on (default 8000).
+    """
     print(f"MiniSky Console, connect to {server}:{port}, use /exit to quit")
 
     rool_url = f"{server}:{port}"

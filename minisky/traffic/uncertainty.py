@@ -1,4 +1,11 @@
-"""ADS-B model. Implements real-life limitations of ADS-B communication."""
+"""ADS-B model. Implements real-life limitations of ADS-B communication.
+
+Maintains, per aircraft, the most recently "broadcast" state as it would
+be received via ADS-B: position and altitude with optional transmission
+noise, and updates limited to a configurable truncation interval. This
+surveillance noise is part of the trajectory noise switched on/off with
+the NOISE stack command (see Traffic.setnoise()).
+"""
 
 import numpy as np
 
@@ -8,7 +15,29 @@ from minisky.tools.aero import ft
 
 
 class SurveillanceUncertainty(TrafficArrays):
-    """ADS-B model. Implements real-life limitations of ADS-B communication."""
+    """ADS-B model. Implements real-life limitations of ADS-B communication.
+
+    Keeps a noisy, periodically refreshed copy of the true aircraft state,
+    representing what surveillance-based systems would observe. Available
+    at runtime as ``minisky.traf.noise``.
+
+    Attributes:
+        lastupdate (ndarray): Simulation time of the last broadcast per
+            aircraft [s].
+        lat (ndarray): Last broadcast latitude [deg].
+        lon (ndarray): Last broadcast longitude [deg].
+        alt (ndarray): Last broadcast altitude [m].
+        trk (ndarray): Last broadcast track angle [deg].
+        tas (ndarray): Last broadcast true airspeed [m/s].
+        gs (ndarray): Last broadcast ground speed [m/s].
+        vs (ndarray): Last broadcast vertical speed [m/s].
+        transnoise (bool): Whether transmission noise is added.
+        truncated (bool): Whether updates are truncated to the update
+            interval.
+        transerror (list): Standard deviations of the transmission noise:
+            [lat/lon error [deg], altitude error [m]].
+        trunctime (float): Minimum time between broadcast updates [s].
+    """
 
     def __init__(self):
         super().__init__()
@@ -27,6 +56,12 @@ class SurveillanceUncertainty(TrafficArrays):
         self.setnoise(False)
 
     def setnoise(self, n):
+        """Switch surveillance noise on or off (part of the NOISE command).
+
+        Args:
+            n: True to enable transmission noise and truncation, False to
+                disable them.
+        """
         self.transnoise = n
         self.truncated = n
         self.transerror = [
@@ -36,6 +71,15 @@ class SurveillanceUncertainty(TrafficArrays):
         self.trunctime = 0  # [s]
 
     def create(self, n=1):
+        """Initialize broadcast data for n newly created aircraft.
+
+        Copies the true state as the first broadcast and randomizes the
+        initial update times so aircraft do not all broadcast in the same
+        simulation step.
+
+        Args:
+            n: Number of aircraft that were appended to the traffic arrays.
+        """
         super().create(n)
 
         self.lastupdate[-n:] = -self.trunctime * np.random.rand(n)
@@ -47,6 +91,13 @@ class SurveillanceUncertainty(TrafficArrays):
         self.gs[-n:] = minisky.traf.gs[-n:]
 
     def update(self):
+        """Refresh the broadcast state of aircraft that are due an update.
+
+        Called every simulation step. For aircraft whose last broadcast is
+        older than the truncation interval, the broadcast position and
+        altitude are copied from the true state, with Gaussian transmission
+        noise added when enabled; track and speeds are copied unmodified.
+        """
         up = np.where(self.lastupdate + self.trunctime < minisky.sim.simt)
         nup = len(up)
         if self.transnoise:

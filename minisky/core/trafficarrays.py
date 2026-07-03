@@ -3,6 +3,21 @@
 Classes that derive from TrafficArrays get automated create, delete, and reset
 functionality for all registered child arrays. All subclasses are automatically
 replaceable via SELECTIMPL - see minisky/plugin/ for usage examples.
+
+MiniSky stores aircraft state as parallel numpy arrays and lists, where
+index i in every array belongs to the same aircraft. Per-aircraft
+parameters are registered by assigning them inside a
+``with self.settrafarrays():`` block (implemented by
+RegisterElementParameters): every list or numpy array created inside the
+block is recorded in _LstVars or _ArrVars, and every nested TrafficArrays
+instance is re-parented to form a tree rooted at the traffic object.
+
+When aircraft are created, ``create(n)`` appends n default-valued elements
+to every registered list and array; when aircraft are deleted,
+``delete(idx)`` removes the corresponding elements from all of them, and
+``reset()`` empties everything back to zero aircraft. Each of these
+operations recurses through the tree of children, so all per-aircraft data
+in the simulation grows and shrinks in lockstep.
 """
 
 from collections.abc import Collection
@@ -102,18 +117,26 @@ def _rebind_stack_commands(old_instance, new_instance):
 
 
 class RegisterElementParameters:
-    """Class to use in 'with'-syntax. This class automatically
-    calls for the _init_trafarrays function of the
-    DynamicArray, with all parameters defined in 'with'."""
+    """Context manager that registers per-aircraft parameters on a TrafficArrays object.
+
+    Class to use in 'with'-syntax (through TrafficArrays.settrafarrays()).
+    On construction it takes a snapshot of the attributes already present
+    on the parent object; on exit it passes all newly created attributes to
+    the parent's _init_trafarrays(), which registers lists and numpy arrays
+    as per-aircraft variables that automatically grow and shrink with
+    aircraft creation and deletion.
+    """
 
     def __init__(self, parent):
         self._parent = parent
         self.keys0 = set(parent.__dict__.keys())
 
     def __enter__(self):
+        """No-op: the attribute snapshot is already taken in __init__."""
         pass
 
     def __exit__(self, exc_type, exc_value, tb):
+        """Register all attributes created inside the with-block as traffic arrays."""
         self._parent._init_trafarrays(set(self._parent.__dict__.keys()) - self.keys0)
 
 
@@ -122,9 +145,23 @@ class TrafficArrays:
     vectorizing but still maintain and object like benefits
     for creation and deletion of an element for all parameters.
 
+    TrafficArrays objects form a tree (rooted at the traffic object) in
+    which aircraft creation, deletion, and reset propagate recursively, so
+    that all registered per-aircraft arrays in the simulation keep the same
+    length as the number of aircraft.
+
     Supports the replaceable pattern when subclassed with replaceable=True:
         class Autopilot(TrafficArrays, replaceable=True):
             ...
+
+    Attributes:
+        root: Class attribute; root of the TrafficArrays tree (the traffic
+            object), set with setroot().
+        ntraf: Class attribute; the current number of aircraft.
+        _parent: Parent node of this object in the tree.
+        _children: Child TrafficArrays objects of this object.
+        _ArrVars: Names of the registered numpy-array parameters.
+        _LstVars: Names of the registered list parameters.
     """
 
     # The TrafficArrays class keeps track of all of the constructed
@@ -230,6 +267,12 @@ class TrafficArrays:
         return ret
 
     def __init__(self):
+        """Create a TrafficArrays node and attach it to the current root.
+
+        The new object registers itself as a child of TrafficArrays.root
+        (the traffic object), so that aircraft creation and deletion
+        propagate to its registered arrays.
+        """
         super().__init__()
         self._parent = TrafficArrays.root
         if self._parent:
@@ -250,6 +293,13 @@ class TrafficArrays:
         return RegisterElementParameters(self)
 
     def _init_trafarrays(self, keys):
+        """Register the given attribute names as per-aircraft variables.
+
+        Lists are recorded in _LstVars, numpy arrays in _ArrVars, and
+        nested TrafficArrays objects are re-parented to this object. When
+        traffic already exists, the new arrays are immediately sized to
+        the current number of aircraft.
+        """
         for key in keys:
             if isinstance(self.__dict__[key], list):
                 self._LstVars.append(key)
@@ -265,7 +315,15 @@ class TrafficArrays:
             self.create(TrafficArrays.root.ntraf)
 
     def create(self, n=1):
-        """Append n elements (aircraft) to all lists and arrays."""
+        """Append n elements (aircraft) to all lists and arrays.
+
+        New elements get a default value based on their element type:
+        0 for numeric arrays, False for boolean arrays, and an empty
+        string for string lists.
+
+        Args:
+            n: Number of aircraft to add (default 1).
+        """
 
         for v in self._LstVars:  # Lists (mostly used for strings)
             lst = self.__dict__.get(v)
@@ -280,17 +338,29 @@ class TrafficArrays:
             )
 
     def istrafarray(self, name):
-        """Returns true if parameter 'name' is a traffic array."""
+        """Returns true if parameter 'name' is a registered traffic array of this object."""
         return name in self._LstVars or name in self._ArrVars
 
     def create_children(self, n=1):
-        """Call create (aircraft create) on all children."""
+        """Call create (aircraft create) recursively on all children.
+
+        Args:
+            n: Number of aircraft to add (default 1).
+        """
         for child in self._children:
             child.create(n)
             child.create_children(n)
 
     def delete(self, idx):
-        """Aircraft delete."""
+        """Aircraft delete.
+
+        Removes element(s) idx from all registered lists and arrays of
+        this object, recursing through its children first, so that all
+        per-aircraft data shrinks consistently.
+
+        Args:
+            idx: Index or collection of indices of the aircraft to remove.
+        """
         # Remove element (aircraft) idx from all lists and arrays
         for child in self._children:
             child.delete(idx)
@@ -308,7 +378,11 @@ class TrafficArrays:
                     del self.__dict__[v][idx]
 
     def reset(self):
-        """Delete all elements from arrays and start at 0 aircraft."""
+        """Delete all elements from arrays and start at 0 aircraft.
+
+        Recursively empties the registered arrays and lists of this object
+        and all of its children, preserving the array dtypes.
+        """
         for child in self._children:
             child.reset()
 

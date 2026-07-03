@@ -33,7 +33,20 @@ hooks = SimpleNamespace(
 
 
 class Timer:
-    """Timer class for simulation-time periodic functions."""
+    """Timer class for simulation-time periodic functions.
+
+    A timer fires every ``dt`` simulation seconds, quantised to whole simulation
+    timesteps: the requested interval is converted to a step count relative to the
+    current ``sim.simdt``, so the actual interval is never smaller than one timestep.
+
+    Attributes:
+        name: Unique name of the timer (also the registry key).
+        dt_default: Interval the timer was created with [s].
+        dt_requested: Currently requested interval [s].
+        dt_act: Actual interval after quantisation to whole timesteps [s].
+        rel_freq: Number of simulation steps between firings.
+        readynext: True when the timer fires on the current step.
+    """
 
     _timers = {}
 

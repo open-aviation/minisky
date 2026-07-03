@@ -1,4 +1,14 @@
-"""Simulate wind in BlueSky."""
+"""Simulate wind in BlueSky.
+
+Implements a wind field defined by wind vectors at arbitrary lat/lon
+positions, optionally with altitude profiles. The field is interpolated
+(inverse-distance weighting horizontally, linear in altitude) to obtain
+the wind at any aircraft position. :class:`Windfield` contains the field
+data and interpolation; :class:`Wind` adds the stack-command interface
+(WIND to define wind, GETWIND to query it) and is available at runtime as
+``minisky.traf.wind``. The traffic model uses the wind to compute ground
+speed and track from heading and airspeed.
+"""
 
 import numpy as np
 from scipy.interpolate import LinearNDInterpolator, interp1d
@@ -59,6 +69,7 @@ class Windfield:
         return
 
     def clear(self):  # Clear actual field
+        """Remove all wind vectors, leaving a windless (winddim 0) field."""
         # Windfield dimension will automatically be detected:
         # 0 = no wind, 1 = constant wind, 2 = 2D field (no alt profiles),
         # 3 = 3D field (alt matters), used to speed up interpolation
@@ -73,9 +84,21 @@ class Windfield:
         return
 
     def addpointvne(self, lat, lon, vnorth, veast, windalt=None):
-        """Add a vector of lat/lon positions (arrays) with a (2D vector of)
-        wind speed [m/s] in north and east component.
-        Optionally an array with altitudes can be used
+        """Add wind vectors given as north/east speed components.
+
+        Vectorized alternative to addpoint() for defining many wind points
+        at once. When altitudes are given, a scipy interpolator over
+        (altitude, lat, lon) is set up for regular grids; otherwise the
+        profiles are resampled onto the fixed altitude axis.
+
+        Args:
+            lat: Latitudes of the wind definition points [deg].
+            lon: Longitudes of the wind definition points [deg].
+            vnorth: North wind component [m/s]; 2D (altitude x position)
+                when windalt is given.
+            veast: East wind component [m/s]; same shape as vnorth.
+            windalt: Optional array of altitudes [m] belonging to the rows
+                of vnorth/veast; makes the field 3D.
         """
         if windalt is not None and len(windalt) > 1:
             # Set altitude interpolation functions
@@ -152,10 +175,24 @@ class Windfield:
             self.winddim = min(2, len(self.lat))
 
     def addpoint(self, lat, lon, winddir, windspd, windalt=None):
-        """addpoint: adds a lat,lon position with a wind direction [deg]
-                                                 and wind speedd [m/s]
-        Optionally an array with altitudes can be used in which case windspd
-        and wind speed need to have the same dimension
+        """Add a wind vector (direction/speed) at a lat/lon position.
+
+        The wind is converted to north/east components and stored on the
+        fixed altitude axis. When an altitude array is given, the wind
+        profile is interpolated onto that axis and the field becomes 3D
+        (altitude dependent).
+
+        Args:
+            lat: Latitude of the wind definition point [deg].
+            lon: Longitude of the wind definition point [deg].
+            winddir: Direction the wind comes from [deg]; array when an
+                altitude profile is given.
+            windspd: Wind speed [m/s]; same dimension as winddir.
+            windalt: Optional altitudes [m] belonging to winddir/windspd,
+                defining an altitude profile at this position.
+
+        Returns:
+            int: Index of the added wind point (for use with remove()).
         """
 
         # If scalar, copy into table for altitude axis
@@ -206,6 +243,23 @@ class Windfield:
     def getdata(
         self, userlat, userlon, useralt=0.0
     ):  # in case no altitude specified and field is 3D, use sea level wind
+        """Interpolate the wind field at one or more positions.
+
+        Uses inverse-distance-squared weighting between the defined wind
+        points horizontally, and linear interpolation along the altitude
+        axis for 3D fields. Constant and empty fields are handled as
+        special cases. When no altitude is given for a 3D field, sea-level
+        wind is returned.
+
+        Args:
+            userlat: Latitude(s) [deg]; scalar, list or ndarray.
+            userlon: Longitude(s) [deg]; same shape as userlat.
+            useralt: Altitude(s) [m]; scalar, list or ndarray (default 0).
+
+        Returns:
+            tuple: (vnorth, veast): north and east wind components [m/s],
+            with the same type/shape as the given positions.
+        """
         eps = 1e-20  # [m2] to avoid divison by zero for using exact same points
 
         swvector = isinstance(userlat, (list, np.ndarray))
@@ -322,6 +376,12 @@ class Windfield:
             return float(vnorth), float(veast)
 
     def remove(self, idx):  # remove a point using the returned index when it was added
+        """Remove a wind definition point by index.
+
+        Args:
+            idx: Index of the point, as returned by addpoint(). The field
+                dimension (winddim) is re-evaluated after removal.
+        """
         if idx < len(self.lat):
             self.lat = np.delete(self.lat, idx)
             self.lon = np.delete(self.lat, idx)
@@ -339,8 +399,18 @@ class Windfield:
 
 
 class Wind(TrafficArrays, Windfield):
+    """Wind field with the stack-command interface of the simulation.
+
+    Combines the :class:`Windfield` data and interpolation with the
+    TrafficArrays machinery so the field is cleared on simulation reset.
+    Implements the WIND (add()) and GETWIND (get()) stack commands.
+    Available at runtime as ``minisky.traf.wind``.
+    """
+
     def add(self, lat: "lat", lon: "lon", *winddata: "float"):
         """Define a wind vector as part of the 2D or 3D wind field.
+
+        Implements the WIND stack command.
 
         Arguments:
         - lat/lon: Horizonal position to define wind vector(s)
@@ -387,9 +457,16 @@ class Wind(TrafficArrays, Windfield):
     def get(self, lat: "lat", lon: "lon", alt: "alt" = None):
         """Get wind at a specified position (and optionally at altitude)
 
+        Implements the GETWIND stack command. The result is reported as
+        direction/speed text (e.g. "270/25", speed in kts).
+
         Arguments:
         - lat, lon: Horizontal position where wind should be determined [deg]
-        - alt: Altitude at which wind should be determined [ft]
+        - alt: Altitude at which wind should be determined [m]
+          (stack input in ft)
+
+        Returns:
+            tuple: (True, text with wind direction [deg] and speed [kts]).
         """
         vn, ve = self.getdata(lat, lon, alt)
 

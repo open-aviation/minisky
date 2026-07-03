@@ -1,3 +1,17 @@
+"""MiniSky REST API server.
+
+FastAPI application that wraps a live simulation: the simulator is initialised at import
+time and stepped continuously by the async Runner once the server starts. Endpoints
+expose aircraft state, conflict information, simulation-time control, plugin management,
+and a passthrough for any stack command.
+
+Run with::
+
+    fastapi dev minisky-api.py    # development, auto-reload
+    fastapi run minisky-api.py    # production
+
+Interactive OpenAPI docs are served at ``/docs``.
+"""
 import asyncio
 import os
 from io import StringIO
@@ -22,6 +36,7 @@ minisky.load_plugins()
 
 
 async def start_simulation():
+    """Start the simulation loop as a background task in the server's event loop."""
     asyncio.create_task(minisky.runner.run())
 
 
@@ -30,6 +45,7 @@ app.add_event_handler("startup", start_simulation)
 
 @app.get("/")
 def root():
+    """Health check: confirm the API is up."""
     return {"msg": "MiniSky API endpoint ready"}
 
 
@@ -81,6 +97,12 @@ def forward(seconds: float):
 
 @app.get("/conflicts")
 def conflicts():
+    """Get all detected conflicts.
+
+    Returns one record per unique aircraft pair with distance (NM), altitude
+    difference (ft), bearing (deg), time to loss of separation (s), and distance and
+    time to the closest point of approach (m, s).
+    """
     if not hasattr(minisky.traf.cd, "confpairs") or not len(minisky.traf.cd.confpairs):
         return {"msg": "No conflicts detected"}
 
@@ -124,6 +146,7 @@ async def stack(cmd: str):
 
 @app.get("/scn")
 def upload_form():
+    """Serve a minimal HTML form for uploading a scenario file."""
     content = """
     upload a scenario file<hr>
     <form method="post" enctype="multipart/form-data">
@@ -136,6 +159,7 @@ def upload_form():
 
 @app.post("/scn")
 async def scn(file: UploadFile = File(...)):
+    """Load an uploaded scenario file into the running simulation."""
     minisky.scr.event.clear()
     contents = await file.read()
     scenario = StringIO(contents.decode("utf-8"))

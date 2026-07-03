@@ -1,4 +1,17 @@
-"""Route implementation for the BlueSky FMS."""
+"""Route implementation for the BlueSky FMS.
+
+Contains the per-aircraft :class:`Route` class (the flight plan: an ordered
+list of waypoints with optional altitude, speed, RTA and turn constraints)
+plus the module-level functions that implement the route-editing stack
+commands: ADDWPT, ADDWPTMODE, AFTER, BEFORE, AT, DIRECT, RTA, LISTRTE,
+DELRTE and DELWPT.
+
+The route itself is passive data with flight-plan pre-calculations
+(calcfp()); the actual guidance along the route is performed by
+:class:`~minisky.traffic.autopilot.Autopilot`, which pulls waypoint data
+into the vectorized :class:`~minisky.traffic.activewpdata.ActiveWaypoint`
+arrays via getnextwp()/getnextturnwp().
+"""
 
 import math
 from weakref import WeakValueDictionary
@@ -17,16 +30,54 @@ from minisky.tools.position import txt2pos
 
 
 class Route:
-    """
-    Route class definition   : Route data for an aircraft
-    (basic FMS functionality)
+    """Flight plan (route) of a single aircraft: basic FMS functionality.
 
-    addwpt(name,wptype,lat,lon,alt) :
-    Add waypoint (closest to lat/lon when from navdb
+    A Route is an ordered list of waypoints, each with an optional altitude
+    constraint, speed constraint, required time of arrival (RTA), turn
+    specification (fly-by/fly-over/fly-turn with radius, speed or heading
+    rate) and stack commands to execute when the waypoint is passed. One
+    Route object is kept per aircraft in ``minisky.traf.ap.route``.
 
-    For lat/lon waypoints: use call sign as wpname, number will be added
+    Waypoints from the navigation database are resolved to the entry
+    closest to the given lat/lon. For plain lat/lon waypoints the aircraft
+    callsign is used as waypoint name, with a number appended.
 
-    Created by  : Jacco M. Hoekstra
+    Attributes:
+        acid (str): Callsign of the aircraft this route belongs to.
+        wpname (list): Waypoint names.
+        wptype (list): Waypoint types (wplatlon, wpnav, orig, dest,
+            calcwp, runway).
+        wplat (list): Waypoint latitudes [deg].
+        wplon (list): Waypoint longitudes [deg].
+        wpalt (list): Altitude constraints [m] (negative = not specified).
+        wpspd (list): Speed constraints, CAS [m/s] or Mach [-]
+            (negative = not specified).
+        wprta (list): Required times of arrival [s] (negative = none).
+        wpflyby (list): Fly-by (True) / fly-over (False) switch.
+        wpflyturn (list): Fly-turn switch (use specified turn parameters).
+        wpturnrad (list): Turn radius per waypoint (<0 = not specified).
+        wpturnspd (list): Turn speed (CAS) per waypoint (<0 = not specified).
+        wpturnhdgr (list): Turn heading rate per waypoint [deg/s]
+            (<0 = not specified).
+        wpstack (list): Stack command lines executed when passing each
+            waypoint (AT ... DO).
+        iactwp (int): Index of the currently active waypoint (-1 = none).
+        swflyby (bool): Default fly-by mode for newly added waypoints.
+        swflyturn (bool): Default fly-turn mode for newly added waypoints.
+        bank (float): Default bank angle for turn calculations [deg].
+        flag_landed_runway (bool): True after touchdown on a runway; the
+            aircraft then keeps the runway heading.
+        wpdirfrom (list): Direction of the leg leaving each waypoint [deg].
+        wpdirto (list): Direction of the leg to each waypoint [deg].
+        wpdistto (list): Length of the leg to each waypoint [nm].
+        wpialt (list): Index of the next waypoint with an altitude
+            constraint.
+        wptoalt (list): Next altitude constraint [m].
+        wpxtoalt (list): Distance to the next altitude constraint [m].
+        wptorta (list): Next time constraint [s].
+        wpxtorta (list): Distance to the next time constraint [m].
+
+    Created by: Jacco M. Hoekstra
     """
 
     # Waypoint types:
@@ -89,8 +140,21 @@ class Route:
         self.wpxtorta = []  # [m] distance to next time constaint
 
     def insert_wpt_data(self, wpidx, wpname, wplat, wplon, wptype, wpalt, wpspd):
-        """
-        Inserts information for a waypoint
+        """Insert a new waypoint record at a given index in the route.
+
+        All per-waypoint lists are updated consistently; the current default
+        fly-by/fly-turn mode and turn parameters of the route are applied to
+        the new waypoint, and no RTA is set.
+
+        Args:
+            wpidx: List index at which to insert the waypoint.
+            wpname: Waypoint name.
+            wplat: Waypoint latitude [deg].
+            wplon: Waypoint longitude [deg].
+            wptype: Waypoint type (see the Route class constants).
+            wpalt: Altitude constraint [m] (negative = not specified).
+            wpspd: Speed constraint, CAS [m/s] or Mach [-]
+                (negative = not specified).
         """
 
         self.wpname.insert(wpidx, wpname)
@@ -119,8 +183,31 @@ class Route:
         afterwp="",
         beforewp="",
     ):
-        """
-        Adds waypoint, returns index of waypoint, lat/lon [deg], alt[m]
+        """Add a waypoint to the route and update the flight plan.
+
+        Handles all waypoint types: origin/destination airports (placed at
+        the start/end of the route, overwriting an existing orig/dest),
+        navigation-database waypoints (resolved closest to the given
+        position), runways and plain lat/lon waypoints. The insertion point
+        can be steered with afterwp/beforewp; by default waypoints are
+        appended just before the destination. Afterwards the flight-plan
+        tables are recalculated (calcfp()) and, when a waypoint is active,
+        the guidance towards it is refreshed.
+
+        Args:
+            iac: Aircraft index.
+            name: Waypoint name (or callsign for lat/lon waypoints).
+            wptype: Waypoint type (see the Route class constants).
+            lat: Waypoint latitude [deg].
+            lon: Waypoint longitude [deg].
+            alt: Altitude constraint [m] (negative = not specified).
+            spd: Speed constraint, CAS [m/s] or Mach [-]
+                (negative = not specified).
+            afterwp: Optional name of the waypoint after which to insert.
+            beforewp: Optional name of the waypoint before which to insert.
+
+        Returns:
+            int: Index of the added waypoint in the route, or -1 on failure.
         """
 
         # For safety
@@ -261,7 +348,16 @@ class Route:
         return idx
 
     def getnextturnwp(self):
-        """Give the next turn waypoint data."""
+        """Give the data of the next fly-turn waypoint at or after the
+        active waypoint.
+
+        Returns:
+            list: [lat [deg], lon [deg], turn speed (CAS, <0 = not
+            specified), turn radius (<0 = not specified), turn heading rate
+            [deg/s] (<0 = not specified), waypoint index]. Default values
+            (zeros / -999) are returned when the route has no upcoming turn
+            waypoint.
+        """
         # Starting point
         wpidx = self.iactwp
         # Find next turn waypoint index
@@ -284,7 +380,23 @@ class Route:
         ]
 
     def getnextwp(self):
-        """Go to next waypoint and return data"""
+        """Activate the next waypoint in the route and return its data.
+
+        Called by the autopilot when the active waypoint has been passed.
+        Advances iactwp (unless the last waypoint was reached, in which case
+        the returned LNAV switch is False). When the new active waypoint is
+        a runway used for landing, a fixed runway heading is commanded and
+        deceleration plus deletion of the aircraft are scheduled via the
+        stack.
+
+        Returns:
+            tuple: (lat [deg], lon [deg], altitude constraint [m], speed
+            constraint (CAS [m/s] or Mach), distance to next altitude
+            constraint [m], next altitude constraint [m], distance to next
+            RTA [m], next RTA [s], lnavon switch, fly-by switch, fly-turn
+            switch, turn radius, turn speed (CAS), turn heading rate
+            [deg/s], bearing of the next leg [deg], last-waypoint switch).
+        """
 
         n_wpt = len(self.wpname)
 
@@ -394,6 +506,11 @@ class Route:
         )
 
     def runactwpstack(self):
+        """Execute the stack commands stored for the active waypoint.
+
+        Commands are attached to waypoints with the AT ... DO/STACK command
+        and are issued when the aircraft passes the waypoint.
+        """
         for cmdline in self.wpstack[self.iactwp]:
             stack.stack(cmdline)
             # debug
@@ -401,7 +518,7 @@ class Route:
         return
 
     def insertcalcwp(self, i, name):
-        """Insert empty wp with no attributes at location i"""
+        """Insert an empty calculated waypoint (T/C, T/D) at location i."""
 
         self.wpname.insert(i, name)
         self.wplat.insert(i, 0.0)
@@ -420,6 +537,11 @@ class Route:
         Note: No Top of Descent or Top of Climb can inserted here as this depends on
         the speed, which might be undefined (often is). Guidance in autpilot.py takes
         care of ToD and ToC logic while flying using current speed.
+
+        Recomputes, per waypoint: leg directions [deg] and lengths [nm]
+        (wpdirfrom, wpdirto, wpdistto), the next altitude constraint and
+        distance to it (wptoalt [m], wpxtoalt [m]), and the next time
+        constraint and distance to it (wptorta [s], wpxtorta [m]).
         """
 
         # Direction to waypoint
@@ -562,8 +684,21 @@ class Route:
             # print("wptorta=", self.wptorta)
 
     def findact(self, i):
-        """Find best default active waypoint.
-        This function is called during route creation"""
+        """Find the best default active waypoint for an aircraft.
+
+        Called when LNAV is (re-)engaged. Selects the waypoint closest to
+        the aircraft, without walking back to earlier waypoints, and skips
+        to the next waypoint when the closest one cannot be reached with
+        the required heading change (turn time exceeds straight flight
+        time).
+
+        Args:
+            i: Aircraft index.
+
+        Returns:
+            int: Index of the suggested active waypoint in this route,
+            or -1 for an empty route.
+        """
 
         n_wpt = len(self.wpname)
 
@@ -607,6 +742,11 @@ class Route:
         return iwpnear
 
     def getnextqdr(self):
+        """Return the bearing of the leg after the active waypoint [deg].
+
+        Returns -999.0 when there is no next leg (no active waypoint or the
+        active waypoint is the last one).
+        """
         # get qdr for next leg
         if -1 < self.iactwp < len(self.wpname) - 1:
             nextqdr, dist = geo.qdrdist(
@@ -624,8 +764,19 @@ class Route:
 
 
 def get_available_name(data, name_, len_=2):
-    """
-    Check if name already exists, if so add integer 01, 02, 03 etc.
+    """Make a waypoint name unique by appending a zero-padded number.
+
+    Checks if the name already exists in the given list (or matches an
+    aircraft callsign); if so, appends/increments an integer suffix
+    (01, 02, 03, ...) until the name is unique.
+
+    Args:
+        data: Existing names (e.g. the wpname list of a route).
+        name_: Requested base name.
+        len_: Number of digits of the appended counter (default 2).
+
+    Returns:
+        str: A name that does not yet occur in data.
     """
     appi = 0  # appended integer to name starts at zero (=nothing)
     # Use Python 3 formatting syntax: "{:03d}".format(7) => "007"
@@ -643,9 +794,24 @@ def get_available_name(data, name_, len_=2):
 
 
 def change_wpt_mode(acidx, mode=None, value=None):
-    """Changes the mode of the ADDWPT command to add waypoints of type 'mode'.
-    Available modes: FLYBY, FLYOVER, FLYTURN. Also used to specify
-    TURNSPEED or TURNRADIUS."""
+    """Change the mode with which ADDWPT adds new waypoints.
+
+    Implements the ADDWPTMODE stack command. Available modes: FLYBY,
+    FLYOVER, FLYTURN. Also used to specify the TURNSPEED, TURNRADIUS or
+    TURNHDGRATE used for fly-turn waypoints. Without arguments, the current
+    ADDWPT mode is echoed.
+
+    Args:
+        acidx: Aircraft index.
+        mode: Mode keyword (FLYBY/FLYOVER/FLYTURN) or turn-parameter keyword
+            (TURNSPEED/TURNRADIUS/TURNHDGRATE and synonyms); None to show
+            the current mode.
+        value: Value for the selected turn parameter (parsed via the alt
+            argument parser; see addwpt() for the unit conversions).
+
+    Returns:
+        bool: True on success.
+    """
     # Get aircraft route
     acid = minisky.traf.callsign[acidx]
     acrte = minisky.traf.ap.route[acidx]
@@ -685,7 +851,32 @@ def change_wpt_mode(acidx, mode=None, value=None):
 
 
 def addwpt(ac: str | int, *args):  # args: all arguments of addwpt
-    """ADDWPT acid, (wpname/lat,lon),[alt],[spd],[afterwp],[beforewp]"""
+    """Add a waypoint to the route of an aircraft.
+
+    Implements the ADDWPT stack command:
+    ``ADDWPT acid, (wpname/lat,lon), [alt], [spd], [afterwp], [beforewp]``.
+
+    Besides adding a regular waypoint (navdb waypoint, airport, runway or
+    lat/lon position, with optional altitude constraint [m] and speed
+    constraint (CAS [m/s] or Mach)), this function also handles:
+
+    - Mode keywords FLYBY/FLYOVER/FLYTURN, which change the default mode
+      for waypoints added afterwards.
+    - Turn-parameter keywords TURNRAD(IUS)/TURNSPD/TURNSPEED/TURNHDG(RATE),
+      which set the default turn radius/speed/heading rate and switch on
+      fly-turn mode ("OFF" removes the setting).
+    - The special TAKEOFF waypoint, placed 2 nm beyond the runway threshold
+      in the runway direction.
+
+    The first real waypoint added to a route is made active, engaging LNAV.
+
+    Args:
+        ac: Aircraft callsign or index.
+        *args: Remaining ADDWPT arguments as described above.
+
+    Returns:
+        bool or tuple: True on success, or (success flag, message).
+    """
 
     # First get the appropriate ac route
     if isinstance(ac, str):
@@ -953,9 +1144,22 @@ def addwpt_before(
     alt: "alt" = None,
     spd: "spd" = None,
 ):
-    """acid BEFORE wpt ADDWPT (wpname/lat,lon),[alt],[spd]
+    """Add a waypoint to a route before an existing waypoint.
 
-    Before waypoint, add a waypoint to route of aircraft (FMS).
+    Implements the BEFORE stack command:
+    ``acid BEFORE wpt ADDWPT (wpname/lat,lon), [alt], [spd]``.
+    Thin wrapper around addwpt() with the insertion point set.
+
+    Args:
+        acidx: Aircraft index.
+        beforewp: Name of the existing waypoint to insert before.
+        addwpt: The literal ADDWPT keyword (ignored).
+        waypoint: Waypoint name or lat/lon text of the new waypoint.
+        alt: Optional altitude constraint [m].
+        spd: Optional speed constraint, CAS [m/s] or Mach [-].
+
+    Returns:
+        bool or tuple: Result of addwpt().
     """
     return addwpt(acidx, waypoint, alt, spd, None, beforewp)
 
@@ -968,15 +1172,53 @@ def addwpt_after(
     alt: "alt" = None,
     spd: "spd" = None,
 ):
-    """acid AFTER wpt ADDWPT (wpname/lat,lon),[alt],[spd]
+    """Add a waypoint to a route after an existing waypoint.
 
-    After waypoint, add a waypoint to route of aircraft (FMS).
+    Implements the AFTER stack command:
+    ``acid AFTER wpt ADDWPT (wpname/lat,lon), [alt], [spd]``.
+    Thin wrapper around addwpt() with the insertion point set.
+
+    Args:
+        acidx: Aircraft index.
+        afterwp: Name of the existing waypoint to insert after.
+        addwpt: The literal ADDWPT keyword (ignored).
+        waypoint: Waypoint name or lat/lon text of the new waypoint.
+        alt: Optional altitude constraint [m].
+        spd: Optional speed constraint, CAS [m/s] or Mach [-].
+
+    Returns:
+        bool or tuple: Result of addwpt().
     """
     return addwpt(acidx, waypoint, alt, spd, afterwp)
 
 
 def at_wpt(acidx: int, atwp: "wpt", *args):
-    """AT acid, wpt [DEL] ALT/SPD/DO alt/spd/stack command"""
+    """Show, set or delete constraints and commands at a route waypoint.
+
+    Implements the AT stack command:
+    ``AT acid, wpt [DEL] ALT/SPD/DO alt/spd/stack command``.
+
+    Usage examples:
+
+    - ``KL204 AT LOPIK``: show altitude/speed constraints at the waypoint.
+    - ``KL204 AT LOPIK FL090/250``: set both altitude and speed constraint.
+    - ``KL204 AT LOPIK ALT FL090``: set the altitude constraint.
+    - ``KL204 AT LOPIK SPD 250``: set the speed constraint.
+    - ``KL204 AT LOPIK DO SPD 250``: stack a command when passing the
+      waypoint (own callsign is prepended when the command needs one).
+    - ``KL204 AT LOPIK DEL ALT/SPD/BOTH/ALL``: delete constraint(s).
+
+    After editing, the flight plan and active-waypoint guidance are
+    recalculated.
+
+    Args:
+        acidx: Aircraft index.
+        atwp: Name of the waypoint in the route.
+        *args: Remaining AT arguments as described above.
+
+    Returns:
+        bool or tuple: True on success, or (success flag, message).
+    """
     acid = minisky.traf.callsign[acidx]
     acrte = minisky.traf.ap.route[acidx]
     if atwp in acrte.wpname:
@@ -1177,9 +1419,22 @@ def at_wpt(acidx: int, atwp: "wpt", *args):
 
 
 def direct(acidx: int, wpname: "wpt"):
-    """DIRECT acid wpname
+    """Go direct to a specified waypoint in the route.
 
-    Go direct to specified waypoint in route (FMS)"""
+    Implements the DIRECT stack command: ``DIRECT acid wpname``. Makes the
+    given waypoint the active waypoint, copies its data (position, fly-by/
+    fly-turn settings, next-turn data) into the active-waypoint arrays,
+    recalculates the flight plan and the VNAV profile, sets the next-leg
+    speed from any speed constraint, computes the turn distance for the
+    new leg, and engages LNAV.
+
+    Args:
+        acidx: Aircraft index.
+        wpname: Name of the waypoint in the route to fly direct to.
+
+    Returns:
+        bool: True on success.
+    """
     acid = minisky.traf.callsign[acidx]
     acrte = minisky.traf.ap.route[acidx]
     wpidx = acrte.wpname.index(wpname)
@@ -1295,9 +1550,20 @@ def direct(acidx: int, wpname: "wpt"):
 
 
 def set_rta(acidx: int, wpname: "wpt", time: "time"):  # all arguments of setRTA
-    """RTA acid, wpname, time
+    """Set a required time of arrival (RTA) at a route waypoint.
 
-    Add RTA to waypoint record"""
+    Implements the RTA stack command: ``RTA acid, wpname, time``. The RTA
+    is stored with the waypoint and the guidance to the active waypoint is
+    recomputed so the autopilot can adjust its speed schedule.
+
+    Args:
+        acidx: Aircraft index.
+        wpname: Name of the waypoint in the route.
+        time: Required time of arrival as simulation time [s].
+
+    Returns:
+        bool: True on success.
+    """
     acid = minisky.traf.callsign[acidx]
     acrte = minisky.traf.ap.route[acidx]
     wpidx = acrte.wpname.index(wpname)
@@ -1310,9 +1576,21 @@ def set_rta(acidx: int, wpname: "wpt", time: "time"):  # all arguments of setRTA
 
 
 def listrte(acidx: int, ipagetxt="0"):
-    """LISTRTE acid, [pagenr]
+    """Show the route of an aircraft in the console, page by page.
 
-    Show list of route in window per page of 5 waypoints/"""
+    Implements the LISTRTE stack command: ``LISTRTE acid, [pagenr]``.
+    Each line shows the waypoint name (active waypoint marked with ``*``),
+    its altitude constraint (ft or FL), speed constraint (kts or Mach) and
+    type ([orig], [dest], [C] fly-by, [|] fly-over, [U] fly-turn). Seven
+    waypoints are shown per page.
+
+    Args:
+        acidx: Aircraft index.
+        ipagetxt: Page number as text (default "0").
+
+    Returns:
+        tuple or None: (False, message) when the aircraft has no route.
+    """
     # First get the appropriate ac route
     ipage = int(ipagetxt)
     acrte = minisky.traf.ap.route[acidx]
@@ -1366,8 +1644,19 @@ def listrte(acidx: int, ipagetxt="0"):
 
 
 def delrte(acidx: int = None):
-    """DELRTE acid
-    Delete for this a/c the complete route/dest/orig (FMS)."""
+    """Delete the complete route (including origin/destination) of an
+    aircraft.
+
+    Implements the DELRTE stack command: ``DELRTE acid``. The route is
+    re-initialized empty and LNAV/VNAV are disengaged. When no callsign is
+    given and exactly one aircraft exists, that aircraft is used.
+
+    Args:
+        acidx: Aircraft index; may be None when only one aircraft exists.
+
+    Returns:
+        bool or tuple: True on success, or (False, error message).
+    """
     if acidx is None:
         if minisky.traf.ntraf == 0:
             return False, "No aircraft in simulation"
@@ -1388,8 +1677,20 @@ def delrte(acidx: int = None):
 
 
 def delwpt(acidx: int, wpname: "wpt"):
-    """DELWPT acid,wpname
-    Delete a waypoint from a route (FMS)."""
+    """Delete a single waypoint from the route of an aircraft.
+
+    Implements the DELWPT stack command: ``DELWPT acid, wpname``. When the
+    deleted waypoint is the active one (and not the last), guidance is
+    redirected to the following waypoint. LNAV/VNAV are disengaged when
+    the route becomes empty.
+
+    Args:
+        acidx: Aircraft index.
+        wpname: Name of the waypoint to delete.
+
+    Returns:
+        bool or tuple: True on success, or (False, error message).
+    """
 
     # Look up waypoint
     acrte = minisky.traf.ap.route[acidx]

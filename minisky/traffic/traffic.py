@@ -1,4 +1,16 @@
-"""BlueSky traffic implementation."""
+"""BlueSky traffic implementation.
+
+Defines the :class:`Traffic` class, the top-level traffic database of the
+simulator. It holds all per-aircraft state (position, attitude, speeds,
+atmosphere, autopilot selections) as numpy arrays, owns the sub-models
+(autopilot, performance, conflict detection/resolution, wind, turbulence,
+trails, groups), and performs the numerical integration of the aircraft
+states each simulation time step.
+
+A single instance is created at simulator start-up and made available as
+``minisky.traf``. Several methods double as stack-command implementations
+(CRE, MCRE, CRECONFS, MOVE, POS, BANK, THR, NOISE, CRECMD, ...).
+"""
 
 from __future__ import print_function
 
@@ -43,20 +55,70 @@ from .wind import Wind
 
 
 class Traffic(TrafficArrays):
-    """
-    Traffic class definition    : Traffic data
-    Methods:
-        Traffic()            :  constructor
-        reset()              :  Reset traffic database w.r.t a/c data
-        create(acid,actype,aclat,aclon,achdg,acalt,acspd) : create aircraft
-        delete(acid)         : delete an aircraft from traffic data
-        deletall()           : delete all traffic
-        update(sim)          : do a numerical integration step
-        idx(callsign)         : return index in traffic database of given call sign
-        engchange(i,engtype) : change engine type of an aircraft
-        setnoise(A)          : Add turbulence
-    Members: see create
-    Created by  : Jacco M. Hoekstra
+    """Central traffic database holding the state of all simulated aircraft.
+
+    Traffic is the top-level :class:`TrafficArrays` object: all per-aircraft
+    arrays registered by its child entities (autopilot, active waypoint data,
+    performance model, conflict detection/resolution, etc.) grow and shrink
+    together when aircraft are created or deleted. A single instance is
+    available at runtime as ``minisky.traf``.
+
+    Every simulation step, :meth:`update` refreshes the atmosphere, runs the
+    autopilot and separation-assurance logic, applies performance limits, and
+    numerically integrates airspeed, heading, vertical speed and position of
+    all aircraft. All internal state is kept in SI units; stack commands use
+    aviation units (ft, kts, FL) and are converted on input/output.
+
+    Attributes:
+        ntraf (int): Number of aircraft currently in the simulation.
+        callsign (list): Aircraft identifier (callsign) strings.
+        typecode (list): ICAO aircraft type designators (e.g. "A320").
+        lat (ndarray): Latitude [deg].
+        lon (ndarray): Longitude [deg].
+        distflown (ndarray): Distance flown since creation [m].
+        alt (ndarray): Altitude [m].
+        hdg (ndarray): Heading [deg].
+        trk (ndarray): Track angle over the ground [deg].
+        tas (ndarray): True airspeed [m/s].
+        gs (ndarray): Ground speed [m/s].
+        gsnorth (ndarray): North component of ground speed [m/s].
+        gseast (ndarray): East component of ground speed [m/s].
+        cas (ndarray): Calibrated airspeed [m/s].
+        M (ndarray): Mach number [-].
+        vs (ndarray): Vertical speed [m/s].
+        ax (ndarray): Current longitudinal acceleration [m/s2].
+        p (ndarray): Ambient air pressure [Pa].
+        rho (ndarray): Ambient air density [kg/m3].
+        Temp (ndarray): Ambient air temperature [K].
+        dtemp (ndarray): Temperature offset for non-ISA conditions [K].
+        windnorth (ndarray): Wind north component at aircraft position [m/s].
+        windeast (ndarray): Wind east component at aircraft position [m/s].
+        selspd (ndarray): Selected speed: CAS [m/s] or Mach [-].
+        selalt (ndarray): Selected altitude [m].
+        selvs (ndarray): Selected vertical speed [m/s].
+        swlnav (ndarray): Bool switch: LNAV (lateral FMS guidance) on/off.
+        swvnav (ndarray): Bool switch: VNAV (vertical FMS guidance) on/off.
+        swvnavspd (ndarray): Bool switch: VNAV speed guidance on/off.
+        swhdgsel (ndarray): Bool switch: True while aircraft is turning.
+        swats (ndarray): Bool switch: autothrottle on/off.
+        thr (ndarray): Throttle setting [0.0-1.0]; negative = invalid/auto.
+        work (ndarray): Work done by the engines during the flight [J].
+        translvl (float): Transition level [m].
+        bphase (ndarray): Default bank angles per flight phase [rad].
+        crecmdlist (list): Command lines issued for each new aircraft.
+        cond (Condition): Pending conditional (ATALT/ATSPD/ATDIST) commands.
+        wind (Wind): Wind-field model.
+        turbulence (Turbulence): Turbulence model.
+        ap (Autopilot): Autopilot/FMS guidance.
+        actwp (ActiveWaypoint): Active waypoint data per aircraft.
+        aporasas (APorASAS): Selection between autopilot and ASAS commands.
+        cd (ConflictDetection): Conflict detection.
+        cr (ConflictResolution): Conflict resolution.
+        perf (OpenAP): Aircraft performance model.
+        trails (Trails): Radar-display trails.
+        groups (TrafficGroups): Aircraft group administration.
+
+    Created by: Jacco M. Hoekstra
     """
 
     def __init__(self):
@@ -159,7 +221,12 @@ class Traffic(TrafficArrays):
         self.bphase = np.deg2rad(np.array([15, 35, 35, 35, 15, 45]))
 
     def reset(self):
-        """Clear all traffic data upon simulation reset."""
+        """Clear all traffic data upon simulation reset.
+
+        Empties all per-aircraft arrays (including those of child entities),
+        resets the performance, wind and turbulence models, switches off
+        trajectory noise and restores the default transition level.
+        """
         # Some child reset functions depend on a correct value of self.ntraf
         self.ntraf = 0
         # This ensures that the traffic arrays (which size is dynamic)
@@ -191,7 +258,24 @@ class Traffic(TrafficArrays):
         alt: int = 25000,
         spd: int = 300,
     ):
-        """Create one or more aircraft."""
+        """Create a single aircraft and add it to the traffic database.
+
+        Implements the CRE stack command. After creation, any commands stored
+        via CRECMD are stacked for the new aircraft.
+
+        Args:
+            callsign: Aircraft identifier; converted to upper case, must be
+                unique within the simulation.
+            actype: ICAO aircraft type designator (default "A320").
+            lat: Initial latitude [deg].
+            lon: Initial longitude [deg].
+            hdg: Initial heading [deg].
+            alt: Initial altitude [m] (stack input is given in ft/FL).
+            spd: Initial speed: CAS [m/s] or Mach [-] (stack input in kts).
+
+        Returns:
+            tuple: (success flag, confirmation or error message).
+        """
 
         if callsign in self.callsign:
             return False, f"aircraft {callsign} already exists"
@@ -220,9 +304,25 @@ class Traffic(TrafficArrays):
         acalt: int = None,
         acspd: int = None,
     ):
-        """
-        Create one or more random aircraft in a specified area.
-        By default, use North Sea region.
+        """Create multiple aircraft at random positions in a lat/lon box.
+
+        Implements the MCRE stack command. Callsigns are generated randomly
+        (two letters plus a sequence number). Heading is drawn uniformly from
+        1-360 deg; when not given, altitude is drawn from 2000-39000 ft and
+        speed from 250-450 kts. The default area is the North Sea region.
+
+        Args:
+            n: Number of aircraft to create.
+            lat_min: Southern boundary of the creation area [deg].
+            lon_min: Western boundary of the creation area [deg].
+            lat_max: Northern boundary of the creation area [deg].
+            lon_max: Eastern boundary of the creation area [deg].
+            actype: ICAO aircraft type designator for all aircraft.
+            acalt: Optional fixed altitude [m]; random when None.
+            acspd: Optional fixed speed, CAS [m/s] or Mach; random when None.
+
+        Returns:
+            tuple: (True, confirmation message).
         """
 
         # Generate random callsigns
@@ -252,7 +352,14 @@ class Traffic(TrafficArrays):
         alt: Iterable[int],
         spd: Iterable[int],
     ):
-        """Create one or more aircraft."""
+        """Append one or more aircraft to all traffic arrays.
+
+        Common backend for cre() and mcre(): resizes all (child) traffic
+        arrays, initializes position, heading, speeds, atmosphere and wind
+        for the new aircraft, and stacks any CRECMD default commands.
+        All array arguments must have the same length; alt is in [m],
+        spd is CAS [m/s] or Mach [-].
+        """
 
         n = len(acid)
 
@@ -357,18 +464,28 @@ class Traffic(TrafficArrays):
         tlosv=None,
         spd=None,
     ):
-        """Create an aircraft in conflict with target aircraft.
+        """Create an aircraft in conflict with a target aircraft.
 
-        Arguments:
-        - callsign: callsign of new aircraft
-        - actype: aircraft type of new aircraft
-        - targetidx: id (callsign) of target aircraft
-        - dpsi: Conflict angle (angle between tracks of ownship and intruder) (deg)
-        - cpa: Predicted distance at closest point of approach (NM)
-        - tlosh: Horizontal time to loss of separation ((hh:mm:)sec)
-        - dH: Vertical distance (ft)
-        - tlosv: Vertical time to loss of separation
-        - spd: Speed of new aircraft (CAS/Mach, kts/-)
+        Implements the CRECONFS stack command. The intruder position, track
+        and speed are computed such that, relative to the target aircraft,
+        separation is lost after the given time with the given distance at
+        the closest point of approach. The protected-zone radius and height
+        from the settings (asas_pzr, asas_pzh) are taken into account.
+
+        Args:
+            callsign: Callsign of the new (intruder) aircraft.
+            actype: ICAO aircraft type designator of the new aircraft.
+            targetidx: Index of the target (ownship) aircraft.
+            dpsi: Conflict angle between ownship and intruder tracks [deg].
+            dcpa: Predicted distance at closest point of approach [nm].
+            tlosh: Horizontal time to loss of separation [s]
+                (stack input as (hh:mm:)sec).
+            dH: Optional vertical offset of the intruder [m]
+                (stack input in ft); level conflict when None.
+            tlosv: Optional vertical time to loss of separation [s];
+                defaults to tlosh.
+            spd: Optional speed of the new aircraft, CAS [m/s] or Mach [-]
+                (stack input in kts/-); ownship ground speed when omitted.
         """
         latref = self.lat[targetidx]  # deg
         lonref = self.lon[targetidx]  # deg
@@ -430,7 +547,17 @@ class Traffic(TrafficArrays):
         self.vs[-1] = acvs
 
     def delete(self, idx):
-        """Delete an aircraft"""
+        """Delete one or more aircraft from the traffic database.
+
+        Removes the corresponding entries from all (child) traffic arrays
+        and updates the aircraft count. Used by the DEL stack command.
+
+        Args:
+            idx: Aircraft index, or a collection of indices.
+
+        Returns:
+            bool: True (deletion always succeeds for valid indices).
+        """
         # If this is a multiple delete, sort first for list delete
         # (which will use list in reverse order to avoid index confusion)
         if isinstance(idx, Collection):
@@ -444,6 +571,17 @@ class Traffic(TrafficArrays):
         return True
 
     def update(self):
+        """Perform one simulation time step for all aircraft.
+
+        Called every step by the simulation loop. In order: updates the
+        atmosphere, surveillance noise, autopilot and airborne separation
+        assurance (ASAS) guidance, decides per channel between autopilot and
+        ASAS commands, updates the performance model and limits the commanded
+        speeds accordingly, integrates airspeed/heading/vertical speed,
+        ground speed and position, applies turbulence, triggers conditional
+        commands and updates the display trails. Does nothing when there is
+        no traffic.
+        """
         # Update only if there is traffic ---------------------
         if self.ntraf == 0:
             return
@@ -482,11 +620,21 @@ class Traffic(TrafficArrays):
         self.trails.update()
 
     def update_asas(self):
+        """Run conflict detection and conflict resolution for all aircraft."""
         # Conflict detection and resolution
         self.cd.update(self, self)
         self.cr.update(self.cd, self, self)
 
     def update_airspeed(self):
+        """Integrate true airspeed, heading and vertical speed over one step.
+
+        Accelerates or decelerates towards the commanded TAS using the
+        performance-limited longitudinal acceleration, turns towards the
+        commanded heading with a turn rate that follows from the bank angle
+        (commanded turn bank or default bank limit), and updates the vertical
+        speed for the altitude select/capture/hold autopilot logic. Also
+        refreshes the derived CAS and Mach values.
+        """
         # Compute horizontal acceleration
         delta_spd = self.aporasas.tas - self.tas
         need_ax = np.abs(delta_spd) > np.abs(minisky.sim.simdt * self.perf.axmax)
@@ -547,6 +695,13 @@ class Traffic(TrafficArrays):
         self.vs = np.where(np.isfinite(self.vs), self.vs, 0)  # fix vs nan issue
 
     def update_groundspeed(self):
+        """Compute ground speed and track from heading, airspeed and wind.
+
+        Without wind, ground speed equals TAS and track equals heading. With
+        a wind field defined, the wind vector at each aircraft position is
+        added to the airspeed vector (only when airborne, above 50 ft). Also
+        accumulates the work done by the engines [J] along the flown path.
+        """
         # Compute ground speed and track from heading, airspeed and wind
         if self.wind.winddim == 0:  # no wind
             self.gsnorth = self.tas * np.cos(np.radians(self.hdg))
@@ -584,6 +739,13 @@ class Traffic(TrafficArrays):
         )
 
     def update_pos(self):
+        """Integrate altitude and lat/lon position over one time step.
+
+        Altitude follows the vertical speed while the altitude-select mode is
+        engaged, and snaps to the commanded altitude otherwise. Latitude and
+        longitude are advanced with the ground speed components using a
+        spherical-Earth approximation, and the flown distance is accumulated.
+        """
         # Update position
         self.alt = np.where(
             self.swaltsel,
@@ -598,7 +760,17 @@ class Traffic(TrafficArrays):
         self.distflown += self.gs * minisky.sim.simdt
 
     def idx(self, callsign: str | Iterable[str]):
-        """Find index of aircraft id"""
+        """Find the traffic-array index for one or more callsigns.
+
+        Args:
+            callsign: A single callsign string, or an iterable of callsigns.
+                The special values "*" and "#" refer to the most recently
+                created aircraft.
+
+        Returns:
+            int or list: Index of the aircraft (or list of indices when an
+            iterable was given); -1 for callsigns that are not found.
+        """
         if not isinstance(callsign, str):
             # for multiple callsigns
             # Fast way of finding indices of all ACID's in a given list
@@ -615,7 +787,18 @@ class Traffic(TrafficArrays):
                 return -1
 
     def setnoise(self, noise=None):
-        """Noise (turbulence, ADBS-transmission noise, ADSB-truncated effect)"""
+        """Switch trajectory noise models on or off, or report their state.
+
+        Implements the NOISE stack command. Controls both the turbulence
+        model and the surveillance (ADS-B transmission/truncation) noise.
+
+        Args:
+            noise: True/False to enable/disable noise; None to report the
+                current state.
+
+        Returns:
+            bool or tuple: True on set, or (True, status message) on query.
+        """
         if noise is None:
             return True, "Noise is currently " + (
                 "on" if self.turbulence.active else "off"
@@ -626,11 +809,30 @@ class Traffic(TrafficArrays):
         return True
 
     def engchange(self, acid, engid):
-        """Change of engines"""
+        """Change the engine type of an aircraft in the performance model.
+
+        Args:
+            acid: Aircraft index.
+            engid: New engine type identifier.
+        """
         self.perf.engchange(acid, engid)
         return
 
     def move(self, idx, lat, lon, alt=None, hdg=None, casmach=None, vspd=None):
+        """Instantaneously move an aircraft to a new position/state.
+
+        Implements the MOVE stack command. Optional state values are left
+        unchanged when omitted. Setting a vertical speed disengages VNAV.
+
+        Args:
+            idx: Aircraft index.
+            lat: New latitude [deg].
+            lon: New longitude [deg].
+            alt: Optional new altitude [m]; also sets the selected altitude.
+            hdg: Optional new heading [deg]; also sets the autopilot track.
+            casmach: Optional new speed, CAS [m/s] or Mach [-].
+            vspd: Optional new vertical speed [m/s].
+        """
         self.lat[idx] = lat
         self.lon[idx] = lon
 
@@ -650,7 +852,19 @@ class Traffic(TrafficArrays):
             self.swvnav[idx] = False
 
     def position(self, id_or_name):
-        """Show info or an aircraft, airport, waypoint or navaid"""
+        """Show information on an aircraft, airport, waypoint or navaid.
+
+        Implements the POS stack command. Dispatches to
+        :meth:`position_aircraft` when an aircraft index is given, and to
+        :meth:`position_by_name` for a name lookup.
+
+        Args:
+            id_or_name: Aircraft index (int) or the name of an aircraft,
+                airport, waypoint, navaid or airway (str).
+
+        Returns:
+            tuple: (success flag, multi-line information text).
+        """
 
         if isinstance(id_or_name, int):
             return self.position_aircraft(id_or_name)
@@ -658,7 +872,18 @@ class Traffic(TrafficArrays):
             return self.position_by_name(id_or_name)
 
     def position_aircraft(self, idx: int):
-        """Show info or an aircraft, airport, waypoint or navaid"""
+        """Generate a position report for a single aircraft.
+
+        The report includes position, heading/track [deg], altitude [ft],
+        vertical speed [fpm], CAS/TAS/GS [kts], Mach, active FMS modes
+        (LNAV/VNAV) with the active waypoint, and origin/destination.
+
+        Args:
+            idx: Aircraft index.
+
+        Returns:
+            tuple: (True, multi-line position report).
+        """
 
         acid = self.callsign[idx]
 
@@ -707,6 +932,19 @@ class Traffic(TrafficArrays):
         return True, info
 
     def position_by_name(self, name: str):
+        """Look up a name and generate an information report for it.
+
+        Searches, in order: airports, aircraft callsigns, waypoints/navaids,
+        and airways in the navigation database. Airport reports include
+        position, elevation [ft] and runways; navaid reports include type,
+        frequency and airway connections.
+
+        Args:
+            name: Name/identifier to look up (case-insensitive).
+
+        Returns:
+            tuple: (success flag, multi-line information text).
+        """
         name = name.upper()
 
         lines = "Information on " + name + ":\n"
@@ -833,7 +1071,16 @@ class Traffic(TrafficArrays):
         # Show what we found on airport and navaid/waypoint
 
     def settrans(self, alt=-999.0):
-        """Set or show transition level"""
+        """Set or show the transition level.
+
+        Args:
+            alt: New transition level [m] (stack input in ft/FL). With the
+                default sentinel value the current level is reported instead.
+
+        Returns:
+            bool or tuple: True on set, (True, message) on query, or
+            (False, error message) for invalid values.
+        """
         # in case a valid value is ginve set it
         if alt > -900.0:
             if alt > 0.0:
@@ -846,7 +1093,19 @@ class Traffic(TrafficArrays):
         return True, f"Transition level = {tlvl}/FL{int(round(tlvl / 100.0))}"
 
     def setbanklim(self, idx, bankangle=None):
-        """Set bank limit for given aircraft."""
+        """Set or show the bank angle limit for a given aircraft.
+
+        Implements the BANK stack command. The limit is used by the autopilot
+        to compute turn rates when no explicit turn is specified.
+
+        Args:
+            idx: Aircraft index.
+            bankangle: New bank limit [deg]; when omitted, the current limit
+                is reported.
+
+        Returns:
+            bool or tuple: True on set, or (True, status message) on query.
+        """
         if bankangle:
             self.ap.bankdef[idx] = np.radians(bankangle)  # [rad]
             return True
@@ -856,7 +1115,21 @@ class Traffic(TrafficArrays):
         )
 
     def setthrottle(self, idx, throttle=""):
-        """Set throttle to given value or AUTO, meaning autothrottle on (default)"""
+        """Set the throttle of an aircraft, or report the autothrottle state.
+
+        Implements the THR stack command. "AUTO"/"OFF" re-engages the
+        autothrottle, "IDLE" sets zero thrust, and a numeric value (0.0-1.0,
+        optionally as a percentage like "80%") sets a fixed throttle and
+        disables the autothrottle.
+
+        Args:
+            idx: Aircraft index.
+            throttle: Throttle argument string; empty to query the state.
+
+        Returns:
+            bool or tuple: True on set, (True, status message) on query, or
+            (False, error message) for invalid input.
+        """
 
         if throttle:
             if throttle in ("AUTO", "OFF"):  # throttle mode off, ATS on
@@ -901,8 +1174,18 @@ class Traffic(TrafficArrays):
         )
 
     def crecmd(self, cmdline):
-        """CRECMD command: list of commands to be issued for each aircraft after creation
-        This commands adds a command to the list of default commands.
+        """Add a command to the list issued for every newly created aircraft.
+
+        Implements the CRECMD stack command. Each stored command line is
+        stacked as "<acid> <cmdline>" for every aircraft created afterwards.
+        With an empty argument or "?", the current list is shown instead.
+
+        Args:
+            cmdline: Command line (without callsign) to add to the list, or
+                ""/"?" to show the current list.
+
+        Returns:
+            tuple: (True, message).
         """
         # Help text need or info on current list?
         if cmdline == "" or cmdline == "?":
@@ -925,8 +1208,13 @@ class Traffic(TrafficArrays):
         return True, ""
 
     def clrcrecmd(self):
-        """CRECMD command: list of commands to be issued for each aircraft after creation
-        This commands adds a command to the list of default commands.
+        """Clear the list of commands issued for newly created aircraft.
+
+        Implements the CLRCRECMD stack command, removing all command lines
+        previously added with CRECMD.
+
+        Returns:
+            tuple: (True, message).
         """
         ncrecmd = len(self.crecmdlist)
         if ncrecmd == 0:

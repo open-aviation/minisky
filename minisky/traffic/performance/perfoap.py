@@ -1,3 +1,13 @@
+"""OpenAP-based aircraft performance model.
+
+This module provides :class:`OpenAP`, the aircraft performance implementation
+used by the MiniSky traffic object (``minisky.traf.perf``). It combines the
+coefficient database (``coeff``), flight-phase logic (``phase``), and the
+empirical thrust/fuel-flow models (``thrust``) into per-aircraft vectorised
+computations of drag, thrust, fuel flow, and kinematic envelope limits. All
+internal quantities are in SI units.
+"""
+
 import numpy as np
 from openap import Drag, FuelFlow
 
@@ -14,9 +24,43 @@ class OpenAP(TrafficArrays):
     """
     Open-source Aircraft Performance (OpenAP) Model
 
+    Holds per-aircraft performance state in numpy arrays. On aircraft
+    creation, type-specific coefficients (mass, wing area, engines, drag
+    polar, envelope limits) are looked up in the OpenAP database; unknown
+    fixed-wing types fall back to the B744. Every update step the flight
+    phase is inferred from the aircraft state, after which drag (parabolic
+    drag polar), maximum and net thrust, fuel flow (quadratic ICAO model),
+    and phase-dependent speed limits are recomputed. Both fixed-wing aircraft
+    and simple rotorcraft (envelope-only) are supported.
+
     Methods:
         create(): initialize new aircraft with performance parameters
         update(): update performance parameters
+
+    Attributes:
+        actype (ndarray): ICAO aircraft type code per aircraft.
+        lifttype (ndarray): Lift type, fixed-wing (1) or rotor (2) [-].
+        Sref (ndarray): Wing reference surface area [m^2].
+        mass (ndarray): Effective mass, mean of OEW and MTOW [kg].
+        phase (ndarray): Current flight phase identifier (see ``phase``) [-].
+        cd0 (ndarray): Zero-lift drag coefficient for current phase [-].
+        k (ndarray): Induced drag factor for current phase [-].
+        bank (ndarray): Maximum bank angle for current phase [deg].
+        thrust (ndarray): Net thrust (drag + mass * acceleration) [N].
+        drag (ndarray): Total aerodynamic drag [N].
+        fuelflow (ndarray): Fuel flow of all engines [kg/s].
+        max_thrust (ndarray): Maximum available thrust at current state [N].
+        hmax (ndarray): Flight ceiling [m].
+        vmin (ndarray): Minimum operating calibrated airspeed [m/s].
+        vmax (ndarray): Maximum operating calibrated airspeed [m/s].
+        vsmin (ndarray): Maximum descent rate (negative) [m/s].
+        vsmax (ndarray): Maximum climb rate [m/s].
+        axmax (ndarray): Maximum longitudinal acceleration [m/s^2].
+        mmo (ndarray): Maximum operating Mach number [-].
+        engnum (ndarray): Number of engines [-].
+        engthrmax (ndarray): Maximum static thrust per engine [N].
+        engbpr (ndarray): Engine bypass ratio [-].
+        ff_coeff_a/b/c (ndarray): Quadratic ICAO fuel-flow fit coefficients.
     """
 
     def __init__(self):
@@ -81,6 +125,18 @@ class OpenAP(TrafficArrays):
             self.mmo = np.array([])
 
     def create(self, n=1):
+        """Initialise performance parameters for newly created aircraft.
+
+        Called by the traffic object when aircraft are created. Looks up the
+        type of the last created aircraft in the OpenAP coefficient database
+        and fills the last ``n`` array elements with its mass, engine, drag
+        polar, and flight-envelope coefficients. Rotorcraft types get the
+        (simpler) rotor envelope; unknown fixed-wing types default to B744.
+
+        Args:
+            n (int): Number of newly created aircraft (all assumed to be of
+                the same type as the last created aircraft).
+        """
         # cautious! considering multiple created aircraft with same type
         super().create(n)
 
@@ -191,7 +247,21 @@ class OpenAP(TrafficArrays):
         self.vmin[-n:], self.vmax[-n:] = self._construct_v_limits(mask)
 
     def update(self, dt=1):
-        """Periodic update function for performance calculations."""
+        """Periodic update function for performance calculations.
+
+        Re-derives the flight phase from the current speed, vertical rate,
+        and altitude, then updates for all (fixed-wing) aircraft:
+
+        - phase-dependent drag polar coefficients (cd0, k) and speed limits;
+        - drag from the parabolic drag polar with lift equal to weight;
+        - maximum thrust from the empirical bypass-ratio model;
+        - net thrust as drag plus mass times current acceleration;
+        - fuel flow from the quadratic ICAO fuel-flow fit;
+        - maximum acceleration and phase-dependent maximum bank angle.
+
+        Args:
+            dt (float): Update timestep [s] (currently unused).
+        """
         # update phase, infer from spd, roc, alt
         lenph1 = len(self.phase)
         self.phase = ph.get(
@@ -284,13 +354,22 @@ class OpenAP(TrafficArrays):
     def limits(self, intent_v_tas, intent_vs, intent_h, ax):
         """apply limits on indent speed, vertical speed, and altitude (called in pilot module)
 
+        Clips the intended state to the aircraft flight envelope: altitude to
+        the ceiling, speed to the CAS limits of the current flight phase and
+        the maximum Mach number, and vertical speed to the climb/descent rate
+        limits (reduced when simultaneously accelerating). Aircraft on the
+        ground below their takeoff speed get zero vertical speed. Rotorcraft
+        speed limits are applied directly on TAS.
+
         Args:
-            intent_v_tas (float or 1D-array): intent true airspeed
-            intent_vs (float or 1D-array): intent vertical speed
-            intent_h (float or 1D-array): intent altitude
-            ax (float or 1D-array): acceleration
+            intent_v_tas (float or 1D-array): intent true airspeed [m/s]
+            intent_vs (float or 1D-array): intent vertical speed [m/s]
+            intent_h (float or 1D-array): intent altitude [m]
+            ax (float or 1D-array): acceleration [m/s^2]
+
         Returns:
-            floats or 1D-arrays: Allowed TAS, Allowed vetical rate, Allowed altitude
+            floats or 1D-arrays: Allowed TAS [m/s], Allowed vertical
+                rate [m/s], Allowed altitude [m]
         """
         allow_h = np.where(intent_h > self.hmax, self.hmax, intent_h)
 
@@ -336,12 +415,16 @@ class OpenAP(TrafficArrays):
     def currentlimits(self, id=None):
         """Get current kinematic performance envelop.
 
+        Converts the phase-dependent CAS limits to TAS at the current
+        altitude; the maximum is additionally capped by the maximum
+        operating Mach number.
+
         Args:
             id (int or 1D-array): Aircraft ID(s). Defualt to None (all aircraft).
 
         Returns:
-            floats or 1D-arrays: Min TAS, Max TAS, Min VS, Max VS
-
+            floats or 1D-arrays: Min TAS [m/s], Max TAS [m/s],
+                Min VS [m/s], Max VS [m/s]
         """
         vtasmin = aero.vcas2tas(self.vmin, minisky.traf.alt)
 
@@ -358,12 +441,16 @@ class OpenAP(TrafficArrays):
     def _construct_v_limits(self, mask=True):
         """Compute speed limist base on aircraft model and flight phases
 
+        For fixed-wing aircraft the applicable minimum and maximum calibrated
+        airspeed of the current flight phase is selected (initial climb,
+        en-route, approach, or ground). Rotorcraft keep their static limits.
+
         Args:
             mask: Indices (boolean) for aircraft to construct speed limits for.
                   When no indices are passed, all aircraft are updated.
 
         Returns:
-            2D-array: vmin, vmax
+            2D-array: vmin, vmax (CAS limits per aircraft [m/s])
         """
         n = len(self.actype)
         vmin = np.zeros(n)
@@ -413,6 +500,16 @@ class OpenAP(TrafficArrays):
         return vmin[mask], vmax[mask]
 
     def calc_axmax(self):
+        """Compute the maximum longitudinal acceleration per aircraft.
+
+        In flight the maximum acceleration follows from the excess thrust:
+        (max_thrust - drag) / mass. Fixed constants are used for fixed-wing
+        aircraft on the ground (2 m/s^2) and rotorcraft (3.5 m/s^2), with a
+        global lower bound of 0.5 m/s^2.
+
+        Returns:
+            ndarray: Maximum acceleration per aircraft [m/s^2].
+        """
         # accelerations depending on phase and wing type
         axmax_fixwing_ground = 2
         axmax_rotor = 3.5
@@ -434,6 +531,18 @@ class OpenAP(TrafficArrays):
         return axmax
 
     def show_performance(self, acid):
+        """Report the current performance state of one aircraft.
+
+        Implements the PERFSTATS stack command output: flight phase, thrust,
+        drag, fuel flow, speed and vertical-speed envelopes, and ceiling in
+        aviation units (kN, kg/s, kts, fpm, ft).
+
+        Args:
+            acid (int): Aircraft index.
+
+        Returns:
+            tuple: (True, message (str)) for the command stack.
+        """
         return (
             True,
             f"Flight phase: {ph.readable_phase(self.phase[acid])}\n"
