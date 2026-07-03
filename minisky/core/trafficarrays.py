@@ -81,7 +81,24 @@ def _replace_instance_on_traf(base, impl):
                     setattr(new_instance, lst_var, getattr(attr_value, lst_var))
             # Replace on traf
             setattr(minisky.traf, attr_name, new_instance)
+            # Stack commands registered as bound methods of the old instance
+            # would silently mutate the orphaned object; rebind them
+            _rebind_stack_commands(attr_value, new_instance)
             break
+
+
+def _rebind_stack_commands(old_instance, new_instance):
+    """Rebind stack command callbacks from old_instance to new_instance."""
+    import inspect
+
+    from minisky.stack import Command
+
+    for cmdobj in set(Command.cmddict.values()):
+        callback = cmdobj.callback
+        if inspect.ismethod(callback) and callback.__self__ is old_instance:
+            cmdobj.callback = getattr(
+                new_instance, callback.__func__.__name__, callback
+            )
 
 
 class RegisterElementParameters:
