@@ -92,6 +92,16 @@ for i in range(5):
     print(f"time-{minisky.sim.simt}s, positions: {minisky.traf.lat} {minisky.traf.lon}")
 ```
 
+## Tests
+
+Run the test suite with pytest:
+
+```bash
+uv run pytest                        # unit + integration tests
+uv run pytest tests/unit             # fast pure-function tests only
+uv run pytest -m api tests/test_api.py   # REST API smoke tests (separate process)
+```
+
 ## Tasks
 
 - [x] remove discoverable mode
@@ -117,4 +127,4 @@ for i in range(5):
 - [x] refactor acid to callsign
 - [ ] check all echo, ensure print and scr.echo are consistent
 - [ ] refactor code so import and simulation is easier
-- [ ] add new tests
+- [x] add new tests
