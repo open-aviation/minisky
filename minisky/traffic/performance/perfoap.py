@@ -191,10 +191,6 @@ class OpenAP(TrafficArrays):
             self.vsmax[-n:] = self.coeff.limits_rotor[actype]["vsmax"]
             self.hmax[-n:] = self.coeff.limits_rotor[actype]["hmax"]
 
-            self.vsmin[-n:] = self.coeff.limits_rotor[actype]["vsmin"]
-            self.vsmax[-n:] = self.coeff.limits_rotor[actype]["vsmax"]
-            self.hmax[-n:] = self.coeff.limits_rotor[actype]["hmax"]
-
             self.cd0_clean[-n:] = np.nan
             self.k_clean[-n:] = np.nan
             self.cd0_to[-n:] = np.nan
@@ -502,8 +498,6 @@ class OpenAP(TrafficArrays):
         # accelerations depending on phase and wing type
         axmax_fixwing_ground = 2
         axmax_rotor = 3.5
-
-        axmax = np.zeros(minisky.traf.ntraf)
 
         # fix-wing, in flight
         axmax = (self.max_thrust - self.drag) / self.mass

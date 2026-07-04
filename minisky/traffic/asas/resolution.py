@@ -294,7 +294,7 @@ class ConflictResolution(TrafficArrays):
                 # and send the aircraft to that waypoint.
                 iwpid = minisky.traf.ap.route[idx].findact(idx)
                 if iwpid != -1:  # To avoid problems if there are no waypoints
-                    minisky.traf.ap.route[idx].direct(idx, minisky.traf.ap.route[idx].wpname[iwpid])
+                    minisky.traffic.route.direct(idx, minisky.traf.ap.route[idx].wpname[iwpid])
 
         # Remove pairs from the list that are past CPA or have deleted aircraft
         self.resopairs -= delpairs
@@ -370,7 +370,7 @@ class ConflictResolution(TrafficArrays):
         if not idx:
             return (
                 True,
-                "NORESO [ACID, ... ] OR NORESO [GROUPID]"
+                "RESOOFF [ACID, ... ] OR RESOOFF [GROUPID]"
                 + "\nCurrent list of aircraft will not avoid anybody:"
                 + ", ".join(np.array(minisky.traf.callsign)[self.resooffac]),
             )
@@ -520,9 +520,10 @@ class ConflictResolution(TrafficArrays):
         names = ["OFF", "MVP"]
 
         if not name:
+            curname = type(minisky.traf.cr).__name__ if minisky.traf.cr.activate else "OFF"
             return (
                 True,
-                "Current CR method: " + f"\nAvailable CR methods: {', '.join(names)}",
+                f"Current CR method: {curname}" + f"\nAvailable CR methods: {', '.join(names)}",
             )
 
         if name == "OFF":
@@ -538,3 +539,44 @@ class ConflictResolution(TrafficArrays):
             return True, "Selected MVP as Conflict Resolution method."
 
         return False, f"Unknown method: {name}. Available: {', '.join(names)}"
+
+
+# Module-level dispatchers for the stack commands below. RESO can replace
+# minisky.traf.cr with a new instance (e.g. MVP), which would leave commands
+# registered as bound methods pointing at the stale, replaced object. These
+# wrappers resolve the current instance at call time instead.
+
+
+def setprio(flag: bool | None = None, priocode="") -> "bool | tuple":
+    """PRIORULES stack command; see ConflictResolution.setprio()."""
+    return minisky.traf.cr.setprio(flag, priocode)
+
+
+def setnoreso(*idx: int) -> "bool | tuple":
+    """NORESO stack command; see ConflictResolution.setnoreso()."""
+    return minisky.traf.cr.setnoreso(*idx)
+
+
+def setresooff(*idx: int) -> "bool | tuple":
+    """RESOOFF stack command; see ConflictResolution.setresooff()."""
+    return minisky.traf.cr.setresooff(*idx)
+
+
+def setresofach(factor: float | None = None) -> tuple:
+    """RFACH stack command; see ConflictResolution.setresofach()."""
+    return minisky.traf.cr.setresofach(factor)
+
+
+def setresofacv(factor: float | None = None) -> tuple:
+    """RFACV stack command; see ConflictResolution.setresofacv()."""
+    return minisky.traf.cr.setresofacv(factor)
+
+
+def setresozoner(zoner: float | None = None) -> tuple:
+    """RSZONER stack command; see ConflictResolution.setresozoner()."""
+    return minisky.traf.cr.setresozoner(zoner)
+
+
+def setresozonedh(zonedh: float | None = None) -> tuple:
+    """RSZONEDH stack command; see ConflictResolution.setresozonedh()."""
+    return minisky.traf.cr.setresozonedh(zonedh)

@@ -65,7 +65,7 @@ def get(
     Returns:
         1D array: Phase identifier per aircraft (NA, GD, IC, CL, CR, DE, AP).
     """
-    ph = np.zeros(len(spd))
+    ph = np.zeros(len(spd), dtype=int)
 
     # phase for fixwings
     ph = np.where(lifttype == LIFT_FIXWING, get_fixwing(spd, roc, alt, unit), ph)
@@ -112,11 +112,11 @@ def get_fixwing(spd: np.ndarray, roc: np.ndarray, alt: np.ndarray, unit: str = "
     ph = np.zeros(len(spd), dtype=int)
 
     ph[(alt <= 75)] = GD
-    ph[(alt >= 75) & (alt <= 1000) & (roc >= 150)] = IC
-    ph[(alt >= 75) & (alt <= 1000) & (roc <= -150)] = AP
-    ph[(alt >= 1000) & (roc >= 150)] = CL
-    ph[(alt >= 1000) & (roc <= -150)] = DE
-    ph[(alt >= 10000) & (roc <= 150) & (roc >= -150)] = CR
+    ph[(alt > 75) & (alt <= 1000) & (roc >= 150)] = IC
+    ph[(alt > 75) & (alt <= 1000) & (roc <= -150)] = AP
+    ph[(alt > 1000) & (roc >= 150)] = CL
+    ph[(alt > 1000) & (roc <= -150)] = DE
+    ph[(alt >= 10000) & (roc < 150) & (roc > -150)] = CR
 
     return ph
 
@@ -136,5 +136,5 @@ def get_rotor(spd: np.ndarray, roc: np.ndarray, alt: np.ndarray, unit: str = "SI
     Returns:
         1D array: NA phase identifier for every aircraft.
     """
-    ph = np.ones(len(spd)) * NA
+    ph = np.full(len(spd), NA, dtype=int)
     return ph
