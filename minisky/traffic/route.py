@@ -1124,7 +1124,7 @@ def addwpt(ac: str | int, *args) -> bool | tuple:  # args: all arguments of addw
 def addwpt_before(
     acidx: int,
     beforewp: "wpt",
-    addwpt,
+    addwptkey,
     waypoint,
     alt: "alt" = None,
     spd: "spd" = None,
@@ -1138,7 +1138,7 @@ def addwpt_before(
     Args:
         acidx: Aircraft index.
         beforewp: Name of the existing waypoint to insert before.
-        addwpt: The literal ADDWPT keyword (ignored).
+        addwptkey: The literal ADDWPT keyword (ignored).
         waypoint: Waypoint name or lat/lon text of the new waypoint.
         alt: Optional altitude constraint [m].
         spd: Optional speed constraint, CAS [m/s] or Mach [-].
@@ -1152,7 +1152,7 @@ def addwpt_before(
 def addwpt_after(
     acidx: int,
     afterwp: "wpt",
-    addwpt,
+    addwptkey,
     waypoint,
     alt: "alt" = None,
     spd: "spd" = None,
@@ -1166,7 +1166,7 @@ def addwpt_after(
     Args:
         acidx: Aircraft index.
         afterwp: Name of the existing waypoint to insert after.
-        addwpt: The literal ADDWPT keyword (ignored).
+        addwptkey: The literal ADDWPT keyword (ignored).
         waypoint: Waypoint name or lat/lon text of the new waypoint.
         alt: Optional altitude constraint [m].
         spd: Optional speed constraint, CAS [m/s] or Mach [-].
@@ -1293,7 +1293,7 @@ def at_wpt(acidx: int, atwp: "wpt", *args) -> bool | tuple:
                 acrte.wpspd[wpidx] = -999.0
             else:
                 try:
-                    acrte.wpalt[wpidx] = txt2spd(spdtxt)
+                    acrte.wpspd[wpidx] = txt2spd(spdtxt)
                 except ValueError:
                     success = False
 
@@ -1302,7 +1302,7 @@ def at_wpt(acidx: int, atwp: "wpt", *args) -> bool | tuple:
 
             # If success: update flight plan and guidance
             acrte.calcfp()
-            acrte.direct(acidx, acrte.wpname[acrte.iactwp])
+            direct(acidx, acrte.wpname[acrte.iactwp])
 
         # acid AT wpt ALT/SPD alt/spd
         elif len(args) >= 2:
@@ -1386,7 +1386,7 @@ def at_wpt(acidx: int, atwp: "wpt", *args) -> bool | tuple:
 
             # If success: update flight plan and guidance
             acrte.calcfp()
-            acrte.direct(acidx, acrte.wpname[acrte.iactwp])
+            direct(acidx, acrte.wpname[acrte.iactwp])
 
     # Waypoint not found in route
     else:
@@ -1485,7 +1485,7 @@ def direct(acidx: int, wpname: "wpt") -> bool:
         turnrad = acrte.wpturnrad[wpidx]
     # Overwrite is hdgrate  defined
     if acrte.wpflyturn[wpidx] and acrte.wpturnhdgr[wpidx] > 0.0:  # heading rate specified
-        turnrad = minisky.traf.tas[acidx] * 360.0 / (2 * pi * acrte.wpturnhdgr[wpidx])
+        turnrad = minisky.traf.tas[acidx] * 360.0 / (2 * math.pi * acrte.wpturnhdgr[wpidx])
     else:  # nothing specified, use default bank ang;e
         turnrad = (
             minisky.traf.tas[acidx]
@@ -1664,7 +1664,7 @@ def delwpt(acidx: int, wpname: "wpt") -> bool | tuple:
     # check if active way point is the one being deleted and that it is not the last wpt.
     # If active wpt is deleted then change path of aircraft
     if acrte.iactwp == wpidx and wpidx != n_wpt - 1:
-        acrte.direct(acidx, acrte.wpname[wpidx + 1])
+        direct(acidx, acrte.wpname[wpidx + 1])
 
     n_wpt = n_wpt - 1
 

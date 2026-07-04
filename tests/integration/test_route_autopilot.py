@@ -5,6 +5,7 @@ import pytest
 from minisky.tools import geo
 
 FT = 0.3048
+KTS = 0.514444
 
 
 @pytest.fixture
@@ -90,6 +91,135 @@ class TestVerticalGuidance:
         target = 8000 * FT
         run_cmd(f"ALT {aircraft} FL080")
         step_until(lambda: abs(bs.traf.alt[0] - target) < 50 * FT, max_steps=600)
+
+
+class TestRouteEditing:
+    """Regression tests for route-editing bugs from docs/known-issues.md."""
+
+    def test_addwpt_accepts_string_callsign(self, bs, run_cmd, aircraft):
+        # addwpt() with a callsign string used to crash on the callsign lookup
+        result = bs.traffic.route.addwpt(aircraft, "52.5,5.0")
+        assert result is True
+        route = bs.traf.ap.route[0]
+        assert route.wplat[0] == pytest.approx(52.5)
+        assert route.wplon[0] == pytest.approx(5.0)
+
+    def test_direct_switches_active_waypoint(self, bs, run_cmd, aircraft):
+        run_cmd(f"ADDWPT {aircraft} 52.5,5.0")
+        run_cmd(f"ADDWPT {aircraft} 53.0,6.0")
+        route = bs.traf.ap.route[0]
+        assert bs.traffic.route.direct(0, route.wpname[1]) is True
+        assert route.iactwp == 1
+        assert bs.traf.actwp.lat[0] == pytest.approx(53.0)
+
+    def test_direct_with_turn_heading_rate(self, bs, run_cmd, aircraft):
+        # direct() used bare `pi` in the heading-rate branch (NameError)
+        run_cmd(f"ADDWPT {aircraft} TURNHDG 3")
+        run_cmd(f"ADDWPT {aircraft} 52.5,5.0")
+        # Second waypoint activates the first one via direct()
+        out = run_cmd(f"ADDWPT {aircraft} 53.0,6.0")
+        assert "Error" not in out
+        route = bs.traf.ap.route[0]
+        assert route.wpturnhdgr == [3.0, 3.0]
+        assert route.iactwp == 0
+        assert bs.traf.swlnav[0]
+
+    def test_delwpt_active_waypoint_redirects(self, bs, run_cmd, aircraft):
+        # delwpt() used to call the nonexistent Route.direct method
+        run_cmd(f"ADDWPT {aircraft} 52.5,5.0")
+        run_cmd(f"ADDWPT {aircraft} 53.0,6.0")
+        route = bs.traf.ap.route[0]
+        first, second = route.wpname
+        out = run_cmd(f"DELWPT {aircraft} {first}")
+        assert "Error" not in out
+        assert route.wpname == [second]
+        assert route.iactwp == 0
+        assert bs.traf.actwp.lat[0] == pytest.approx(53.0)
+
+    def test_at_wpt_sets_alt_and_spd_constraints(self, bs, run_cmd, aircraft):
+        # The alt/spd branch wrote the speed into the altitude constraint
+        # and called the nonexistent Route.direct method
+        run_cmd(f"ADDWPT {aircraft} 52.5,5.0")
+        run_cmd(f"ADDWPT {aircraft} 53.0,6.0")
+        route = bs.traf.ap.route[0]
+        result = bs.traffic.route.at_wpt(0, route.wpname[1], "FL090/250")
+        assert result is True
+        assert route.wpalt[1] == pytest.approx(9000 * FT, rel=1e-3)
+        assert route.wpspd[1] == pytest.approx(250 * KTS, rel=1e-3)
+
+    def test_lnav_reengage_issues_direct(self, bs, run_cmd, aircraft):
+        # setLNAV used to call the nonexistent Route.direct method
+        run_cmd(f"ADDWPT {aircraft} 52.5,5.0")
+        run_cmd(f"ADDWPT {aircraft} 53.0,6.0")
+        run_cmd(f"LNAV {aircraft} OFF")
+        assert not bs.traf.swlnav[0]
+        out = run_cmd(f"LNAV {aircraft} ON")
+        assert "Error" not in out
+        assert bs.traf.swlnav[0]
+
+    def test_at_via_stack_sets_constraints(self, bs, run_cmd, aircraft):
+        # The AT registration used help text as its argument spec, so the
+        # command never reached at_wpt() from the stack
+        run_cmd(f"ADDWPT {aircraft} 52.5,5.0")
+        run_cmd(f"ADDWPT {aircraft} 53.0,6.0")
+        route = bs.traf.ap.route[0]
+        out = run_cmd(f"{aircraft} AT {route.wpname[1]} FL090/250")
+        assert "Error" not in out
+        assert route.wpalt[1] == pytest.approx(9000 * FT, rel=1e-3)
+        assert route.wpspd[1] == pytest.approx(250 * KTS, rel=1e-3)
+
+    def test_direct_via_stack(self, bs, run_cmd, aircraft):
+        # The DIRECT argument spec had a stray space (" wpt"), dropping the
+        # waypoint parameter so DIRECT always rejected its second argument
+        run_cmd(f"ADDWPT {aircraft} 52.5,5.0")
+        run_cmd(f"ADDWPT {aircraft} 53.0,6.0")
+        route = bs.traf.ap.route[0]
+        out = run_cmd(f"DIRECT {aircraft} {route.wpname[1]}")
+        assert "Error" not in out
+        assert route.iactwp == 1
+
+    def test_after_and_before_via_stack(self, bs, run_cmd, aircraft):
+        # AFTER/BEFORE specs contained unparseable tokens, and the ADDWPT
+        # keyword parameter shadowed the addwpt() function
+        run_cmd(f"ADDWPT {aircraft} EH007")
+        run_cmd(f"ADDWPT {aircraft} HELEN")
+        route = bs.traf.ap.route[0]
+        out = run_cmd(f"{aircraft} AFTER EH007 ADDWPT SPY")
+        assert "Error" not in out
+        out = run_cmd(f"{aircraft} BEFORE HELEN ADDWPT PAM")
+        assert "Error" not in out
+        assert route.wpname == ["EH007", "SPY", "PAM", "HELEN"]
+
+
+class TestStatusQueries:
+    def test_vnav_query_reports_state(self, bs, run_cmd, aircraft):
+        # The VNAV query path referenced nonexistent minisky.traf.id
+        run_cmd(f"ADDWPT {aircraft} 52.5,5.0 FL110")
+        run_cmd(f"ADDWPT {aircraft} 53.0,6.0")
+        run_cmd(f"VNAV {aircraft} ON")
+        out = run_cmd(f"VNAV {aircraft}")
+        assert f"{aircraft}: VNAV is ON" in out
+        run_cmd(f"VNAV {aircraft} OFF")
+        out = run_cmd(f"VNAV {aircraft}")
+        assert f"{aircraft}: VNAV is OFF" in out
+
+    def test_swtod_status_reflects_switch(self, bs, run_cmd, aircraft):
+        # SWTOD status output used to read swtoc instead of swtod
+        out = run_cmd(f"SWTOD {aircraft}")
+        assert f"{aircraft}: SWTOD is ON" in out
+        run_cmd(f"SWTOD {aircraft} OFF")
+        assert bs.traf.ap.swtoc[0]  # ToC switch must stay untouched
+        out = run_cmd(f"SWTOD {aircraft}")
+        assert f"{aircraft}: SWTOD is OFF" in out
+
+
+class TestActiveWaypointDefaults:
+    def test_mcre_initialises_nextaltco_for_all(self, bs, run_cmd):
+        # ActiveWaypoint.create() used nextaltco[-n] instead of [-n:],
+        # leaving all but one new aircraft without the -999 sentinel
+        run_cmd("MCRE 3")
+        assert bs.traf.ntraf == 3
+        assert (bs.traf.actwp.nextaltco == -999.0).all()
 
 
 class TestGuidanceGeometry:
