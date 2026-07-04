@@ -112,10 +112,8 @@ class Plugin:
             return True, f"Successfully loaded plugin {self.plugin_name}"
 
         except ImportError as e:
-            print(f"Plugin system failed to load {self.plugin_name}: {e}")
             return False, f"Failed to load {self.plugin_name}: {e}"
         except Exception as e:
-            print(f"Plugin system error loading {self.plugin_name}: {e}")
             import traceback
 
             traceback.print_exc()
@@ -296,13 +294,13 @@ def load_enabled() -> None:
     """Load enabled plugins from settings.
 
     Loads every plugin listed under ``enabled_plugins`` in the settings and
-    prints the resulting status message for each. Called from
+    echoes the resulting status message for each. Called from
     :func:`minisky.load_plugins` after the simulator has been initialized.
     """
     enabled = getattr(settings, "enabled_plugins", [])
     for plugin_name in enabled:
         success, msg = Plugin.load(plugin_name)
-        print(msg)
+        minisky.scr.echo(msg)
 
 
 def manage_plugins(cmd: str = "LIST", plugin_name: str = "") -> tuple[bool, str]:

@@ -85,7 +85,7 @@ class Runner:
         target simulation time is reached. The loop exits when
         :meth:`stop` sets ``running`` to False (and shutdown is allowed).
         """
-        print("staring simulation")
+        minisky.scr.echo("Starting simulation")
         self.running = True
 
         while self.running:
@@ -110,7 +110,7 @@ class Runner:
 
             await asyncio.sleep(sleep_time)
 
-        print("simulation completed")
+        minisky.scr.echo("Simulation completed")
 
     def stop(self) -> None:
         """Request the run loop to stop.
@@ -122,4 +122,4 @@ class Runner:
         if self.allow_shutdown:
             self.running = False
         else:
-            print("Shutdown is prevented")
+            minisky.scr.echo("Shutdown is prevented")

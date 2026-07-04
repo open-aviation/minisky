@@ -286,7 +286,7 @@ class Traffic(TrafficArrays):
 
         self.__create_aircraft(acid_, actype_, lat_, lon_, hdg_, alt_, spd_)
 
-        return True, f"arcraft {callsign} created"
+        return True, f"Aircraft {callsign} created"
 
     def mcre(
         self,

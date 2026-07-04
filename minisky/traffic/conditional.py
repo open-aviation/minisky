@@ -135,9 +135,9 @@ class Condition:
         self.ncond = len(self.id)
 
         if self.ncond != len(self.cmd):
-            print("self.ncond=", self.ncond)
-            print("self.cmd=", self.cmd)
-            print("traffic/conditional.py: self.delcondition: invalid condition array size")
+            minisky.scr.echo(
+                f"delcondition: invalid condition array size (ncond={self.ncond}, cmd={self.cmd})"
+            )
         return
 
     def ataltcmd(self, acidx: int, targalt: float, cmdtxt: str) -> bool:

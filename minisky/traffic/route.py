@@ -1112,7 +1112,6 @@ def addwpt(ac: str | int, *args) -> bool | tuple:  # args: all arguments of addw
         minisky.traf.swlnav[acidx] = True
 
     if afterwp and acrte.wpname.count(afterwp) == 0:
-        print(afterwp, acrte.wpname)
         return (
             True,
             "Waypoint " + afterwp + " not found\n" + "waypoint added at end of route",

@@ -511,7 +511,7 @@ def readscn(scn: "str | Path | StringIO") -> Iterator[tuple[float, str]]:
         except (ValueError, IndexError):
             # nice try, we will just ignore this syntax error
             if not (len(line.strip()) > 0 and line.strip()[0] == "#"):
-                print("except this:" + line)
+                minisky.scr.echo(f"Skipping invalid scenario line: {line.strip()}")
 
 
 def ic(scn: str) -> tuple[bool, str]:

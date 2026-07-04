@@ -52,6 +52,11 @@ class TestCreate:
         assert bs.traf.alt[0] == pytest.approx(25000 * FT, rel=1e-3)
         assert bs.traf.cas[0] == pytest.approx(300 * KTS, rel=1e-3)
 
+    def test_cre_echoes_confirmation(self, bs, run_cmd):
+        # Command results must reach the output buffer (scr.echo), not stdout only
+        out = run_cmd("CRE KL204,B744,52,4,45,FL250,350")
+        assert out == "Aircraft KL204 created"
+
 
 class TestArrays:
     def test_array_sizes_consistent(self, bs, sim):

@@ -142,7 +142,7 @@ uv run pytest -m api tests/test_api.py   # REST API smoke tests (separate proces
 - [x] better time and simulation speed control
 - [x] refactor route functions
 - [x] refactor acid to callsign
-- [ ] check all echo, ensure print and scr.echo are consistent
+- [x] check all echo, ensure print and scr.echo are consistent
 - [ ] refactor code so import and simulation is easier
 - [x] add new tests
 - [x] add docstrings and documentation website (mkdocs)
