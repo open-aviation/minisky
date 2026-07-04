@@ -26,7 +26,7 @@ else:
     print("Using Python-based geo functions")
 
 
-def init():
+def init() -> None:
     """Initialise the tools package by loading the magnetic declination table."""
     # print("Reading magnetic variation data")
     geo.load_magnetic_declination()

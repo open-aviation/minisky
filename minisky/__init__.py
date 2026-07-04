@@ -17,7 +17,7 @@ Call :func:`init` once to construct these singletons, then optionally
 :func:`load_plugins` to activate the plugins enabled in the settings.
 """
 
-from minisky import stack, tools, core, plugin
+from minisky import core, plugin, stack, tools
 from minisky.core import varexplorer
 from minisky.core.settings import data
 from minisky.simulation import ConsoleIO, Runner, Simulation
@@ -33,16 +33,17 @@ BS_CMDERR = 4
 # simulation states
 INIT, HOLD, OP, END = (0, 1, 2, 3)
 
-# Main singleton objects in BlueSky
-runner = None
-traf = None
-navdb = None
-sim = None
-scr = None
-navdb = None
+# Main singleton objects in BlueSky. They are None until init() constructs them,
+# but are annotated with their concrete types so downstream code type-checks
+# against the real objects (init() must be called before any of them are used).
+runner: Runner = None  # type: ignore[assignment]
+traf: Traffic = None  # type: ignore[assignment]
+navdb: Navdatabase = None  # type: ignore[assignment]
+sim: Simulation = None  # type: ignore[assignment]
+scr: ConsoleIO = None  # type: ignore[assignment]
 
 
-def init(scenario=None):
+def init(scenario: str | None = None) -> None:
     """Initialize all MiniSky modules and singletons.
 
     Constructs the navigation database, traffic, simulation, console I/O and
@@ -88,7 +89,7 @@ def init(scenario=None):
     plugin.discover()
 
 
-def load_plugins():
+def load_plugins() -> None:
     """Load the plugins enabled in the settings.
 
     Imports and initializes every plugin listed under ``enabled_plugins`` in

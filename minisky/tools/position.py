@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-
 """Parsing of position texts in MiniSky.
 
 Translates the position notations used in stack commands - lat/lon pairs
@@ -13,7 +11,7 @@ import minisky
 from .convert import txt2lat, txt2lon
 
 
-def txt2pos(name, reflat, reflon):
+def txt2pos(name: str, reflat: float, reflon: float) -> "tuple[bool, Position | str]":
     """Parse a position text into a Position object.
 
     Args:
@@ -31,7 +29,7 @@ def txt2pos(name, reflat, reflon):
     return False, name + " not found in database"
 
 
-def islat(txt):
+def islat(txt: str) -> bool:
     """Check whether a text looks like a latitude.
 
     Accepts decimal or degrees/minutes/seconds notation, with an optional
@@ -88,7 +86,7 @@ class Position:
     # position types: "latlon","nav","apt","rwy"
 
     # Initialize using text
-    def __init__(self, name, reflat, reflon):
+    def __init__(self, name: str, reflat: float, reflon: float) -> None:
         """Resolve a position text relative to a reference position.
 
         Args:
@@ -114,9 +112,7 @@ class Position:
             try:
                 aptname, rwytxt = name.split("/RW")
                 rwyname = rwytxt.lstrip("Y").upper()  # remove Y and spaces
-                self.lat, self.lon, self.refhdg = minisky.navdb.rwythresholds[aptname][
-                    rwyname
-                ]
+                self.lat, self.lon, self.refhdg = minisky.navdb.rwythresholds[aptname][rwyname]
             except KeyError:
                 self.error = True
             self.type = "rwy"

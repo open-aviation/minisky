@@ -17,7 +17,9 @@ to the last parsed position or aircraft.
 
 import inspect
 import re
+from collections.abc import Callable
 from types import SimpleNamespace
+from typing import Any
 
 import minisky
 from minisky.tools.convert import (
@@ -38,15 +40,13 @@ from minisky.tools.position import Position, islat
 # (?<=[\'"])[^\'"]+  : look behind for a leading quote, and if so, parse everything until closing quote
 # (?<![\'"])[^\s,]+  : look behind for not a leading quote, then parse until first whitespace or comma
 # [\'"]?\s*,?\s*     : skip potential closing quote, whitespace, and a potential single comma
-re_getarg = re.compile(
-    r'\s*[\'"]?((?<=[\'"])[^\'"]*|(?<![\'"])[^\s,]*)[\'"]?\s*,?\s*(.*)'
-)
+re_getarg = re.compile(r'\s*[\'"]?((?<=[\'"])[^\'"]*|(?<![\'"])[^\s,]*)[\'"]?\s*,?\s*(.*)')
 
 # Stack reference data namespace
 refdata = SimpleNamespace(lat=None, lon=None, alt=None, acidx=-1, hdg=None, cas=None)
 
 
-def getnextarg(cmdstring):
+def getnextarg(cmdstring: str) -> tuple:
     """Return first argument and remainder of command string from cmdstring.
 
     Arguments are separated by whitespace and/or a comma; quoted arguments
@@ -61,7 +61,7 @@ def getnextarg(cmdstring):
     return re_getarg.match(cmdstring).groups()
 
 
-def reset():
+def reset() -> None:
     """Reset reference data.
 
     Clears the stored reference position, aircraft index, heading, and
@@ -95,13 +95,13 @@ class Parameter:
         valid: False for keyword-only or unparsable parameters.
     """
 
-    def __init__(self, param, annotation="", isopt=None):
+    def __init__(
+        self, param: inspect.Parameter, annotation: str = "", isopt: "bool | None" = None
+    ) -> None:
         self.name = param.name
         self.default = param.default
         self.optional = (
-            (self.hasdefault() or param.kind == param.VAR_POSITIONAL)
-            if isopt is None
-            else isopt
+            (self.hasdefault() or param.kind == param.VAR_POSITIONAL) if isopt is None else isopt
         )
         self.gobble = param.kind == param.VAR_POSITIONAL and not annotation
         self.annotation = annotation or param.annotation
@@ -116,9 +116,7 @@ class Parameter:
             # If the annotation is a string we get our parsers from the argparsers dict
             pfuns = [argparsers.get(a) for a in self.annotation.split("/")]
             self.parsers = [p for p in pfuns if p is not None]
-        elif isinstance(param.annotation, type) and issubclass(
-            param.annotation, Parser
-        ):
+        elif isinstance(param.annotation, type) and issubclass(param.annotation, Parser):
             # If the paramter annotation is a class derived from Parser
             self.parsers = [self.annotation()]
         else:
@@ -131,7 +129,7 @@ class Parameter:
         # processing a stack command line.
         self.valid = bool(self.parsers) and self.canwrap(param)
 
-    def __call__(self, argstring):
+    def __call__(self, argstring: str):
         """Parse the next argument(s) for this parameter from argstring.
 
         Args:
@@ -165,23 +163,23 @@ class Parameter:
         # If all fail, raise error
         raise ArgumentError(error)
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"{self.name}:{self.annotation}"
 
-    def __bool__(self):
+    def __bool__(self) -> bool:
         return self.valid
 
-    def size(self):
+    def size(self) -> int:
         """Returns the (maximum) number of return variables when parsing this
         parameter."""
-        return max((p.size for p in self.parsers))
+        return max(p.size for p in self.parsers)
 
-    def hasdefault(self):
+    def hasdefault(self) -> bool:
         """Returns True if this parameter has a default value."""
         return self.default is not inspect._empty
 
     @staticmethod
-    def canwrap(param):
+    def canwrap(param: inspect.Parameter) -> bool:
         """Returns True if Parameter can be used to wrap given function parameter.
         Returns False if param is keyword-only."""
         return param.kind not in (param.VAR_KEYWORD, param.KEYWORD_ONLY)
@@ -211,10 +209,10 @@ class Parser:
     # Output size of this parser
     size = 1
 
-    def __init__(self, parsefun=None):
+    def __init__(self, parsefun: "Callable[..., Any] | None" = None) -> None:
         self.parsefun = parsefun
 
-    def parse(self, argstring):
+    def parse(self, argstring: str) -> tuple:
         """Parse the next argument from argstring.
 
         Args:
@@ -230,7 +228,7 @@ class Parser:
 class StringArg(Parser):
     """Argument parser that simply consumes the entire remaining text string."""
 
-    def parse(self, argstring):
+    def parse(self, argstring: str) -> tuple:
         """Return the complete remaining text as a single string argument."""
         return argstring, ""
 
@@ -238,7 +236,7 @@ class StringArg(Parser):
 class CallsignArg(Parser):
     """Argument parser for aircraft callsigns and group ids."""
 
-    def parse(self, argstring):
+    def parse(self, argstring: str) -> tuple:
         """Parse a callsign or group name into traffic index/indices.
 
         For an aircraft callsign the traffic index is returned and the
@@ -276,7 +274,7 @@ class WptArg(Parser):
     Default values
     """
 
-    def parse(self, argstring):
+    def parse(self, argstring: str) -> tuple:
         """Combine one or two arguments into a single waypoint position text.
 
         Aircraft ids are translated to a "lat,lon" text; lat/lon pairs and
@@ -319,7 +317,7 @@ class PosArg(Parser):
     # This parser's output size is 2 (lat, lon)
     size = 2
 
-    def parse(self, argstring):
+    def parse(self, argstring: str) -> tuple:
         """Parse one or two arguments into a lat/lon position.
 
         Also updates the parser reference position to the parsed location.
@@ -356,9 +354,7 @@ class PosArg(Parser):
 
         posobj = Position(argu, refdata.lat, refdata.lon)
         if posobj.error:
-            raise ArgumentError(
-                f"{argu} is not a valid waypoint, airport, runway, or aircraft id."
-            )
+            raise ArgumentError(f"{argu} is not a valid waypoint, airport, runway, or aircraft id.")
 
         # Update reference lat/lon
         refdata.lat = posobj.lat
@@ -371,7 +367,7 @@ class PosArg(Parser):
 class PandirArg(Parser):
     """Parse pan direction commands."""
 
-    def parse(self, argstring):
+    def parse(self, argstring: str) -> tuple:
         """Parse a screen pan direction (LEFT, RIGHT, UP/ABOVE, or DOWN).
 
         Raises:

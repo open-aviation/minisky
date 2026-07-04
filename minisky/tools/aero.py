@@ -1,4 +1,4 @@
-""" This module defines a set of standard aerodynamic functions and constants.
+"""This module defines a set of standard aerodynamic functions and constants.
 
 The aeronautics conversion and atmosphere library of MiniSky. It provides:
 
@@ -49,7 +49,7 @@ casmach_thr = 2  # Threshold below which speeds should
 # be considered as Mach numbers in casormach* functions
 
 
-def casmachthr(threshold: float = None):
+def casmachthr(threshold: float = None) -> tuple[bool, str]:
     """CASMACHTHR threshold
 
     Set a threshold below which speeds should be considered as Mach numbers
@@ -99,7 +99,7 @@ def casmachthr(threshold: float = None):
 # ------------------------------------------------------------------------------
 # Vectorized aero functions
 # ------------------------------------------------------------------------------
-def vatmos(h):
+def vatmos(h: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Calculate atmospheric pressure, density, and temperature for a given altitude.
 
     Arguments:
@@ -124,7 +124,7 @@ def vatmos(h):
     return p, rho, T
 
 
-def vtemp(h):
+def vtemp(h: np.ndarray) -> np.ndarray:
     """Calculate atmospheric temperature for a given altitude.
 
     Arguments:
@@ -138,7 +138,7 @@ def vtemp(h):
 
 
 # Atmos wrappings:
-def vpressure(h):
+def vpressure(h: np.ndarray) -> np.ndarray:
     """Calculate atmospheric pressure for a given altitude.
 
     Arguments:
@@ -151,7 +151,7 @@ def vpressure(h):
     return p
 
 
-def vdensity(h):
+def vdensity(h: np.ndarray) -> np.ndarray:
     """Calculate atmospheric density for a given altitude.
 
     Arguments:
@@ -164,7 +164,7 @@ def vdensity(h):
     return r
 
 
-def vvsound(h):
+def vvsound(h: np.ndarray) -> np.ndarray:
     """Calculate the speed of sound for a given altitude.
 
     Arguments:
@@ -179,7 +179,7 @@ def vvsound(h):
 
 
 # ---------Speed conversions---h in [m]------------------
-def vtas2mach(tas, h):
+def vtas2mach(tas: np.ndarray, h: np.ndarray) -> np.ndarray:
     """True airspeed (tas) to mach number conversion for numpy arrays.
 
     Arguments:
@@ -194,7 +194,7 @@ def vtas2mach(tas, h):
     return mach
 
 
-def vmach2tas(mach, h):
+def vmach2tas(mach: np.ndarray, h: np.ndarray) -> np.ndarray:
     """Mach number to True airspeed (tas) conversion for numpy arrays.
 
     Arguments:
@@ -209,7 +209,7 @@ def vmach2tas(mach, h):
     return tas
 
 
-def veas2tas(eas, h):
+def veas2tas(eas: np.ndarray, h: np.ndarray) -> np.ndarray:
     """Equivalent airspeed to true airspeed conversion for numpy arrays.
 
     Arguments:
@@ -224,7 +224,7 @@ def veas2tas(eas, h):
     return tas
 
 
-def vtas2eas(tas, h):
+def vtas2eas(tas: np.ndarray, h: np.ndarray) -> np.ndarray:
     """True airspeed to equivalent airspeed conversion for numpy arrays.
 
     Arguments:
@@ -239,7 +239,7 @@ def vtas2eas(tas, h):
     return eas
 
 
-def vcas2tas(cas, h):
+def vcas2tas(cas: np.ndarray, h: np.ndarray) -> np.ndarray:
     """Calibrated to true airspeed conversion for numpy arrays.
 
     Arguments:
@@ -258,7 +258,7 @@ def vcas2tas(cas, h):
     return tas
 
 
-def vtas2cas(tas, h):
+def vtas2cas(tas: np.ndarray, h: np.ndarray) -> np.ndarray:
     """True to calibrated airspeed conversion for numpy arrays.
 
     Arguments:
@@ -277,7 +277,7 @@ def vtas2cas(tas, h):
     return cas
 
 
-def vmach2cas(mach, h):
+def vmach2cas(mach: np.ndarray, h: np.ndarray) -> np.ndarray:
     """Mach to calibrated airspeed conversion for numpy arrays.
 
     Arguments:
@@ -292,7 +292,7 @@ def vmach2cas(mach, h):
     return cas
 
 
-def vcas2mach(cas, h):
+def vcas2mach(cas: np.ndarray, h: np.ndarray) -> np.ndarray:
     """Calibrated airspeed to Mach conversion for numpy arrays.
 
     Arguments:
@@ -307,7 +307,7 @@ def vcas2mach(cas, h):
     return M
 
 
-def vcasormach(spd, h):
+def vcasormach(spd: np.ndarray, h: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Interpret input speed as either CAS or a Mach number, and return TAS, CAS, and Mach.
 
     Arguments:
@@ -327,7 +327,7 @@ def vcasormach(spd, h):
     return tas, cas, mach
 
 
-def vcasormach2tas(spd, h):
+def vcasormach2tas(spd: np.ndarray, h: np.ndarray) -> np.ndarray:
     """Interpret input speed as either CAS or a Mach number, and return TAS.
 
     Arguments:
@@ -342,7 +342,7 @@ def vcasormach2tas(spd, h):
     return np.where(ismach, vmach2tas(spd, h), vcas2tas(spd, h))
 
 
-def crossoveralt(cas, mach):
+def crossoveralt(cas: float, mach: float) -> float:
     """Calculate crossover altitude for given CAS and Mach number.
 
     Calculates the altitude where the given CAS and Mach values
@@ -358,9 +358,9 @@ def crossoveralt(cas, mach):
     - Altitude [m].
     """
     # Delta: pressure ratio at the transition altitude
-    delta = (
-        (1.0 + 0.5 * (gamma - 1.0) * (cas / a0) ** 2) ** (gamma / (gamma - 1.0)) - 1.0
-    ) / ((1.0 + 0.5 * (gamma - 1.0) * mach**2) ** (gamma / (gamma - 1.0)) - 1.0)
+    delta = ((1.0 + 0.5 * (gamma - 1.0) * (cas / a0) ** 2) ** (gamma / (gamma - 1.0)) - 1.0) / (
+        (1.0 + 0.5 * (gamma - 1.0) * mach**2) ** (gamma / (gamma - 1.0)) - 1.0
+    )
     # Theta: Temperature ratio at the transition altitude
     theta = delta ** (-beta * R / g0)
     return 1000.0 / 6.5 * T0 * (1.0 - theta)
@@ -369,7 +369,7 @@ def crossoveralt(cas, mach):
 # ------------------------------------------------------------------------------
 # Scalar aero functions
 # ------------------------------------------------------------------------------
-def atmos(h):
+def atmos(h: float) -> tuple[float, float, float]:
     """International Standard Atmosphere calculator (scalar version).
 
     Uses the full multi-layer ISA table up to the mesosphere, with base
@@ -447,7 +447,7 @@ def atmos(h):
     return p, rho, T
 
 
-def temp(h):
+def temp(h: float) -> float:
     """Temperature-only version of the ISA atmosphere (scalar).
 
     Saves time relative to atmos() when only the temperature is needed.
@@ -494,19 +494,14 @@ def temp(h):
     while h > h0[i + 1] and i < len(h0) - 2:
         i = i + 1
 
-    # Calculate if sothermic layer
-    if a[i] == 0:
-        T = T0[i]
-
-    # Calculate for temperature gradient
-    else:
-        T = T0[i] + a[i] * (h - h0[i])
+    # Isothermic layer has constant temperature, otherwise apply the gradient
+    T = T0[i] if a[i] == 0 else T0[i] + a[i] * (h - h0[i])
 
     return T
 
 
 # Atmos wrappings:
-def pressure(h):  # h [m]
+def pressure(h: float) -> float:  # h [m]
     """Calculate ISA atmospheric pressure for a given altitude (scalar).
 
     Args:
@@ -519,7 +514,7 @@ def pressure(h):  # h [m]
     return p
 
 
-def density(h):  # air density at given altitude h [m]
+def density(h: float) -> float:  # air density at given altitude h [m]
     """Calculate ISA atmospheric density for a given altitude (scalar).
 
     Args:
@@ -532,7 +527,7 @@ def density(h):  # air density at given altitude h [m]
     return r
 
 
-def vsound(h):  # Speed of sound for given altitude h [m]
+def vsound(h: float) -> float:  # Speed of sound for given altitude h [m]
     """Calculate the ISA speed of sound for a given altitude (scalar).
 
     a = sqrt(gamma * R * T)
@@ -549,7 +544,7 @@ def vsound(h):  # Speed of sound for given altitude h [m]
 
 
 # ---------Speed conversions---h in [m]------------------
-def tas2mach(tas, h):
+def tas2mach(tas: float, h: float) -> float:
     """True airspeed (tas) to mach number conversion (scalar).
 
     Args:
@@ -564,7 +559,7 @@ def tas2mach(tas, h):
     return M
 
 
-def mach2tas(M, h):
+def mach2tas(M: float, h: float) -> float:
     """Mach number to true airspeed (tas) conversion (scalar).
 
     Args:
@@ -579,7 +574,7 @@ def mach2tas(M, h):
     return tas
 
 
-def eas2tas(eas, h):
+def eas2tas(eas: float, h: float) -> float:
     """Equivalent airspeed to true airspeed conversion (scalar).
 
     tas = eas * sqrt(rho0 / rho(h))
@@ -596,7 +591,7 @@ def eas2tas(eas, h):
     return tas
 
 
-def tas2eas(tas, h):
+def tas2eas(tas: float, h: float) -> float:
     """True airspeed to equivalent airspeed conversion (scalar).
 
     eas = tas * sqrt(rho(h) / rho0)
@@ -613,7 +608,7 @@ def tas2eas(tas, h):
     return eas
 
 
-def cas2tas(cas, h):
+def cas2tas(cas: float, h: float) -> float:
     """Calibrated airspeed to true airspeed conversion (scalar).
 
     Uses the compressible-flow relation: the impact pressure that would be
@@ -635,7 +630,7 @@ def cas2tas(cas, h):
     return tas
 
 
-def tas2cas(tas, h):
+def tas2cas(tas: float, h: float) -> float:
     """True airspeed to calibrated airspeed conversion (scalar).
 
     Inverse of cas2tas(), using the compressible-flow relation at the
@@ -656,7 +651,7 @@ def tas2cas(tas, h):
     return cas
 
 
-def mach2cas(M, h):
+def mach2cas(M: float, h: float) -> float:
     """Mach number to calibrated airspeed conversion (scalar).
 
     Args:
@@ -671,7 +666,7 @@ def mach2cas(M, h):
     return cas
 
 
-def cas2mach(cas, h):
+def cas2mach(cas: float, h: float) -> float:
     """Calibrated airspeed to Mach number conversion (scalar).
 
     Args:
@@ -686,7 +681,7 @@ def cas2mach(cas, h):
     return M
 
 
-def casormach(spd, h):
+def casormach(spd: float, h: float) -> tuple[float, float, float]:
     """Interpret input speed as either CAS or a Mach number (scalar version).
 
     The speed is treated as a Mach number when 0.1 < spd < casmach_thr
@@ -713,7 +708,7 @@ def casormach(spd, h):
     return tas, cas, m
 
 
-def casormach2tas(spd, h):
+def casormach2tas(spd: float, h: float) -> float:
     """Interpret input speed as either CAS or Mach, and return TAS (scalar version).
 
     Args:
@@ -724,16 +719,12 @@ def casormach2tas(spd, h):
     Returns:
         True airspeed [m/s].
     """
-    if 0.1 < spd < casmach_thr:
-        # Interpret spd as Mach number
-        tas = mach2tas(spd, h)
-    else:
-        # Interpret spd as CAS
-        tas = cas2tas(spd, h)
+    # Interpret spd as Mach number inside the threshold band, otherwise as CAS
+    tas = mach2tas(spd, h) if 0.1 < spd < casmach_thr else cas2tas(spd, h)
     return tas
 
 
-def metres_to_feet_rounded(metres):
+def metres_to_feet_rounded(metres: float) -> int:
     """
     Converts metres to feet.
     Returns feet as rounded integer.
@@ -741,7 +732,7 @@ def metres_to_feet_rounded(metres):
     return int(round(metres / ft))
 
 
-def metric_spd_to_knots_rounded(speed):
+def metric_spd_to_knots_rounded(speed: float) -> int:
     """
     Converts speed in m/s to knots.
     Returns knots as rounded integer.

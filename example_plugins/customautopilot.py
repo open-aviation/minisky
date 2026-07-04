@@ -26,9 +26,7 @@ from minisky.traffic.autopilot import Autopilot
 
 
 def init_plugin():
-    config = {
-        "plugin_name": "CUSTOMAUTOPILOT"
-    }
+    config = {"plugin_name": "CUSTOMAUTOPILOT"}
     return config
 
 
@@ -51,4 +49,3 @@ class CustomAutoPilot(Autopilot):
 
         # Option 2: Replace base behavior entirely - don't call super().update()
         # and implement your own autopilot logic from scratch
-

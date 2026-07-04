@@ -14,9 +14,10 @@ and/or speed) or vertical-only manoeuvres, and optional priority (right of
 way) rules can assign the manoeuvre to only one aircraft of a pair.
 """
 
+from typing import Any
+
 import numpy as np
 
-from minisky import stack
 from minisky.traffic.asas import ConflictResolution
 
 
@@ -42,7 +43,7 @@ class MVP(ConflictResolution):
         swresovert (bool): Limit resolutions to the vertical direction.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
         # [-] switch to limit resolution to the horizontal direction
         self.swresohoriz = True
@@ -53,7 +54,7 @@ class MVP(ConflictResolution):
         # [-] switch to limit resolution to the vertical direction
         self.swresovert = False
 
-    def setprio(self, flag=None, priocode=""):
+    def setprio(self, flag=None, priocode="") -> "bool | tuple":
         """Set the prio switch and the type of prio.
 
         Implements the PRIORULES stack command for MVP. Validates the
@@ -84,12 +85,10 @@ class MVP(ConflictResolution):
             )
         options = ["FF1", "FF2", "FF3", "LAY1", "LAY2"]
         if priocode not in options:
-            return False, "Priority code Not Understood. Available Options: " + str(
-                options
-            )
+            return False, "Priority code Not Understood. Available Options: " + str(options)
         return super().setprio(flag, priocode)
 
-    def setresometh(self, value: "txt" = ""):
+    def setresometh(self, value: "txt" = "") -> "tuple | None":
         """Processes the RMETHH command. Sets swresovert = False.
 
         Selects which horizontal degrees of freedom MVP may use for
@@ -120,8 +119,7 @@ class MVP(ConflictResolution):
         if value not in options:
             return (
                 False,
-                "RMETH Not Understood"
-                + "\nRMETHH [ON / BOTH / OFF / NONE / SPD / HDG]",
+                "RMETH Not Understood" + "\nRMETHH [ON / BOTH / OFF / NONE / SPD / HDG]",
             )
         else:
             if value == "ON" or value == "BOTH":
@@ -145,7 +143,7 @@ class MVP(ConflictResolution):
                 self.swresohdg = True
                 self.swresovert = False
 
-    def setresometv(self, value: "txt" = ""):
+    def setresometv(self, value: "txt" = "") -> "tuple | None":
         """Processes the RMETHV command. Sets swresohoriz = False.
 
         Enables (ON/"V/S") or disables (OFF/NONE) vertical-speed-only
@@ -183,7 +181,14 @@ class MVP(ConflictResolution):
             # Do NOT swtich off self.swresohoriz if value == OFF
             self.swresovert = False
 
-    def applyprio(self, dv_mvp, dv1, dv2, vs1, vs2):
+    def applyprio(
+        self,
+        dv_mvp: np.ndarray,
+        dv1: np.ndarray,
+        dv2: np.ndarray,
+        vs1: float,
+        vs2: float,
+    ) -> tuple:
         """Apply the desired priority setting to the resolution.
 
         Distributes the pairwise MVP resolution vector over the two aircraft
@@ -268,7 +273,7 @@ class MVP(ConflictResolution):
 
         return dv1, dv2
 
-    def resolve(self, conf, ownship, intruder):
+    def resolve(self, conf: Any, ownship: Any, intruder: Any) -> tuple:
         """Resolve all current conflicts.
 
         Loops over all detected conflict pairs, computes the MVP resolution
@@ -303,7 +308,7 @@ class MVP(ConflictResolution):
 
         # Call MVP function to resolve conflicts-----------------------------------
         for (ac1, ac2), qdr, dist, tcpa, tLOS in zip(
-            conf.confpairs, conf.qdr, conf.dist, conf.tcpa, conf.tLOS
+            conf.confpairs, conf.qdr, conf.dist, conf.tcpa, conf.tLOS, strict=False
         ):
             idx1 = ownship.callsign.index(ac1)
             idx2 = intruder.callsign.index(ac2)
@@ -311,9 +316,7 @@ class MVP(ConflictResolution):
             # If A/C indexes are found, then apply MVP on this conflict pair
             # Because ADSB is ON, this is done for each aircraft separately
             if idx1 > -1 and idx2 > -1:
-                dv_mvp, tsolV = self.MVP(
-                    ownship, intruder, conf, qdr, dist, tcpa, tLOS, idx1, idx2
-                )
+                dv_mvp, tsolV = self.MVP(ownship, intruder, conf, qdr, dist, tcpa, tLOS, idx1, idx2)
                 if tsolV < timesolveV[idx1]:
                     timesolveV[idx1] = tsolV
 
@@ -375,9 +378,7 @@ class MVP(ConflictResolution):
         # Determine ASAS module commands for all aircraft--------------------------
 
         # Cap the velocity
-        newgscapped = np.maximum(
-            ownship.perf.vmin, np.minimum(ownship.perf.vmax, newgs)
-        )
+        newgscapped = np.maximum(ownship.perf.vmin, np.minimum(ownship.perf.vmax, newgs))
 
         # Cap the vertical speed
         vscapped = np.maximum(ownship.perf.vsmin, np.minimum(ownship.perf.vsmax, newvs))
@@ -388,20 +389,14 @@ class MVP(ConflictResolution):
         # the time to resolve, it may result in climbing or descending more than the selected
         # altitude.
         asasalttemp = vscapped * timesolveV + ownship.alt
-        signdvs = np.sign(
-            vscapped - ownship.ap.vs * np.sign(ownship.selalt - ownship.alt)
-        )
+        signdvs = np.sign(vscapped - ownship.ap.vs * np.sign(ownship.selalt - ownship.alt))
         signalt = np.sign(asasalttemp - ownship.selalt)
-        alt = np.where(
-            np.logical_or(signdvs == 0, signdvs == signalt), asasalttemp, ownship.selalt
-        )
+        alt = np.where(np.logical_or(signdvs == 0, signdvs == signalt), asasalttemp, ownship.selalt)
 
         # To compute asas alt, timesolveV is used. timesolveV is a really big value (1e9)
         # when there is no conflict. Therefore asas alt is only updated when its
         # value is less than the look-ahead time, because for those aircraft are in conflict
-        altCondition = np.logical_and(
-            timesolveV < conf.dtlookahead, np.abs(dv[2, :]) > 0.0
-        )
+        altCondition = np.logical_and(timesolveV < conf.dtlookahead, np.abs(dv[2, :]) > 0.0)
         alt[altCondition] = asasalttemp[altCondition]
 
         # If resolutions are limited in the horizontal direction, then asasalt should
@@ -411,7 +406,18 @@ class MVP(ConflictResolution):
         alt = alt * (1 - self.swresohoriz) + ownship.selalt * self.swresohoriz
         return newtrack, newgscapped, vscapped, alt
 
-    def MVP(self, ownship, intruder, conf, qdr, dist, tcpa, tLOS, idx1, idx2):
+    def MVP(
+        self,
+        ownship: Any,
+        intruder: Any,
+        conf: Any,
+        qdr,
+        dist: float,
+        tcpa: float,
+        tLOS: float,
+        idx1: int,
+        idx2: int,
+    ) -> tuple:
         """Modified Voltage Potential (MVP) resolution method.
 
         Computes the velocity change that displaces the predicted closest
@@ -462,9 +468,7 @@ class MVP(ConflictResolution):
 
         # Write velocities as vectors and find relative velocity vector
         v1 = np.array([ownship.gseast[idx1], ownship.gsnorth[idx1], ownship.vs[idx1]])
-        v2 = np.array(
-            [intruder.gseast[idx2], intruder.gsnorth[idx2], intruder.vs[idx2]]
-        )
+        v2 = np.array([intruder.gseast[idx2], intruder.gsnorth[idx2], intruder.vs[idx2]])
         vrel = v2 - v1
 
         # Horizontal resolution----------------------------------------------------
@@ -514,9 +518,7 @@ class MVP(ConflictResolution):
         # Compute the resolution velocity vector in the vertical direction
         # The direction of the vertical resolution is such that the aircraft with
         # higher climb/decent rate reduces their climb/decent rate
-        dv3 = np.where(
-            abs(vrel[2]) > 0.0, (iV / tsolV) * (-vrel[2] / abs(vrel[2])), (iV / tsolV)
-        )
+        dv3 = np.where(abs(vrel[2]) > 0.0, (iV / tsolV) * (-vrel[2] / abs(vrel[2])), (iV / tsolV))
 
         # It is necessary to cap dv3 to prevent that a vertical conflict
         # is solved in 1 timestep, leading to a vertical separation that is too

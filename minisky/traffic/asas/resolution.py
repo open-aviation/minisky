@@ -13,11 +13,14 @@ Actual resolution algorithms (e.g. the Modified Voltage Potential method in
 :meth:`ConflictResolution.resolve`.
 """
 
+from typing import Any
+
 import numpy as np
 
 import minisky
 from minisky.core.trafficarrays import TrafficArrays
 from minisky.tools.aero import ft, nm
+
 
 class ConflictResolution(TrafficArrays):
     """Base class for Conflict Resolution implementations.
@@ -56,7 +59,7 @@ class ConflictResolution(TrafficArrays):
         vs (ndarray): Resolution vertical speed advisory [m/s].
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
         self.activate = False
 
@@ -75,9 +78,7 @@ class ConflictResolution(TrafficArrays):
         self.resodhrelative = (
             True  # Size of resolution zone dh, vertically, set relative to CD zone
         )
-        self.resorrelative = (
-            True  # Size of resolution zone r, vertically, set relative to CD zone
-        )
+        self.resorrelative = True  # Size of resolution zone r, vertically, set relative to CD zone
 
         with self.settrafarrays():
             self.resooffac = np.array([], dtype=bool)
@@ -89,7 +90,7 @@ class ConflictResolution(TrafficArrays):
             self.alt = np.array([])  # alt provided by the ASAS [m]
             self.vs = np.array([])  # vspeed provided by the ASAS [m/s]
 
-    def switch(self, flag: bool = None):
+    def switch(self, flag: bool = None) -> None:
         """Turn conflict resolution on or off.
 
         Args:
@@ -97,7 +98,7 @@ class ConflictResolution(TrafficArrays):
         """
         self.activate = flag
 
-    def reset(self):
+    def reset(self) -> None:
         """Reset the conflict resolution state to defaults.
 
         Called on simulation reset: clears priority settings and pending
@@ -118,7 +119,7 @@ class ConflictResolution(TrafficArrays):
     # derived ASAS Conflict Resolution class (@property decorator takes away
     # need for brackets when calling it so it can be overloaded by a variable)
     @property
-    def hdgactive(self):
+    def hdgactive(self) -> np.ndarray:
         """Return a boolean array sized according to the number of aircraft
         with True for all elements where heading is currently controlled by
         the conflict resolution algorithm.
@@ -126,7 +127,7 @@ class ConflictResolution(TrafficArrays):
         return self.active
 
     @property
-    def vsactive(self):
+    def vsactive(self) -> np.ndarray:
         """Return a boolean array sized according to the number of aircraft
         with True for all elements where vertical speed is currently
         controlled by the conflict resolution algorithm.
@@ -134,7 +135,7 @@ class ConflictResolution(TrafficArrays):
         return self.active
 
     @property
-    def altactive(self):
+    def altactive(self) -> np.ndarray:
         """Return a boolean array sized according to the number of aircraft
         with True for all elements where altitude is currently controlled by
         the conflict resolution algorithm.
@@ -142,14 +143,14 @@ class ConflictResolution(TrafficArrays):
         return self.active
 
     @property
-    def tasactive(self):
+    def tasactive(self) -> np.ndarray:
         """Return a boolean array sized according to the number of aircraft
         with True for all elements where speed is currently controlled by
         the conflict resolution algorithm.
         """
         return self.active
 
-    def resolve(self, conf, ownship, intruder):
+    def resolve(self, conf: Any, ownship: Any, intruder: Any) -> tuple:
         """Resolve all current conflicts.
 
         This function should be reimplemented in a subclass for actual
@@ -171,7 +172,7 @@ class ConflictResolution(TrafficArrays):
         # should then follow the auto pilot instructions.
         return ownship.ap.trk, ownship.ap.tas, ownship.ap.vs, ownship.ap.alt
 
-    def update(self, conf, ownship, intruder):
+    def update(self, conf: Any, ownship: Any, intruder: Any) -> None:
         """Perform an update step of the Conflict Resolution implementation.
 
         When resolution is active, computes new resolution advisories with
@@ -185,12 +186,10 @@ class ConflictResolution(TrafficArrays):
         """
         if self.activate:
             if conf.confpairs:
-                self.trk, self.tas, self.vs, self.alt = self.resolve(
-                    conf, ownship, intruder
-                )
+                self.trk, self.tas, self.vs, self.alt = self.resolve(conf, ownship, intruder)
             self.resumenav(conf, ownship, intruder)
 
-    def resumenav(self, conf, ownship, intruder):
+    def resumenav(self, conf: Any, ownship: Any, intruder: Any) -> None:
         """Decide for each aircraft in the conflict list whether the ASAS
         should be followed or not, based on if the aircraft pairs passed
         their CPA.
@@ -213,10 +212,10 @@ class ConflictResolution(TrafficArrays):
 
         # Conflict pairs to be deleted
         delpairs = set()
-        changeactive = dict()
+        changeactive = {}
 
         # smallest relative angle between vectors of heading a and b
-        def anglediff(a, b):
+        def anglediff(a: float, b: float) -> float:
             d = a - b
             if d > 180:
                 return anglediff(a, b + 360)
@@ -239,9 +238,7 @@ class ConflictResolution(TrafficArrays):
                 dist = re * np.array(
                     [
                         np.radians(intruder.lon[idx2] - ownship.lon[idx1])
-                        * np.cos(
-                            0.5 * np.radians(intruder.lat[idx2] + ownship.lat[idx1])
-                        ),
+                        * np.cos(0.5 * np.radians(intruder.lat[idx2] + ownship.lat[idx1])),
                         np.radians(intruder.lat[idx2] - ownship.lat[idx1]),
                     ]
                 )
@@ -297,14 +294,12 @@ class ConflictResolution(TrafficArrays):
                 # and send the aircraft to that waypoint.
                 iwpid = minisky.traf.ap.route[idx].findact(idx)
                 if iwpid != -1:  # To avoid problems if there are no waypoints
-                    minisky.traf.ap.route[idx].direct(
-                        idx, minisky.traf.ap.route[idx].wpname[iwpid]
-                    )
+                    minisky.traf.ap.route[idx].direct(idx, minisky.traf.ap.route[idx].wpname[iwpid])
 
         # Remove pairs from the list that are past CPA or have deleted aircraft
         self.resopairs -= delpairs
 
-    def setprio(self, flag: bool = None, priocode=""):
+    def setprio(self, flag: bool = None, priocode="") -> "bool | tuple":
         """Define priority rules (right of way) for conflict resolution.
 
         Implements the PRIORULES stack command. The base class only stores
@@ -331,7 +326,7 @@ class ConflictResolution(TrafficArrays):
         self.priocode = priocode
         return True
 
-    def setnoreso(self, *idx):
+    def setnoreso(self, *idx) -> "bool | tuple":
         """ADD or Remove aircraft that nobody will avoid.
         Multiple aircraft can be sent to this function at once.
 
@@ -357,7 +352,7 @@ class ConflictResolution(TrafficArrays):
         self.noresoac[idx] = np.logical_not(self.noresoac[idx])
         return True
 
-    def setresooff(self, *idx):
+    def setresooff(self, *idx) -> "bool | tuple":
         """ADD or Remove aircraft that will not avoid anybody else.
         Multiple aircraft can be sent to this function at once.
 
@@ -384,7 +379,7 @@ class ConflictResolution(TrafficArrays):
             self.resooffac[idx] = np.logical_not(self.resooffac[idx])
             return True
 
-    def setresofach(self, factor: float = None):
+    def setresofach(self, factor: float = None) -> tuple:
         """Set resolution factor horizontal
         (to maneuver only a fraction of a resolution vector).
 
@@ -412,7 +407,7 @@ class ConflictResolution(TrafficArrays):
             )
             return True, f"Horizontal resolution factor set to {self.resofach}"
 
-    def setresofacv(self, factor: float = None):
+    def setresofacv(self, factor: float = None) -> tuple:
         """Set resolution factor vertical (to maneuver only a fraction of a resolution vector).
 
         Implements the RFACV stack command. The vertical resolution zone
@@ -435,7 +430,7 @@ class ConflictResolution(TrafficArrays):
         self.resodhrelative = True
         return True, f"Vertical resolution factor set to {self.resofacv}"
 
-    def setresozoner(self, zoner: float = None):
+    def setresozoner(self, zoner: float = None) -> tuple:
         """Set resolution factor horizontal, but then with absolute value
         (to maneuver only a fraction of a resolution vector).
 
@@ -471,7 +466,7 @@ class ConflictResolution(TrafficArrays):
             f"Horizontal resolution factor updated to {self.resofach}, resulting in radius: {zoner} nm",
         )
 
-    def setresozonedh(self, zonedh: float = None):
+    def setresozonedh(self, zonedh: float = None) -> tuple:
         """Set resolution factor vertical (to maneuver only a fraction of a
         resolution vector), but then with absolute value.
 
@@ -508,7 +503,7 @@ class ConflictResolution(TrafficArrays):
         )
 
     @staticmethod
-    def setmethod(name: "txt" = ""):
+    def setmethod(name: "txt" = "") -> tuple:
         """Select a Conflict Resolution method.
 
         Implements the RESO stack command. Selecting "MVP" replaces the
@@ -527,8 +522,7 @@ class ConflictResolution(TrafficArrays):
         if not name:
             return (
                 True,
-                f"Current CR method: "
-                + f"\nAvailable CR methods: {', '.join(names)}",
+                "Current CR method: " + f"\nAvailable CR methods: {', '.join(names)}",
             )
 
         if name == "OFF":
@@ -537,6 +531,7 @@ class ConflictResolution(TrafficArrays):
 
         if name == "MVP":
             from minisky.traffic.asas.mvp import MVP
+
             # Replace the current conflict resolution instance with MVP
             minisky.traf.cr = MVP()
             minisky.traf.cr.switch(True)

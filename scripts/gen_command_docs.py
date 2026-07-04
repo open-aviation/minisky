@@ -36,20 +36,20 @@ waypoint, navaid, airport, or aircraft.
 """
 
 
-def main():
+def main() -> None:
     minisky.init()
 
     # cmddict maps every name (including synonyms) to a Command object;
     # group synonyms under the primary name.
-    primary = {}
-    synonyms = {}
+    primary: dict[str, Command] = {}
+    synonyms: dict[str, list[str]] = {}
     for name, cmdobj in sorted(Command.cmddict.items()):
         if cmdobj.name == name:
             primary[name] = cmdobj
         else:
             synonyms.setdefault(cmdobj.name, []).append(name)
 
-    lines = [HEADER]
+    lines: list[str] = [HEADER]
     for name, cmdobj in sorted(primary.items()):
         usage = (cmdobj.brief or "").replace("|", "\\|").replace("\n", " ")
         help_text = (cmdobj.help or "").replace("|", "\\|")

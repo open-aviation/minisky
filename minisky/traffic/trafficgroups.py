@@ -9,6 +9,8 @@ and UNGROUP stack commands; deleting a whole group is supported through
 the DEL command.
 """
 
+from typing import Any
+
 import numpy as np
 
 import minisky
@@ -25,7 +27,7 @@ class GroupArray(np.ndarray):
     """
 
     # Similar to normal numpy arrays, but with the attribute of a groupname
-    def __new__(cls, *args, groupname="", **kwargs):
+    def __new__(cls, *args, groupname: str = "", **kwargs) -> "GroupArray":
         ret = np.array(*args, **kwargs).view(cls)
         ret.groupname = groupname
         return ret
@@ -45,20 +47,20 @@ class TrafficGroups(TrafficArrays):
         ingroup (ndarray): Per-aircraft group-membership bitmask (int64).
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         # Initialize the groups structure
         super().__init__()
-        self.groups = dict()
+        self.groups = {}
         self.allmasks = 0
         with self.settrafarrays():
             self.ingroup = np.array([], dtype=np.int64)
 
-    def __contains__(self, groupname):
+    def __contains__(self, groupname: str) -> bool:
         """Check whether a group with the given name exists ("*" always does)."""
         # Check if a group with a name exists
         return groupname in self.groups or groupname == "*"
 
-    def group(self, groupname="", *args):
+    def group(self, groupname: str = "", *args) -> tuple[bool, str]:
         """Add aircraft to a group, list its members, or list all groups.
 
         Implements the GROUP stack command. Without arguments the existing
@@ -95,9 +97,7 @@ class TrafficGroups(TrafficArrays):
 
         elif not args:
             acnames = np.array(minisky.traf.callsign)[self.listgroup(groupname)]
-            return True, "Aircraft in group {}:\n{}".format(
-                groupname, ", ".join(acnames)
-            )
+            return True, "Aircraft in group {}:\n{}".format(groupname, ", ".join(acnames))
 
         # Add aircraft to group
         if areafilter.has_area(args[0]):
@@ -110,11 +110,9 @@ class TrafficGroups(TrafficArrays):
             idx = list(args)
             self.ingroup[idx] |= self.groups[groupname]
             acnames = np.array(minisky.traf.callsign)[idx]
-        return True, "Aircraft added to group {}:\n{}".format(
-            groupname, ", ".join(acnames)
-        )
+        return True, "Aircraft added to group {}:\n{}".format(groupname, ", ".join(acnames))
 
-    def delgroup(self, grouparray):
+    def delgroup(self, grouparray: Any) -> None:
         """Delete a group, and all aircraft in that group.
 
         Used by the DEL stack command when it is given a group name. The
@@ -132,7 +130,7 @@ class TrafficGroups(TrafficArrays):
         if grouparray.groupname != "*":
             self.allmasks ^= self.groups.pop(grouparray.groupname)
 
-    def ungroup(self, groupname, *args):
+    def ungroup(self, groupname: str, *args) -> "tuple[bool, str] | None":
         """Remove members from a group by aircraft index.
 
         Implements the UNGROUP stack command.
@@ -150,7 +148,7 @@ class TrafficGroups(TrafficArrays):
             return False, f"Group {groupname} doesn't exist"
         self.ingroup[list(args)] ^= groupmask
 
-    def listgroup(self, groupname):
+    def listgroup(self, groupname: str) -> Any:
         """Return the aircraft indices of all aircraft in a group.
 
         When "*" is passed as group name, all aircraft in the simulation
@@ -169,6 +167,4 @@ class TrafficGroups(TrafficArrays):
         groupmask = self.groups.get(groupname, None)
         if groupmask is None:
             return False, f"Group {groupname} doesn't exist"
-        return GroupArray(
-            np.where((self.ingroup & groupmask) > 0)[0], groupname=groupname
-        )
+        return GroupArray(np.where((self.ingroup & groupmask) > 0)[0], groupname=groupname)

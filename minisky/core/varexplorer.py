@@ -11,12 +11,13 @@ prints variable type, size, and parent information to the console.
 
 from collections import OrderedDict
 from numbers import Number
+from typing import Any
 
 try:
     from collections.abc import Collection
 except ImportError:
     # In python <3.3 collections.abc doesn't exist
-    from collections import Collection
+    from collections.abc import Collection
 
 import re
 
@@ -30,7 +31,7 @@ from minisky.core import TrafficArrays
 varlist = OrderedDict()
 
 
-def init():
+def init() -> None:
     """Variable explorer initialization function.
     Is called in minisky.init()"""
     # Add the default sources to the variable explorer
@@ -42,7 +43,7 @@ def init():
     )
 
 
-def register_data_parent(obj, name):
+def register_data_parent(obj: Any, name: str) -> None:
     """Register an object as a searchable data source of the variable explorer.
 
     Args:
@@ -52,22 +53,22 @@ def register_data_parent(obj, name):
     varlist[name] = (obj, getvarsfromobj(obj))
 
 
-def getvarsfromobj(obj):
+def getvarsfromobj(obj: Any) -> list[str] | None:
     """Return a list with the names of the variables of the passed object."""
     try:
         # Return attribute names, but exclude private attributes
-        return [name for name in vars(obj) if not name[0] == "_"]
+        return [name for name in vars(obj) if name[0] != "_"]
     except TypeError:
         return None
 
 
-def lsvar(varname=""):
+def lsvar(varname: str = "") -> tuple[bool, str]:
     """Stack function to list information on simulation variables in the
     BlueSky console."""
     if not varname:
         # When no argument is passed, show a list of parent objects for which
         # variables can be accessed
-        return True, "\n" + str.join(", ", [key for key in varlist])
+        return True, "\n" + str.join(", ", list(varlist))
 
     # Find the variable in the variable list
     v = findvar(varname)
@@ -88,7 +89,7 @@ def lsvar(varname=""):
     return False, f"Variable {varname} not found"
 
 
-def findvar(varname):
+def findvar(varname: str) -> "Variable | None":
     """Find a variable and its parent object in the registered varlist set, based
     on varname, as passed by the stack.
     Variables can be searched in two ways:
@@ -116,7 +117,7 @@ def findvar(varname):
             if varset[0][0] in varlist:
                 obj = varlist.get(varset[0][0])[0]
             else:
-                for objname, objset in varlist.items():
+                for objset in varlist.values():
                     if varset[0][0] in objset[1]:
                         obj = getattr(objset[0], varset[0][0])
 
@@ -134,7 +135,7 @@ def findvar(varname):
             for objname, objset in varlist.items():
                 if name in objset[1]:
                     return Variable(objset[0], objname, name, index)
-    except:
+    except Exception:
         pass
     return None
 
@@ -151,7 +152,7 @@ class Variable:
             (empty when the whole variable is referenced).
     """
 
-    def __init__(self, parent, parentname, varname, index):
+    def __init__(self, parent: Any, parentname: str, varname: str, index: Any) -> None:
         self.parent = parent
         self.parentname = parentname
         self.varname = varname
@@ -169,11 +170,11 @@ class Variable:
             or (
                 isinstance(v, Collection)
                 and self.index
-                and all([isinstance(v[i], Number) for i in self.index])
+                and all(isinstance(v[i], Number) for i in self.index)
             )
         )
 
-    def get_type(self):
+    def get_type(self) -> str:
         """Return the a string containing the type name of this variable."""
         return self.get().__class__.__name__
 

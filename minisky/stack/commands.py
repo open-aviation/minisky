@@ -52,7 +52,7 @@ shown by the HELP command.
 """
 
 
-def get_commands():
+def get_commands() -> tuple:
     """Assemble the base command and synonym dictionaries of the simulator.
 
     Imports minisky at call time so that command callbacks can be bound to

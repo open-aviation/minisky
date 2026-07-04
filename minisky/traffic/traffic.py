@@ -12,11 +12,8 @@ A single instance is created at simulator start-up and made available as
 (CRE, MCRE, CRECONFS, MOVE, POS, BANK, THR, NOISE, CRECMD, ...).
 """
 
-from __future__ import print_function
-
-from collections.abc import Collection
+from collections.abc import Collection, Iterable
 from random import randint
-from typing import Iterable
 
 import numpy as np
 
@@ -26,7 +23,6 @@ from minisky.stack.argparser import refdata
 from minisky.tools import geo
 from minisky.tools.aero import (
     Rearth,
-    cas2tas,
     casormach2tas,
     fpm,
     ft,
@@ -121,7 +117,7 @@ class Traffic(TrafficArrays):
     Created by: Jacco M. Hoekstra
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
 
         # Traffic is the toplevel trafficarrays object
@@ -197,17 +193,13 @@ class Traffic(TrafficArrays):
             self.groups = TrafficGroups()
 
             # Traffic autopilot data
-            self.swhdgsel = np.array(
-                [], dtype=bool
-            )  # determines whether aircraft is turning
+            self.swhdgsel = np.array([], dtype=bool)  # determines whether aircraft is turning
 
             # Traffic autothrottle settings
             self.swats = np.array(
                 [], dtype=bool
             )  # Switch indicating whether autothrottle system is on/off
-            self.thr = np.array(
-                []
-            )  # Thottle seeting (0.0-1.0), negative = non-valid/auto
+            self.thr = np.array([])  # Thottle seeting (0.0-1.0), negative = non-valid/auto
 
             # Display information on label
             self.label = []  # Text and bitmap of traffic label
@@ -220,7 +212,7 @@ class Traffic(TrafficArrays):
         # Default bank angles per flight phase
         self.bphase = np.deg2rad(np.array([15, 35, 35, 35, 15, 45]))
 
-    def reset(self):
+    def reset(self) -> None:
         """Clear all traffic data upon simulation reset.
 
         Empties all per-aircraft arrays (including those of child entities),
@@ -257,7 +249,7 @@ class Traffic(TrafficArrays):
         hdg: float = 45.0,
         alt: int = 25000,
         spd: int = 300,
-    ):
+    ) -> tuple[bool, str]:
         """Create a single aircraft and add it to the traffic database.
 
         Implements the CRE stack command. After creation, any commands stored
@@ -303,7 +295,7 @@ class Traffic(TrafficArrays):
         actype: str = "A320",
         acalt: int = None,
         acspd: int = None,
-    ):
+    ) -> tuple[bool, str]:
         """Create multiple aircraft at random positions in a lat/lon box.
 
         Implements the MCRE stack command. Callsigns are generated randomly
@@ -351,7 +343,7 @@ class Traffic(TrafficArrays):
         hdg: Iterable[int],
         alt: Iterable[int],
         spd: Iterable[int],
-    ):
+    ) -> None:
         """Append one or more aircraft to all traffic arrays.
 
         Common backend for cre() and mcre(): resizes all (child) traffic
@@ -454,16 +446,16 @@ class Traffic(TrafficArrays):
 
     def creconfs(
         self,
-        callsign,
-        actype,
-        targetidx,
-        dpsi,
-        dcpa,
-        tlosh,
-        dH=None,
-        tlosv=None,
-        spd=None,
-    ):
+        callsign: str,
+        actype: str,
+        targetidx: int,
+        dpsi: float,
+        dcpa: float,
+        tlosh: float,
+        dH: float | None = None,
+        tlosv: float | None = None,
+        spd: float | None = None,
+    ) -> None:
         """Create an aircraft in conflict with a target aircraft.
 
         Implements the CRECONFS stack command. The intruder position, track
@@ -546,7 +538,7 @@ class Traffic(TrafficArrays):
         self.ap.selaltcmd(len(self.lat) - 1, altref, acvs)
         self.vs[-1] = acvs
 
-    def delete(self, idx):
+    def delete(self, idx) -> bool:
         """Delete one or more aircraft from the traffic database.
 
         Removes the corresponding entries from all (child) traffic arrays
@@ -570,7 +562,7 @@ class Traffic(TrafficArrays):
         self.ntraf = len(self.lat)
         return True
 
-    def update(self):
+    def update(self) -> None:
         """Perform one simulation time step for all aircraft.
 
         Called every step by the simulation loop. In order: updates the
@@ -619,13 +611,13 @@ class Traffic(TrafficArrays):
         # ---------- Aftermath ---------------------------------
         self.trails.update()
 
-    def update_asas(self):
+    def update_asas(self) -> None:
         """Run conflict detection and conflict resolution for all aircraft."""
         # Conflict detection and resolution
         self.cd.update(self, self)
         self.cr.update(self.cd, self, self)
 
-    def update_airspeed(self):
+    def update_airspeed(self) -> None:
         """Integrate true airspeed, heading and vertical speed over one step.
 
         Accelerates or decelerates towards the commanded TAS using the
@@ -640,9 +632,7 @@ class Traffic(TrafficArrays):
         need_ax = np.abs(delta_spd) > np.abs(minisky.sim.simdt * self.perf.axmax)
         self.ax = need_ax * np.sign(delta_spd) * self.perf.axmax
         # Update velocities
-        self.tas = np.where(
-            need_ax, self.tas + self.ax * minisky.sim.simdt, self.aporasas.tas
-        )
+        self.tas = np.where(need_ax, self.tas + self.ax * minisky.sim.simdt, self.aporasas.tas)
         self.cas = vtas2cas(self.tas, self.alt)
         self.M = vtas2mach(self.tas, self.alt)
 
@@ -688,13 +678,11 @@ class Traffic(TrafficArrays):
         delta_vs = target_vs - self.vs
         # print(delta_vs / fpm)
         need_az = np.abs(delta_vs) > 300 * fpm  # small threshold
-        self.az = (
-            need_az * np.sign(delta_vs) * (300 * fpm)
-        )  # fixed vertical acc approx 1.6 m/s^2
+        self.az = need_az * np.sign(delta_vs) * (300 * fpm)  # fixed vertical acc approx 1.6 m/s^2
         self.vs = np.where(need_az, self.vs + self.az * minisky.sim.simdt, target_vs)
         self.vs = np.where(np.isfinite(self.vs), self.vs, 0)  # fix vs nan issue
 
-    def update_groundspeed(self):
+    def update_groundspeed(self) -> None:
         """Compute ground speed and track from heading, airspeed and wind.
 
         Without wind, ground speed equals TAS and track equals heading. With
@@ -716,12 +704,8 @@ class Traffic(TrafficArrays):
 
             vnwnd, vewnd = self.wind.getdata(self.lat, self.lon, self.alt)
             self.windnorth[:], self.windeast[:] = vnwnd, vewnd
-            self.gsnorth = (
-                self.tas * np.cos(np.radians(self.hdg)) + self.windnorth * applywind
-            )
-            self.gseast = (
-                self.tas * np.sin(np.radians(self.hdg)) + self.windeast * applywind
-            )
+            self.gsnorth = self.tas * np.cos(np.radians(self.hdg)) + self.windnorth * applywind
+            self.gseast = self.tas * np.sin(np.radians(self.hdg)) + self.windeast * applywind
 
             self.gs = np.logical_not(applywind) * self.tas + applywind * np.sqrt(
                 self.gsnorth**2 + self.gseast**2
@@ -733,12 +717,10 @@ class Traffic(TrafficArrays):
             )
 
         self.work += (
-            self.perf.thrust
-            * minisky.sim.simdt
-            * np.sqrt(self.gs * self.gs + self.vs * self.vs)
+            self.perf.thrust * minisky.sim.simdt * np.sqrt(self.gs * self.gs + self.vs * self.vs)
         )
 
-    def update_pos(self):
+    def update_pos(self) -> None:
         """Integrate altitude and lat/lon position over one time step.
 
         Altitude follows the vertical speed while the altitude-select mode is
@@ -754,12 +736,10 @@ class Traffic(TrafficArrays):
         )
         self.lat = self.lat + np.degrees(minisky.sim.simdt * self.gsnorth / Rearth)
         self.coslat = np.cos(np.deg2rad(self.lat))
-        self.lon = self.lon + np.degrees(
-            minisky.sim.simdt * self.gseast / self.coslat / Rearth
-        )
+        self.lon = self.lon + np.degrees(minisky.sim.simdt * self.gseast / self.coslat / Rearth)
         self.distflown += self.gs * minisky.sim.simdt
 
-    def idx(self, callsign: str | Iterable[str]):
+    def idx(self, callsign: str | Iterable[str]) -> int | list:
         """Find the traffic-array index for one or more callsigns.
 
         Args:
@@ -774,7 +754,7 @@ class Traffic(TrafficArrays):
         if not isinstance(callsign, str):
             # for multiple callsigns
             # Fast way of finding indices of all ACID's in a given list
-            tmp = dict((v, i) for i, v in enumerate(self.callsign))
+            tmp = {v: i for i, v in enumerate(self.callsign)}
             return [tmp.get(acidi, -1) for acidi in callsign]
         else:
             # Catch last created id (* or # symbol)
@@ -783,10 +763,10 @@ class Traffic(TrafficArrays):
 
             try:
                 return self.callsign.index(callsign.upper())
-            except:
+            except ValueError:
                 return -1
 
-    def setnoise(self, noise=None):
+    def setnoise(self, noise: bool | None = None) -> bool | tuple[bool, str]:
         """Switch trajectory noise models on or off, or report their state.
 
         Implements the NOISE stack command. Controls both the turbulence
@@ -800,15 +780,13 @@ class Traffic(TrafficArrays):
             bool or tuple: True on set, or (True, status message) on query.
         """
         if noise is None:
-            return True, "Noise is currently " + (
-                "on" if self.turbulence.active else "off"
-            )
+            return True, "Noise is currently " + ("on" if self.turbulence.active else "off")
 
         self.turbulence.setnoise(noise)
         self.noise.setnoise(noise)
         return True
 
-    def engchange(self, acid, engid):
+    def engchange(self, acid: int, engid: str) -> None:
         """Change the engine type of an aircraft in the performance model.
 
         Args:
@@ -818,7 +796,16 @@ class Traffic(TrafficArrays):
         self.perf.engchange(acid, engid)
         return
 
-    def move(self, idx, lat, lon, alt=None, hdg=None, casmach=None, vspd=None):
+    def move(
+        self,
+        idx: int,
+        lat: float,
+        lon: float,
+        alt: float | None = None,
+        hdg: float | None = None,
+        casmach: float | None = None,
+        vspd: float | None = None,
+    ) -> None:
         """Instantaneously move an aircraft to a new position/state.
 
         Implements the MOVE stack command. Optional state values are left
@@ -851,7 +838,7 @@ class Traffic(TrafficArrays):
             self.vs[idx] = vspd
             self.swvnav[idx] = False
 
-    def position(self, id_or_name):
+    def position(self, id_or_name: int | str) -> tuple[bool, str]:
         """Show information on an aircraft, airport, waypoint or navaid.
 
         Implements the POS stack command. Dispatches to
@@ -871,7 +858,7 @@ class Traffic(TrafficArrays):
         else:
             return self.position_by_name(id_or_name)
 
-    def position_aircraft(self, idx: int):
+    def position_aircraft(self, idx: int) -> tuple[bool, str]:
         """Generate a position report for a single aircraft.
 
         The report includes position, heading/track [deg], altitude [ft],
@@ -931,7 +918,7 @@ class Traffic(TrafficArrays):
 
         return True, info
 
-    def position_by_name(self, name: str):
+    def position_by_name(self, name: str) -> tuple[bool, str]:
         """Look up a name and generate an information report for it.
 
         Searches, in order: airports, aircraft callsigns, waypoints/navaids,
@@ -961,9 +948,7 @@ class Traffic(TrafficArrays):
             aptelev = minisky.navdb.aptelev[idx_airport]
 
             # country informatation
-            idx_cc = minisky.navdb.cocode2.index(
-                minisky.navdb.aptco[idx_airport].upper()
-            )
+            idx_cc = minisky.navdb.cocode2.index(minisky.navdb.aptco[idx_airport].upper())
             country_name = minisky.navdb.coname[idx_cc].upper()
             country_code = minisky.navdb.aptco[idx_airport]
 
@@ -974,9 +959,7 @@ class Traffic(TrafficArrays):
             )
 
             if minisky.navdb.aptid[idx_airport] in minisky.navdb.rwythresholds:
-                runways = minisky.navdb.rwythresholds[
-                    minisky.navdb.aptid[idx_airport]
-                ].keys()
+                runways = minisky.navdb.rwythresholds[minisky.navdb.aptid[idx_airport]].keys()
                 if runways:
                     lines += f"Runways: {', '.join(runways)}\n"
 
@@ -1011,10 +994,7 @@ class Traffic(TrafficArrays):
                         lastdesc = minisky.navdb.wpdesc[i]
 
                     # Navaid: frequency
-                    if (
-                        minisky.navdb.wptype[i] in ["VOR", "DME", "TACAN"]
-                        and not samedesc
-                    ):
+                    if minisky.navdb.wptype[i] in ["VOR", "DME", "TACAN"] and not samedesc:
                         desctxt = desctxt + " " + str(minisky.navdb.wpfreq[i]) + " MHz"
                     elif minisky.navdb.wptype[i] == "NDB" and not samedesc:
                         desctxt = desctxt + " " + str(minisky.navdb.wpfreq[i]) + " kHz"
@@ -1038,16 +1018,14 @@ class Traffic(TrafficArrays):
                 # How many others?
                 n_other = minisky.navdb.wpid.count(name) - len(idx_waypoints)
                 if n_other > 0:
-                    lines += (
-                        f"Attention: {n_other} other waypoint(s) also has name {name}\n"
-                    )
+                    lines += f"Attention: {n_other} other waypoint(s) also has name {name}\n"
 
                 # In which airways?
                 connect = minisky.navdb.listconnections(
                     name, minisky.navdb.wplat[iwp], minisky.navdb.wplon[iwp]
                 )
                 if len(connect) > 0:
-                    awset = set([])
+                    awset = set()
                     for c in connect:
                         awset.add(c[0])
 
@@ -1070,7 +1048,7 @@ class Traffic(TrafficArrays):
 
         # Show what we found on airport and navaid/waypoint
 
-    def settrans(self, alt=-999.0):
+    def settrans(self, alt: float = -999.0) -> bool | tuple[bool, str]:
         """Set or show the transition level.
 
         Args:
@@ -1092,7 +1070,7 @@ class Traffic(TrafficArrays):
         tlvl = int(round(self.translvl / ft))
         return True, f"Transition level = {tlvl}/FL{int(round(tlvl / 100.0))}"
 
-    def setbanklim(self, idx, bankangle=None):
+    def setbanklim(self, idx: int, bankangle: float | None = None) -> bool | tuple[bool, str]:
         """Set or show the bank angle limit for a given aircraft.
 
         Implements the BANK stack command. The limit is used by the autopilot
@@ -1114,7 +1092,7 @@ class Traffic(TrafficArrays):
             f"Banklimit of {self.callsign[idx]} is {int(np.degrees(self.ap.bankdef[idx]))} deg",
         )
 
-    def setthrottle(self, idx, throttle=""):
+    def setthrottle(self, idx: int, throttle: str = "") -> bool | tuple[bool, str]:
         """Set the throttle of an aircraft, or report the autothrottle state.
 
         Implements the THR stack command. "AUTO"/"OFF" re-engages the
@@ -1151,7 +1129,7 @@ class Traffic(TrafficArrays):
                 # Remaining option is that it is a float, so try conversion
                 try:
                     x = factor * float(throttle)
-                except:
+                except ValueError:
                     return False, "THR invalid argument " + throttle
 
                 # Check whether value makes sense
@@ -1169,11 +1147,9 @@ class Traffic(TrafficArrays):
 
         if self.swats[idx]:
             return True, "ATS of " + self.callsign[idx] + " is ON"
-        return True, "ATS of " + self.callsign[idx] + " is OFF. THR is " + str(
-            self.thr[idx]
-        )
+        return True, "ATS of " + self.callsign[idx] + " is OFF. THR is " + str(self.thr[idx])
 
-    def crecmd(self, cmdline):
+    def crecmd(self, cmdline: str) -> tuple[bool, str]:
         """Add a command to the list issued for every newly created aircraft.
 
         Implements the CRECMD stack command. Each stored command line is
@@ -1207,7 +1183,7 @@ class Traffic(TrafficArrays):
             self.crecmdlist.append(cmdline)
         return True, ""
 
-    def clrcrecmd(self):
+    def clrcrecmd(self) -> tuple[bool, str]:
         """Clear the list of commands issued for newly created aircraft.
 
         Implements the CLRCRECMD stack command, removing all command lines

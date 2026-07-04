@@ -7,6 +7,7 @@ clients (such as the HTTP API in ``minisky-api.py``) can read asynchronously.
 A single instance is created by :func:`minisky.init` and available as
 ``minisky.scr``.
 """
+
 import asyncio
 import io
 
@@ -33,21 +34,21 @@ class ConsoleIO:
     """
 
     # Update rate of simulation info messages [Hz]
-    siminfo_rate = 1
+    siminfo_rate: int = 1
 
     # Update rate of aircraft update messages [Hz]
-    acupdate_rate = 5
+    acupdate_rate: int = 5
 
-    def __init__(self):
+    def __init__(self) -> None:
         # Timing bookkeeping counters
-        self.prevtime = 0.0
-        self.samplecount = 0
-        self.prevcount = 0
+        self.prevtime: float = 0.0
+        self.samplecount: int = 0
+        self.prevcount: int = 0
 
-        self.output_buffer = io.StringIO()
-        self.event = asyncio.Event()
+        self.output_buffer: io.StringIO = io.StringIO()
+        self.event: asyncio.Event = asyncio.Event()
 
-    def update(self):
+    def update(self) -> None:
         """Count one simulation sample while the simulation is operating.
 
         Increments the sample counter only when the simulation state is
@@ -56,13 +57,13 @@ class ConsoleIO:
         if minisky.sim.state == minisky.OP:
             self.samplecount += 1
 
-    def reset(self):
+    def reset(self) -> None:
         """Reset the timing bookkeeping counters to their initial values."""
         self.samplecount = 0
         self.prevcount = 0
         self.prevtime = 0.0
 
-    def echo(self, text: str = "", flag=0):
+    def echo(self, text: str = "", flag: int = 0) -> None:
         """Print a message and store it in the output buffer.
 
         The previous buffer contents are discarded, the text is written both
@@ -79,7 +80,7 @@ class ConsoleIO:
         print(text, file=self.output_buffer, end="")
         self.event.set()
 
-    def read_output_buffer(self):
+    def read_output_buffer(self) -> str:
         """Return the buffered console output and clear the buffer.
 
         Returns:

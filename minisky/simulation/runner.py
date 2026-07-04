@@ -38,22 +38,22 @@ class Runner:
         jump_to: Target simulation time of the active fast-forward jump [s].
     """
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs) -> None:
         """Initialize the runner.
 
         Args:
             **kwargs: Optional settings. Supports ``speed`` (simulation speed
                 factor relative to real time, default 1).
         """
-        self.node_id = b"\x00" + os.urandom(4)
-        self.host_id = b""
-        self.running = False
-        self.allow_shutdown = True
+        self.node_id: bytes = b"\x00" + os.urandom(4)
+        self.host_id: bytes = b""
+        self.running: bool = False
+        self.allow_shutdown: bool = True
         self.speed = kwargs.get("speed", 1)
-        self.jump = 0
-        self.jump_to = 0
+        self.jump: float = 0
+        self.jump_to: float = 0
 
-    def forward(self, seconds):
+    def forward(self, seconds: float) -> None:
         """Fast-forward the simulation by a number of simulation seconds.
 
         Activates a jump: the run loop switches to the minimum sleep interval
@@ -66,7 +66,7 @@ class Runner:
         self.jump_to = minisky.sim.simt + seconds - 2  #  -2 for the action margin
         self.jump = seconds
 
-    def prevent_shutdown(self):
+    def prevent_shutdown(self) -> None:
         """Disable shutdown so that :meth:`stop` requests are ignored.
 
         Used when the simulator runs without a scenario (e.g. behind the HTTP
@@ -75,7 +75,7 @@ class Runner:
         """
         self.allow_shutdown = False
 
-    async def run(self):
+    async def run(self) -> None:
         """Run the main simulation loop until stopped.
 
         Repeatedly steps the simulation, sleeping between steps so that steps
@@ -111,7 +111,7 @@ class Runner:
 
         print("simulation completed")
 
-    def stop(self):
+    def stop(self) -> None:
         """Request the run loop to stop.
 
         Has no effect when shutdown has been disabled with

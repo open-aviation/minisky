@@ -24,11 +24,12 @@ dependencies = [
 dev = [
     "ipykernel>=6.29.5",
     "pytest>=9.1.1",
+    "ruff>=0.8.0",
+    "pyright>=1.1.390",
 ]
 docs = [
     "mkdocs-material>=9.5.0",
     "mkdocstrings[python]>=0.27.0",
-    "ruff>=0.8.0",
 ]
 
 [tool.pytest.ini_options]
@@ -38,3 +39,39 @@ addopts = "-ra -m 'not api'"
 markers = [
     "api: FastAPI endpoint tests, run separately: uv run pytest -m api tests/test_api.py",
 ]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+# E/W: pycodestyle, F: pyflakes, I: isort, UP: pyupgrade,
+# B: flake8-bugbear, SIM: flake8-simplify, C4: flake8-comprehensions
+select = ["E", "W", "F", "I", "UP", "B", "SIM", "C4"]
+ignore = [
+    "E501",   # line length is handled by the formatter
+    "B008",   # FastAPI relies on function calls (Depends/File) in argument defaults
+    "F403",   # `from module import *` is a core BlueSky plugin/tools convention
+    "F405",   # names resolved via the star imports above
+    "F821",   # stack commands annotate args with parser-DSL strings ("alt", "wpt", ...)
+    "E711",   # `== None` on numpy arrays is elementwise, not equivalent to `is None`
+    "E712",   # `== True/False` on numpy arrays is elementwise and intentional
+    "E721",   # `type(x) == y` comparisons are intentional in a few numeric paths
+]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]  # re-exports
+"minisky/plugin/*.py" = ["F401"]  # plugin API surface re-exports
+
+[tool.pyright]
+include = ["minisky", "minisky-api.py", "minisky-console.py", "minisky-run.py", "scripts"]
+exclude = ["**/__pycache__", ".venv", "build", "site"]
+pythonVersion = "3.11"
+# "basic" surfaces real bugs without drowning a numpy/scipy-heavy fork in noise.
+typeCheckingMode = "basic"
+reportMissingTypeStubs = false
+# Stack commands annotate arguments with parser-DSL strings ("alt", "wpt", ...)
+# that pyright reads as forward references; the tools/plugins also use star
+# imports. Both are intentional BlueSky conventions, not undefined names.
+reportUndefinedVariable = false
+reportWildcardImportFromLibrary = false

@@ -14,6 +14,11 @@ The active detection and resolution instances live on the traffic object as
 ``minisky.traf.cd`` and ``minisky.traf.cr``.
 """
 
+# isort: off
+# Import order matters: MVP subclasses ConflictResolution, so resolution must
+# be importable before mvp to avoid a partially-initialised circular import.
 from .detection import ConflictDetection
 from .resolution import ConflictResolution
 from .mvp import MVP
+
+# isort: on

@@ -11,7 +11,7 @@ from math import *
 import numpy as np
 
 import minisky
-from minisky.core import TrafficArrays, settings
+from minisky.core import TrafficArrays
 
 
 class Trails(TrafficArrays):
@@ -46,7 +46,7 @@ class Trails(TrafficArrays):
     Created by: Jacco M. Hoekstra
     """
 
-    def __init__(self, dttrail=10.0):
+    def __init__(self, dttrail: float = 10.0) -> None:
         super().__init__()
         self.active = False  # Wether or not to show trails
         self.dt = dttrail  # Resolution of trail pieces in time
@@ -90,7 +90,7 @@ class Trails(TrafficArrays):
 
         return
 
-    def create(self, n=1):
+    def create(self, n: int = 1) -> None:
         """Initialize trail data for newly created aircraft.
 
         Sets the default trail color and records the creation position as
@@ -105,7 +105,7 @@ class Trails(TrafficArrays):
         self.lastlat[-1] = minisky.traf.lat[-1]
         self.lastlon[-1] = minisky.traf.lon[-1]
 
-    def update(self):
+    def update(self) -> None:
         """Add new trail segments for aircraft that moved long enough.
 
         Called every simulation step. When trails are inactive, only the
@@ -176,14 +176,11 @@ class Trails(TrafficArrays):
             self.newlat1.extend(lstlat1)
             self.newlon1.extend(lstlon1)
         # Update colours
-        self.fcol = (
-            1.0
-            - np.minimum(self.tcol0, np.abs(minisky.sim.simt - self.time)) / self.tcol0
-        )
+        self.fcol = 1.0 - np.minimum(self.tcol0, np.abs(minisky.sim.simt - self.time)) / self.tcol0
 
         return
 
-    def buffer(self):
+    def buffer(self) -> None:
         """Move the current foreground trail segments to the background.
 
         Background segments keep being drawn (in the old color) but are no
@@ -208,7 +205,7 @@ class Trails(TrafficArrays):
         self.clearfg()  # Clear foreground trails
         return
 
-    def clearnew(self):
+    def clearnew(self) -> None:
         """Clear the pipeline of new line segments used for the QtGL GUI."""
         # Clear new lines pipeline used for QtGL
         self.newlat0 = []
@@ -216,7 +213,7 @@ class Trails(TrafficArrays):
         self.newlat1 = []
         self.newlon1 = []
 
-    def clearfg(self):  # Foreground
+    def clearfg(self) -> None:  # Foreground
         """Clear the foreground trail segment buffers."""
         self.lat0 = np.array([])
         self.lon0 = np.array([])
@@ -226,7 +223,7 @@ class Trails(TrafficArrays):
         self.col = np.array([])
         return
 
-    def clearbg(self):  # Background
+    def clearbg(self) -> None:  # Background
         """Clear the background trail segment buffers."""
         self.bglat0 = np.array([])
         self.bglon0 = np.array([])
@@ -236,7 +233,7 @@ class Trails(TrafficArrays):
         self.bgacid = []
         return
 
-    def clear(self):
+    def clear(self) -> None:
         """Clear all trail data: foreground, background and new-line buffers."""
         self.lastlon = np.array([])
         self.lastlat = np.array([])
@@ -245,7 +242,7 @@ class Trails(TrafficArrays):
         self.clearnew()
         return
 
-    def setTrails(self, *args):
+    def setTrails(self, *args) -> "bool | tuple[bool, str]":
         """Switch trails on/off, or change the trail color of an aircraft.
 
         Implements the TRAIL stack command:
@@ -264,10 +261,7 @@ class Trails(TrafficArrays):
         if len(args) == 0:
             msg = "TRAIL ON/OFF, [dt] / TRAIL acid color\n"
 
-            if self.active:
-                msg = msg + "TRAILS ARE ON"
-            else:
-                msg = msg + "TRAILS ARE OFF"
+            msg = msg + "TRAILS ARE ON" if self.active else msg + "TRAILS ARE OFF"
 
             return True, msg
 
@@ -292,7 +286,7 @@ class Trails(TrafficArrays):
 
         return True
 
-    def changeTrailColor(self, color, idx):
+    def changeTrailColor(self, color: str, idx: int) -> None:
         """Change the trail color of one aircraft.
 
         Args:
@@ -303,7 +297,7 @@ class Trails(TrafficArrays):
         self.accolor[idx] = self.colorList[color]
         return
 
-    def reset(self):
+    def reset(self) -> None:
         """Clear all trail data and switch trails off upon simulation reset."""
         # This ensures that the traffic arrays (which size is dynamic)
         # are all reset as well, so all lat,lon,sdp etc but also objects adsb

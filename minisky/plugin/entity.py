@@ -17,8 +17,9 @@ Usage:
 For non-singleton TrafficArrays that are replaceable,
 just inherit from TrafficArrays directly.
 """
+
 import inspect
-from typing import ClassVar, Optional
+from typing import Any, ClassVar, Optional
 
 from minisky.core.trafficarrays import TrafficArrays
 
@@ -30,48 +31,48 @@ class Proxy:
     attribute access through the currently selected implementation.
     """
 
-    def __init__(self):
-        self.__dict__['_refobj'] = None
-        self.__dict__['_proxied'] = list()
+    def __init__(self) -> None:
+        self.__dict__["_refobj"] = None
+        self.__dict__["_proxied"] = []
 
-    def _selected(self):
+    def _selected(self) -> type:
         """Return the class of the currently selected implementation."""
         return self._refobj.__class__
 
-    def _replace(self, refobj):
+    def _replace(self, refobj: object) -> None:
         """Replace the reference object with a new implementation."""
-        self.__dict__['_refobj'] = refobj
+        self.__dict__["_refobj"] = refobj
         # Clear all proxied functions/methods
         for name in self._proxied:
             delattr(self, name)
         self._proxied.clear()
         # Copy all public functions/methods of reference object
         for name, value in inspect.getmembers(refobj, callable):
-            if name[0] != '_':
+            if name[0] != "_":
                 self.__dict__[name] = value
                 self._proxied.append(name)
 
-    def __getattr__(self, attr):
+    def __getattr__(self, attr: str) -> Any:
         return getattr(self._refobj, attr)
 
-    def __setattr__(self, name, value):
+    def __setattr__(self, name: str, value: Any) -> None:
         return setattr(self._refobj, name, value)
 
 
-def isproxied(obj):
+def isproxied(obj: object) -> bool:
     """Returns True if obj is a proxied object."""
     return isinstance(obj, Proxy)
 
 
-def getproxied(obj):
+def getproxied(obj: object) -> Any:
     """Return wrapped proxy object if proxied, otherwise the original object."""
-    return obj.__dict__['_refobj'] if isinstance(obj, Proxy) else obj
+    return obj.__dict__["_refobj"] if isinstance(obj, Proxy) else obj
 
 
 class EntityMeta(type):
     """Meta class to make Entity subclasses singletons."""
 
-    def __call__(cls, *args, **kwargs):
+    def __call__(cls, *args, **kwargs) -> Any:
         """Object creation with proxy wrapping and singleton behavior."""
         # Create singleton instance if it doesn't exist yet
         if not cls.is_instantiated():
@@ -105,23 +106,23 @@ class Entity(TrafficArrays, metaclass=EntityMeta):
     """
 
     # Singleton instance tracking
-    _proxy: ClassVar[Optional[Proxy]] = None
-    _instance: ClassVar[Optional['Entity']] = None
+    _proxy: ClassVar[Proxy | None] = None
+    _instance: ClassVar[Optional["Entity"]] = None
 
-    def __init_subclass__(cls, **kwargs):
+    def __init_subclass__(cls, **kwargs) -> None:
         """Called when a subclass is defined."""
         super().__init_subclass__(**kwargs)
 
         # Each Entity subclass keeps its own singleton instance
         cls._instance = None
 
-        # First-level Entity subclasses get a proxy for hot-swapping
-        if not hasattr(cls, '_proxy') or cls._proxy is None:
-            if cls._baseimpl is not None:  # Is this a replaceable class?
-                cls._proxy = Proxy()
+        # First-level Entity subclasses get a proxy for hot-swapping,
+        # but only replaceable classes (with a base implementation) get one
+        if (not hasattr(cls, "_proxy") or cls._proxy is None) and cls._baseimpl is not None:
+            cls._proxy = Proxy()
 
     @classmethod
-    def select(cls, instance=None):
+    def select(cls, instance: Optional["Entity"] = None) -> None:
         """Select this class/instance as the active implementation."""
         # Call parent's select to update _generator
         super().select()
@@ -135,16 +136,16 @@ class Entity(TrafficArrays, metaclass=EntityMeta):
             cls._proxy._replace(instance)
 
     @classmethod
-    def is_instantiated(cls):
+    def is_instantiated(cls) -> bool:
         """Returns True if the singleton has been instantiated."""
         return cls._instance is not None
 
     @classmethod
-    def instance(cls):
+    def instance(cls) -> "Proxy | Entity | None":
         """Return the current instance (proxy if replaceable, else instance)."""
         return cls._proxy or cls._instance
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
         cls = type(self)
         if cls._instance is None:

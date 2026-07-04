@@ -21,17 +21,17 @@ in the simulation grows and shrinks in lockstep.
 """
 
 from collections.abc import Collection
-from typing import ClassVar, Optional
+from typing import ClassVar
 
 import numpy as np
 
 defaults = {"float": 0.0, "int": 0, "uint": 0, "bool": False, "S": "", "str": ""}
 
 # Global dictionary of replaceable classes
-replaceables: dict[str, type['TrafficArrays']] = {}
+replaceables: dict[str, type["TrafficArrays"]] = {}
 
 
-def reset_replaceables():
+def reset_replaceables() -> None:
     """Reset all replaceables to their default implementation and reinstantiate on traf."""
     for base in replaceables.values():
         base.selectdefault()
@@ -39,7 +39,7 @@ def reset_replaceables():
         _replace_instance_on_traf(base, base._generator)
 
 
-def select_implementation(basename='', implname=''):
+def select_implementation(basename: str = "", implname: str = "") -> tuple[bool, str]:
     """Select an implementation for a replaceable class.
 
     Arguments:
@@ -49,36 +49,39 @@ def select_implementation(basename='', implname=''):
     Returns: (success, message) tuple
     """
     if not basename:
-        return True, 'Replaceable classes in MiniSky:\n' + ', '.join(replaceables)
+        return True, "Replaceable classes in MiniSky:\n" + ", ".join(replaceables)
 
     base = replaceables.get(basename.upper())
     if not base:
-        return False, f'Replaceable {basename} not found.'
+        return False, f"Replaceable {basename} not found."
 
     impls = base.derived()
     if not implname:
         current = base._generator.__name__
-        return True, (f'Current implementation for {basename}: {current}\n'
-                      f'Available implementations: {", ".join(impls)}')
+        return True, (
+            f"Current implementation for {basename}: {current}\n"
+            f"Available implementations: {', '.join(impls)}"
+        )
 
-    impl = impls.get(base.__name__ if implname.upper() == 'BASE' else implname.upper())
+    impl = impls.get(base.__name__ if implname.upper() == "BASE" else implname.upper())
     if not impl:
-        return False, f'Implementation {implname} not found for {basename}.'
+        return False, f"Implementation {implname} not found for {basename}."
 
     impl.select()
 
     # Replace existing instance on traf if it exists
     _replace_instance_on_traf(base, impl)
 
-    return True, f'Selected {implname} for {basename}'
+    return True, f"Selected {implname} for {basename}"
 
 
-def _replace_instance_on_traf(base, impl):
+def _replace_instance_on_traf(base: type["TrafficArrays"], impl: type["TrafficArrays"]) -> None:
     """Replace existing instance of base class on traf with new impl instance.
 
     This ensures SELECTIMPL takes effect immediately, not just for future instantiations.
     """
     import minisky
+
     if minisky.traf is None:
         return
 
@@ -88,10 +91,10 @@ def _replace_instance_on_traf(base, impl):
             # Create new instance of selected implementation
             new_instance = impl()
             # Copy over any per-aircraft array data from old instance (if they exist)
-            for arr_var in getattr(attr_value, '_ArrVars', []):
+            for arr_var in getattr(attr_value, "_ArrVars", []):
                 if hasattr(new_instance, arr_var):
                     setattr(new_instance, arr_var, getattr(attr_value, arr_var))
-            for lst_var in getattr(attr_value, '_LstVars', []):
+            for lst_var in getattr(attr_value, "_LstVars", []):
                 if hasattr(new_instance, lst_var):
                     setattr(new_instance, lst_var, getattr(attr_value, lst_var))
             # Replace on traf
@@ -102,7 +105,7 @@ def _replace_instance_on_traf(base, impl):
             break
 
 
-def _rebind_stack_commands(old_instance, new_instance):
+def _rebind_stack_commands(old_instance: "TrafficArrays", new_instance: "TrafficArrays") -> None:
     """Rebind stack command callbacks from old_instance to new_instance."""
     import inspect
 
@@ -111,9 +114,7 @@ def _rebind_stack_commands(old_instance, new_instance):
     for cmdobj in set(Command.cmddict.values()):
         callback = cmdobj.callback
         if inspect.ismethod(callback) and callback.__self__ is old_instance:
-            cmdobj.callback = getattr(
-                new_instance, callback.__func__.__name__, callback
-            )
+            cmdobj.callback = getattr(new_instance, callback.__func__.__name__, callback)
 
 
 class RegisterElementParameters:
@@ -127,15 +128,15 @@ class RegisterElementParameters:
     aircraft creation and deletion.
     """
 
-    def __init__(self, parent):
+    def __init__(self, parent: "TrafficArrays") -> None:
         self._parent = parent
         self.keys0 = set(parent.__dict__.keys())
 
-    def __enter__(self):
+    def __enter__(self) -> None:
         """No-op: the attribute snapshot is already taken in __init__."""
         pass
 
-    def __exit__(self, exc_type, exc_value, tb):
+    def __exit__(self, exc_type, exc_value, tb) -> None:
         """Register all attributes created inside the with-block as traffic arrays."""
         self._parent._init_trafarrays(set(self._parent.__dict__.keys()) - self.keys0)
 
@@ -170,17 +171,17 @@ class TrafficArrays:
     ntraf = 0
 
     # Replaceable pattern class variables (set per-subclass)
-    _baseimpl: ClassVar[Optional[type]] = None
+    _baseimpl: ClassVar[type | None] = None
     _generator: ClassVar[type]
-    _default: ClassVar[str] = ''
+    _default: ClassVar[str] = ""
 
     @staticmethod
-    def setroot(obj):
+    def setroot(obj: "TrafficArrays") -> None:
         """This function is used to set the root of the tree of TrafficArray
         objects (which is the traffic object.)"""
         TrafficArrays.root = obj
 
-    def __init_subclass__(cls, **kwargs):
+    def __init_subclass__(cls, **kwargs) -> None:
         """Called when a subclass is defined.
 
         This is the key to load-order independence: Python calls this
@@ -197,9 +198,9 @@ class TrafficArrays:
         cls._generator = cls
 
         # First-level subclasses become base implementations (all are replaceable)
-        if not hasattr(cls, '_baseimpl') or cls._baseimpl is None:
+        if not hasattr(cls, "_baseimpl") or cls._baseimpl is None:
             cls._baseimpl = cls
-            cls._default = ''
+            cls._default = ""
             replaceables[cls.__name__.upper()] = cls
 
     def __new__(cls, *args, **kwargs):
@@ -219,7 +220,7 @@ class TrafficArrays:
         return object.__new__(cls)
 
     @classmethod
-    def setdefault(cls, name):
+    def setdefault(cls, name: str) -> None:
         """Set a default implementation by name."""
         if cls._baseimpl is None:
             return
@@ -229,7 +230,7 @@ class TrafficArrays:
             cls._baseimpl._generator = impl
 
     @classmethod
-    def getdefault(cls):
+    def getdefault(cls) -> "type[TrafficArrays] | None":
         """Get the default implementation class."""
         if cls._baseimpl is None:
             return cls
@@ -237,7 +238,7 @@ class TrafficArrays:
         return cls._baseimpl.derived().get(default) if default else cls._baseimpl
 
     @classmethod
-    def selectdefault(cls):
+    def selectdefault(cls) -> None:
         """Select the default implementation."""
         if cls._baseimpl is None:
             return
@@ -245,14 +246,14 @@ class TrafficArrays:
         base.derived().get(base._default, base).select()
 
     @classmethod
-    def select(cls):
+    def select(cls) -> None:
         """Select this class as the active implementation."""
         if cls._baseimpl is None:
             return
         cls._baseimpl._generator = cls
 
     @classmethod
-    def selected(cls):
+    def selected(cls) -> "type[TrafficArrays]":
         """Return the currently selected implementation class."""
         if cls._baseimpl is None:
             return cls
@@ -266,7 +267,7 @@ class TrafficArrays:
             ret.update(sub.derived())
         return ret
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Create a TrafficArrays node and attach it to the current root.
 
         The new object registers itself as a child of TrafficArrays.root
@@ -281,18 +282,18 @@ class TrafficArrays:
         self._ArrVars = []
         self._LstVars = []
 
-    def reparent(self, newparent):
+    def reparent(self, newparent: "TrafficArrays") -> None:
         """Give TrafficArrays object a new parent."""
         # Remove myself from the parent list of children, and add to new parent
         self._parent._children.pop(self._parent._children.index(self))
         newparent._children.append(self)
         self._parent = newparent
 
-    def settrafarrays(self):
+    def settrafarrays(self) -> RegisterElementParameters:
         """Convenience function for with-style traffic array registration."""
         return RegisterElementParameters(self)
 
-    def _init_trafarrays(self, keys):
+    def _init_trafarrays(self, keys: set[str]) -> None:
         """Register the given attribute names as per-aircraft variables.
 
         Lists are recorded in _LstVars, numpy arrays in _ArrVars, and
@@ -314,7 +315,7 @@ class TrafficArrays:
         if TrafficArrays.root.ntraf:
             self.create(TrafficArrays.root.ntraf)
 
-    def create(self, n=1):
+    def create(self, n: int = 1) -> None:
         """Append n elements (aircraft) to all lists and arrays.
 
         New elements get a default value based on their element type:
@@ -333,15 +334,13 @@ class TrafficArrays:
         for v in self._ArrVars:  # Numpy array
             # Get type without byte length
             vartype = "".join(c for c in str(self.__dict__[v].dtype) if c.isalpha())
-            self.__dict__[v] = np.append(
-                self.__dict__[v], [defaults.get(vartype, 0)] * n
-            )
+            self.__dict__[v] = np.append(self.__dict__[v], [defaults.get(vartype, 0)] * n)
 
-    def istrafarray(self, name):
+    def istrafarray(self, name: str) -> bool:
         """Returns true if parameter 'name' is a registered traffic array of this object."""
         return name in self._LstVars or name in self._ArrVars
 
-    def create_children(self, n=1):
+    def create_children(self, n: int = 1) -> None:
         """Call create (aircraft create) recursively on all children.
 
         Args:
@@ -351,7 +350,7 @@ class TrafficArrays:
             child.create(n)
             child.create_children(n)
 
-    def delete(self, idx):
+    def delete(self, idx) -> None:
         """Aircraft delete.
 
         Removes element(s) idx from all registered lists and arrays of
@@ -377,7 +376,7 @@ class TrafficArrays:
                 for v in self._LstVars:
                     del self.__dict__[v][idx]
 
-    def reset(self):
+    def reset(self) -> None:
         """Delete all elements from arrays and start at 0 aircraft.
 
         Recursively empties the registered arrays and lists of this object

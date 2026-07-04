@@ -17,7 +17,7 @@ from minisky.tools import geo
 from minisky.tools.aero import nm
 
 
-def findall(lst, x):
+def findall(lst, x) -> list:
     """Find indices of multiple occurences of x in lst.
 
     Args:
@@ -89,13 +89,13 @@ class Navdatabase:
     Created by  : Jacco M. Hoekstra (TU Delft)
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """The navigation database: Contains waypoint, airport, airway, and sector data, but also
         geographical graphics data."""
         # Variables are initialized in reset()
         self.reset()
 
-    def reset(self):
+    def reset(self) -> None:
         """(Re)load all navigation data from the package data directory."""
         # print("Loading global navigation database...")
         # wptdata, aptdata, awydata, firdata, codata, rwythresholds = load_navdata()
@@ -107,8 +107,10 @@ class Navdatabase:
         awydata = pd.read_parquet(nav_data_path / "airway.parquet")
         codata = pd.read_parquet(nav_data_path / "country.parquet")
 
-        firdata = json.load(open(nav_data_path / "fir.json"))
-        rwythresholds = json.load(open(nav_data_path / "runway_thresholds.json"))
+        with open(nav_data_path / "fir.json") as f:
+            firdata = json.load(f)
+        with open(nav_data_path / "runway_thresholds.json") as f:
+            rwythresholds = json.load(f)
 
         # Get waypoint data
         self.wpid = wptdata["wpid"].to_list()  # identifier (string)
@@ -157,7 +159,7 @@ class Navdatabase:
 
         self.rwythresholds = rwythresholds
 
-    def defwpt(self, name=None, lat=None, lon=None, wptype=None):
+    def defwpt(self, name=None, lat=None, lon=None, wptype=None) -> tuple[bool, str]:
         """DEFWPT: Define, inspect, or delete a scenario-specific waypoint.
 
         Without lat/lon, information about the existing waypoint is
@@ -182,10 +184,9 @@ class Navdatabase:
             return False, "Name needs to start with an alphabetical character"
 
         # DEL command: give info on waypoint (shudl work wit or without lat,lon, may be clicked by accident
-        elif (
-            not wptype == None
-            and (wptype.upper() == "DEL" or wptype.upper() == "DELETE")
-        ) or (type(lon) == str and (lon.upper() == "DEL" or lon.upper == "DELETE")):
+        elif (wptype != None and (wptype.upper() == "DEL" or wptype.upper() == "DELETE")) or (
+            type(lon) == str and (lon.upper() == "DEL" or lon.upper == "DELETE")
+        ):
             return self.delwpt(name)
 
         # No data: give info on waypoint
@@ -193,9 +194,7 @@ class Navdatabase:
             reflat, reflon = minisky.scr.getviewctr()
             if self.wpid.count(name.upper()) > 0:
                 i = self.getwpidx(name.upper(), reflat, reflon)
-                txt = (
-                    self.wpid[i] + " : " + str(self.wplat[i]) + "," + str(self.wplon[i])
-                )
+                txt = self.wpid[i] + " : " + str(self.wplat[i]) + "," + str(self.wplon[i])
                 if len(self.wptype[i]) > 0:
                     txt = txt + "  " + self.wptype[i]
                 return True, txt
@@ -224,7 +223,7 @@ class Navdatabase:
 
         return True, name.upper() + " added to navdb."
 
-    def delwpt(self, name=None):
+    def delwpt(self, name=None) -> tuple[bool, str]:
         """Delete a waypoint from the database.
 
         The last-added occurrence of the name is removed.
@@ -238,9 +237,7 @@ class Navdatabase:
         if self.wpid.count(name.upper()) <= 0:
             return False, "Waypoint " + name.upper() + " does not exist."
 
-        idx = (
-            len(self.wpid) - self.wpid[::-1].index(name) - 1
-        )  # Search from back of list
+        idx = len(self.wpid) - self.wpid[::-1].index(name) - 1  # Search from back of list
 
         del self.wpid[idx]  # wp name
 
@@ -258,7 +255,7 @@ class Navdatabase:
 
         return True, name.upper() + " deleted from navdb."
 
-    def getwpidx(self, txt, reflat=999999.0, reflon=999999):
+    def getwpidx(self, txt: str, reflat: float = 999999.0, reflon: float = 999999) -> int:
         """Get waypoint index to access data.
 
         Args:
@@ -273,7 +270,7 @@ class Navdatabase:
         name = txt.upper()
         try:
             i = self.wpid.index(name)
-        except:
+        except ValueError:
             return -1
 
         # if no pos is specified, get first occurence
@@ -289,7 +286,7 @@ class Navdatabase:
                 try:
                     i = self.wpid.index(name, i + 1)
                     idx.append(i)
-                except:
+                except ValueError:
                     found = False
             if len(idx) == 1:
                 return idx[0]
@@ -303,7 +300,9 @@ class Navdatabase:
                         dmin = d
                 return imin
 
-    def getwpindices(self, txt, reflat=999999.0, reflon=999999, crit=1852.0):
+    def getwpindices(
+        self, txt: str, reflat: float = 999999.0, reflon: float = 999999, crit: float = 1852.0
+    ) -> list:
         """Get indices of a waypoint and its co-located duplicates.
 
         Finds the occurrence of the identifier closest to the reference
@@ -321,7 +320,7 @@ class Navdatabase:
         name = txt.upper()
         try:
             i = self.wpid.index(name)
-        except:
+        except ValueError:
             return [-1]
 
         # if no pos is specified, get first occurence
@@ -357,7 +356,7 @@ class Navdatabase:
 
                 return indices
 
-    def getaptidx(self, txt):
+    def getaptidx(self, txt: str) -> int:
         """Get the index of an airport by ICAO identifier.
 
         Args:
@@ -368,10 +367,10 @@ class Navdatabase:
         """
         try:
             return self.aptid.index(txt.upper())
-        except:
+        except ValueError:
             return -1
 
-    def getinear(self, wlat, wlon, lat, lon):  # lat,lon in degrees
+    def getinear(self, wlat, wlon, lat: float, lon: float):  # lat,lon in degrees
         """Get the index of the entry nearest to a given position.
 
         Uses a fast flat-earth squared-distance comparison.
@@ -395,15 +394,15 @@ class Navdatabase:
         # print dt
         return idx
 
-    def getwpinear(self, lat, lon):  # lat,lon in degrees
+    def getwpinear(self, lat: float, lon: float):  # lat,lon in degrees
         """Get the index of the waypoint closest to position (lat, lon) [deg]."""
         return self.getinear(self.wplat, self.wplon, lat, lon)
 
-    def getapinear(self, lat, lon):  # lat,lon in degrees
+    def getapinear(self, lat: float, lon: float):  # lat,lon in degrees
         """Get the index of the airport closest to position (lat, lon) [deg]."""
         return self.getinear(self.aptlat, self.aptlon, lat, lon)
 
-    def getinside(self, wlat, wlon, lat0, lat1, lon0, lon1):
+    def getinside(self, wlat, wlon, lat0: float, lat1: float, lon0: float, lon1: float) -> list:
         """Get indices of positions inside the given lat/lon box.
 
         Args:
@@ -419,28 +418,24 @@ class Navdatabase:
         """
         # t0 = time.clock()
         if lat0 < lat1:
-            arr = np.where(
-                (wlat > lat0) * (wlat < lat1) * (wlon > lon0) * (wlon < lon1)
-            )
+            arr = np.where((wlat > lat0) * (wlat < lat1) * (wlon > lon0) * (wlon < lon1))
         else:
-            arr = np.where(
-                (wlat > lat1) + (wlat < lat0) * (wlon > lon0) * (wlon < lon1)
-            )
+            arr = np.where((wlat > lat1) + (wlat < lat0) * (wlon > lon0) * (wlon < lon1))
 
         # dt = time.clock()-t0
         # print dt
         return list(arr[0])  # Get indices
 
-    def getwpinside(self, lat0, lat1, lon0, lon1):
+    def getwpinside(self, lat0: float, lat1: float, lon0: float, lon1: float) -> list:
         """Get waypoint indices inside the given lat/lon box [deg]."""
         return self.getinside(self.wplat, self.wplon, lat0, lat1, lon0, lon1)
 
-    def getapinside(self, lat0, lat1, lon0, lon1):
+    def getapinside(self, lat0: float, lat1: float, lon0: float, lon1: float) -> list:
         """Get airport indices inside the given lat/lon box [deg]."""
         return self.getinside(self.aptlat, self.aptlon, lat0, lat1, lon0, lon1)
 
     # returns all runways of given airport
-    def listairway(self, airwayid):
+    def listairway(self, airwayid: str) -> list:
         """Return the waypoint sequence(s) of an airway.
 
         Collects all legs of the airway and chains them into ordered
@@ -482,7 +477,7 @@ class Navdatabase:
             # Count wps to see when we have all segments
             unused = len(left) + len(right)
 
-            while unused > 0 and not left == len(left) * [""]:
+            while unused > 0 and left != len(left) * [""]:
                 # Find start of a segment
                 wps = left + right
                 iwps = 0
@@ -542,7 +537,7 @@ class Navdatabase:
 
         return airway  # ,connect
 
-    def listconnections(self, wpid, wplat, wplon):
+    def listconnections(self, wpid: str, wplat: float, wplon: float) -> list:
         """Return the airway legs connecting to a given waypoint.
 
         Only legs whose stored endpoint lies within 10 nm of the given

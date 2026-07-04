@@ -20,7 +20,7 @@ class TestAltitude:
         assert cv.txt2alt("2500") == pytest.approx(2500 * FT)
 
     def test_invalid_raises(self):
-        with pytest.raises(Exception):
+        with pytest.raises(ValueError):
             cv.txt2alt("NOTANALT")
 
 
@@ -64,7 +64,7 @@ class TestSpeed:
         assert cv.txt2spd(".8") == pytest.approx(0.8)
 
     def test_invalid_raises(self):
-        with pytest.raises(Exception):
+        with pytest.raises(ValueError):
             cv.txt2spd("FAST")
 
 

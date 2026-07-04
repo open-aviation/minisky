@@ -10,6 +10,7 @@ traffic object once per timestep. A single instance is created by
 import datetime
 import time
 from random import seed
+from typing import Any
 
 import numpy as np
 
@@ -47,31 +48,31 @@ class Simulation:
         clients: Set of known client identifiers connected to this simulation.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.state = minisky.INIT
         self.prevstate = None
 
         # Simulation time [seconds]
-        self.simt = 0
+        self.simt: float = 0
 
         # Simulation timestep [seconds]
-        self.simdt = 1
+        self.simdt: float = 1
 
         # System time [seconds]
-        self.syst = 0
+        self.syst: float = 0
 
         # Simulated UTC clock time, can be set by setutc()
-        self.utc = datetime.datetime.today()
+        self.utc: datetime.datetime = datetime.datetime.today()
 
         # Flag indicating running at fixed rate or fast time
 
         # Flag indicating whether timestep can be varied to ensure realtime op
-        self.rtmode = False
+        self.rtmode: bool = False
 
         # Keep track of known clients
-        self.clients = set()
+        self.clients: set[Any] = set()
 
-    def step(self):
+    def step(self) -> None:
         """Perform one simulation timestep.
 
         Call this function instead of update if you don't want to run with a fixed
@@ -86,10 +87,11 @@ class Simulation:
            ``simdt`` seconds, run plugin ``preupdate`` hooks (including
            timers), update all aircraft, then run plugin ``update`` hooks.
         """
-        if self.state == minisky.INIT:
-            # Simulation starts as soon as there is traffic, or pending commands
-            if minisky.traf.ntraf > 0 or len(minisky.stack.get_scendata()[0]) > 0:
-                self.op()
+        # Simulation starts as soon as there is traffic, or pending commands
+        if self.state == minisky.INIT and (
+            minisky.traf.ntraf > 0 or len(minisky.stack.get_scendata()[0]) > 0
+        ):
+            self.op()
 
         # Always update stack
         minisky.stack.process()
@@ -108,7 +110,7 @@ class Simulation:
             # Plugin post-update hooks
             PluginManager.update()
 
-    def stop(self):
+    def stop(self) -> None:
         """Stop the simulation (stack STOP/QUIT command).
 
         Sets the simulation state to ``END`` and asks the runner to exit its
@@ -119,7 +121,7 @@ class Simulation:
         self.state = minisky.END
         minisky.runner.stop()
 
-    def op(self):
+    def op(self) -> None:
         """Set simulation state to OPERATE (stack OP command).
 
         Resumes (or starts) advancing simulation time. Also re-anchors the
@@ -130,7 +132,7 @@ class Simulation:
         self.state = minisky.OP
         minisky.scr.echo("Simulation running")
 
-    def hold(self):
+    def hold(self) -> None:
         """Set simulation state to HOLD (stack HOLD command).
 
         Pauses the advance of simulation time and triggers the plugin ``hold``
@@ -142,7 +144,7 @@ class Simulation:
         PluginManager.hold()
         minisky.scr.echo("Simulation paused")
 
-    def reset(self):
+    def reset(self) -> None:
         """Reset all simulation objects (stack RESET command).
 
         Returns the simulation to its initial state: simulation time back to
@@ -155,9 +157,7 @@ class Simulation:
         self.syst = 0
         self.simt = 0
         self.simdt = 1
-        self.utc = datetime.datetime.utcnow().replace(
-            hour=0, minute=0, second=0, microsecond=0
-        )
+        self.utc = datetime.datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
         minisky.navdb.reset()
         minisky.traf.reset()
         minisky.stack.reset()
@@ -169,7 +169,7 @@ class Simulation:
         PluginManager.reset()
         minisky.scr.echo("Simulation reset")
 
-    def realtime(self, flag=None):
+    def realtime(self, flag: bool | None = None) -> tuple[bool, str]:
         """Get or set realtime mode (stack REALTIME command).
 
         In realtime mode the timestep may be varied to keep the simulation
@@ -188,7 +188,7 @@ class Simulation:
 
         return True, "Realtime mode is o" + ("n" if self.rtmode else "ff")
 
-    def event(self, eventname, eventdata, sender_rte):
+    def event(self, eventname: bytes, eventdata: Any, sender_rte: Any) -> bool:
         """Handle events coming from the network.
 
         Supports two event types: ``b"STACK"``, which appends a single stack
@@ -225,7 +225,7 @@ class Simulation:
 
         return event_processed
 
-    def setutc(self, *args):
+    def setutc(self, *args) -> tuple[bool, str]:
         """Set the simulated UTC clock time (stack UTC/DATE command).
 
         Usage: UTC [RUN | REAL | UTC | HH:MM:SS[.ff] | day month year [HH:MM:SS[.ff]]]
@@ -281,11 +281,7 @@ class Simulation:
             try:
                 self.utc = datetime.datetime.strptime(
                     f"{year},{month},{day},{timestring}",
-                    (
-                        "%Y,%m,%d,%H:%M:%S.%f"
-                        if "." in timestring
-                        else "%Y,%m,%d,%H:%M:%S"
-                    ),
+                    ("%Y,%m,%d,%H:%M:%S.%f" if "." in timestring else "%Y,%m,%d,%H:%M:%S"),
                 )
             except ValueError:
                 return False, "Input date invalid."
@@ -295,7 +291,7 @@ class Simulation:
         return True, "Simulation UTC " + str(self.utc)
 
     @staticmethod
-    def setseed(value):
+    def setseed(value: int) -> None:
         """Set the random seed for this simulation (stack SEED command).
 
         Seeds both Python's :mod:`random` module and NumPy's random generator

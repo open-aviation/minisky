@@ -9,6 +9,7 @@ classified as NA (unknown).
 """
 
 import numpy as np
+
 from .coeff import *
 
 NA = 0  # Unknown phase
@@ -20,7 +21,7 @@ DE = 5  # Descent
 AP = 6  # Approach
 
 
-def readable_phase(ph):
+def readable_phase(ph: int) -> str:
     """Return the human-readable name of a flight-phase identifier.
 
     Args:
@@ -41,7 +42,13 @@ def readable_phase(ph):
     return phases[ph]
 
 
-def get(lifttype, spd, roc, alt, unit="SI"):
+def get(
+    lifttype: np.ndarray,
+    spd: np.ndarray,
+    roc: np.ndarray,
+    alt: np.ndarray,
+    unit: str = "SI",
+) -> np.ndarray:
     """Get the flight phase for all aircraft, dispatching on lift type.
 
     Fixed-wing aircraft are classified with :func:`get_fixwing`, rotorcraft
@@ -68,7 +75,7 @@ def get(lifttype, spd, roc, alt, unit="SI"):
     return ph
 
 
-def get_fixwing(spd, roc, alt, unit="SI"):
+def get_fixwing(spd: np.ndarray, roc: np.ndarray, alt: np.ndarray, unit: str = "SI") -> np.ndarray:
     """Get the phase of flight base on aircraft state data
 
     Classifies fixed-wing aircraft with altitude and vertical-rate
@@ -114,7 +121,7 @@ def get_fixwing(spd, roc, alt, unit="SI"):
     return ph
 
 
-def get_rotor(spd, roc, alt, unit="SI"):
+def get_rotor(spd: np.ndarray, roc: np.ndarray, alt: np.ndarray, unit: str = "SI") -> np.ndarray:
     """Get the flight phase for rotorcraft (always NA).
 
     Rotorcraft phase identification is not implemented; all rotorcraft are

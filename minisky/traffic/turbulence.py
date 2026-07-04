@@ -6,6 +6,8 @@ is part of the trajectory noise that is switched on/off with the NOISE
 stack command (see Traffic.setnoise()).
 """
 
+from typing import Any
+
 import numpy as np
 
 import minisky
@@ -27,16 +29,16 @@ class Turbulence(TrafficArrays):
             clipped to a small positive minimum.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.active = False
         self.sd = np.array([])
 
-    def reset(self):
+    def reset(self) -> None:
         """Switch turbulence off and restore the default standard deviations."""
         self.active = False
         self.SetStandards([0, 0.1, 0.1])
 
-    def setnoise(self, flag):
+    def setnoise(self, flag: bool) -> None:
         """Switch the turbulence model on or off (part of the NOISE command).
 
         Args:
@@ -44,7 +46,7 @@ class Turbulence(TrafficArrays):
         """
         self.active = flag
 
-    def SetStandards(self, s):
+    def SetStandards(self, s: Any) -> None:
         """Set the turbulence standard deviations.
 
         Args:
@@ -56,7 +58,7 @@ class Turbulence(TrafficArrays):
         # in (horizontal flight direction, horizontal wing direction, vertical)
         self.sd = np.where(self.sd > 1e-6, self.sd, 1e-6)
 
-    def update(self):
+    def update(self) -> None:
         """Apply one time step of random turbulence displacements.
 
         Draws zero-mean Gaussian displacements [m] per aircraft (scaled
@@ -86,6 +88,4 @@ class Turbulence(TrafficArrays):
         # Update the aircraft locations
         minisky.traf.alt = minisky.traf.alt + turbalt
         minisky.traf.lat = minisky.traf.lat + np.degrees(turblat / Rearth)
-        minisky.traf.lon = minisky.traf.lon + np.degrees(
-            turblon / Rearth / minisky.traf.coslat
-        )
+        minisky.traf.lon = minisky.traf.lon + np.degrees(turblon / Rearth / minisky.traf.coslat)

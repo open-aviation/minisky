@@ -8,13 +8,22 @@ the takeoff regime and for three in-flight altitude segments (below 10000 ft,
 engine emission databank fuel-flow points as a function of thrust ratio.
 """
 
+from typing import Any
+
 import numpy as np
 
 from minisky.tools import aero
 from minisky.traffic.performance import phase as ph
 
 
-def compute_max_thr_ratio(phase, bpr, v, h, vs, thr0):
+def compute_max_thr_ratio(
+    phase: np.ndarray,
+    bpr: np.ndarray,
+    v: np.ndarray,
+    h: np.ndarray,
+    vs: np.ndarray,
+    thr0: np.ndarray,
+) -> np.ndarray:
     """Computer the dynamic thrust based on engine bypass-ratio, static maximum
     thrust, aircraft true airspeed, and aircraft altitude
 
@@ -52,7 +61,7 @@ def compute_max_thr_ratio(phase, bpr, v, h, vs, thr0):
     return tr
 
 
-def tr_takeoff(bpr, v, h):
+def tr_takeoff(bpr: np.ndarray, v: np.ndarray, h: np.ndarray) -> np.ndarray:
     """Compute thrust ration at take-off.
 
     Empirical polynomial model of the thrust lapse of a turbofan during the
@@ -86,7 +95,7 @@ def tr_takeoff(bpr, v, h):
     return ratio
 
 
-def inflight(v, h, vs, thr0):
+def inflight(v: np.ndarray, h: np.ndarray, vs: np.ndarray, thr0: np.ndarray) -> np.ndarray:
     """Compute thrust ration for inflight.
 
     Empirical model of the in-flight maximum thrust of a turbofan. The
@@ -161,7 +170,9 @@ def inflight(v, h, vs, thr0):
     return ratio_F0
 
 
-def compute_eng_ff_coeff(ffidl, ffapp, ffco, ffto):
+def compute_eng_ff_coeff(
+    ffidl: float, ffapp: float, ffco: float, ffto: float
+) -> tuple[Any, Any, Any]:
     """Compute fuel flow based on engine icao fuel flow model
 
     Fits a quadratic polynomial through the four fuel-flow measurement

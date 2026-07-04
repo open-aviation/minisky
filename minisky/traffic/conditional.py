@@ -10,6 +10,8 @@ value crosses its target, the stored command is issued on the stack and
 the condition is removed.
 """
 
+from typing import Any
+
 import numpy as np
 
 import minisky
@@ -42,7 +44,7 @@ class Condition:
         cmd (list): Command line to stack when the condition triggers.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.ncond = 0  # Number of conditions
 
         self.id = []  # Id of aircraft of condition
@@ -52,7 +54,7 @@ class Condition:
         self.posdata = []  # Data for postype: tuples lat[deg],lon[deg] of ref position
         self.cmd = []  # Commands to be issued
 
-    def update(self):
+    def update(self) -> None:
         """Check all pending conditions and execute triggered commands.
 
         Called every simulation step. Conditions of deleted aircraft are
@@ -67,7 +69,7 @@ class Condition:
         # Update indices based on list of id's
         acidxlst = np.array(minisky.traf.idx(self.id))
         if len(acidxlst) > 0:
-            idelcond = sorted(list(np.where(acidxlst < 0)[0]))
+            idelcond = sorted(np.where(acidxlst < 0)[0])
             for i in idelcond[::-1]:
                 del self.id[i]
                 self.condtype = np.delete(self.condtype, i)
@@ -106,9 +108,7 @@ class Condition:
         actdif = self.target - self.actual
 
         # Make sorted arrya of indices of true conditions and their conditional commands
-        idxtrue = sorted(
-            list(np.where(actdif * self.lastdif <= 0.0)[0])
-        )  # Sign changed
+        idxtrue = sorted(np.where(actdif * self.lastdif <= 0.0)[0])  # Sign changed
         self.lastdif = actdif
         if idxtrue == None or len(idxtrue) == 0:
             return
@@ -137,12 +137,10 @@ class Condition:
         if self.ncond != len(self.cmd):
             print("self.ncond=", self.ncond)
             print("self.cmd=", self.cmd)
-            print(
-                "traffic/conditional.py: self.delcondition: invalid condition array size"
-            )
+            print("traffic/conditional.py: self.delcondition: invalid condition array size")
         return
 
-    def ataltcmd(self, acidx, targalt, cmdtxt):
+    def ataltcmd(self, acidx: int, targalt: float, cmdtxt: str) -> bool:
         """Schedule a command for when an aircraft crosses an altitude.
 
         Implements the ATALT stack command:
@@ -160,7 +158,7 @@ class Condition:
         self.addcondition(acidx, alttype, targalt, actalt, cmdtxt)
         return True
 
-    def atspdcmd(self, acidx, targspd, cmdtxt):
+    def atspdcmd(self, acidx: int, targspd: float, cmdtxt: str) -> bool:
         """Schedule a command for when an aircraft crosses a speed.
 
         Implements the ATSPD stack command:
@@ -178,7 +176,7 @@ class Condition:
         self.addcondition(acidx, spdtype, targspd, actspd, cmdtxt)
         return True
 
-    def atdistcmd(self, acidx, lat, lon, targdist, cmdtxt):
+    def atdistcmd(self, acidx: int, lat: float, lon: float, targdist: float, cmdtxt: str) -> bool:
         """Schedule a command for a distance from a reference position.
 
         Implements the ATDIST stack command: ``acid ATDIST lat lon dist
@@ -195,13 +193,19 @@ class Condition:
         Returns:
             bool: True (the condition is always added).
         """
-        qdr, actdist = qdrdist(
-            minisky.traf.lat[acidx], minisky.traf.lon[acidx], lat, lon
-        )
+        qdr, actdist = qdrdist(minisky.traf.lat[acidx], minisky.traf.lon[acidx], lat, lon)
         self.addcondition(acidx, postype, targdist, actdist, cmdtxt, (lat, lon))
         return True
 
-    def addcondition(self, acidx, icondtype, target, actual, cmdtxt, latlon=None):
+    def addcondition(
+        self,
+        acidx: int,
+        icondtype: int,
+        target: float,
+        actual: Any,
+        cmdtxt: str,
+        latlon: Any = None,
+    ) -> None:
         """Append a condition to the internal condition arrays.
 
         Args:
@@ -233,7 +237,7 @@ class Condition:
         # print("addcondition: self.ncond",self.ncond)
         return
 
-    def renameac(self, oldid, newid):
+    def renameac(self, oldid: str, newid: str) -> None:
         """Update stored callsigns after an aircraft has been renamed.
 
         Conditions are stored per callsign, so this must be called when an

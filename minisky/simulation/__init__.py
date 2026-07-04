@@ -9,6 +9,7 @@ Bundles the three objects that drive a simulation run:
 - :class:`ConsoleIO`: collects console/echo output from the simulation so it
   can be printed and forwarded to remote clients (e.g. the HTTP API).
 """
-from .simulation import Simulation
+
 from .console import ConsoleIO
 from .runner import Runner
+from .simulation import Simulation

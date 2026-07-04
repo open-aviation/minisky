@@ -20,17 +20,17 @@ by :func:`checkscen` when the simulation time passes their timestamps.
 import inspect
 import os
 import traceback
+from collections.abc import Iterator
 from io import StringIO
 from pathlib import Path
-from typing import Dict
 
 import minisky
+from minisky.plugin.plugin_decorators import append_commands, command
 from minisky.stack import argparser, commands
 from minisky.stack.argparser import ArgumentError, Parameter, getnextarg
-from minisky.plugin.plugin_decorators import command, append_commands
 
 
-def init():
+def init() -> None:
     """Initialise BlueSky base stack commands."""
 
     cmddict, synonyms = commands.get_commands()
@@ -73,10 +73,10 @@ class Command:
     """
 
     # Dictionary with all command objects
-    cmddict: Dict[str, "Command"] = dict()
+    cmddict: dict[str, "Command"] = {}
 
     @classmethod
-    def addcommand(cls, func, parent=None, name="", **kwargs):
+    def addcommand(cls, func, parent: "Command | None" = None, name: str = "", **kwargs) -> None:
         """Add 'func' as a stack command.
 
         Creates a Command object for the given function and registers it
@@ -120,19 +120,19 @@ class Command:
         if not inspect.ismethod(func):
             func.__stack_cmd__ = cmdobj
 
-    def __init__(self, func, parent=None, name="", **kwargs):
+    def __init__(self, func, parent: "Command | None" = None, name: str = "", **kwargs) -> None:
         self.name = name
         self.help = inspect.cleandoc(kwargs.get("help", ""))
         self.brief = kwargs.get("brief", "")
-        self.aliases = kwargs.get("aliases", tuple())
+        self.aliases = kwargs.get("aliases", ())
         self.impl = ""
         self.valid = True
         self.arguments = self._get_arguments(kwargs.get("arguments", ""))
-        self.params = list()
+        self.params = []
         self.parent = parent
         self.callback = func
 
-    def __call__(self, argstring):
+    def __call__(self, argstring: str):
         """Parse an argument string and execute this command.
 
         The command's Parameter objects convert the argument text into
@@ -184,12 +184,12 @@ class Command:
             ret = ret[0]
         return ret, ""
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         if self.valid:
             return f"<Stack Command {self.name}, callback={self.callback}>"
         return f"<Stack Command {self.name} (invalid), callback=unbound method {self.callback}"
 
-    def notimplemented(self, *args, **kwargs):
+    def notimplemented(self, *args, **kwargs) -> None:
         """Placeholder callback for commands without an implementation."""
         pass
 
@@ -205,25 +205,21 @@ class Command:
         self._callback = function
         spec = inspect.signature(function)
         # Check if this is an unbound class/instance method
-        self.valid = (
-            spec.parameters.get("self") is None and spec.parameters.get("cls") is None
-        )
+        self.valid = spec.parameters.get("self") is None and spec.parameters.get("cls") is None
 
         if self.valid:
-            # Store implementation origin
-            if not self.impl:
-                # Check if this is a bound (class or object) method
-                if inspect.ismethod(function):
-                    if inspect.isclass(function.__self__):
-                        self.impl = function.__self__.__name__
-                    else:
-                        self.impl = function.__self__.__class__.__name__
+            # Store implementation origin if this is a bound (class or object) method
+            if not self.impl and inspect.ismethod(function):
+                if inspect.isclass(function.__self__):
+                    self.impl = function.__self__.__name__
+                else:
+                    self.impl = function.__self__.__class__.__name__
 
             self.brief = self.brief or (self.name + " " + ",".join(spec.parameters))
             self.help = self.help or inspect.cleandoc(inspect.getdoc(function) or "")
             paramspecs = list(filter(Parameter.canwrap, spec.parameters.values()))
             if self.arguments:
-                self.params = list()
+                self.params = []
                 pos = 0
                 for annot, isopt in self.arguments:
                     if annot == "...":
@@ -250,7 +246,7 @@ class Command:
             else:
                 self.params = [p for p in map(Parameter, paramspecs) if p]
 
-    def helptext(self, subcmd=""):
+    def helptext(self, subcmd: str = "") -> str:
         """Return complete help text."""
         msg = f"{self.help}\nUsage:\n{self.brief}"
         if self.aliases:
@@ -269,11 +265,11 @@ class Command:
 
         return msg
 
-    def brieftext(self):
+    def brieftext(self) -> str:
         """Return the brief usage text."""
         return self.brief
 
-    def _get_arguments(self, arguments):
+    def _get_arguments(self, arguments) -> tuple:
         """Get arguments from string, or tuple/list."""
         if isinstance(arguments, (tuple, list)):
             return tuple(arguments)
@@ -294,7 +290,7 @@ class Command:
 
             types = arguments[:cut].strip("[,]").split(",")
             # Returned argtypes are tuples of type and optional status
-            argtypes += zip(types, [opt or t == "..." for t in types])
+            argtypes += zip(types, [opt or t == "..." for t in types], strict=False)
             arguments = arguments[cut:].lstrip(",]")
 
         return tuple(argtypes)
@@ -329,7 +325,7 @@ class Stack:
     sender_rte = None  # bs net route to sender
 
     @classmethod
-    def reset(cls):
+    def reset(cls) -> None:
         """Reset stack variables."""
         cls.cmdstack = []
         cls.scenname = ""
@@ -338,14 +334,15 @@ class Stack:
         cls.sender_rte = None
 
     @classmethod
-    def commands(cls):
+    def commands(cls) -> Iterator[str]:
         """Generator function to iterate over stack commands."""
         # Return commands from PCALL if passed, otherwise own command stack
-        for cls.current, cls.sender_rte in cls.cmdstack:
+        # (assigning to cls attributes on purpose, so cls.current tracks the loop)
+        for cls.current, cls.sender_rte in cls.cmdstack:  # noqa: B020
             yield cls.current
 
     @classmethod
-    def clear(cls):
+    def clear(cls) -> None:
         """Remove all commands from the command stack."""
         cls.cmdstack.clear()
 
@@ -375,7 +372,7 @@ def delete_element(*arg):
         return minisky.traf.delete(arg)
 
 
-def reset():
+def reset() -> None:
     """Reset the stack.
 
     Clears the command queue and buffered scenario data, and resets the
@@ -385,7 +382,7 @@ def reset():
     argparser.reset()
 
 
-def process():
+def process() -> None:
     """Sim-side stack processing; called once per simulation step.
 
     First moves due scenario commands onto the stack (see checkscen), then
@@ -403,7 +400,6 @@ def process():
     for cmdline in Stack.commands():
         success = True
         echotext = ""
-        echoflags = minisky.BS_OK
 
         # Get first argument from command line and check if it's a command
         cmd, argstring = argparser.getnextarg(cmdline)
@@ -427,21 +423,14 @@ def process():
                     if not argstring:
                         echotext = echotext or cmdobj.brieftext()
                     else:
-                        echoflags = minisky.BS_FUNERR
                         echotext = f"Error: {echotext or cmdobj.brieftext()}"
 
             except argparser.ArgumentError as e:
                 success = False
-                echoflags = minisky.BS_ARGERR
-                header = (
-                    "" if not argstring else e.args[0] if e.args else "Argument error."
-                )
+                header = "" if not argstring else e.args[0] if e.args else "Argument error."
                 echotext = f"{header}\nUsage:\n{cmdobj.brieftext()}"
             except Exception as e:
-                echoflags = minisky.BS_FUNERR
-                header = (
-                    "" if not argstring else e.args[0] if e.args else "Function error."
-                )
+                header = "" if not argstring else e.args[0] if e.args else "Function error."
                 echotext = (
                     f"Error calling function implementation of {cmdu}: {header}\n"
                     + "Traceback printed to terminal."
@@ -451,7 +440,6 @@ def process():
         # Command not found
         else:
             success = False
-            echoflags = minisky.BS_CMDERR
             if not argstring:
                 echotext = f"error: unknown command or aircraft: {cmd}"
             else:
@@ -464,7 +452,7 @@ def process():
     Stack.clear()
 
 
-def readscn(scn):
+def readscn(scn: "str | Path | StringIO") -> Iterator[tuple[float, str]]:
     """Read a scenario file and yield its timestamped commands.
 
     Parses lines of the form ``HH:MM:SS.hh>CMDLINE``, skipping comments
@@ -481,11 +469,11 @@ def readscn(scn):
     Raises:
         TypeError: When scn is neither a path nor a StringIO object.
     """
-    if isinstance(scn, str) or isinstance(scn, Path):
+    if isinstance(scn, (str, Path)):
         # ensure .scn suffix if necessary
         scn_path = Path(scn).with_suffix(".scn")
 
-        with open(scn_path, "r") as fscen:
+        with open(scn_path) as fscen:
             scn_input = StringIO(fscen.read())
     elif isinstance(scn, StringIO):
         scn_input = scn
@@ -523,7 +511,7 @@ def readscn(scn):
                 print("except this:" + line)
 
 
-def ic(scn: str):
+def ic(scn: str) -> tuple[bool, str]:
     """IC: Load a scenario file.
 
     Resets the simulation, reads the scenario file, and buffers its
@@ -553,7 +541,7 @@ def ic(scn: str):
     return True, f"scenario {scn} loaded."
 
 
-def ic_StringIO(scn: StringIO, scn_name: str = None):
+def ic_StringIO(scn: StringIO, scn_name: str = None) -> tuple[bool, str]:
     """IC: Load a scenario from a StringIO object.
 
     Resets the simulation, reads scenario lines from the StringIO object,
@@ -580,7 +568,7 @@ def ic_StringIO(scn: StringIO, scn_name: str = None):
     return True, f"scenario {scn_name} loaded."
 
 
-def scenario(name: "string"):
+def scenario(name: "string") -> tuple[bool, str]:
     """SCENARIO: Set the scenario name for the current simulation.
 
     Args:
@@ -593,7 +581,7 @@ def scenario(name: "string"):
     return True, "Starting scenario " + name
 
 
-def schedule(time: "time", cmdline: "string"):
+def schedule(time: "time", cmdline: "string") -> bool:
     """SCHEDULE: Schedule a stack command at a specific simulation time.
 
     The command is inserted into the scenario buffer, keeping the buffer
@@ -608,15 +596,13 @@ def schedule(time: "time", cmdline: "string"):
         bool: True (the command is always scheduled).
     """
     # Get index of first scentime greater than 'time' as insert position
-    idx = next(
-        (i for i, t in enumerate(Stack.scentime) if t > time), len(Stack.scentime)
-    )
+    idx = next((i for i, t in enumerate(Stack.scentime) if t > time), len(Stack.scentime))
     Stack.scentime.insert(idx, time)
     Stack.scencmd.insert(idx, cmdline)
     return True
 
 
-def delay(time: "time", cmdline: "string"):
+def delay(time: "time", cmdline: "string") -> bool:
     """DELAY: Delay a stack command by a time interval.
 
     Like schedule(), but the given time is relative to the current
@@ -631,15 +617,13 @@ def delay(time: "time", cmdline: "string"):
     """
     # Get index of first scentime greater than 'time' as insert position
     time += minisky.sim.simt
-    idx = next(
-        (i for i, t in enumerate(Stack.scentime) if t > time), len(Stack.scentime)
-    )
+    idx = next((i for i, t in enumerate(Stack.scentime) if t > time), len(Stack.scentime))
     Stack.scentime.insert(idx, time)
     Stack.scencmd.insert(idx, cmdline)
     return True
 
 
-def showhelp(cmd: "txt" = "", subcmd: "txt" = ""):
+def showhelp(cmd: "txt" = "", subcmd: "txt" = "") -> tuple[bool, str]:
     """HELP: Display general help text or help text for a specific command,
     or dump command reference in file when command is >filename.
 
@@ -661,10 +645,7 @@ def showhelp(cmd: "txt" = "", subcmd: "txt" = ""):
     # Write command reference to tab-delimited text file
     if cmd[0] == ">":
         # Get filename
-        if len(cmd) > 1:
-            fname = "./docs/" + cmd[1:]
-        else:
-            fname = "./docs/minisky-commands.txt"
+        fname = "./docs/" + cmd[1:] if len(cmd) > 1 else "./docs/minisky-commands.txt"
 
         # Get unique set of commands
         cmdobjs = set(Command.cmddict.values())
@@ -673,7 +654,7 @@ def showhelp(cmd: "txt" = "", subcmd: "txt" = ""):
         # Get info for all commands
         for obj in cmdobjs:
             fname = obj.callback.__name__.replace("<", "").replace(">", "")
-            args = ",".join((str(p) for p in obj.parsers))
+            args = ",".join(str(p) for p in obj.parsers)
             syn = ",".join(obj.aliases)
             line = f"{obj.name}\t{obj.help}\t{obj.brief}\t{args}\t{fname}\t{syn}"
             table.append(line)
@@ -689,7 +670,7 @@ def showhelp(cmd: "txt" = "", subcmd: "txt" = ""):
     return False, "HELP: Unknown command: " + cmd
 
 
-def checkscen():
+def checkscen() -> None:
     """Check if commands from the scenario buffer need to be stacked.
 
     All buffered scenario commands with a timestamp at or before the
@@ -698,16 +679,14 @@ def checkscen():
     """
     if Stack.scencmd:
         # Find index of first timestamp exceeding minisky.sim.simt
-        idx = next(
-            (i for i, t in enumerate(Stack.scentime) if t > minisky.sim.simt), None
-        )
+        idx = next((i for i, t in enumerate(Stack.scentime) if t > minisky.sim.simt), None)
         # Stack all commands before that time, and remove from scenario
         stack(*Stack.scencmd[:idx])
         del Stack.scencmd[:idx]
         del Stack.scentime[:idx]
 
 
-def stack(*cmdlines, sender_id=None):
+def stack(*cmdlines, sender_id=None) -> None:
     """Stack one or more commands separated by ";".
 
     The queued commands are executed on the next call to process().
@@ -738,14 +717,14 @@ def routetosender():
     return Stack.sender_rte
 
 
-def get_scenname():
+def get_scenname() -> str:
     """Return the name of the current scenario.
     This is either the name defined by the SCEN command,
     or otherwise the filename of the scenario."""
     return Stack.scenname
 
 
-def get_scendata():
+def get_scendata() -> tuple:
     """Return the scenario data that was loaded from a scenario file.
 
     Returns:
@@ -755,7 +734,7 @@ def get_scendata():
     return Stack.scentime, Stack.scencmd
 
 
-def set_scendata(newtime, newcmd):
+def set_scendata(newtime, newcmd) -> None:
     """Set the scenario data. This is used by the batch logic."""
     Stack.scentime = newtime
     Stack.scencmd = newcmd

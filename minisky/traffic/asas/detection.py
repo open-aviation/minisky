@@ -13,6 +13,8 @@ aircraft pairs simultaneously. Internally SI units are used (m, m/s, s);
 user-facing (stack command) arguments are in aviation units (NM, ft).
 """
 
+from typing import Any
+
 import numpy as np
 
 import minisky
@@ -63,7 +65,7 @@ class ConflictDetection(TrafficArrays):
         dtnolook (ndarray): Per-aircraft detection hold-off interval [s].
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
         ## Default values
         # [m] Horizontal separation minimum for detection
@@ -80,8 +82,8 @@ class ConflictDetection(TrafficArrays):
         self.activate = True
 
         # Conflicts and LoS detected in the current timestep (used for resolving)
-        self.confpairs = list()
-        self.lospairs = list()
+        self.confpairs = []
+        self.lospairs = []
         self.qdr = np.array([])
         self.dist = np.array([])
         self.dcpa = np.array([])
@@ -93,8 +95,8 @@ class ConflictDetection(TrafficArrays):
         self.lospairs_unique = set()
 
         # All conflicts and LoS since simt=0
-        self.confpairs_all = list()
-        self.lospairs_all = list()
+        self.confpairs_all = []
+        self.lospairs_all = []
 
         # Per-aircraft conflict data
         with self.settrafarrays():
@@ -108,7 +110,7 @@ class ConflictDetection(TrafficArrays):
             self.dtlookahead = np.array([])
             self.dtnolook = np.array([])
 
-    def clearconfdb(self):
+    def clearconfdb(self) -> None:
         """Clear the conflict database.
 
         Empties the pairwise conflict/LoS lists and geometry arrays of the
@@ -128,7 +130,7 @@ class ConflictDetection(TrafficArrays):
         self.inconf = np.zeros(minisky.traf.ntraf)
         self.tcpamax = np.zeros(minisky.traf.ntraf)
 
-    def create(self, n):
+    def create(self, n: int) -> None:
         """Initialise per-aircraft detection parameters for new aircraft.
 
         Called by the traffic object when aircraft are created. Extends all
@@ -145,7 +147,7 @@ class ConflictDetection(TrafficArrays):
         self.dtlookahead[-n:] = self.dtlookahead_def
         self.dtnolook[-n:] = self.dtnolook_def
 
-    def reset(self):
+    def reset(self) -> None:
         """Reset the conflict detection state to defaults.
 
         Called on simulation reset: clears the conflict database and the
@@ -157,15 +159,13 @@ class ConflictDetection(TrafficArrays):
         self.confpairs_all.clear()
         self.lospairs_all.clear()
         self.rpz_def = minisky.core.settings.asas_pzr * nm
-        self.hpz_def = (
-            minisky.core.settings.asas_pzh - 1
-        ) * ft  # -1 for rounding margins
+        self.hpz_def = (minisky.core.settings.asas_pzh - 1) * ft  # -1 for rounding margins
         self.dtlookahead_def = minisky.core.settings.asas_dtlookahead
         self.dtnolook_def = 0.0
         self.global_rpz = self.global_hpz = True
         self.global_dtlook = self.global_dtnolook = True
 
-    def switch(self, name: "txt" = "ON"):
+    def switch(self, name: "txt" = "ON") -> "tuple | None":
         """Turn Conflict Detection (CD) ON / OFF.
 
         Switching off also clears the current conflict database.
@@ -190,7 +190,7 @@ class ConflictDetection(TrafficArrays):
             self.activate = True
             return True, "Conflict Detection is on."
 
-    def setrpz(self, radius: float = -1.0, *acidx):
+    def setrpz(self, radius: float = -1.0, *acidx) -> tuple:
         """Set the horizontal separation distance (i.e., the radius of the
         protected zone) in nautical miles.
 
@@ -228,7 +228,7 @@ class ConflictDetection(TrafficArrays):
             minisky.stack.stack(f"RSZONER {minisky.traf.cr.resofach * oldradius / nm}")
         return True, f"Setting default PZ radius to {radius} NM"
 
-    def sethpz(self, height: float = -1.0, *acidx):
+    def sethpz(self, height: float = -1.0, *acidx) -> tuple:
         """Set the vertical separation distance (i.e., half of the protected
         zone height) in feet.
 
@@ -266,7 +266,7 @@ class ConflictDetection(TrafficArrays):
             minisky.stack.stack(f"RSZONEDH {minisky.traf.cr.resofacv * oldhpz / ft}")
         return True, f"Setting default PZ height to {height} ft"
 
-    def setdtlook(self, time: "time" = -1.0, *acidx):
+    def setdtlook(self, time: "time" = -1.0, *acidx) -> tuple:
         """Set the lookahead time (in [hh:mm:]sec) for conflict detection.
 
         Implements the DTLOOK stack command.
@@ -294,7 +294,7 @@ class ConflictDetection(TrafficArrays):
             self.dtlookahead[:] = time
         return True, f"Setting default CD lookahead to {time} sec"
 
-    def setdtnolook(self, time: "time" = -1.0, *acidx):
+    def setdtnolook(self, time: "time" = -1.0, *acidx) -> tuple:
         """Set the interval (in [hh:mm:]sec) in which conflict detection
         is skipped after a conflict resolution.
 
@@ -323,7 +323,7 @@ class ConflictDetection(TrafficArrays):
             self.dtnolook[:] = time
         return True, f"Setting default CD no-look to {time} sec"
 
-    def update(self, ownship, intruder):
+    def update(self, ownship: Any, intruder: Any) -> None:
         """Perform an update step of the Conflict Detection implementation.
 
         Runs :meth:`detect` on the current traffic states and stores its
@@ -364,7 +364,14 @@ class ConflictDetection(TrafficArrays):
         self.confpairs_unique = confpairs_unique
         self.lospairs_unique = lospairs_unique
 
-    def detect(self, ownship, intruder, rpz, hpz, dtlookahead):
+    def detect(
+        self,
+        ownship: Any,
+        intruder: Any,
+        rpz: np.ndarray,
+        hpz: np.ndarray,
+        dtlookahead: np.ndarray,
+    ) -> tuple:
         """Conflict detection between ownship (traf) and intruder (traf/adsb).
 
         State-based detection over all aircraft pairs at once. For every pair,
@@ -401,7 +408,7 @@ class ConflictDetection(TrafficArrays):
                 - dalt (ndarray): Current altitude difference per conflict [m].
         """
         # Identity matrix of order ntraf: avoid ownship-ownship detected conflicts
-        I = np.eye(ownship.ntraf)
+        eye = np.eye(ownship.ntraf)
 
         # Horizontal conflict ------------------------------------------------------
 
@@ -416,7 +423,7 @@ class ConflictDetection(TrafficArrays):
         # Convert back to array to allow element-wise array multiplications later on
         # Convert to meters and add large value to own/own pairs
         qdr = np.asarray(qdr)
-        dist = np.asarray(dist) * nm + 1e9 * I
+        dist = np.asarray(dist) * nm + 1e9 * eye
 
         # Calculate horizontal closest point of approach (CPA)
         qdrrad = np.radians(qdr)
@@ -440,7 +447,7 @@ class ConflictDetection(TrafficArrays):
         dv2 = np.where(np.abs(dv2) < 1e-6, 1e-6, dv2)  # limit lower absolute value
         vrel = np.sqrt(dv2)
 
-        tcpa = -(du * dx + dv * dy) / dv2 + 1e9 * I
+        tcpa = -(du * dx + dv * dy) / dv2 + 1e9 * eye
 
         # Calculate distance^2 at CPA (minimum distance^2)
         dcpa2 = np.abs(dist * dist - tcpa * tcpa * dv2)
@@ -452,9 +459,7 @@ class ConflictDetection(TrafficArrays):
         swhorconf = dcpa2 < R2  # conflict or not
 
         # Calculate times of entering and leaving horizontal conflict
-        dxinhor = np.sqrt(
-            np.maximum(0.0, R2 - dcpa2)
-        )  # half the distance travelled inzide zone
+        dxinhor = np.sqrt(np.maximum(0.0, R2 - dcpa2))  # half the distance travelled inzide zone
         dtinhor = dxinhor / vrel
 
         tinhor = np.where(swhorconf, tcpa - dtinhor, 1e8)  # Set very large if no conf
@@ -466,13 +471,10 @@ class ConflictDetection(TrafficArrays):
         dalt = (
             ownship.alt.reshape((1, ownship.ntraf))
             - intruder.alt.reshape((1, ownship.ntraf)).T
-            + 1e9 * I
+            + 1e9 * eye
         )
 
-        dvs = (
-            ownship.vs.reshape(1, ownship.ntraf)
-            - intruder.vs.reshape(1, ownship.ntraf).T
-        )
+        dvs = ownship.vs.reshape(1, ownship.ntraf) - intruder.vs.reshape(1, ownship.ntraf).T
         dvs = np.where(np.abs(dvs) < 1e-6, 1e-6, dvs)  # prevent division by zero
 
         # Check for passing through each others zone
@@ -492,7 +494,7 @@ class ConflictDetection(TrafficArrays):
             * (tinconf <= toutconf)
             * (toutconf > 0.0)
             * np.asarray(tinconf < np.asmatrix(dtlookahead).T)
-            * (1.0 - I),
+            * (1.0 - eye),
             dtype=bool,
         )
 
@@ -506,11 +508,12 @@ class ConflictDetection(TrafficArrays):
         # Select conflicting pairs: each a/c gets their own record
         confpairs = [
             (ownship.callsign[i], ownship.callsign[j])
-            for i, j in zip(*np.where(swconfl))
+            for i, j in zip(*np.where(swconfl), strict=False)
         ]
         swlos = (dist < rpz) * (np.abs(dalt) < hpz)
         lospairs = [
-            (ownship.callsign[i], ownship.callsign[j]) for i, j in zip(*np.where(swlos))
+            (ownship.callsign[i], ownship.callsign[j])
+            for i, j in zip(*np.where(swlos), strict=False)
         ]
 
         return (

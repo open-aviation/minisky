@@ -39,7 +39,7 @@ class SurveillanceUncertainty(TrafficArrays):
         trunctime (float): Minimum time between broadcast updates [s].
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
         # From here, define object arrays
         with self.settrafarrays():
@@ -55,7 +55,7 @@ class SurveillanceUncertainty(TrafficArrays):
 
         self.setnoise(False)
 
-    def setnoise(self, n):
+    def setnoise(self, n: bool) -> None:
         """Switch surveillance noise on or off (part of the NOISE command).
 
         Args:
@@ -70,7 +70,7 @@ class SurveillanceUncertainty(TrafficArrays):
         ]  # [degree,m] standard lat/lon distance, altitude error
         self.trunctime = 0  # [s]
 
-    def create(self, n=1):
+    def create(self, n: int = 1) -> None:
         """Initialize broadcast data for n newly created aircraft.
 
         Copies the true state as the first broadcast and randomizes the
@@ -90,7 +90,7 @@ class SurveillanceUncertainty(TrafficArrays):
         self.tas[-n:] = minisky.traf.tas[-n:]
         self.gs[-n:] = minisky.traf.gs[-n:]
 
-    def update(self):
+    def update(self) -> None:
         """Refresh the broadcast state of aircraft that are due an update.
 
         Called every simulation step. For aircraft whose last broadcast is
@@ -101,15 +101,9 @@ class SurveillanceUncertainty(TrafficArrays):
         up = np.where(self.lastupdate + self.trunctime < minisky.sim.simt)
         nup = len(up)
         if self.transnoise:
-            self.lat[up] = minisky.traf.lat[up] + np.random.normal(
-                0, self.transerror[0], nup
-            )
-            self.lon[up] = minisky.traf.lon[up] + np.random.normal(
-                0, self.transerror[0], nup
-            )
-            self.alt[up] = minisky.traf.alt[up] + np.random.normal(
-                0, self.transerror[1], nup
-            )
+            self.lat[up] = minisky.traf.lat[up] + np.random.normal(0, self.transerror[0], nup)
+            self.lon[up] = minisky.traf.lon[up] + np.random.normal(0, self.transerror[0], nup)
+            self.alt[up] = minisky.traf.alt[up] + np.random.normal(0, self.transerror[1], nup)
         else:
             self.lat[up] = minisky.traf.lat[up]
             self.lon[up] = minisky.traf.lon[up]

@@ -12,13 +12,15 @@ Run with::
 
 Interactive OpenAPI docs are served at ``/docs``.
 """
+
 import asyncio
 import os
 from io import StringIO
+from typing import Any
 
 import pandas as pd
-from fastapi import FastAPI, File, HTTPException, Response, UploadFile
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import FastAPI, File, Response, UploadFile
+from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 import minisky
@@ -35,7 +37,7 @@ minisky.init()
 minisky.load_plugins()
 
 
-async def start_simulation():
+async def start_simulation() -> None:
     """Start the simulation loop as a background task in the server's event loop."""
     asyncio.create_task(minisky.runner.run())
 
@@ -44,13 +46,13 @@ app.add_event_handler("startup", start_simulation)
 
 
 @app.get("/")
-def root():
+def root() -> dict[str, str]:
     """Health check: confirm the API is up."""
     return {"msg": "MiniSky API endpoint ready"}
 
 
 @app.get("/all")
-def all():
+def all() -> list[dict[str, Any]]:
     """Get all aircraft states"""
     df = pd.DataFrame(
         {
@@ -76,27 +78,27 @@ def all():
 
 
 @app.get("/simtime")
-def simtime():
+def simtime() -> dict[str, float]:
     """Get the simulation time"""
     return {"simulation time (seconds)": minisky.sim.simt}
 
 
 @app.get("/speed/{speed}")
-def speedup(speed: float):
+def speedup(speed: float) -> dict[str, str]:
     """Speed up the simulation"""
     minisky.runner.speed = speed
     return {"msg": f"simulation speed set to {speed}x"}
 
 
 @app.get("/forward/{seconds}")
-def forward(seconds: float):
+def forward(seconds: float) -> dict[str, str]:
     """Jump to a specific simulation time"""
     minisky.runner.forward(seconds)
     return {"msg": f"simulation time jump forward {seconds} seconds"}
 
 
 @app.get("/conflicts")
-def conflicts():
+def conflicts() -> list[dict[str, Any]] | dict[str, str]:
     """Get all detected conflicts.
 
     Returns one record per unique aircraft pair with distance (NM), altitude
@@ -134,7 +136,7 @@ def conflicts():
 
 
 @app.get("/stack/{cmd}")
-async def stack(cmd: str):
+async def stack(cmd: str) -> dict[str, Any]:
     """Execute a stack command and return the output"""
     minisky.scr.event.clear()
     minisky.stack.stack(f"{cmd}")
@@ -145,7 +147,7 @@ async def stack(cmd: str):
 
 
 @app.get("/scn")
-def upload_form():
+def upload_form() -> Response:
     """Serve a minimal HTML form for uploading a scenario file."""
     content = """
     upload a scenario file<hr>
@@ -158,28 +160,29 @@ def upload_form():
 
 
 @app.post("/scn")
-async def scn(file: UploadFile = File(...)):
+async def scn(file: UploadFile = File(...)) -> dict[str, str]:
     """Load an uploaded scenario file into the running simulation."""
     minisky.scr.event.clear()
     contents = await file.read()
     scenario = StringIO(contents.decode("utf-8"))
-    minisky.stack.ic_StringIO(scenario, file.filename)
-    return {"msg": f"scenario {file.filename} loaded"}
+    filename = file.filename or "uploaded.scn"
+    minisky.stack.ic_StringIO(scenario, filename)
+    return {"msg": f"scenario {filename} loaded"}
 
 
 @app.get("/map")
-def show_map():
+def show_map() -> RedirectResponse:
     """Display the aircraft map viewer"""
     return RedirectResponse(url="/static/display.html")
 
 
 @app.get("/plugins")
-def list_plugins():
+def list_plugins() -> Any:
     """List available and loaded plugins"""
-    return minisky.plugin.manage_plugins('LIST')
+    return minisky.plugin.manage_plugins("LIST")
 
 
 @app.get("/plugins/load/{name}")
-def load_plugin(name: str):
+def load_plugin(name: str) -> Any:
     """Load a plugin by name"""
-    return minisky.plugin.manage_plugins('LOAD', name)
+    return minisky.plugin.manage_plugins("LOAD", name)

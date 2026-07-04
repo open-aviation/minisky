@@ -30,7 +30,7 @@ class APorASAS(TrafficArrays):
         tas (ndarray): Desired true airspeed [m/s].
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
         with self.settrafarrays():
             # Desired aircraft states
@@ -40,7 +40,7 @@ class APorASAS(TrafficArrays):
             self.vs = np.array([])  # desired vertical speed [m/s]
             self.tas = np.array([])  # desired speed [m/s]
 
-    def create(self, n=1):
+    def create(self, n: int = 1) -> None:
         """Initialize desired states for n newly created aircraft.
 
         The desired altitude, speed, heading and track are copied from the
@@ -55,7 +55,7 @@ class APorASAS(TrafficArrays):
         self.hdg[-n:] = minisky.traf.hdg[-n:]
         self.trk[-n:] = minisky.traf.trk[-n:]
 
-    def update(self):
+    def update(self) -> None:
         """Select the desired aircraft states from autopilot or ASAS.
 
         Called every simulation step, after conflict resolution and before
@@ -73,12 +73,8 @@ class APorASAS(TrafficArrays):
             vwn, vwe = minisky.traf.wind.getdata(
                 minisky.traf.lat, minisky.traf.lon, minisky.traf.alt
             )
-            asastasnorth = (
-                minisky.traf.cr.tas * np.cos(np.radians(minisky.traf.cr.trk)) - vwn
-            )
-            asastaseast = (
-                minisky.traf.cr.tas * np.sin(np.radians(minisky.traf.cr.trk)) - vwe
-            )
+            asastasnorth = minisky.traf.cr.tas * np.cos(np.radians(minisky.traf.cr.trk)) - vwn
+            asastaseast = minisky.traf.cr.tas * np.sin(np.radians(minisky.traf.cr.trk)) - vwe
             asastas = np.sqrt(asastasnorth**2 + asastaseast**2)
         # no wind, then ground speed = TAS
         else:
@@ -87,16 +83,10 @@ class APorASAS(TrafficArrays):
         # Select asas if there is a conflict AND resolution is on
         # Determine desired states per channel whether to use value from ASAS or AP.
         # minisky.traf.cr.active may be used as well, will set all of these channels
-        self.trk = np.where(
-            minisky.traf.cr.hdgactive, minisky.traf.cr.trk, minisky.traf.ap.trk
-        )
+        self.trk = np.where(minisky.traf.cr.hdgactive, minisky.traf.cr.trk, minisky.traf.ap.trk)
         self.tas = np.where(minisky.traf.cr.tasactive, asastas, minisky.traf.ap.tas)
-        self.alt = np.where(
-            minisky.traf.cr.altactive, minisky.traf.cr.alt, minisky.traf.ap.alt
-        )
-        self.vs = np.where(
-            minisky.traf.cr.vsactive, minisky.traf.cr.vs, minisky.traf.ap.vs
-        )
+        self.alt = np.where(minisky.traf.cr.altactive, minisky.traf.cr.alt, minisky.traf.ap.alt)
+        self.vs = np.where(minisky.traf.cr.vsactive, minisky.traf.cr.vs, minisky.traf.ap.vs)
 
         # ASAS can give positive and negative VS, but the sign of VS is determined using delalt in Traf.ComputeAirSpeed
         # Therefore, ensure that pilot.vs is always positive to prevent opposite signs of delalt and VS in Traf.ComputeAirSpeed
@@ -114,9 +104,7 @@ class APorASAS(TrafficArrays):
             steer = np.arcsin(
                 np.minimum(
                     1.0,
-                    np.maximum(
-                        -1.0, Vw * np.sin(drift) / np.maximum(0.001, minisky.traf.tas)
-                    ),
+                    np.maximum(-1.0, Vw * np.sin(drift) / np.maximum(0.001, minisky.traf.tas)),
                 )
             )
             # desired heading

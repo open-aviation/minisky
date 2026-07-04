@@ -8,13 +8,14 @@ computations of drag, thrust, fuel flow, and kinematic envelope limits. All
 internal quantities are in SI units.
 """
 
+from typing import Any
+
 import numpy as np
-from openap import Drag, FuelFlow
 
 import minisky
+from minisky.core.trafficarrays import TrafficArrays
 from minisky.tools import aero
 from minisky.tools.aero import fpm, ft, kts
-from minisky.core.trafficarrays import TrafficArrays
 
 from . import coeff, thrust
 from . import phase as ph
@@ -63,7 +64,7 @@ class OpenAP(TrafficArrays):
         ff_coeff_a/b/c (ndarray): Quadratic ICAO fuel-flow fit coefficients.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
 
         self.ac_warning = False  # aircraft mdl to default warning
@@ -72,7 +73,6 @@ class OpenAP(TrafficArrays):
         self.coeff = coeff.Coefficient()
 
         with self.settrafarrays():
-            
             # --- fixed parameters ---
             self.actype = np.array([], dtype=str)  # aircraft type
             self.Sref = np.array([])  # wing reference surface area [m^2]
@@ -95,7 +95,7 @@ class OpenAP(TrafficArrays):
             self.vsmin = np.array([])  # Maximum descent speed [m/s]
             self.vsmax = np.array([])  # Maximum climb speed [m/s]
             self.axmax = np.array([])  # Max/min acceleration [m/s2]
-            
+
             self.lifttype = np.array([])  # lift type, fixwing [1] or rotor [2]
             self.engnum = np.array([], dtype=int)  # number of engines
             self.engthrmax = np.array([])  # static engine thrust
@@ -124,7 +124,7 @@ class OpenAP(TrafficArrays):
             self.hcross = np.array([])
             self.mmo = np.array([])
 
-    def create(self, n=1):
+    def create(self, n: int = 1) -> None:
         """Initialise performance parameters for newly created aircraft.
 
         Called by the traffic object when aircraft are created. Looks up the
@@ -147,14 +147,12 @@ class OpenAP(TrafficArrays):
         if actype in self.coeff.actypes_rotor:
             self.lifttype[-n:] = coeff.LIFT_ROTOR
             self.mass[-n:] = 0.5 * (
-                self.coeff.acs_rotor[actype]["oew"]
-                + self.coeff.acs_rotor[actype]["mtow"]
+                self.coeff.acs_rotor[actype]["oew"] + self.coeff.acs_rotor[actype]["mtow"]
             )
             self.engnum[-n:] = int(self.coeff.acs_rotor[actype]["n_engines"])
             self.engpower[-n:] = self.coeff.acs_rotor[actype]["engines"][0][1]
 
         else:
-            
             # convert to known aircraft type
             if actype.lower() not in self.coeff.actypes_fixwing:
                 actype = "B744"
@@ -168,10 +166,9 @@ class OpenAP(TrafficArrays):
 
             self.lifttype[-n:] = coeff.LIFT_FIXWING
 
-            self.Sref[-n:] = self.coeff.acs_fixwing[actype]["wing"]['area']
+            self.Sref[-n:] = self.coeff.acs_fixwing[actype]["wing"]["area"]
             self.mass[-n:] = 0.5 * (
-                self.coeff.acs_fixwing[actype]["oew"]
-                + self.coeff.acs_fixwing[actype]["mtow"]
+                self.coeff.acs_fixwing[actype]["oew"] + self.coeff.acs_fixwing[actype]["mtow"]
             )
 
             self.engnum[-n:] = int(self.coeff.acs_fixwing[actype]["engine"]["number"])
@@ -181,15 +178,13 @@ class OpenAP(TrafficArrays):
             self.ff_coeff_c[-n:] = coeff_c
 
             all_ac_engs = list(self.coeff.acs_fixwing[actype]["engines"].keys())
-            self.engthrmax[-n:] = self.coeff.acs_fixwing[actype]["engines"][
-                all_ac_engs[0]
-            ]["max_thrust"]
-            self.engbpr[-n:] = self.coeff.acs_fixwing[actype]["engines"][
-                all_ac_engs[0]
-            ]["bpr"]
+            self.engthrmax[-n:] = self.coeff.acs_fixwing[actype]["engines"][all_ac_engs[0]][
+                "max_thrust"
+            ]
+            self.engbpr[-n:] = self.coeff.acs_fixwing[actype]["engines"][all_ac_engs[0]]["bpr"]
 
         # init type specific coefficients for flight envelops
-        if actype in self.coeff.limits_rotor.keys():  # rotorcraft
+        if actype in self.coeff.limits_rotor:  # rotorcraft
             self.vmin[-n:] = self.coeff.limits_rotor[actype]["vmin"]
             self.vmax[-n:] = self.coeff.limits_rotor[actype]["vmax"]
             self.vsmin[-n:] = self.coeff.limits_rotor[actype]["vsmin"]
@@ -209,8 +204,7 @@ class OpenAP(TrafficArrays):
             self.delta_cd_gear[-n:] = np.nan
 
         else:
-
-            if actype not in self.coeff.limits_fixwing.keys():
+            if actype not in self.coeff.limits_fixwing:
                 actype = "B744"
 
             self.vminic[-n:] = self.coeff.limits_fixwing[actype]["vminic"]
@@ -234,9 +228,7 @@ class OpenAP(TrafficArrays):
             self.k_to[-n:] = self.coeff.dragpolar_fixwing[actype]["k_to"]
             self.cd0_ld[-n:] = self.coeff.dragpolar_fixwing[actype]["cd0_ld"]
             self.k_ld[-n:] = self.coeff.dragpolar_fixwing[actype]["k_ld"]
-            self.delta_cd_gear[-n:] = self.coeff.dragpolar_fixwing[actype][
-                "delta_cd_gear"
-            ]
+            self.delta_cd_gear[-n:] = self.coeff.dragpolar_fixwing[actype]["delta_cd_gear"]
 
         # append update actypes, after removing unknown types
         self.actype[-n:] = [actype] * n
@@ -246,7 +238,7 @@ class OpenAP(TrafficArrays):
         mask[-n:] = True
         self.vmin[-n:], self.vmax[-n:] = self._construct_v_limits(mask)
 
-    def update(self, dt=1):
+    def update(self, dt: float = 1) -> None:
         """Periodic update function for performance calculations.
 
         Re-derives the flight phase from the current speed, vertical rate,
@@ -263,7 +255,7 @@ class OpenAP(TrafficArrays):
             dt (float): Update timestep [s] (currently unused).
         """
         # update phase, infer from spd, roc, alt
-        lenph1 = len(self.phase)
+        len(self.phase)
         self.phase = ph.get(
             self.lifttype,
             minisky.traf.tas,
@@ -301,9 +293,7 @@ class OpenAP(TrafficArrays):
         vtas = minisky.traf.tas[idx_fixwing]
         rhovs = 0.5 * rho * vtas**2 * self.Sref[idx_fixwing]
         cl = self.mass[idx_fixwing] * aero.g0 / rhovs
-        self.drag[idx_fixwing] = rhovs * (
-            self.cd0[idx_fixwing] + self.k[idx_fixwing] * cl**2
-        )
+        self.drag[idx_fixwing] = rhovs * (self.cd0[idx_fixwing] + self.k[idx_fixwing] * cl**2)
 
         # ----- compute maximum thrust -----
         max_thrustratio_fixwing = thrust.compute_max_thr_ratio(
@@ -315,15 +305,12 @@ class OpenAP(TrafficArrays):
             self.engnum[idx_fixwing] * self.engthrmax[idx_fixwing],
         )
         self.max_thrust[idx_fixwing] = (
-            max_thrustratio_fixwing
-            * self.engnum[idx_fixwing]
-            * self.engthrmax[idx_fixwing]
+            max_thrustratio_fixwing * self.engnum[idx_fixwing] * self.engthrmax[idx_fixwing]
         )
 
         # ----- compute net thrust -----
         self.thrust[idx_fixwing] = (
-            self.drag[idx_fixwing]
-            + self.mass[idx_fixwing] * minisky.traf.ax[idx_fixwing]
+            self.drag[idx_fixwing] + self.mass[idx_fixwing] * minisky.traf.ax[idx_fixwing]
         )
 
         # ----- compute fuel flow -----
@@ -351,7 +338,13 @@ class OpenAP(TrafficArrays):
             self.bank,
         )
 
-    def limits(self, intent_v_tas, intent_vs, intent_h, ax):
+    def limits(
+        self,
+        intent_v_tas: np.ndarray,
+        intent_vs: np.ndarray,
+        intent_h: np.ndarray,
+        ax: np.ndarray,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """apply limits on indent speed, vertical speed, and altitude (called in pilot module)
 
         Clips the intended state to the aircraft flight envelope: altitude to
@@ -403,16 +396,12 @@ class OpenAP(TrafficArrays):
         allow_v_tas[ir] = np.where(
             (intent_v_tas[ir] > self.vmax[ir]), self.vmax[ir], allow_v_tas[ir]
         )
-        allow_vs[ir] = np.where(
-            (intent_vs[ir] < self.vsmin[ir]), self.vsmin[ir], intent_vs[ir]
-        )
-        allow_vs[ir] = np.where(
-            (intent_vs[ir] > self.vsmax[ir]), self.vsmax[ir], allow_vs[ir]
-        )
+        allow_vs[ir] = np.where((intent_vs[ir] < self.vsmin[ir]), self.vsmin[ir], intent_vs[ir])
+        allow_vs[ir] = np.where((intent_vs[ir] > self.vsmax[ir]), self.vsmax[ir], allow_vs[ir])
 
         return allow_v_tas, allow_vs, allow_h
 
-    def currentlimits(self, id=None):
+    def currentlimits(self, id: Any = None) -> tuple:
         """Get current kinematic performance envelop.
 
         Converts the phase-dependent CAS limits to TAS at the current
@@ -438,7 +427,7 @@ class OpenAP(TrafficArrays):
         else:
             return vtasmin, vtasmax, self.vsmin, self.vsmax
 
-    def _construct_v_limits(self, mask=True):
+    def _construct_v_limits(self, mask: Any = True) -> tuple[np.ndarray, np.ndarray]:
         """Compute speed limist base on aircraft model and flight phases
 
         For fixed-wing aircraft the applicable minimum and maximum calibrated
@@ -499,7 +488,7 @@ class OpenAP(TrafficArrays):
             return vmin, vmax
         return vmin[mask], vmax[mask]
 
-    def calc_axmax(self):
+    def calc_axmax(self) -> np.ndarray:
         """Compute the maximum longitudinal acceleration per aircraft.
 
         In flight the maximum acceleration follows from the excess thrust:
@@ -530,7 +519,7 @@ class OpenAP(TrafficArrays):
 
         return axmax
 
-    def show_performance(self, acid):
+    def show_performance(self, acid: int) -> tuple:
         """Report the current performance state of one aircraft.
 
         Implements the PERFSTATS stack command output: flight phase, thrust,

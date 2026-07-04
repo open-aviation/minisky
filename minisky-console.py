@@ -7,11 +7,11 @@ lines starting with ``/`` are sent as raw API request paths (e.g. ``/all``,
 
     python minisky-console.py [--server http://host] [--port 8000]
 """
+
 import os
 from pprint import pprint
 
 import click
-import pandas as pd
 import requests
 from colorama import Fore, Style
 from prompt_toolkit import prompt
@@ -21,15 +21,13 @@ from prompt_toolkit.history import FileHistory
 history_file = os.path.expanduser("/tmp/hacksky_console_history")
 path_completer = PathCompleter()
 
-completer = NestedCompleter.from_nested_dict(
-    {"load": path_completer, "/load": path_completer}
-)
+completer = NestedCompleter.from_nested_dict({"load": path_completer, "/load": path_completer})
 
 
 @click.command()
 @click.option("--server", default="http://localhost", help="API server")
 @click.option("--port", default=8000, help="API Port")
-def main(server, port):
+def main(server: str, port: int) -> None:
     """Run the interactive prompt loop against the given API server.
 
     Args:

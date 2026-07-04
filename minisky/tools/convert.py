@@ -16,7 +16,7 @@ from .aero import cas2tas, fpm, ft, kts, mach2tas
 from .geo import magdec
 
 
-def txt2alt(txt):
+def txt2alt(txt: str) -> float:
     """Convert text to altitude in meter: also FL300 => 30000. as float
 
     Accepts a flight level ("FL300" = 30000 ft) or a plain number in feet.
@@ -40,7 +40,7 @@ def txt2alt(txt):
     raise ValueError(f'Could not parse "{txt}" as altitude"')
 
 
-def tim2txt(t):
+def tim2txt(t: float) -> str:
     """Convert time to timestring: HH:MM:SS.hh
 
     Args:
@@ -52,7 +52,7 @@ def tim2txt(t):
     return strftime("%H:%M:%S.", gmtime(t)) + i2txt(int((t - int(t)) * 100.0), 2)
 
 
-def txt2tim(txt):
+def txt2tim(txt: str) -> float:
     """Convert text to time in seconds:
     SS.hh
     MM:SS.hh
@@ -83,10 +83,10 @@ def txt2tim(txt):
 
         return t
     except (ValueError, IndexError):
-        raise ValueError(f'Could not parse "{txt}" as time')
+        raise ValueError(f'Could not parse "{txt}" as time') from None
 
 
-def txt2bool(txt):
+def txt2bool(txt: str) -> bool:
     """Convert string to boolean.
 
     Args:
@@ -107,12 +107,12 @@ def txt2bool(txt):
     raise ValueError(f"Could not parse {txt} as bool.")
 
 
-def i2txt(i, n):
+def i2txt(i: int, n: int) -> str:
     """Convert integer to string with leading zeros to make it n chars long"""
     return f"{i:0{n}d}"
 
 
-def txt2hdg(txt, lat=None, lon=None):
+def txt2hdg(txt: str, lat: float | None = None, lon: float | None = None) -> float:
     """Convert text to true or magnetic heading.
     Modified by : Yaofu Zhou
 
@@ -146,7 +146,7 @@ def txt2hdg(txt, lat=None, lon=None):
     return heading
 
 
-def txt2vs(txt):
+def txt2vs(txt: str) -> float:
     """Convert text to vertical speed.
 
     Arguments:
@@ -158,7 +158,7 @@ def txt2vs(txt):
     return fpm * float(txt)
 
 
-def txt2spd(txt):
+def txt2spd(txt: str) -> float:
     """Convert text to speed, keep type (EAS/TAS/MACH) unchanged.
 
     Values written with an "M" prefix (e.g. "M.8", "M0.8") or between 0.1
@@ -182,10 +182,10 @@ def txt2spd(txt):
             spd *= kts
         return spd
     except ValueError:
-        raise ValueError(f"Could not parse {txt} as speed.")
+        raise ValueError(f"Could not parse {txt} as speed.") from None
 
 
-def txt2tas(txt, h):
+def txt2tas(txt: str, h: float) -> float:
     """Convert speed text to true airspeed at a given altitude.
 
     Mach notation ("M.8", "M95", ".95") is converted with mach2tas; plain
@@ -220,7 +220,7 @@ def txt2tas(txt, h):
     return acspd
 
 
-def col2rgb(txt):
+def col2rgb(txt: str) -> tuple[int, int, int]:
     """Convert named color to R,G,B values (integer per component, 0-255).
 
     Args:
@@ -249,7 +249,7 @@ def col2rgb(txt):
     return rgb
 
 
-def degto180(angle):
+def degto180(angle: float) -> float:
     """Change an angle to the domain [-180, 180) degrees.
 
     Args:
@@ -261,7 +261,7 @@ def degto180(angle):
     return (angle + 180.0) % 360 - 180.0
 
 
-def radtopi(angle):
+def radtopi(angle: float) -> float:
     """Change an angle to the domain [-pi, pi) radians.
 
     Args:
@@ -273,7 +273,7 @@ def radtopi(angle):
     return (angle + np.pi) % (2.0 * np.pi) - np.pi
 
 
-def txt2lat(lattxt):
+def txt2lat(lattxt: str) -> float:
     """Convert a latitude text to degrees.
 
     Accepts decimal degrees or degrees/minutes/seconds separated by
@@ -286,24 +286,17 @@ def txt2lat(lattxt):
     Returns:
         Latitude [deg] as float (0.0 when parsing fails).
     """
-    txt = (
-        lattxt.upper().replace("N", "").replace("S", "-")
-    )  # North positive, South negative
+    txt = lattxt.upper().replace("N", "").replace("S", "-")  # North positive, South negative
     neg = txt.count("-") > 0
 
     # Use of "'" and '"' as delimiter for degrees/minutes/seconds
     # (also accept degree symbol chr(176))
     if txt.count("'") > 0 or txt.count('"') > 0 or txt.count(chr(176)) > 0:
-        txt = txt.replace('"', "'").replace(
-            chr(176), "'"
-        )  # replace " or degree symbol and  by a '
+        txt = txt.replace('"', "'").replace(chr(176), "'")  # replace " or degree symbol and  by a '
         degs = txt.split("'")
         div = 1
         lat = 0
-        if neg:
-            f = -1.0
-        else:
-            f = 1.0
+        f = -1.0 if neg else 1.0
         for xtxt in degs:
             if len(xtxt) > 0:
                 try:
@@ -318,7 +311,7 @@ def txt2lat(lattxt):
     # Return float
 
 
-def txt2lon(lontxt):
+def txt2lon(lontxt: str) -> float:
     """Convert a longitude text to degrees.
 
     Accepts decimal degrees or degrees/minutes/seconds separated by
@@ -338,9 +331,7 @@ def txt2lon(lontxt):
 
     # Leading E will trigger error ansd means simply East,just as  W = West = Negative
     except ValueError:
-        txt = (
-            lontxt.upper().replace("E", "").replace("W", "-")
-        )  # East positive, West negative
+        txt = lontxt.upper().replace("E", "").replace("W", "-")  # East positive, West negative
         neg = txt.count("-") > 0
 
         # Use of "'" and '"' as delimiter for degrees/minutes/seconds
@@ -351,10 +342,7 @@ def txt2lon(lontxt):
             degs = txt.split("'")
             div = 1
             lon = 0.0
-            if neg:
-                f = -1.0
-            else:
-                f = 1.0
+            f = -1.0 if neg else 1.0
             for xtxt in degs:
                 if len(xtxt) > 0.0:
                     try:
@@ -367,10 +355,7 @@ def txt2lon(lontxt):
         else:  # Cope with "W65"without "'" or '"', also "-65" or "--65"
             try:
                 neg = txt.count("-") > 0
-                if neg:
-                    f = -1.0
-                else:
-                    f = 1.0
+                f = -1.0 if neg else 1.0
                 lon = f * abs(float(txt))
             except ValueError:
                 print("txt2lon value error:", lontxt)
@@ -379,24 +364,24 @@ def txt2lon(lontxt):
     return lon
 
 
-def lat2txt(lat):
+def lat2txt(lat: float) -> str:
     """Convert latitude into string (N/Sdegrees'minutes'seconds)."""
     d, m, s = float2degminsec(abs(lat))
-    return "NS"[int(lat<0)] + "%02d'%02d'"%(int(d),int(m))+str(s)+'"'
+    return "NS"[int(lat < 0)] + f"{int(d):02d}'{int(m):02d}'" + str(s) + '"'
 
 
-def lon2txt(lon):
+def lon2txt(lon: float) -> str:
     """Convert longitude into string (E/Wdegrees'minutes'seconds)."""
     d, m, s = float2degminsec(abs(lon))
-    return "EW"[int(lon<0)] + "%03d'%02d'"%(int(d),int(m))+str(s)+'"'
+    return "EW"[int(lon < 0)] + f"{int(d):03d}'{int(m):02d}'" + str(s) + '"'
 
 
-def latlon2txt(lat, lon):
+def latlon2txt(lat: float, lon: float) -> str:
     """Convert latitude and longitude in latlon string."""
     return lat2txt(lat) + "  " + lon2txt(lon)
 
 
-def deg180(dangle):
+def deg180(dangle: float) -> float:
     """Convert any difference in angles to interval [ -180,180 ).
 
     Args:
@@ -408,7 +393,7 @@ def deg180(dangle):
     return (dangle + 180.0) % 360.0 - 180.0
 
 
-def float2degminsec(x):
+def float2degminsec(x: float) -> tuple[int, float, float]:
     """Split a positive angle in degrees into whole degrees, minutes, and seconds.
 
     Args:

@@ -9,8 +9,9 @@ instantiated once by the performance model (``perfoap.OpenAP``).
 """
 
 import json
-from openap import prop, WRAP, drag
+
 import numpy as np
+from openap import WRAP, drag, prop
 
 import minisky
 
@@ -48,8 +49,10 @@ class Coefficient:
             configurations, plus the landing-gear drag increment.
     """
 
-    def __init__(self):
-        self.actypes_fixwing = prop.available_aircraft(use_synonym=True) # fixed wing types from openap
+    def __init__(self) -> None:
+        self.actypes_fixwing = prop.available_aircraft(
+            use_synonym=True
+        )  # fixed wing types from openap
         self.acs_fixwing = self._load_all_fixwing_flavor()
         self.limits_fixwing = self._load_all_fixwing_envelop()
 
@@ -59,9 +62,10 @@ class Coefficient:
 
         self.dragpolar_fixwing = self._load_fixedwing_dragpolar()
 
-    def _load_all_fixwing_flavor(self):
+    def _load_all_fixwing_flavor(self) -> dict:
         """Load fixed-wing aircraft and default engine data from OpenAP."""
         import warnings
+
         warnings.simplefilter("ignore")
 
         # load fixwing aircraft and engine from openap
@@ -71,23 +75,19 @@ class Coefficient:
             ac = prop.aircraft(mdl, use_synonym=True)
             acs[mdl.upper()] = ac.copy()
             engines = []
-            engines.append(prop.engine(ac['engine']['default']))
+            engines.append(prop.engine(ac["engine"]["default"]))
             # options can have repeated strings as default or dicts (with model variant as key), do we handle this?
             # engines.append([prop.engine(e) for e in ac_['engine']['options']])
-            acs[mdl.upper()]['engines'] = {}
+            acs[mdl.upper()]["engines"] = {}
             for e in engines:
-                acs[mdl.upper()]['engines'][e['name']] = e.copy()
+                acs[mdl.upper()]["engines"][e["name"]] = e.copy()
         return acs
 
-    def _load_all_rotor_flavor(self):
+    def _load_all_rotor_flavor(self) -> dict:
         """Load rotorcraft data from the local JSON database."""
         # read rotor aircraft
-        acs = json.load(
-            open(
-                OPENAP_DIR / "rotor/aircraft.json",
-                "r",
-            )
-        )
+        with open(OPENAP_DIR / "rotor/aircraft.json") as f:
+            acs = json.load(f)
         acs.pop("__comment")
         acs_ = {}
         for mdl, ac in acs.items():
@@ -95,7 +95,7 @@ class Coefficient:
             acs_[mdl.upper()]["lifttype"] = LIFT_ROTOR
         return acs_
 
-    def _load_all_fixwing_envelop(self):
+    def _load_all_fixwing_envelop(self) -> dict:
         """load aircraft envelop from the openap database,
         All unit in SI
 
@@ -105,9 +105,9 @@ class Coefficient:
         Mach/CAS crossover altitudes, and takeoff acceleration [m/s^2].
         En-route limits are the extremes over all flight phases.
         """
-        _MAX = 'maximum'
-        _MIN = 'minimum'
-        _OPT = 'default'
+        _MAX = "maximum"
+        _MIN = "minimum"
+        _OPT = "default"
         limits_fixwing = {}
         for mdl in self.actypes_fixwing:
             wrap = WRAP(ac=mdl)
@@ -161,7 +161,7 @@ class Coefficient:
 
         return limits_fixwing
 
-    def _load_all_rotor_envelop(self):
+    def _load_all_rotor_envelop(self) -> dict:
         """load rotor aircraft envelop, all unit in SI
 
         Reads speed [m/s], vertical speed [m/s], and ceiling [m] limits from
@@ -187,7 +187,7 @@ class Coefficient:
 
         return limits_rotor
 
-    def _load_fixedwing_dragpolar(self):
+    def _load_fixedwing_dragpolar(self) -> dict:
         """Derive clean, takeoff, and landing drag polars from OpenAP.
 
         OpenAP computes non-clean drag from flap deflection; since MiniSky
@@ -199,8 +199,8 @@ class Coefficient:
         dragpolar = {}
         # openap relies on flap angles to caculate nonclean drag, BS doesn't have a flap angle concept
         # we assume 15 degrees flap during takeoff and 40 degrees during landing
-        flap_to = 15 # degs
-        flap_ld = 40 # degs
+        flap_to = 15  # degs
+        flap_ld = 40  # degs
 
         for mdl in self.actypes_fixwing:
             mdl = mdl.upper()
@@ -213,21 +213,25 @@ class Coefficient:
             lambda_f = _polar["flaps"]["lambda_f"]
             cfc = _polar["flaps"]["cf/c"]
             SfS = _polar["flaps"]["Sf/S"]
-            delta_cd_flap_to = lambda_f * (cfc)**1.38 * SfS * np.sin(np.deg2rad(flap_to)) ** 2
-            delta_cd_flap_ld = lambda_f * (cfc)**1.38 * SfS * np.sin(np.deg2rad(flap_ld)) ** 2
+            delta_cd_flap_to = lambda_f * (cfc) ** 1.38 * SfS * np.sin(np.deg2rad(flap_to)) ** 2
+            delta_cd_flap_ld = lambda_f * (cfc) ** 1.38 * SfS * np.sin(np.deg2rad(flap_ld)) ** 2
             dragpolar[mdl]["cd0_to"] = round(float(_polar["clean"]["cd0"] + delta_cd_flap_to), 3)
             dragpolar[mdl]["cd0_ld"] = round(float(_polar["clean"]["cd0"] + delta_cd_flap_ld), 3)
 
-            if self.acs_fixwing[mdl]['engine']['mount'] == "rear":
+            if self.acs_fixwing[mdl]["engine"]["mount"] == "rear":
                 delta_e_flap_to = 0.0046 * flap_to
                 delta_e_flap_ld = 0.0046 * flap_ld
             else:
                 delta_e_flap_to = 0.0026 * flap_to
                 delta_e_flap_ld = 0.0026 * flap_ld
-            
+
             ar = self.acs_fixwing[mdl]["wing"]["span"] ** 2 / self.acs_fixwing[mdl]["wing"]["area"]
-            dragpolar[mdl]["k_to"] = round(1 / (1 / _polar["clean"]["k"] + np.pi * ar * delta_e_flap_to), 3)
-            dragpolar[mdl]["k_ld"] = round(1 / (1 / _polar["clean"]["k"] + np.pi * ar * delta_e_flap_ld), 3)
+            dragpolar[mdl]["k_to"] = round(
+                1 / (1 / _polar["clean"]["k"] + np.pi * ar * delta_e_flap_to), 3
+            )
+            dragpolar[mdl]["k_ld"] = round(
+                1 / (1 / _polar["clean"]["k"] + np.pi * ar * delta_e_flap_ld), 3
+            )
             dragpolar[mdl]["delta_cd_gear"] = _polar["gears"]
 
         return dragpolar
