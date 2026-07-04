@@ -10,6 +10,7 @@ instance is created by :func:`minisky.init` and available as
 
 import asyncio
 import os
+from typing import Any
 
 import minisky
 
@@ -38,7 +39,7 @@ class Runner:
         jump_to: Target simulation time of the active fast-forward jump [s].
     """
 
-    def __init__(self, **kwargs) -> None:
+    def __init__(self, **kwargs: Any) -> None:
         """Initialize the runner.
 
         Args:

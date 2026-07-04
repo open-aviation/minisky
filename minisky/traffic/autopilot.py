@@ -35,7 +35,7 @@ from minisky.tools.aero import (
     vcasormach2tas,
 )
 from minisky.tools.convert import degto180
-from minisky.tools.position import txt2pos
+from minisky.tools.position import Position, txt2pos
 
 from .route import Route
 
@@ -119,10 +119,10 @@ class Autopilot(TrafficArrays):
 
             # Bearing to waypoint from last check point
             # used to prevent 180-degree turns when bearing updates shortly before passing waypoint
-            self.qdr2wp = np.array([])
+            self.qdr2wp: np.ndarray = np.array([])
 
             # Distance to active waypoint [m]
-            self.dist2wp = np.array([])
+            self.dist2wp: np.ndarray = np.array([])
 
             # Bearing to next turn
             self.qdrturn = np.array([])
@@ -398,7 +398,7 @@ class Autopilot(TrafficArrays):
                 and minisky.traf.actwp.turnrad[i] < 0.0
                 and minisky.traf.actwp.turnspd[i] >= 0.0
             ):
-                turntas = cas2tas(minisky.traf.actwp.turnspd[i], minisky.traf.alt[i])
+                turntas = cas2tas(float(minisky.traf.actwp.turnspd[i]), float(minisky.traf.alt[i]))
                 minisky.traf.actwp.turndist[i] = (
                     minisky.traf.actwp.turndist[i]
                     * turntas
@@ -474,8 +474,8 @@ class Autopilot(TrafficArrays):
             minisky.traf.actwp.lon,
         )  # [deg][nm])
 
-        self.qdr2wp = qdr
-        self.dist2wp = distinnm * nm  # Conversion to meters
+        self.qdr2wp = np.asarray(qdr)
+        self.dist2wp = np.asarray(distinnm) * nm  # Conversion to meters
 
         # Check possible waypoint shift. Note: qdr, dist2wp will be updated accordingly in case of waypoint switch
         self.wppassingcheck(qdr, self.dist2wp)  # Updates self.qdr2wp when necessary
@@ -911,7 +911,7 @@ class Autopilot(TrafficArrays):
         else:
             return False
 
-    def selaltcmd(self, idx: int, alt: "alt", vspd: "vspd" = None) -> tuple[bool, str]:
+    def selaltcmd(self, idx: "int | np.ndarray", alt: "alt", vspd: "vspd" = None) -> tuple[bool, str]:
         """Select the autopilot altitude, optionally with a vertical speed.
 
         Implements the ALT stack command: ``ALT acid, alt, [vspd]``.
@@ -935,17 +935,16 @@ class Autopilot(TrafficArrays):
         if vspd:
             minisky.traf.selvs[idx] = vspd
         else:
-            if not isinstance(idx, Collection):
-                idx = np.array([idx])
-            delalt = alt - minisky.traf.alt[idx]
+            idxarr = idx if isinstance(idx, np.ndarray) else np.array([idx])
+            delalt = alt - minisky.traf.alt[idxarr]
             # Check for VS with opposite sign => use default vs
             # by setting autopilot vs to zero
             oppositevs = np.logical_and(
-                minisky.traf.selvs[idx] * delalt < 0.0,
-                abs(minisky.traf.selvs[idx]) > 0.01,
+                minisky.traf.selvs[idxarr] * delalt < 0.0,
+                abs(minisky.traf.selvs[idxarr]) > 0.01,
             )
 
-            minisky.traf.selvs[idx[oppositevs]] = 0.0
+            minisky.traf.selvs[idxarr[oppositevs]] = 0.0
         return True, f"altitude set to {alt / ft} ft"
 
     def selvspdcmd(self, idx: int, vspd: "vspd") -> tuple[bool, str]:
@@ -1068,8 +1067,9 @@ class Autopilot(TrafficArrays):
                 reflat = minisky.traf.lat[acidx]
                 reflon = minisky.traf.lon[acidx]
 
-            success, posobj = txt2pos(wpname, reflat, reflon)
+            success, posobj = txt2pos(wpname, float(reflat), float(reflon))
             if success:
+                assert isinstance(posobj, Position)
                 lat = posobj.lat
                 lon = posobj.lon
             else:
@@ -1132,8 +1132,9 @@ class Autopilot(TrafficArrays):
                 reflat = minisky.traf.lat[acidx]
                 reflon = minisky.traf.lon[acidx]
 
-            success, posobj = txt2pos(wpname, reflat, reflon)
+            success, posobj = txt2pos(wpname, float(reflat), float(reflon))
             if success:
+                assert isinstance(posobj, Position)
                 lat = posobj.lat
                 lon = posobj.lon
             else:
@@ -1153,7 +1154,7 @@ class Autopilot(TrafficArrays):
 
         return True, f"origin set to {wpname}"
 
-    def setVNAV(self, idx: int, flag: "bool" = None) -> tuple[bool, str]:
+    def setVNAV(self, idx: Any, flag: "bool" = None) -> tuple[bool, str]:  # type: ignore[assignment]
         """Switch VNAV (vertical FMS guidance) on or off, or show its state.
 
         Implements the VNAV stack command: ``VNAV acid, [ON/OFF]``. VNAV can
@@ -1174,6 +1175,7 @@ class Autopilot(TrafficArrays):
                 # All aircraft are targeted
                 minisky.traf.swvnav = np.array(minisky.traf.ntraf * [flag])
                 minisky.traf.swvnavspd = np.array(minisky.traf.ntraf * [flag])
+                idx = np.arange(minisky.traf.ntraf)
             else:
                 # Prepare for the loop
                 idx = np.array([idx])
@@ -1226,7 +1228,7 @@ class Autopilot(TrafficArrays):
 
         return True, f"VNAV {'ON' if flag else 'OFF'}"
 
-    def setLNAV(self, idx: int, flag: "bool" = None) -> tuple[bool, str]:
+    def setLNAV(self, idx: Any, flag: "bool" = None) -> tuple[bool, str]:  # type: ignore[assignment]
         """Switch LNAV (lateral FMS guidance) on or off, or show its state.
 
         Implements the LNAV stack command: ``LNAV acid, [ON/OFF]``. LNAV can
@@ -1246,6 +1248,7 @@ class Autopilot(TrafficArrays):
             if idx is None:
                 # All aircraft are targeted
                 minisky.traf.swlnav = np.array(minisky.traf.ntraf * [flag])
+                idx = np.arange(minisky.traf.ntraf)
             else:
                 # Prepare for the loop
                 idx = np.array([idx])
@@ -1278,7 +1281,7 @@ class Autopilot(TrafficArrays):
 
         return True, f"LNAV {'ON' if flag else 'OFF'}"
 
-    def setswtoc(self, idx: int, flag: "bool" = None) -> tuple[bool, str]:
+    def setswtoc(self, idx: Any, flag: "bool" = None) -> tuple[bool, str]:  # type: ignore[assignment]
         """Switch the Top-of-Climb logic on or off, or show its state.
 
         Implements the SWTOC stack command: ``SWTOC acid, [ON/OFF]``. With
@@ -1299,6 +1302,7 @@ class Autopilot(TrafficArrays):
             if idx is None:
                 # All aircraft are targeted
                 self.swtoc = np.array(minisky.traf.ntraf * [flag])
+                idx = np.arange(minisky.traf.ntraf)
             else:
                 # Prepare for the loop
                 idx = np.array([idx])
@@ -1320,7 +1324,7 @@ class Autopilot(TrafficArrays):
 
         return True, f"SWTOC {'ON' if flag else 'OFF'}"
 
-    def setswtod(self, idx: int, flag: "bool" = None) -> tuple[bool, str]:
+    def setswtod(self, idx: Any, flag: "bool" = None) -> tuple[bool, str]:  # type: ignore[assignment]
         """Switch the Top-of-Descent logic on or off, or show its state.
 
         Implements the SWTOD stack command: ``SWTOD acid, [ON/OFF]``. With
@@ -1340,6 +1344,7 @@ class Autopilot(TrafficArrays):
             if idx is None:
                 # All aircraft are targeted
                 self.swtod = np.array(minisky.traf.ntraf * [flag])
+                idx = np.arange(minisky.traf.ntraf)
             else:
                 # Prepare for the loop
                 idx = np.array([idx])

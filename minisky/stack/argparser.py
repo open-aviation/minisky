@@ -42,6 +42,14 @@ from minisky.tools.position import Position, islat
 # [\'"]?\s*,?\s*     : skip potential closing quote, whitespace, and a potential single comma
 re_getarg = re.compile(r'\s*[\'"]?((?<=[\'"])[^\'"]*|(?<![\'"])[^\s,]*)[\'"]?\s*,?\s*(.*)')
 
+
+def _match_groups(argstring: str) -> tuple[str, str]:
+    """Match argstring against re_getarg (which always matches) and return groups."""
+    m = re_getarg.match(argstring)
+    assert m is not None
+    return m.groups()  # type: ignore[return-value]
+
+
 # Stack reference data namespace
 refdata = SimpleNamespace(lat=None, lon=None, alt=None, acidx=-1, hdg=None, cas=None)
 
@@ -58,7 +66,7 @@ def getnextarg(cmdstring: str) -> tuple:
     Returns:
         tuple: (first argument (str), remaining command string (str)).
     """
-    return re_getarg.match(cmdstring).groups()
+    return _match_groups(cmdstring)
 
 
 def reset() -> None:
@@ -146,7 +154,7 @@ class Parameter:
         """
         # First check if argument is omitted and default value is needed
         if not argstring or argstring[0] == ",":
-            _, argstring = re_getarg.match(argstring).groups()
+            _, argstring = _match_groups(argstring)
             if self.hasdefault():
                 return self.default, argstring
             if self.optional:
@@ -221,7 +229,8 @@ class Parser:
         Returns:
             tuple: (parsed value, remaining argument string).
         """
-        curarg, argstring = re_getarg.match(argstring).groups()
+        curarg, argstring = _match_groups(argstring)
+        assert self.parsefun is not None
         return self.parsefun(curarg), argstring
 
 
@@ -246,7 +255,7 @@ class CallsignArg(Parser):
         Raises:
             ArgumentError: When no aircraft with the given callsign exists.
         """
-        arg, argstring = re_getarg.match(argstring).groups()
+        arg, argstring = _match_groups(argstring)
         callsign = arg.upper()
         if callsign in minisky.traf.groups:
             idx = minisky.traf.groups.listgroup(callsign)
@@ -280,7 +289,7 @@ class WptArg(Parser):
         Aircraft ids are translated to a "lat,lon" text; lat/lon pairs and
         airport/runway combinations are joined into one string.
         """
-        arg, argstring = re_getarg.match(argstring).groups()
+        arg, argstring = _match_groups(argstring)
         name = arg.upper()
 
         # Try aircraft first: translate a/c id into a valid position text with a lat,lon
@@ -291,12 +300,12 @@ class WptArg(Parser):
         # Check if lat/lon combination
         elif islat(name):
             # lat,lon ? Combine into one string with a comma
-            arg, argstring = re_getarg.match(argstring).groups()
+            arg, argstring = _match_groups(argstring)
             name = name + "," + arg
 
         # apt,runway ? Combine into one string with a slash as separator
         elif argstring[:2].upper() == "RW" and name in minisky.navdb.aptid:
-            arg, argstring = re_getarg.match(argstring).groups()
+            arg, argstring = _match_groups(argstring)
             name = name + "/" + arg.upper()
 
         return name, argstring
@@ -329,7 +338,7 @@ class PosArg(Parser):
             ArgumentError: When the text is not a valid waypoint, airport,
                 runway, or aircraft id.
         """
-        arg, argstring = re_getarg.match(argstring).groups()
+        arg, argstring = _match_groups(argstring)
         argu = arg.upper()
 
         # Try aircraft first: translate a/c id into a valid position text with a lat,lon
@@ -339,14 +348,14 @@ class PosArg(Parser):
 
         # Check if lat/lon combination
         if islat(argu):
-            nextarg, argstring = re_getarg.match(argstring).groups()
+            nextarg, argstring = _match_groups(argstring)
             refdata.lat = txt2lat(argu)
             refdata.lon = txt2lon(nextarg)
             return txt2lat(argu), txt2lon(nextarg), argstring
 
         # apt,runway ? Combine into one string with a slash as separator
         if argstring[:2].upper() == "RW" and argu in minisky.navdb.aptid:
-            arg, argstring = re_getarg.match(argstring).groups()
+            arg, argstring = _match_groups(argstring)
             argu = argu + "/" + arg.upper()
 
         if refdata.lat is None:
@@ -373,7 +382,7 @@ class PandirArg(Parser):
         Raises:
             ArgumentError: When the text is not a valid pan direction.
         """
-        arg, argstring = re_getarg.match(argstring).groups()
+        arg, argstring = _match_groups(argstring)
         pandir = arg.upper()
         if pandir not in ("LEFT", "RIGHT", "UP", "ABOVE", "RIGHT", "DOWN"):
             raise ArgumentError(f"{arg} is not a valid pan direction")

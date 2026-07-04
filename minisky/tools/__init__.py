@@ -13,7 +13,7 @@ from minisky.core import settings
 # Register settings defaults
 if settings.prefer_compiled:
     try:
-        from . import cgeo as geo
+        from . import cgeo as geo  # type: ignore[import-not-found]
 
         # print("Using compiled geo functions")
     except ImportError:
@@ -24,6 +24,8 @@ else:
     from . import geo
 
     print("Using Python-based geo functions")
+
+from . import aero, areafilter, convert, navdata, position  # noqa: E402
 
 
 def init() -> None:

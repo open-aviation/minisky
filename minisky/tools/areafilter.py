@@ -15,7 +15,7 @@ import numpy as np
 from matplotlib.path import Path
 
 try:
-    from rtree.index import Index
+    from rtree.index import Index  # type: ignore[assignment]
 except (ImportError, OSError):
     print(
         "Warning: RTree could not be loaded. areafilter get_intersecting and get_knearest won't work"
@@ -55,7 +55,7 @@ def has_area(areaname: str) -> bool:
 
 
 def define_area(
-    areaname: str, areatype: str, coordinates, top: float = 1e9, bottom: float = -1e9
+    areaname: str, areatype: str, coordinates: tuple[float, ...], top: float = 1e9, bottom: float = -1e9
 ) -> tuple[bool, str]:
     """Define a new area, or list/inspect existing areas.
 
@@ -93,7 +93,7 @@ def define_area(
     return True, f"Created {areatype} {areaname}"
 
 
-def define_box_area(name: str, *coords) -> tuple[bool, str]:
+def define_box_area(name: str, *coords: float) -> tuple[bool, str]:
     """BOX: Define a box-shaped area.
 
     Args:
@@ -104,7 +104,7 @@ def define_box_area(name: str, *coords) -> tuple[bool, str]:
     return define_area(name, "BOX", coords[:4], *coords[4:])
 
 
-def define_circle_area(name: str, *coords) -> tuple[bool, str]:
+def define_circle_area(name: str, *coords: float) -> tuple[bool, str]:
     """CIRCLE: Define a circle-shaped area.
 
     Args:
@@ -115,7 +115,7 @@ def define_circle_area(name: str, *coords) -> tuple[bool, str]:
     return define_area(name, "CIRCLE", coords[:3], *coords[3:])
 
 
-def define_line_area(name: str, *coords) -> tuple[bool, str]:
+def define_line_area(name: str, *coords: float) -> tuple[bool, str]:
     """LINE: Draw a line between two positions on the radar screen.
 
     Args:
@@ -125,7 +125,7 @@ def define_line_area(name: str, *coords) -> tuple[bool, str]:
     return define_area(name, "LINE", coords)
 
 
-def define_poly_area(name: str, *coords) -> tuple[bool, str]:
+def define_poly_area(name: str, *coords: float) -> tuple[bool, str]:
     """POLY: Define a polygon-shaped area.
 
     Args:
@@ -135,7 +135,7 @@ def define_poly_area(name: str, *coords) -> tuple[bool, str]:
     return define_area(name, "POLY", coords)
 
 
-def define_polyalt_area(name: str, top: float, bottom: float, *coords) -> tuple[bool, str]:
+def define_polyalt_area(name: str, top: float, bottom: float, *coords: float) -> tuple[bool, str]:
     """POLYALT: Define a polygon-shaped area in 3D, between two altitudes.
 
     Args:
@@ -147,7 +147,7 @@ def define_polyalt_area(name: str, top: float, bottom: float, *coords) -> tuple[
     return define_area(name, "POLYALT", coords, top, bottom)
 
 
-def define_polyline_area(name: str, *coords) -> tuple[bool, str]:
+def define_polyline_area(name: str, *coords: float) -> tuple[bool, str]:
     """POLYLINE: Draw a multi-segment line on the radar screen.
 
     Args:
@@ -180,6 +180,21 @@ def reset() -> None:
     """Clear all data."""
     basic_shapes.clear()
     Shape.reset()
+
+
+def deleteArea(name: str) -> tuple[bool, str]:
+    """Delete a previously defined area by name.
+
+    Args:
+        name: Name of the area shape to remove.
+
+    Returns:
+        tuple: (success (bool), message (str)).
+    """
+    if name in basic_shapes:
+        del basic_shapes[name]
+        return True, f"Area {name} deleted."
+    return False, f"No area found with name {name}."
 
 
 def get_intersecting(lat0: float, lon0: float, lat1: float, lon1: float) -> list:

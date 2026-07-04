@@ -115,14 +115,14 @@ class Windfield:
                 windalt,
                 vnorth.T,
                 bounds_error=False,
-                fill_value=(vnorth[0], vnorth[-1]),
+                fill_value=(vnorth[0], vnorth[-1]),  # type: ignore[arg-type]
                 assume_sorted=True,
             )
             feast = interp1d(
                 windalt,
                 veast.T,
                 bounds_error=False,
-                fill_value=(veast[0], veast[-1]),
+                fill_value=(veast[0], veast[-1]),  # type: ignore[arg-type]
                 assume_sorted=True,
             )
 

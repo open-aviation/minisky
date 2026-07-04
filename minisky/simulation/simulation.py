@@ -225,7 +225,7 @@ class Simulation:
 
         return event_processed
 
-    def setutc(self, *args) -> tuple[bool, str]:
+    def setutc(self, *args: str) -> tuple[bool, str]:
         """Set the simulated UTC clock time (stack UTC/DATE command).
 
         Usage: UTC [RUN | REAL | UTC | HH:MM:SS[.ff] | day month year [HH:MM:SS[.ff]]]
@@ -273,7 +273,7 @@ class Simulation:
         elif len(args) == 3:
             day, month, year = args
             try:
-                self.utc = datetime.datetime(year, month, day)
+                self.utc = datetime.datetime(int(year), int(month), int(day))
             except ValueError:
                 return False, "Input date invalid."
         elif len(args) == 4:

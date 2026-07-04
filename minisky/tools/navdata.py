@@ -8,6 +8,7 @@ argument that references a navaid, airport, or runway.
 """
 
 import json
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -15,6 +16,16 @@ import pandas as pd
 import minisky
 from minisky.tools import geo
 from minisky.tools.aero import nm
+
+
+def _tolist(column: Any) -> list:
+    """Return a pandas column as a plain Python list.
+
+    Wrapper around ``Series.to_list()`` that gives a concrete ``list``
+    return type (the pandas ``__getitem__`` overloads otherwise widen the
+    result to include ``str``).
+    """
+    return column.to_list()
 
 
 def findall(lst, x) -> list:
@@ -113,36 +124,37 @@ class Navdatabase:
             rwythresholds = json.load(f)
 
         # Get waypoint data
-        self.wpid = wptdata["wpid"].to_list()  # identifier (string)
-        self.wplat = wptdata["wplat"].to_list()  # latitude [deg]
-        self.wplon = wptdata["wplon"].to_list()  # longitude [deg]
-        self.wptype = wptdata["wptype"].to_list()  # type (string)
-        self.wpelev = wptdata["wpelev"].to_list()  # elevation [m]
-        self.wpvar = wptdata["wpvar"].to_list()  # magn variation [deg]
-        self.wpfreq = wptdata["wpfreq"].to_list()  # frequency [kHz/MHz]
-        self.wpdesc = wptdata["wpdesc"].to_list()  # description
+        self.wpid = _tolist(wptdata["wpid"])  # identifier (string)
+        # wplat/wplon start as lists but are reassigned to ndarrays by addwpt
+        self.wplat: Any = _tolist(wptdata["wplat"])  # latitude [deg]
+        self.wplon: Any = _tolist(wptdata["wplon"])  # longitude [deg]
+        self.wptype = _tolist(wptdata["wptype"])  # type (string)
+        self.wpelev = _tolist(wptdata["wpelev"])  # elevation [m]
+        self.wpvar = _tolist(wptdata["wpvar"])  # magn variation [deg]
+        self.wpfreq = _tolist(wptdata["wpfreq"])  # frequency [kHz/MHz]
+        self.wpdesc = _tolist(wptdata["wpdesc"])  # description
 
         # Get airway legs data
-        self.awfromwpid = awydata["awfromwpid"].to_list()  # identifier (string)
-        self.awfromlat = awydata["awfromlat"].to_list()  # latitude [deg]
-        self.awfromlon = awydata["awfromlon"].to_list()  # longitude [deg]
-        self.awtowpid = awydata["awtowpid"].to_list()  # identifier (string)
-        self.awtolat = awydata["awtolat"].to_list()  # latitude [deg]
-        self.awtolon = awydata["awtolon"].to_list()  # longitude [deg]
-        self.awid = awydata["awid"].to_list()  # airway identifier (string)
-        self.awndir = awydata["awndir"].to_list()  # number of directions (1 or 2)
-        self.awlowfl = awydata["awlowfl"].to_list()  # lower flight level (int)
-        self.awupfl = awydata["awupfl"].to_list()  # upper flight level (int)
+        self.awfromwpid = _tolist(awydata["awfromwpid"])  # identifier (string)
+        self.awfromlat = _tolist(awydata["awfromlat"])  # latitude [deg]
+        self.awfromlon = _tolist(awydata["awfromlon"])  # longitude [deg]
+        self.awtowpid = _tolist(awydata["awtowpid"])  # identifier (string)
+        self.awtolat = _tolist(awydata["awtolat"])  # latitude [deg]
+        self.awtolon = _tolist(awydata["awtolon"])  # longitude [deg]
+        self.awid = _tolist(awydata["awid"])  # airway identifier (string)
+        self.awndir = _tolist(awydata["awndir"])  # number of directions (1 or 2)
+        self.awlowfl = _tolist(awydata["awlowfl"])  # lower flight level (int)
+        self.awupfl = _tolist(awydata["awupfl"])  # upper flight level (int)
 
         # Get airpoint data
-        self.aptid = aptdata["apid"].to_list()  # 4 char identifier (string)
-        self.aptname = aptdata["apname"].to_list()  # full name
-        self.aptlat = aptdata["aplat"].to_list()  # latitude [deg]
-        self.aptlon = aptdata["aplon"].to_list()  # longitude [deg]
-        self.aptmaxrwy = aptdata["apmaxrwy"].to_list()  # max runway length [m]
-        self.aptype = aptdata["aptype"].to_list()  # 1=large, 2=medium, 3=small
-        self.aptco = aptdata["apco"].to_list()  # two char country code (string)
-        self.aptelev = aptdata["apelev"].to_list()  # elevation in meters [m] MSL
+        self.aptid = _tolist(aptdata["apid"])  # 4 char identifier (string)
+        self.aptname = _tolist(aptdata["apname"])  # full name
+        self.aptlat = _tolist(aptdata["aplat"])  # latitude [deg]
+        self.aptlon = _tolist(aptdata["aplon"])  # longitude [deg]
+        self.aptmaxrwy = _tolist(aptdata["apmaxrwy"])  # max runway length [m]
+        self.aptype = _tolist(aptdata["aptype"])  # 1=large, 2=medium, 3=small
+        self.aptco = _tolist(aptdata["apco"])  # two char country code (string)
+        self.aptelev = _tolist(aptdata["apelev"])  # elevation in meters [m] MSL
 
         # Get FIR data
         self.fir = firdata["fir"]  # fir name
@@ -152,14 +164,14 @@ class Navdatabase:
         self.firlon1 = firdata["firlon1"]  # end lon of a line of border
 
         # Get country code data
-        self.coname = codata["coname"].to_list()  # full name
-        self.cocode2 = codata["cocode2"].to_list()  # 2 chars
-        self.cocode3 = codata["cocode3"].to_list()  # 3 chars
-        self.conr = codata["conr"].to_list()  # country icao number
+        self.coname = _tolist(codata["coname"])  # full name
+        self.cocode2 = _tolist(codata["cocode2"])  # 2 chars
+        self.cocode3 = _tolist(codata["cocode3"])  # 3 chars
+        self.conr = _tolist(codata["conr"])  # country icao number
 
         self.rwythresholds = rwythresholds
 
-    def defwpt(self, name=None, lat=None, lon=None, wptype=None) -> tuple[bool, str]:
+    def defwpt(self, name: str | None = None, lat: float | None = None, lon: float | None = None, wptype: str | None = None) -> tuple[bool, str]:
         """DEFWPT: Define, inspect, or delete a scenario-specific waypoint.
 
         Without lat/lon, information about the existing waypoint is
@@ -223,7 +235,7 @@ class Navdatabase:
 
         return True, name.upper() + " added to navdb."
 
-    def delwpt(self, name=None) -> tuple[bool, str]:
+    def delwpt(self, name: str | None = None) -> tuple[bool, str]:
         """Delete a waypoint from the database.
 
         The last-added occurrence of the name is removed.
@@ -234,6 +246,9 @@ class Navdatabase:
         Returns:
             tuple: (success (bool), message (str)).
         """
+        if name is None:
+            return False, "No waypoint name given"
+
         if self.wpid.count(name.upper()) <= 0:
             return False, "Waypoint " + name.upper() + " does not exist."
 
@@ -370,7 +385,7 @@ class Navdatabase:
         except ValueError:
             return -1
 
-    def getinear(self, wlat, wlon, lat: float, lon: float):  # lat,lon in degrees
+    def getinear(self, wlat: "np.ndarray | list", wlon: "np.ndarray | list", lat: float, lon: float) -> int:  # lat,lon in degrees
         """Get the index of the entry nearest to a given position.
 
         Uses a fast flat-earth squared-distance comparison.
@@ -385,6 +400,8 @@ class Navdatabase:
             int: Index of the nearest entry.
         """
         # t0 = time.clock()
+        wlat = np.asarray(wlat)
+        wlon = np.asarray(wlon)
         f = np.cos(np.radians(lat))
         dlat = (wlat - lat + 180.0) % 360.0 - 180.0
         dlon = f * ((wlon - lon + 180.0) % 360.0 - 180.0)
@@ -392,7 +409,7 @@ class Navdatabase:
         idx = np.argmin(d2)
         # dt = time.clock()-t0
         # print dt
-        return idx
+        return int(idx)
 
     def getwpinear(self, lat: float, lon: float):  # lat,lon in degrees
         """Get the index of the waypoint closest to position (lat, lon) [deg]."""
@@ -402,7 +419,7 @@ class Navdatabase:
         """Get the index of the airport closest to position (lat, lon) [deg]."""
         return self.getinear(self.aptlat, self.aptlon, lat, lon)
 
-    def getinside(self, wlat, wlon, lat0: float, lat1: float, lon0: float, lon1: float) -> list:
+    def getinside(self, wlat: "np.ndarray | list", wlon: "np.ndarray | list", lat0: float, lat1: float, lon0: float, lon1: float) -> list:
         """Get indices of positions inside the given lat/lon box.
 
         Args:
@@ -417,6 +434,8 @@ class Navdatabase:
             list: Indices of the positions inside the box.
         """
         # t0 = time.clock()
+        wlat = np.asarray(wlat)
+        wlon = np.asarray(wlon)
         if lat0 < lat1:
             arr = np.where((wlat > lat0) * (wlat < lat1) * (wlon > lon0) * (wlon < lon1))
         else:

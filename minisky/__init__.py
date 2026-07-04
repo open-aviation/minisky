@@ -22,6 +22,14 @@ from minisky.core import varexplorer
 from minisky.core.settings import data
 from minisky.simulation import ConsoleIO, Runner, Simulation
 from minisky.tools.navdata import Navdatabase
+
+# isort: split
+# NOTE: ``traffic`` is imported last, and separately from the ``minisky import``
+# block above, on purpose: importing it pulls in the performance model, whose
+# module-level code calls ``minisky.data`` (defined by the settings import
+# above). Importing it earlier would trigger a circular import. The explicit
+# subpackage import also lets pyright resolve ``minisky.traffic.*`` attributes.
+from minisky import traffic
 from minisky.traffic import Traffic
 
 # Constants

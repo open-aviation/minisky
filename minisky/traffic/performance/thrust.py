@@ -135,13 +135,13 @@ def inflight(v: np.ndarray, h: np.ndarray, vs: np.ndarray, thr0: np.ndarray) -> 
     vcas = aero.vtas2cas(v, h)
 
     p = aero.vpressure(h)
-    p10 = aero.vpressure(10000 * aero.ft)
-    p35 = aero.vpressure(35000 * aero.ft)
+    p10 = aero.vpressure(np.asarray(10000 * aero.ft))
+    p35 = aero.vpressure(np.asarray(35000 * aero.ft))
 
     # approximate thrust at top of climb (REF 2)
     F35 = (200 + 0.2 * thr0 / 4.448) * 4.448
     mach_ref = 0.8
-    vcas_ref = aero.vmach2cas(mach_ref, 35000 * aero.ft)
+    vcas_ref = aero.vmach2cas(np.asarray(mach_ref), np.asarray(35000 * aero.ft))
 
     # segment 3: alt > 35000:
     d = dfunc(mach / mach_ref)

@@ -7,3 +7,13 @@ simulation entities build on, are re-exported here for convenience.
 """
 
 from minisky.core.trafficarrays import RegisterElementParameters, TrafficArrays
+
+from . import settings, trafficarrays, varexplorer
+
+__all__ = [
+    "RegisterElementParameters",
+    "TrafficArrays",
+    "settings",
+    "trafficarrays",
+    "varexplorer",
+]

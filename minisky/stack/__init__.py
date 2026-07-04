@@ -20,9 +20,12 @@ by :func:`checkscen` when the simulation time passes their timestamps.
 import inspect
 import os
 import traceback
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from io import StringIO
 from pathlib import Path
+from typing import Any
+
+import numpy as np
 
 import minisky
 from minisky.plugin.plugin_decorators import append_commands, command
@@ -76,7 +79,7 @@ class Command:
     cmddict: dict[str, "Command"] = {}
 
     @classmethod
-    def addcommand(cls, func, parent: "Command | None" = None, name: str = "", **kwargs) -> None:
+    def addcommand(cls, func: Callable, parent: "Command | None" = None, name: str = "", **kwargs: Any) -> None:
         """Add 'func' as a stack command.
 
         Creates a Command object for the given function and registers it
@@ -181,7 +184,7 @@ class Command:
             if len(ret) > 1:
                 # Assume that (success, echotext) is returned
                 return ret[:2]
-            ret = ret[0]
+            ret = ret[0]  # type: ignore[misc]
         return ret, ""
 
     def __repr__(self) -> str:
@@ -369,7 +372,7 @@ def delete_element(*arg):
     elif hasattr(arg[0], "groupname"):
         return minisky.traf.groups.delgroup(arg[0])
     else:
-        return minisky.traf.delete(arg)
+        return minisky.traf.delete(np.array(arg))
 
 
 def reset() -> None:
@@ -527,21 +530,21 @@ def ic(scn: str) -> tuple[bool, str]:
 
     minisky.sim.reset()
 
-    scn = Path(__file__).parent.parent.parent / scn
-    if not Path(scn).exists():
-        return False, f"IC: File not found: {scn}"
+    scn_path = Path(__file__).parent.parent.parent / scn
+    if not scn_path.exists():
+        return False, f"IC: File not found: {scn_path}"
 
-    lines = readscn(scn)
+    lines = readscn(scn_path)
 
     for cmdtime, cmd in lines:
         Stack.scentime.append(cmdtime)
         Stack.scencmd.append(cmd)
-    Stack.scenname = scn.stem
+    Stack.scenname = scn_path.stem
 
-    return True, f"scenario {scn} loaded."
+    return True, f"scenario {scn_path} loaded."
 
 
-def ic_StringIO(scn: StringIO, scn_name: str = None) -> tuple[bool, str]:
+def ic_StringIO(scn: StringIO, scn_name: str | None = None) -> tuple[bool, str]:
     """IC: Load a scenario from a StringIO object.
 
     Resets the simulation, reads scenario lines from the StringIO object,
@@ -563,7 +566,7 @@ def ic_StringIO(scn: StringIO, scn_name: str = None) -> tuple[bool, str]:
     for cmdtime, cmd in lines:
         Stack.scentime.append(cmdtime)
         Stack.scencmd.append(cmd)
-    Stack.scenname = scn_name
+    Stack.scenname = scn_name or ""
 
     return True, f"scenario {scn_name} loaded."
 
@@ -654,7 +657,7 @@ def showhelp(cmd: "txt" = "", subcmd: "txt" = "") -> tuple[bool, str]:
         # Get info for all commands
         for obj in cmdobjs:
             fname = obj.callback.__name__.replace("<", "").replace(">", "")
-            args = ",".join(str(p) for p in obj.parsers)
+            args = ",".join(str(p) for p in obj.parsers)  # type: ignore[attr-defined]
             syn = ",".join(obj.aliases)
             line = f"{obj.name}\t{obj.help}\t{obj.brief}\t{args}\t{fname}\t{syn}"
             table.append(line)
@@ -686,7 +689,7 @@ def checkscen() -> None:
         del Stack.scentime[:idx]
 
 
-def stack(*cmdlines, sender_id=None) -> None:
+def stack(*cmdlines: str, sender_id: bytes | None = None) -> None:
     """Stack one or more commands separated by ";".
 
     The queued commands are executed on the next call to process().

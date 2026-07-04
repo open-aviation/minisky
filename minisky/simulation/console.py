@@ -80,6 +80,18 @@ class ConsoleIO:
         print(text, file=self.output_buffer, end="")
         self.event.set()
 
+    def getviewctr(self) -> tuple[float, float]:
+        """Return the current view center (lat, lon). Stub for non-GUI mode."""
+        return 0.0, 0.0
+
+    def addnavwpt(self, name: str, lat: float, lon: float) -> None:
+        """Add a nav waypoint marker to the display. Stub for non-GUI mode."""
+        pass
+
+    def removenavwpt(self, name: str) -> None:
+        """Remove a nav waypoint marker from the display. Stub for non-GUI mode."""
+        pass
+
     def read_output_buffer(self) -> str:
         """Return the buffered console output and clear the buffer.
 

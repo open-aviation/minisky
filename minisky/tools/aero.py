@@ -49,7 +49,7 @@ casmach_thr = 2  # Threshold below which speeds should
 # be considered as Mach numbers in casormach* functions
 
 
-def casmachthr(threshold: float = None) -> tuple[bool, str]:
+def casmachthr(threshold: float | None = None) -> tuple[bool, str]:
     """CASMACHTHR threshold
 
     Set a threshold below which speeds should be considered as Mach numbers

@@ -5,6 +5,7 @@ Provides the @command decorator for registering stack commands.
 
 import inspect
 from collections.abc import Callable
+from typing import Any
 
 
 def command(
@@ -14,7 +15,7 @@ def command(
     brief: str = "",
     help: str = "",
     arguments: str = "",
-):
+) -> Any:
     """Decorator to register a function as a stack command.
 
     Args:

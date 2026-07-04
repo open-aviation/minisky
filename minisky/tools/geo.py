@@ -416,7 +416,7 @@ def qdrpos(
     return np.degrees(lat2), np.degrees(lon2)
 
 
-def kwikdist(lata, lona, latb, lonb) -> FloatOrArray:
+def kwikdist(lata: FloatOrArray, lona: FloatOrArray, latb: FloatOrArray, lonb: FloatOrArray) -> FloatOrArray:
     """Quick and dirty distance calculation.
 
     Equirectangular (flat-earth) approximation with the mean earth radius;
@@ -685,7 +685,7 @@ def load_magnetic_declination() -> np.ndarray:
     decl = df[4].values
 
     # Reshape the declination data into a 180x360 grid
-    decl_lat_lon = decl.reshape((180, 360))
+    decl_lat_lon = decl.reshape((180, 360))  # type: ignore[union-attr]
 
     # Add a row for latitude = 90 degrees (same as latitude = 89 degrees)
     decl_lat_lon = np.vstack((decl_lat_lon[0:1, :], decl_lat_lon))

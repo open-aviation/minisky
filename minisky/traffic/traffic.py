@@ -14,15 +14,16 @@ A single instance is created at simulator start-up and made available as
 
 from collections.abc import Collection, Iterable
 from random import randint
+from typing import overload
 
 import numpy as np
 
 import minisky
 from minisky.core.trafficarrays import TrafficArrays
-from minisky.stack.argparser import refdata
 from minisky.tools import geo
 from minisky.tools.aero import (
     Rearth,
+    casormach,
     casormach2tas,
     fpm,
     ft,
@@ -247,8 +248,8 @@ class Traffic(TrafficArrays):
         lat: float = 53.0,
         lon: float = 4.0,
         hdg: float = 45.0,
-        alt: int = 25000,
-        spd: int = 300,
+        alt: float = 25000,
+        spd: float = 300,
     ) -> tuple[bool, str]:
         """Create a single aircraft and add it to the traffic database.
 
@@ -274,14 +275,14 @@ class Traffic(TrafficArrays):
 
         # covert to array with 1 element
         acid_ = np.array([callsign.upper()])
-        actype = np.array([actype])
-        lat = np.array([lat])
-        lon = np.array([lon])
-        alt = np.array([alt])
-        hdg = np.array([hdg])
-        spd = np.array([spd])
+        actype_ = np.array([actype])
+        lat_ = np.array([lat])
+        lon_ = np.array([lon])
+        alt_ = np.array([alt])
+        hdg_ = np.array([hdg])
+        spd_ = np.array([spd])
 
-        self.__create_aircraft(acid_, actype, lat, lon, hdg, alt, spd)
+        self.__create_aircraft(acid_, actype_, lat_, lon_, hdg_, alt_, spd_)
 
         return True, f"arcraft {callsign} created"
 
@@ -293,8 +294,8 @@ class Traffic(TrafficArrays):
         lat_max: float = 60.0,
         lon_max: float = 10.0,
         actype: str = "A320",
-        acalt: int = None,
-        acspd: int = None,
+        acalt: int | None = None,
+        acspd: int | None = None,
     ) -> tuple[bool, str]:
         """Create multiple aircraft at random positions in a lat/lon box.
 
@@ -321,28 +322,30 @@ class Traffic(TrafficArrays):
         idtmp = chr(randint(65, 90)) + chr(randint(65, 90)) + "{:>03}"
         callsign = [idtmp.format(i) for i in range(n)]
 
-        actype = [actype] * n
+        actype_ = np.array([actype] * n)
 
         # Generate random positions
         aclat = np.random.rand(n) * (lat_max - lat_min) + lat_min
         aclon = np.random.rand(n) * (lon_max - lon_min) + lon_min
         achdg = np.random.randint(1, 360, n)
-        acalt = acalt or np.random.randint(2000, 39000, n) * ft
-        acspd = acspd or np.random.randint(250, 450, n) * kts
+        acalt_ = np.full(n, acalt) if acalt is not None else np.random.randint(2000, 39000, n) * ft
+        acspd_ = np.full(n, acspd) if acspd is not None else np.random.randint(250, 450, n) * kts
 
-        self.__create_aircraft(callsign, actype, aclat, aclon, achdg, acalt, acspd)
+        self.__create_aircraft(
+            np.array(callsign), actype_, aclat, aclon, achdg, acalt_, acspd_
+        )
 
         return True, f"{n} aircraft created"
 
     def __create_aircraft(
         self,
-        acid: Iterable[str],
-        actype: Iterable[str],
-        lat: Iterable[float],
-        lon: Iterable[float],
-        hdg: Iterable[int],
-        alt: Iterable[int],
-        spd: Iterable[int],
+        acid: np.ndarray,
+        actype: np.ndarray,
+        lat: np.ndarray,
+        lon: np.ndarray,
+        hdg: np.ndarray,
+        alt: np.ndarray,
+        spd: np.ndarray,
     ) -> None:
         """Append one or more aircraft to all traffic arrays.
 
@@ -362,8 +365,6 @@ class Traffic(TrafficArrays):
         # Limit longitude to [-180.0, 180.0]
         lon[lon > 180.0] -= 360.0
         lon[lon < -180.0] += 360.0
-
-        hdg = (refdata.hdg or 0.0) if hdg is None else hdg
 
         # Aircraft Info
         self.callsign[-n:] = acid
@@ -534,11 +535,13 @@ class Traffic(TrafficArrays):
         achdg = np.degrees(np.atan2(tase, tasn))
 
         # Create and, when necessary, set vertical speed
-        self.cre(callsign, actype, aclat, aclon, achdg, acalt, acspd)
+        self.cre(
+            callsign, actype, float(aclat), float(aclon), float(achdg), acalt, float(acspd)
+        )
         self.ap.selaltcmd(len(self.lat) - 1, altref, acvs)
         self.vs[-1] = acvs
 
-    def delete(self, idx) -> bool:
+    def delete(self, idx: int | np.ndarray) -> bool:
         """Delete one or more aircraft from the traffic database.
 
         Removes the corresponding entries from all (child) traffic arrays
@@ -739,6 +742,10 @@ class Traffic(TrafficArrays):
         self.lon = self.lon + np.degrees(minisky.sim.simdt * self.gseast / self.coslat / Rearth)
         self.distflown += self.gs * minisky.sim.simdt
 
+    @overload
+    def idx(self, callsign: str) -> int: ...
+    @overload
+    def idx(self, callsign: Iterable[str]) -> list: ...
     def idx(self, callsign: str | Iterable[str]) -> int | list:
         """Find the traffic-array index for one or more callsigns.
 
@@ -793,7 +800,7 @@ class Traffic(TrafficArrays):
             acid: Aircraft index.
             engid: New engine type identifier.
         """
-        self.perf.engchange(acid, engid)
+        self.perf.engchange(acid, engid)  # type: ignore[attr-defined]
         return
 
     def move(
@@ -832,7 +839,8 @@ class Traffic(TrafficArrays):
             self.ap.trk[idx] = hdg
 
         if casmach is not None:
-            self.tas[idx], self.selspd[idx], _ = vcasormach(casmach, alt)
+            h = alt if alt is not None else float(self.alt[idx])
+            self.tas[idx], self.selspd[idx], _ = casormach(casmach, h)
 
         if vspd is not None:
             self.vs[idx] = vspd
@@ -1197,4 +1205,4 @@ class Traffic(TrafficArrays):
             return True, "CLRCRECMD deletes all commands on clears command"
         else:
             self.crecmdlist = []
-            return True, str("All", ncrecmd, "crecmd commands deleted.")
+            return True, f"All {ncrecmd} crecmd commands deleted."

@@ -115,7 +115,8 @@ def findvar(varname: str) -> "Variable | None":
             # The first object should be in the varlist of Plot
             # As either a top-level object:
             if varset[0][0] in varlist:
-                obj = varlist.get(varset[0][0])[0]
+                result = varlist.get(varset[0][0])
+                obj = result[0] if result is not None else None
             else:
                 for objset in varlist.values():
                     if varset[0][0] in objset[1]:
@@ -168,7 +169,7 @@ class Variable:
             isinstance(v, Number)
             or (isinstance(v, np.ndarray) and v.dtype.kind not in "OSUV")
             or (
-                isinstance(v, Collection)
+                isinstance(v, (list, np.ndarray))
                 and self.index
                 and all(isinstance(v[i], Number) for i in self.index)
             )

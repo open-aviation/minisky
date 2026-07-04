@@ -247,7 +247,7 @@ class Plugin:
             # Check if this is assignment of a return value dict
             if isinstance(item, ast.Assign) and isinstance(item.value, ast.Dict):
                 for i, name in enumerate(ret_names):
-                    if name and hasattr(item.targets[0], "id") and item.targets[0].id == name:
+                    if name and hasattr(item.targets[0], "id") and item.targets[0].id == name:  # type: ignore[union-attr]
                         ret_dicts[i] = item.value
 
         if not ret_dicts:
@@ -258,25 +258,25 @@ class Plugin:
         if isinstance(ret_dicts[0], ast.Dict):
             for key, value in zip(ret_dicts[0].keys, ret_dicts[0].values, strict=False):
                 if hasattr(key, "s"):  # Python < 3.8 string constant
-                    key_str = key.s
+                    key_str = key.s  # type: ignore[union-attr]
                 elif hasattr(key, "value"):  # Python 3.8+ Constant
-                    key_str = key.value
+                    key_str = key.value  # type: ignore[union-attr]
                 else:
                     continue
 
                 if hasattr(value, "s"):
-                    config[key_str] = value.s
+                    config[key_str] = value.s  # type: ignore[attr-defined]
                 elif hasattr(value, "value"):
-                    config[key_str] = value.value
+                    config[key_str] = value.value  # type: ignore[attr-defined]
 
         # Parse stack functions if present
         if len(ret_dicts) > 1 and isinstance(ret_dicts[1], ast.Dict):
             stack_funcs = []
             for key, value in zip(ret_dicts[1].keys, ret_dicts[1].values, strict=False):
                 if hasattr(key, "s"):
-                    cmd_name = key.s
+                    cmd_name = key.s  # type: ignore[union-attr]
                 elif hasattr(key, "value"):
-                    cmd_name = key.value
+                    cmd_name = key.value  # type: ignore[union-attr]
                 else:
                     continue
 
@@ -284,9 +284,9 @@ class Plugin:
                 if isinstance(value, (ast.List, ast.Tuple)) and value.elts:
                     last = value.elts[-1]
                     if hasattr(last, "s"):
-                        help_text = last.s
+                        help_text = last.s  # type: ignore[attr-defined]
                     elif hasattr(last, "value"):
-                        help_text = last.value
+                        help_text = last.value  # type: ignore[attr-defined]
                     else:
                         help_text = ""
                     stack_funcs.append((cmd_name, help_text))

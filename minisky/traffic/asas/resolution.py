@@ -90,7 +90,7 @@ class ConflictResolution(TrafficArrays):
             self.alt = np.array([])  # alt provided by the ASAS [m]
             self.vs = np.array([])  # vspeed provided by the ASAS [m/s]
 
-    def switch(self, flag: bool = None) -> None:
+    def switch(self, flag: bool | None = None) -> None:
         """Turn conflict resolution on or off.
 
         Args:
@@ -299,7 +299,7 @@ class ConflictResolution(TrafficArrays):
         # Remove pairs from the list that are past CPA or have deleted aircraft
         self.resopairs -= delpairs
 
-    def setprio(self, flag: bool = None, priocode="") -> "bool | tuple":
+    def setprio(self, flag: bool | None = None, priocode="") -> "bool | tuple":
         """Define priority rules (right of way) for conflict resolution.
 
         Implements the PRIORULES stack command. The base class only stores
@@ -319,14 +319,14 @@ class ConflictResolution(TrafficArrays):
                 return False, "No conflict resolution enabled."
             return (
                 False,
-                f"Resolution algorithm {self.__class__.name} hasn't implemented priority.",
+                f"Resolution algorithm {self.__class__.__name__} hasn't implemented priority.",
             )
 
         self.swprio = flag
         self.priocode = priocode
         return True
 
-    def setnoreso(self, *idx) -> "bool | tuple":
+    def setnoreso(self, *idx: int) -> "bool | tuple":
         """ADD or Remove aircraft that nobody will avoid.
         Multiple aircraft can be sent to this function at once.
 
@@ -348,11 +348,11 @@ class ConflictResolution(TrafficArrays):
                 + "\nCurrent list of aircraft nobody will avoid:"
                 + ", ".join(np.array(minisky.traf.callsign)[self.noresoac]),
             )
-        idx = list(idx)
-        self.noresoac[idx] = np.logical_not(self.noresoac[idx])
+        indices = list(idx)
+        self.noresoac[indices] = np.logical_not(self.noresoac[indices])
         return True
 
-    def setresooff(self, *idx) -> "bool | tuple":
+    def setresooff(self, *idx: int) -> "bool | tuple":
         """ADD or Remove aircraft that will not avoid anybody else.
         Multiple aircraft can be sent to this function at once.
 
@@ -375,11 +375,11 @@ class ConflictResolution(TrafficArrays):
                 + ", ".join(np.array(minisky.traf.callsign)[self.resooffac]),
             )
         else:
-            idx = list(idx)
-            self.resooffac[idx] = np.logical_not(self.resooffac[idx])
+            indices = list(idx)
+            self.resooffac[indices] = np.logical_not(self.resooffac[indices])
             return True
 
-    def setresofach(self, factor: float = None) -> tuple:
+    def setresofach(self, factor: float | None = None) -> tuple:
         """Set resolution factor horizontal
         (to maneuver only a fraction of a resolution vector).
 
@@ -407,7 +407,7 @@ class ConflictResolution(TrafficArrays):
             )
             return True, f"Horizontal resolution factor set to {self.resofach}"
 
-    def setresofacv(self, factor: float = None) -> tuple:
+    def setresofacv(self, factor: float | None = None) -> tuple:
         """Set resolution factor vertical (to maneuver only a fraction of a resolution vector).
 
         Implements the RFACV stack command. The vertical resolution zone
@@ -430,7 +430,7 @@ class ConflictResolution(TrafficArrays):
         self.resodhrelative = True
         return True, f"Vertical resolution factor set to {self.resofacv}"
 
-    def setresozoner(self, zoner: float = None) -> tuple:
+    def setresozoner(self, zoner: float | None = None) -> tuple:
         """Set resolution factor horizontal, but then with absolute value
         (to maneuver only a fraction of a resolution vector).
 
@@ -466,7 +466,7 @@ class ConflictResolution(TrafficArrays):
             f"Horizontal resolution factor updated to {self.resofach}, resulting in radius: {zoner} nm",
         )
 
-    def setresozonedh(self, zonedh: float = None) -> tuple:
+    def setresozonedh(self, zonedh: float | None = None) -> tuple:
         """Set resolution factor vertical (to maneuver only a fraction of a
         resolution vector), but then with absolute value.
 
@@ -526,7 +526,7 @@ class ConflictResolution(TrafficArrays):
             )
 
         if name == "OFF":
-            ConflictResolution.switch(False)
+            minisky.traf.cr.switch(False)
             return True, "Conflict Resolution turned off."
 
         if name == "MVP":

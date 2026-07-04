@@ -20,7 +20,6 @@ operations recurses through the tree of children, so all per-aircraft data
 in the simulation grows and shrinks in lockstep.
 """
 
-from collections.abc import Collection
 from typing import ClassVar
 
 import numpy as np
@@ -285,6 +284,7 @@ class TrafficArrays:
     def reparent(self, newparent: "TrafficArrays") -> None:
         """Give TrafficArrays object a new parent."""
         # Remove myself from the parent list of children, and add to new parent
+        assert self._parent is not None, "reparent() called on a root node"
         self._parent._children.pop(self._parent._children.index(self))
         newparent._children.append(self)
         self._parent = newparent
@@ -312,7 +312,7 @@ class TrafficArrays:
         # In plugins and replaceable classes it could be that their instance
         # is created when the simulation is already running, and traffic is
         # present. Size traffic arrays accordingly here
-        if TrafficArrays.root.ntraf:
+        if TrafficArrays.root is not None and TrafficArrays.root.ntraf:
             self.create(TrafficArrays.root.ntraf)
 
     def create(self, n: int = 1) -> None:
@@ -327,7 +327,7 @@ class TrafficArrays:
         """
 
         for v in self._LstVars:  # Lists (mostly used for strings)
-            lst = self.__dict__.get(v)
+            lst = self.__dict__[v]  # Not .get() — if v in _LstVars it must exist
             vartype = type(lst[0]).__name__ if lst else "str"
             lst.extend([defaults.get(vartype)] * n)
 
@@ -350,7 +350,7 @@ class TrafficArrays:
             child.create(n)
             child.create_children(n)
 
-    def delete(self, idx) -> None:
+    def delete(self, idx: int | np.ndarray) -> None:
         """Aircraft delete.
 
         Removes element(s) idx from all registered lists and arrays of
@@ -368,8 +368,8 @@ class TrafficArrays:
             self.__dict__[v] = np.delete(self.__dict__[v], idx)
 
         if self._LstVars:
-            if isinstance(idx, Collection):
-                for i in reversed(idx):
+            if isinstance(idx, np.ndarray):
+                for i in idx[::-1]:
                     for v in self._LstVars:
                         del self.__dict__[v][i]
             else:

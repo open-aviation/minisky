@@ -96,7 +96,7 @@ class Timer:
 
 
 def timed_function(
-    func: Callable | None = None, name: str = "", dt: float = 0, hook="update"
+    func: Callable | None = None, name: str = "", dt: float = 0, hook: str = "update"
 ) -> Callable:
     """Decorator to turn a function into a periodically timed function.
 

@@ -25,7 +25,7 @@ from minisky.stack import Command
 from minisky.tools import geo
 from minisky.tools.aero import casormach2tas, ft, g0, kts, mach2cas, nm
 from minisky.tools.convert import degto180, txt2alt, txt2spd
-from minisky.tools.position import txt2pos
+from minisky.tools.position import Position, txt2pos
 
 
 class Route:
@@ -146,8 +146,8 @@ class Route:
         self,
         wpidx: int,
         wpname: str,
-        wplat,
-        wplon,
+        wplat: float,
+        wplon: float,
         wptype: int,
         wpalt: float,
         wpspd: float,
@@ -586,8 +586,8 @@ class Route:
             qdr, dist = geo.qdrdist(
                 self.wplat[i], self.wplon[i], self.wplat[i + 1], self.wplon[i + 1]
             )
-            self.wpdirfrom[i] = qdr  # [deg]
-            self.wpdistto[i + 1] = dist  # [nm]  distto is in nautical miles
+            self.wpdirfrom[i] = float(qdr)  # [deg]
+            self.wpdistto[i + 1] = float(dist)  # [nm]  distto is in nautical miles
 
         # Also add "from direction" as to directions so no need to shift for actwpdata
         # direction to will be overwritten in actwpdata in case of a direct to
@@ -674,7 +674,7 @@ class Route:
             # print("wpxtorta=",self.wpxtorta)
             # print("wptorta=", self.wptorta)
 
-    def findact(self, i: int):
+    def findact(self, i: int) -> int:
         """Find the best default active waypoint for an aircraft.
 
         Called when LNAV is (re-)engaged. Selects the waypoint closest to
@@ -728,7 +728,7 @@ class Route:
             if time_turn > time_straight:
                 iwpnear += 1
 
-        return iwpnear
+        return int(iwpnear)
 
     def getnextqdr(self):
         """Return the bearing of the leg after the active waypoint [deg].
@@ -869,7 +869,7 @@ def addwpt(ac: str | int, *args) -> bool | tuple:  # args: all arguments of addw
 
     # First get the appropriate ac route
     if isinstance(ac, str):
-        acidx = minisky.traf.callsign.idx(ac)
+        acidx = minisky.traf.idx(ac)
         callsign = ac
     else:
         acidx = ac
@@ -979,6 +979,7 @@ def addwpt(ac: str | int, *args) -> bool | tuple:  # args: all arguments of addw
         # Get waypoint position
         success, posobj = txt2pos(name, reflat, reflon)
         if success:
+            assert isinstance(posobj, Position)
             lat = posobj.lat
             lon = posobj.lon
 
@@ -1045,7 +1046,7 @@ def addwpt(ac: str | int, *args) -> bool | tuple:  # args: all arguments of addw
             else:
                 # Runway specified
                 aptid = args[1]
-                rwyname = args[2]
+                rwyname = args[2]  # type: ignore[misc]
 
             rwyid = rwyname.replace("RWY", "").replace("RW", "")  # take away RW or RWY
             #                    print ("apt,rwy=",aptid,rwyid)
@@ -1062,6 +1063,7 @@ def addwpt(ac: str | int, *args) -> bool | tuple:  # args: all arguments of addw
 
             success, posobj = txt2pos(aptid + "/RW" + rwyid, reflat, reflon)
             if success:
+                assert isinstance(posobj, Position)
                 rwylat, rwylon = posobj.lat, posobj.lon
             else:
                 rwylat = minisky.traf.lat[acidx]
@@ -1342,7 +1344,7 @@ def at_wpt(acidx: int, atwp: "wpt", *args) -> bool | tuple:
                         cmdobj = Command.cmddict[cmd]
 
                         # Command found, check arguments
-                        argtypes = cmdobj.annotations
+                        argtypes = cmdobj.annotations  # type: ignore[attr-defined]
 
                         if (
                             len(argtypes) > 0

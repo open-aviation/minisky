@@ -19,6 +19,16 @@ with open(filename_settings, encoding="utf-8") as file:
 for key, value in data.items():
     globals()[key] = value
 
+# Explicit type declarations for pyright (set dynamically above via globals())
+prefer_compiled: bool
+asas_dtlookahead: float
+asas_pzr: float
+asas_pzh: float
+asas_marh: float
+asas_marv: float
+plugin_path: str
+enabled_plugins: list[str]
+
 
 def data(path: str) -> Path:
     """Return the absolute path of a file or folder in the package data directory.

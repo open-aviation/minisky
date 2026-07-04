@@ -7,6 +7,7 @@ resolution and fade to the "old" color after a configurable time.
 """
 
 from math import *
+from typing import Any
 
 import numpy as np
 
@@ -69,8 +70,12 @@ class Trails(TrafficArrays):
         self.lat1 = np.array([])
         self.lon1 = np.array([])
         self.time = np.array([])
-        self.col = []
+        self.col: Any = []
         self.fcol = np.array([])
+
+        # Whether the (legacy) pygame GUI drawing buffer is used; always
+        # False in headless MiniSky.
+        self.pygame = False
 
         # background copy of data
         self.bglat0 = np.array([])
@@ -78,7 +83,7 @@ class Trails(TrafficArrays):
         self.bglat1 = np.array([])
         self.bglon1 = np.array([])
         self.bgtime = np.array([])
-        self.bgcol = []
+        self.bgcol: Any = []
 
         with self.settrafarrays():
             self.accolor = []

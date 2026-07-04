@@ -75,16 +75,16 @@ class EntityMeta(type):
     def __call__(cls, *args, **kwargs) -> Any:
         """Object creation with proxy wrapping and singleton behavior."""
         # Create singleton instance if it doesn't exist yet
-        if not cls.is_instantiated():
+        if not cls.is_instantiated():  # type: ignore[attr-defined]
             super().__call__(*args, **kwargs)
 
         # When proxied, calling base constructor returns the proxy
-        if cls._proxy and cls is cls._baseimpl:
-            if getproxied(cls._proxy) is None:
-                cls.select(cls._instance)
-            return cls._proxy
+        if cls._proxy and cls is cls._baseimpl:  # type: ignore[attr-defined]
+            if getproxied(cls._proxy) is None:  # type: ignore[attr-defined]
+                cls.select(cls._instance)  # type: ignore[attr-defined]
+            return cls._proxy  # type: ignore[attr-defined]
 
-        return cls._instance
+        return cls._instance  # type: ignore[attr-defined]
 
 
 class Entity(TrafficArrays, metaclass=EntityMeta):
@@ -131,7 +131,7 @@ class Entity(TrafficArrays, metaclass=EntityMeta):
         if instance is None:
             instance = cls._instance or cls()
 
-        cls._baseimpl._instance = instance
+        cls._baseimpl._instance = instance  # type: ignore[attr-defined]
         if cls._proxy:
             cls._proxy._replace(instance)
 

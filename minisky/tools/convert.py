@@ -249,7 +249,7 @@ def col2rgb(txt: str) -> tuple[int, int, int]:
     return rgb
 
 
-def degto180(angle: float) -> float:
+def degto180(angle: "float | np.ndarray") -> "float | np.ndarray":
     """Change an angle to the domain [-180, 180) degrees.
 
     Args:
