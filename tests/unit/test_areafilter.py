@@ -18,11 +18,7 @@ def clean_shapes():
 
 
 def check_single(name, lat, lon, alt=0.0):
-    return bool(
-        areafilter.checkInside(
-            name, np.array([lat]), np.array([lon]), np.array([alt])
-        )[0]
-    )
+    return bool(areafilter.checkInside(name, np.array([lat]), np.array([lon]), np.array([alt]))[0])
 
 
 class TestDefineArea:

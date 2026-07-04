@@ -5,12 +5,13 @@ This plugin demonstrates the plugin system capabilities:
 - Periodic update functions
 - Stack commands
 """
+
 from random import randint
+
 import numpy as np
 
 import minisky
-from minisky import plugin, stack, traf
-
+from minisky import plugin, stack
 
 # Global reference to the example instance
 example = None
@@ -29,9 +30,9 @@ def init_plugin():
 
     # Configuration parameters
     config = {
-        'plugin_name': 'EXAMPLE',
-        'update_interval': 5,  # Update every 5 seconds
-        'update': example.update,  # Register update function via config
+        "plugin_name": "EXAMPLE",
+        "update_interval": 5,  # Update every 5 seconds
+        "update": example.update,  # Register update function via config
     }
 
     return config
@@ -57,11 +58,11 @@ class Example(plugin.Entity):
         """Periodic update function called every 5 simulation seconds."""
         if minisky.traf.ntraf > 0:
             total = int(sum(self.npassengers))
-            print(f'Example plugin: {minisky.traf.ntraf} aircraft, {total} total passengers')
+            print(f"Example plugin: {minisky.traf.ntraf} aircraft, {total} total passengers")
 
 
 # Stack command for passengers - defined as module-level function
-@stack.command(name='PASSENGERS', arguments='txt,[int]')
+@stack.command(name="PASSENGERS", arguments="txt,[int]")
 def passengers(callsign: str, count: int = -1):
     """Set or get the number of passengers on an aircraft.
 
@@ -75,12 +76,12 @@ def passengers(callsign: str, count: int = -1):
 
     # Find aircraft index
     if callsign not in minisky.traf.callsign:
-        return False, f'Aircraft {callsign} not found'
+        return False, f"Aircraft {callsign} not found"
 
     idx = minisky.traf.callsign.index(callsign)
 
     if count < 0:
-        return True, f'Aircraft {callsign} has {int(example.npassengers[idx])} passengers'
+        return True, f"Aircraft {callsign} has {int(example.npassengers[idx])} passengers"
 
     example.npassengers[idx] = count
-    return True, f'Set {callsign} passengers to {count}'
+    return True, f"Set {callsign} passengers to {count}"

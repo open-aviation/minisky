@@ -39,8 +39,30 @@
 #
 # --------------------------------------------------------------------
 
+"""Definition of the base stack commands of the simulator.
 
-def get_commands():
+This module contains the command dictionary that couples every base text
+command of the simulator (e.g., CRE, ALT, HDG) to the Python function that
+implements it, its argument type specification, and its usage and help
+texts, plus a dictionary of command synonyms. Both dictionaries are
+registered with the command interpreter in minisky.stack.init().
+
+The strings in the command dictionary are the in-simulator help texts
+shown by the HELP command.
+"""
+
+
+def get_commands() -> tuple:
+    """Assemble the base command and synonym dictionaries of the simulator.
+
+    Imports minisky at call time so that command callbacks can be bound to
+    the fully initialised simulation objects (traf, sim, navdb, scr, ...).
+
+    Returns:
+        tuple: (cmddict, synonyms). cmddict maps a command name to a list
+        of [function, argument type string, brief usage text, help text];
+        synonyms maps a command name to a list of alias names.
+    """
     import minisky
 
     cmddict = {

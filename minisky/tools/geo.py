@@ -1,12 +1,26 @@
 """This module defines a set of standard geographic functions and constants for
-easy use in BlueSky."""
+easy use in BlueSky.
 
-from math import *
+The geodesy library of MiniSky. It provides bearing and great-circle
+distance calculations on the WGS'84 ellipsoid (qdrdist, latlondist),
+fast flat-earth approximations for short distances (the kwik* functions),
+position projection from a reference position with bearing and distance
+(qdrpos, kwikpos), local earth radius and gravity according to WGS'84,
+and magnetic declination lookup from a WMM data table (magdec).
+
+Matrix variants (suffixed with _matrix) operate on vectors of positions
+and return results for every combination of the input positions.
+Latitudes, longitudes, bearings, and headings are in degrees; distances
+are in nautical miles unless stated otherwise.
+"""
 
 import numpy as np
 import pandas as pd
 
 import minisky
+
+# Type alias for values that may be a scalar or a numpy array
+FloatOrArray = float | np.ndarray
 
 # Constants
 nm = 1852.0  # m       1 nautical mile
@@ -15,10 +29,15 @@ nm = 1852.0  # m       1 nautical mile
 decl_read = False
 
 
-def rwgs84(latd):
-    """Calculate the earths radius with WGS'84 geoid definition
-    In:  lat [deg] (latitude)
-    Out: R   [m]   (earth radius)"""
+def rwgs84(latd: FloatOrArray) -> FloatOrArray:
+    """Calculate the earths radius with WGS'84 geoid definition.
+
+    Args:
+        latd: Latitude [deg].
+
+    Returns:
+        Local earth radius [m] at the given latitude.
+    """
     lat = np.radians(latd)
     a = 6378137.0  # [m] Major semi-axis WGS-84
     b = 6356752.314245  # [m] Minor semi-axis WGS-84
@@ -39,10 +58,15 @@ def rwgs84(latd):
 # ------------------------------------------------------------
 
 
-def rwgs84_matrix(latd):
-    """Calculate the earths radius with WGS'84 geoid definition
-    In:  lat [deg] (Vector of latitudes)
-    Out: R   [m]   (Vector of radii)"""
+def rwgs84_matrix(latd: np.ndarray) -> np.ndarray:
+    """Calculate the earths radius with WGS'84 geoid definition (vectorized).
+
+    Args:
+        latd: Vector of latitudes [deg].
+
+    Returns:
+        Vector of local earth radii [m].
+    """
 
     lat = np.radians(latd)
     a = 6378137.0  # [m] Major semi-axis WGS-84
@@ -64,13 +88,26 @@ def rwgs84_matrix(latd):
     return r
 
 
-def qdrdist(latd1, lond1, latd2, lond2):
-    """Calculate bearing and distance, using WGS'84
-    In:
-        latd1,lond1 en latd2, lond2 [deg] :positions 1 & 2
-    Out:
-        qdr [deg] = heading from 1 to 2
-        d [nm]    = distance from 1 to 2 in nm"""
+def qdrdist(
+    latd1: FloatOrArray, lond1: FloatOrArray, latd2: FloatOrArray, lond2: FloatOrArray
+) -> tuple[FloatOrArray, FloatOrArray]:
+    """Calculate initial bearing and great-circle distance, using WGS'84.
+
+    The distance uses the WGS'84 earth radius at the average latitude of
+    the two positions, with a correction when the positions lie on
+    different hemispheres. Bearing formula from
+    http://www.movable-type.co.uk/scripts/latlong.html
+
+    Args:
+        latd1: Latitude of position 1 [deg].
+        lond1: Longitude of position 1 [deg].
+        latd2: Latitude of position 2 [deg].
+        lond2: Longitude of position 2 [deg].
+
+    Returns:
+        tuple: (qdr, d): bearing from 1 to 2 [deg] and distance from
+        1 to 2 [nm].
+    """
 
     # Haversine with average radius for direction
 
@@ -128,13 +165,24 @@ def qdrdist(latd1, lond1, latd2, lond2):
     return qdr, d / nm
 
 
-def qdrdist_matrix(lat1, lon1, lat2, lon2):
-    """Calculate bearing and distance vectors, using WGS'84
-    In:
-        latd1,lond1 en latd2, lond2 [deg] :positions 1 & 2 (vectors)
-    Out:
-        qdr [deg] = heading from 1 to 2 (matrix)
-        d [nm]    = distance from 1 to 2 in nm (matrix)"""
+def qdrdist_matrix(
+    lat1: np.ndarray, lon1: np.ndarray, lat2: np.ndarray, lon2: np.ndarray
+) -> tuple[np.ndarray, np.ndarray]:
+    """Calculate bearing and distance matrices between position vectors, using WGS'84.
+
+    Computes bearing and haversine distance for every combination of a
+    position in vectors 1 and a position in vectors 2.
+
+    Args:
+        lat1: Latitudes of positions 1 [deg] (vector).
+        lon1: Longitudes of positions 1 [deg] (vector).
+        lat2: Latitudes of positions 2 [deg] (vector).
+        lon2: Longitudes of positions 2 [deg] (vector).
+
+    Returns:
+        tuple: (qdr, dist) matrices: bearing from 1 to 2 [deg] and
+        distance from 1 to 2 [nm].
+    """
     prodla = lat1.T * lat2
     condition = prodla < 0
 
@@ -195,12 +243,21 @@ def qdrdist_matrix(lat1, lon1, lat2, lon2):
     return qdr, dist
 
 
-def latlondist(latd1, lond1, latd2, lond2):
-    """Calculates only distance using haversine notation of the same formulae and average r from wgs'84
-    Input:
-          two lat/lon positions in degrees
-    Out:
-          distance in meters !!!!"""
+def latlondist(
+    latd1: FloatOrArray, lond1: FloatOrArray, latd2: FloatOrArray, lond2: FloatOrArray
+) -> FloatOrArray:
+    """Calculates only distance using haversine notation of the same formulae
+    and average r from wgs'84.
+
+    Args:
+        latd1: Latitude of position 1 [deg].
+        lond1: Longitude of position 1 [deg].
+        latd2: Latitude of position 2 [deg].
+        lond2: Longitude of position 2 [deg].
+
+    Returns:
+        Distance from 1 to 2 in meters [m] (note: NOT nm, unlike qdrdist).
+    """
 
     # Haversine with average radius
 
@@ -214,11 +271,7 @@ def latlondist(latd1, lond1, latd2, lond2):
     a = 6378137.0  # [m] Major semi-axis WGS-84
     r1 = rwgs84(latd1)
     r2 = rwgs84(latd2)
-    res2 = (
-        0.5
-        * (abs(latd1) * (r1 + a) + abs(latd2) * (r2 + a))
-        / (abs(latd1) + abs(latd2))
-    )
+    res2 = 0.5 * (abs(latd1) * (r1 + a) + abs(latd2) * (r2 + a)) / (abs(latd1) + abs(latd2))
 
     # Condition
     sw = latd1 * latd2 >= 0.0
@@ -244,12 +297,21 @@ def latlondist(latd1, lond1, latd2, lond2):
     return d
 
 
-def latlondist_matrix(lat1, lon1, lat2, lon2):
-    """Calculates distance using haversine formulae and avaerage r from wgs'84
-    Input:
-          two lat/lon position vectors in degrees
-    Out:
-          distance vector in meters !!!!"""
+def latlondist_matrix(
+    lat1: np.ndarray, lon1: np.ndarray, lat2: np.ndarray, lon2: np.ndarray
+) -> np.ndarray:
+    """Calculates distance matrix using haversine formulae and average r from wgs'84.
+
+    Args:
+        lat1: Latitudes of positions 1 [deg] (vector).
+        lon1: Longitudes of positions 1 [deg] (vector).
+        lat2: Latitudes of positions 2 [deg] (vector).
+        lon2: Longitudes of positions 2 [deg] (vector).
+
+    Returns:
+        Distance matrix from 1 to 2 [nm] for every position combination
+        (note: nm, unlike the scalar latlondist which returns meters).
+    """
     prodla = lat1.T * lat2
     condition = prodla < 0
 
@@ -296,8 +358,15 @@ def latlondist_matrix(lat1, lon1, lat2, lon2):
     return dist
 
 
-def wgsg(latd):
-    """Gravity acceleration at a given latitude according to WGS'84"""
+def wgsg(latd: FloatOrArray) -> FloatOrArray:
+    """Gravity acceleration at a given latitude according to WGS'84.
+
+    Args:
+        latd: Latitude [deg].
+
+    Returns:
+        Gravitational acceleration [m/s2].
+    """
     geq = 9.7803  # m/s2 g at equator
     e2 = 6.694e-3  # eccentricity
     k = 0.001932  # derived from flattening f, 1/f = 298.257223563
@@ -308,16 +377,25 @@ def wgsg(latd):
     return g
 
 
-def qdrpos(latd1, lond1, qdr, dist):
+def qdrpos(
+    latd1: FloatOrArray, lond1: FloatOrArray, qdr: FloatOrArray, dist: FloatOrArray
+) -> tuple[FloatOrArray, FloatOrArray]:
     """Calculate vector with positions from vectors of reference position,
     bearing and distance.
-    In:
-         latd1,lond1  [deg]   ref position(s)
-         qdr          [deg]   bearing (vector) from 1 to 2
-         dist         [nm]    distance (vector) between 1 and 2
-    Out:
-         latd2,lond2 (IN DEGREES!)
-    Ref for qdrpos: http://www.movable-type.co.uk/scripts/latlong.html"""
+
+    Great-circle projection using the WGS'84 earth radius at the reference
+    latitude. Ref for qdrpos:
+    http://www.movable-type.co.uk/scripts/latlong.html
+
+    Args:
+        latd1: Reference latitude(s) [deg].
+        lond1: Reference longitude(s) [deg].
+        qdr: Bearing (vector) from 1 to 2 [deg].
+        dist: Distance (vector) between 1 and 2 [nm].
+
+    Returns:
+        tuple: (latd2, lond2): the projected position(s) [deg].
+    """
 
     # Unit conversion
     R = rwgs84(latd1) / nm
@@ -326,8 +404,7 @@ def qdrpos(latd1, lond1, qdr, dist):
 
     # Calculate new position
     lat2 = np.arcsin(
-        np.sin(lat1) * np.cos(dist / R)
-        + np.cos(lat1) * np.sin(dist / R) * np.cos(np.radians(qdr))
+        np.sin(lat1) * np.cos(dist / R) + np.cos(lat1) * np.sin(dist / R) * np.cos(np.radians(qdr))
     )
 
     lon2 = lon1 + np.arctan2(
@@ -337,13 +414,20 @@ def qdrpos(latd1, lond1, qdr, dist):
     return np.degrees(lat2), np.degrees(lon2)
 
 
-def kwikdist(lata, lona, latb, lonb):
-    """
-    Quick and dirty dist [nm]
-    In:
-        lat/lon, lat/lon [deg]
-    Out:
-        dist [nm]
+def kwikdist(lata: FloatOrArray, lona: FloatOrArray, latb: FloatOrArray, lonb: FloatOrArray) -> FloatOrArray:
+    """Quick and dirty distance calculation.
+
+    Equirectangular (flat-earth) approximation with the mean earth radius;
+    fast, but accurate for short distances only.
+
+    Args:
+        lata: Latitude of point a [deg].
+        lona: Longitude of point a [deg].
+        latb: Latitude of point b [deg].
+        lonb: Longitude of point b [deg].
+
+    Returns:
+        Distance [nm].
     """
 
     re = 6371000.0  # radius earth [m]
@@ -357,13 +441,22 @@ def kwikdist(lata, lona, latb, lonb):
     return dist
 
 
-def kwikdist_matrix(lata, lona, latb, lonb):
-    """
-    Quick and dirty dist [nm]
-    In:
-        lat/lon, lat/lon vectors [deg]
-    Out:
-        dist vector [nm]
+def kwikdist_matrix(
+    lata: np.ndarray, lona: np.ndarray, latb: np.ndarray, lonb: np.ndarray
+) -> np.ndarray:
+    """Quick and dirty distance matrix between two sets of positions.
+
+    Equirectangular (flat-earth) approximation with the mean earth radius;
+    fast, but accurate for short distances only.
+
+    Args:
+        lata: Latitudes of points a [deg] (vector).
+        lona: Longitudes of points a [deg] (vector).
+        latb: Latitudes of points b [deg] (vector).
+        lonb: Longitudes of points b [deg] (vector).
+
+    Returns:
+        Distance matrix [nm] for every combination of a and b.
     """
 
     re = 6371000.0  # readius earth [m]
@@ -380,9 +473,24 @@ def kwikdist_matrix(lata, lona, latb, lonb):
     return dist
 
 
-def kwikqdrdist(lata, lona, latb, lonb):
+def kwikqdrdist(
+    lata: FloatOrArray, lona: FloatOrArray, latb: FloatOrArray, lonb: FloatOrArray
+) -> tuple[FloatOrArray, FloatOrArray]:
     """Gives quick and dirty qdr[deg] and dist [nm]
-    from lat/lon. (note: does not work well close to poles)"""
+    from lat/lon. (note: does not work well close to poles)
+
+    Flat-earth approximation with the mean earth radius.
+
+    Args:
+        lata: Latitude of point a [deg].
+        lona: Longitude of point a [deg].
+        latb: Latitude of point b [deg].
+        lonb: Longitude of point b [deg].
+
+    Returns:
+        tuple: (qdr, dist): bearing from a to b [deg], in [0, 360),
+        and distance [nm].
+    """
 
     re = 6371000.0  # radius earth [m]
     dlat = np.radians(latb - lata)
@@ -397,9 +505,24 @@ def kwikqdrdist(lata, lona, latb, lonb):
     return qdr, dist
 
 
-def kwikqdrdist_matrix(lata, lona, latb, lonb):
+def kwikqdrdist_matrix(
+    lata: np.ndarray, lona: np.ndarray, latb: np.ndarray, lonb: np.ndarray
+) -> tuple[np.ndarray, np.ndarray]:
     """Gives quick and dirty qdr[deg] and dist [nm] matrices
-    from lat/lon vectors. (note: does not work well close to poles)"""
+    from lat/lon vectors. (note: does not work well close to poles)
+
+    Flat-earth approximation with the mean earth radius.
+
+    Args:
+        lata: Latitudes of points a [deg] (vector).
+        lona: Longitudes of points a [deg] (vector).
+        latb: Latitudes of points b [deg] (vector).
+        lonb: Longitudes of points b [deg] (vector).
+
+    Returns:
+        tuple: (qdr, dist) matrices: bearing from a to b [deg], in
+        [0, 360), and distance [nm] for every combination of a and b.
+    """
 
     re = 6371000.0  # radius earth [m]
     dlat = np.radians(latb - lata.T)
@@ -417,16 +540,24 @@ def kwikqdrdist_matrix(lata, lona, latb, lonb):
     return qdr, dist
 
 
-def kwikpos(latd1, lond1, qdr, dist):
+def kwikpos(
+    latd1: FloatOrArray, lond1: FloatOrArray, qdr: FloatOrArray, dist: FloatOrArray
+) -> tuple[FloatOrArray, FloatOrArray]:
     """Fast, but quick and dirty, position calculation from vectors of reference position,
-    bearing and distance using flat earth approximation
-    In:
-         latd1,lond1  [deg]   ref position(s)
-         qdr          [deg]   bearing (vector) from 1 to 2
-         dist         [nm]    distance (vector) between 1 and 2
-    Out:
-         latd2,lond2 [deg]
-    Use for flat earth purposes e.g. flat display"""
+    bearing and distance using flat earth approximation.
+
+    Use for flat earth purposes e.g. flat display.
+
+    Args:
+        latd1: Reference latitude(s) [deg].
+        lond1: Reference longitude(s) [deg].
+        qdr: Bearing (vector) from 1 to 2 [deg].
+        dist: Distance (vector) between 1 and 2 [nm].
+
+    Returns:
+        tuple: (latd2, lond2): the resulting position(s) [deg], with
+        longitude wrapped to [-180, 180).
+    """
 
     dx = dist * np.sin(np.radians(qdr))
     dy = dist * np.cos(np.radians(qdr))
@@ -438,7 +569,7 @@ def kwikpos(latd1, lond1, qdr, dist):
     return latd2, lond2
 
 
-def magdec(latd, lond):
+def magdec(latd, lond) -> float:
     """
     Gives magnetic declination (also called magnetic variation) at given
     position, interpolated from an external data table. The interpolation is
@@ -504,7 +635,7 @@ def magdec(latd, lond):
     return d_hdg
 
 
-def load_magnetic_declination():
+def load_magnetic_declination() -> np.ndarray:
     """
     Called by Init
     Read magnetic declination (also called magnetic variation) datafile
@@ -552,7 +683,7 @@ def load_magnetic_declination():
     decl = df[4].values
 
     # Reshape the declination data into a 180x360 grid
-    decl_lat_lon = decl.reshape((180, 360))
+    decl_lat_lon = decl.reshape((180, 360))  # type: ignore[union-attr]
 
     # Add a row for latitude = 90 degrees (same as latitude = 89 degrees)
     decl_lat_lon = np.vstack((decl_lat_lon[0:1, :], decl_lat_lon))
@@ -569,8 +700,16 @@ def load_magnetic_declination():
 
 
 # Command MAGVAR to get magnetic variation at position lat,lon
-def magdeccmd(latdeg, londeg):
-    """MAGVAR Get magnetic variation at position lat/lon."""
+def magdeccmd(latdeg: float, londeg: float) -> tuple[bool, str]:
+    """MAGVAR Get magnetic variation at position lat/lon.
+
+    Args:
+        latdeg: Latitude [deg].
+        londeg: Longitude [deg].
+
+    Returns:
+        tuple: (True, message stating the magnetic variation [deg]).
+    """
     return (
         True,
         "Magnetic variation at "

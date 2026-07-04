@@ -2,10 +2,20 @@
 
 Provides the @command decorator for registering stack commands.
 """
+
 import inspect
+from collections.abc import Callable
+from typing import Any
 
 
-def command(func=None, name='', aliases=(), brief='', help='', arguments=''):
+def command(
+    func: Callable | None = None,
+    name: str = "",
+    aliases: tuple = (),
+    brief: str = "",
+    help: str = "",
+    arguments: str = "",
+) -> Any:
     """Decorator to register a function as a stack command.
 
     Args:
@@ -30,6 +40,7 @@ def command(func=None, name='', aliases=(), brief='', help='', arguments=''):
     Returns:
         The original function (unmodified)
     """
+
     def deco(func):
         # Import here to avoid circular import
         from minisky.stack import Command
@@ -41,7 +52,7 @@ def command(func=None, name='', aliases=(), brief='', help='', arguments=''):
         cmd_name = name or actual_func.__name__
 
         # Use function docstring as help if not provided
-        cmd_help = help or inspect.cleandoc(inspect.getdoc(actual_func) or '')
+        cmd_help = help or inspect.cleandoc(inspect.getdoc(actual_func) or "")
 
         # Register the command
         Command.addcommand(
@@ -50,7 +61,7 @@ def command(func=None, name='', aliases=(), brief='', help='', arguments=''):
             aliases=aliases,
             brief=brief,
             help=cmd_help,
-            arguments=arguments
+            arguments=arguments,
         )
 
         return func
@@ -59,7 +70,7 @@ def command(func=None, name='', aliases=(), brief='', help='', arguments=''):
     return deco(func) if func else deco
 
 
-def append_commands(newcommands, syndict=None):
+def append_commands(newcommands: dict, syndict: dict | None = None) -> None:
     """Append additional functions to the stack command dictionary.
 
     Used by plugin loader to register plugin commands.
@@ -78,9 +89,9 @@ def append_commands(newcommands, syndict=None):
             function, arguments, brief, help_text = values[:4]
         else:
             function = values[0]
-            arguments = values[1] if len(values) > 1 else ''
-            brief = values[2] if len(values) > 2 else ''
-            help_text = values[3] if len(values) > 3 else ''
+            arguments = values[1] if len(values) > 1 else ""
+            brief = values[2] if len(values) > 2 else ""
+            help_text = values[3] if len(values) > 3 else ""
 
         Command.addcommand(
             function,
@@ -88,5 +99,5 @@ def append_commands(newcommands, syndict=None):
             arguments=arguments,
             brief=brief,
             help=help_text,
-            aliases=syndict.get(name, [])
+            aliases=syndict.get(name, []),
         )
