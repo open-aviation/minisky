@@ -183,6 +183,13 @@ def qdrdist_matrix(
         tuple: (qdr, dist) matrices: bearing from 1 to 2 [deg] and
         distance from 1 to 2 [nm].
     """
+    # Convert inputs to 2-D row arrays, so that .T gives column arrays and
+    # broadcasting yields a result for every combination of positions.
+    lat1 = np.atleast_2d(np.asarray(lat1))
+    lon1 = np.atleast_2d(np.asarray(lon1))
+    lat2 = np.atleast_2d(np.asarray(lat2))
+    lon2 = np.atleast_2d(np.asarray(lon2))
+
     prodla = lat1.T * lat2
     condition = prodla < 0
 
@@ -219,8 +226,8 @@ def qdrdist_matrix(
     coslat1 = np.cos(np.radians(lat1))
     coslat2 = np.cos(np.radians(lat2))
 
-    sin21 = np.asmatrix(np.sin(sin2))
-    cos21 = np.asmatrix(np.cos(sin2))
+    sin21 = np.sin(sin2)
+    cos21 = np.cos(sin2)
     y = np.multiply(sin21, coslat2)
 
     x1 = np.multiply(coslat1.T, sinlat2)
@@ -231,8 +238,8 @@ def qdrdist_matrix(
 
     qdr = np.degrees(np.arctan2(y, x))
 
-    sin10 = np.asmatrix(np.abs(np.sin(sin1 / 2.0)))
-    sin20 = np.asmatrix(np.abs(np.sin(sin2 / 2.0)))
+    sin10 = np.abs(np.sin(sin1 / 2.0))
+    sin20 = np.abs(np.sin(sin2 / 2.0))
     sin1sin1 = np.multiply(sin10, sin10)
     sin2sin2 = np.multiply(sin20, sin20)
     sqrt = sin1sin1 + np.multiply((coslat1.T * coslat2), sin2sin2)
@@ -309,13 +316,20 @@ def latlondist_matrix(
         lon2: Longitudes of positions 2 [deg] (vector).
 
     Returns:
-        Distance matrix from 1 to 2 [nm] for every position combination
-        (note: nm, unlike the scalar latlondist which returns meters).
+        Distance matrix from 1 to 2 in meters [m] for every position
+        combination (note: NOT nm, consistent with the scalar latlondist).
     """
+    # Convert inputs to 2-D row arrays, so that .T gives column arrays and
+    # broadcasting yields a result for every combination of positions.
+    lat1 = np.atleast_2d(np.asarray(lat1))
+    lon1 = np.atleast_2d(np.asarray(lon1))
+    lat2 = np.atleast_2d(np.asarray(lat2))
+    lon2 = np.atleast_2d(np.asarray(lon2))
+
     prodla = lat1.T * lat2
     condition = prodla < 0
 
-    r = np.zeros(len(prodla))
+    r = np.zeros(prodla.shape)
     r = np.where(condition, r, rwgs84_matrix(lat1.T + lat2))
 
     a = 6378137.0
@@ -345,15 +359,15 @@ def latlondist_matrix(
     coslat1 = np.cos(np.radians(lat1))
     coslat2 = np.cos(np.radians(lat2))
 
-    sin10 = np.asmatrix(np.sin(sin1 / 2))
-    sin20 = np.asmatrix(np.sin(sin2 / 2))
+    sin10 = np.sin(sin1 / 2)
+    sin20 = np.sin(sin2 / 2)
     sin1sin1 = np.multiply(sin10, sin10)
     sin2sin2 = np.multiply(sin20, sin20)
     root = sin1sin1 + np.multiply((coslat1.T * coslat2), sin2sin2)
 
     #    dist = np.multiply(2.*r, np.arcsin(sqrt))
     dist_c = np.multiply(2, np.arctan2(np.sqrt(root), np.sqrt(1.0 - root)))
-    dist = np.multiply(r / nm, dist_c)
+    dist = np.multiply(r, dist_c)
 
     return dist
 

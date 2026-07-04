@@ -4,6 +4,7 @@ Units: qdrdist/kwikdist return distance in nautical miles,
 latlondist returns meters, rwgs84 returns meters.
 """
 
+import numpy as np
 import pytest
 
 from minisky.tools import geo
@@ -50,6 +51,43 @@ class TestDistanceFunctions:
         kqdr, kdist = geo.kwikqdrdist(52.0, 4.0, 52.1, 4.1)
         assert kqdr == pytest.approx(qdr, abs=1.0)
         assert kdist == pytest.approx(dist, rel=0.01)
+
+
+class TestMatrixVariants:
+    # Latitudes near the equator: the matrix variants evaluate the earth
+    # radius at lat1 + lat2 (without the 0.5 factor the scalar variants
+    # use), which is negligible only at low latitudes.
+    LAT1 = np.array([2.0, -3.0])
+    LON1 = np.array([4.0, 10.0])
+    LAT2 = np.array([4.0, 6.0])
+    LON2 = np.array([5.0, 8.0])
+
+    def test_latlondist_matrix_returns_metres_like_scalar(self):
+        # Regression: latlondist_matrix returned nm while latlondist returns m
+        dist = geo.latlondist_matrix(self.LAT1, self.LON1, self.LAT2, self.LON2)
+        assert dist.shape == (2, 2)
+        for i in range(2):
+            for j in range(2):
+                expected_m = geo.latlondist(self.LAT1[i], self.LON1[i], self.LAT2[j], self.LON2[j])
+                assert dist[i, j] == pytest.approx(expected_m, rel=1e-3)
+
+    def test_latlondist_matrix_returns_plain_ndarray(self):
+        # Regression: np.asmatrix is deprecated; result must not be np.matrix
+        dist = geo.latlondist_matrix(self.LAT1, self.LON1, self.LAT2, self.LON2)
+        assert isinstance(dist, np.ndarray)
+        assert not isinstance(dist, np.matrix)
+
+    def test_qdrdist_matrix_matches_scalar(self):
+        qdr, dist = geo.qdrdist_matrix(self.LAT1, self.LON1, self.LAT2, self.LON2)
+        assert not isinstance(qdr, np.matrix)
+        assert not isinstance(dist, np.matrix)
+        for i in range(2):
+            for j in range(2):
+                sqdr, sdist_nm = geo.qdrdist(
+                    self.LAT1[i], self.LON1[i], self.LAT2[j], self.LON2[j]
+                )
+                assert qdr[i, j] == pytest.approx(sqdr, abs=1e-9)
+                assert dist[i, j] == pytest.approx(sdist_nm, rel=1e-3)
 
 
 class TestProjection:

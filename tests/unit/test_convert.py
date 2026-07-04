@@ -68,6 +68,20 @@ class TestSpeed:
             cv.txt2spd("FAST")
 
 
+class TestAngles:
+    @pytest.mark.parametrize(
+        "angle,expected",
+        [(190.0, -170.0), (-190.0, 170.0), (180.0, -180.0), (0.0, 0.0), (359.0, -1.0)],
+    )
+    def test_degto180_wraps(self, angle, expected):
+        assert cv.degto180(angle) == pytest.approx(expected)
+
+    def test_deg180_is_alias_of_degto180(self):
+        # Regression: deg180 and degto180 were duplicate implementations
+        assert cv.deg180 is cv.degto180
+        assert cv.deg180(190.0) == pytest.approx(-170.0)
+
+
 class TestBool:
     @pytest.mark.parametrize("txt", ["ON", "TRUE", "YES", "1"])
     def test_truthy(self, txt):

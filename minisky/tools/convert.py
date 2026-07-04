@@ -261,6 +261,10 @@ def degto180(angle: "float | np.ndarray") -> "float | np.ndarray":
     return (angle + 180.0) % 360 - 180.0
 
 
+# deg180 is an alias of degto180: both map an angle (difference) to [-180, 180)
+deg180 = degto180
+
+
 def radtopi(angle: float) -> float:
     """Change an angle to the domain [-pi, pi) radians.
 
@@ -379,18 +383,6 @@ def lon2txt(lon: float) -> str:
 def latlon2txt(lat: float, lon: float) -> str:
     """Convert latitude and longitude in latlon string."""
     return lat2txt(lat) + "  " + lon2txt(lon)
-
-
-def deg180(dangle: float) -> float:
-    """Convert any difference in angles to interval [ -180,180 ).
-
-    Args:
-        dangle: Angle difference [deg].
-
-    Returns:
-        Equivalent angle difference [deg] in [-180, 180).
-    """
-    return (dangle + 180.0) % 360.0 - 180.0
 
 
 def float2degminsec(x: float) -> tuple[int, float, float]:
