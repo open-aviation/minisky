@@ -10,7 +10,7 @@ classified as NA (unknown).
 
 import numpy as np
 
-from .coeff import *
+from .coeff import LIFT_FIXWING, LIFT_ROTOR
 
 NA = 0  # Unknown phase
 GD = 1  # Ground

@@ -14,8 +14,6 @@ Latitudes, longitudes, bearings, and headings are in degrees; distances
 are in nautical miles unless stated otherwise.
 """
 
-from math import *
-
 import numpy as np
 import pandas as pd
 

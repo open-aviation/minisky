@@ -51,8 +51,6 @@ select = ["E", "W", "F", "I", "UP", "B", "SIM", "C4"]
 ignore = [
     "E501",   # line length is handled by the formatter
     "B008",   # FastAPI relies on function calls (Depends/File) in argument defaults
-    "F403",   # `from module import *` is a core BlueSky plugin/tools convention
-    "F405",   # names resolved via the star imports above
     "F821",   # stack commands annotate args with parser-DSL strings ("alt", "wpt", ...)
     "E711",   # `== None` on numpy arrays is elementwise, not equivalent to `is None`
     "E712",   # `== True/False` on numpy arrays is elementwise and intentional

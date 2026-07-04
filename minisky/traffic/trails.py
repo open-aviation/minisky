@@ -6,7 +6,6 @@ colored with the TRAIL stack command. Segments are added at a fixed time
 resolution and fade to the "old" color after a configurable time.
 """
 
-from math import *
 from typing import Any
 
 import numpy as np
