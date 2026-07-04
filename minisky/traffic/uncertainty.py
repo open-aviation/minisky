@@ -99,7 +99,7 @@ class SurveillanceUncertainty(TrafficArrays):
         noise added when enabled; track and speeds are copied unmodified.
         """
         up = np.where(self.lastupdate + self.trunctime < minisky.sim.simt)
-        nup = len(up)
+        nup = len(up[0])
         if self.transnoise:
             self.lat[up] = minisky.traf.lat[up] + np.random.normal(0, self.transerror[0], nup)
             self.lon[up] = minisky.traf.lon[up] + np.random.normal(0, self.transerror[0], nup)

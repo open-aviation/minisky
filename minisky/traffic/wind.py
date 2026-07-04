@@ -387,7 +387,7 @@ class Windfield:
         """
         if idx < len(self.lat):
             self.lat = np.delete(self.lat, idx)
-            self.lon = np.delete(self.lat, idx)
+            self.lon = np.delete(self.lon, idx)
 
             self.vnorth = np.delete(self.vnorth, idx, axis=1)
             self.veast = np.delete(self.veast, idx, axis=1)
@@ -428,11 +428,18 @@ class Wind(TrafficArrays, Windfield):
             - speed (magnitude) [knots]
             In this case, repeating combinations of alt/dir/spd can be provided
             to specify wind at multiple altitudes.
+          - If winddata contains "DEL" or "DELETE" the whole wind field is
+            deleted (e.g. WIND lat,lon,DEL), like the DEL WIND command.
         """
         ndata = len(winddata)
 
+        # Delete the wind field: WIND lat,lon,DEL(ETE)
+        # Check this first: it would otherwise be shadowed by the numeric forms
+        if "DEL" in winddata or "DELETE" in winddata:
+            self.clear()
+
         # No altitude or just one: same wind for all altitudes at this position
-        if ndata == 2 or (ndata == 3 and winddata[0] is None):  # only one point, ignore altitude
+        elif ndata == 2 or (ndata == 3 and winddata[0] is None):  # only one point, ignore altitude
             if winddata[-2] is None or winddata[-1] is None:
                 return False, "Wind direction and speed needed."
 
@@ -446,9 +453,6 @@ class Wind(TrafficArrays, Windfield):
             altarr = windarr[0::3] * ft
 
             self.addpoint(lat, lon, dirarr, spdarr, altarr)
-
-        elif winddata.count("DEL") > 0:
-            self.clear()
 
         else:  # Something is wrong
             return False, "Winddata not recognized"

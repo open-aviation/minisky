@@ -248,8 +248,8 @@ class Traffic(TrafficArrays):
         lat: float = 53.0,
         lon: float = 4.0,
         hdg: float = 45.0,
-        alt: float = 25000,
-        spd: float = 300,
+        alt: float = 25000 * ft,
+        spd: float = 300 * kts,
     ) -> tuple[bool, str]:
         """Create a single aircraft and add it to the traffic database.
 
@@ -263,8 +263,10 @@ class Traffic(TrafficArrays):
             lat: Initial latitude [deg].
             lon: Initial longitude [deg].
             hdg: Initial heading [deg].
-            alt: Initial altitude [m] (stack input is given in ft/FL).
-            spd: Initial speed: CAS [m/s] or Mach [-] (stack input in kts).
+            alt: Initial altitude [m] (stack input is given in ft/FL);
+                defaults to 25000 ft.
+            spd: Initial speed: CAS [m/s] or Mach [-] (stack input in kts);
+                defaults to 300 kts.
 
         Returns:
             tuple: (success flag, confirmation or error message).
