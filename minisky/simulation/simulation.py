@@ -157,7 +157,9 @@ class Simulation:
         self.syst = 0
         self.simt = 0
         self.simdt = 1
-        self.utc = datetime.datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        self.utc = datetime.datetime.now(datetime.UTC).replace(
+            hour=0, minute=0, second=0, microsecond=0, tzinfo=None
+        )
         minisky.navdb.reset()
         minisky.traf.reset()
         minisky.stack.reset()
@@ -252,15 +254,17 @@ class Simulation:
 
         elif len(args) == 1:
             if args[0].upper() == "RUN":
-                self.utc = datetime.datetime.utcnow().replace(
-                    hour=0, minute=0, second=0, microsecond=0
+                self.utc = datetime.datetime.now(datetime.UTC).replace(
+                    hour=0, minute=0, second=0, microsecond=0, tzinfo=None
                 )
 
             elif args[0].upper() == "REAL":
                 self.utc = datetime.datetime.today().replace(microsecond=0)
 
             elif args[0].upper() == "UTC":
-                self.utc = datetime.datetime.utcnow().replace(microsecond=0)
+                self.utc = datetime.datetime.now(datetime.UTC).replace(
+                    microsecond=0, tzinfo=None
+                )
 
             else:
                 try:
