@@ -143,7 +143,22 @@ uv run pytest -m api tests/test_api.py   # REST API smoke tests (separate proces
 - [x] refactor route functions
 - [x] refactor acid to callsign
 - [x] check all echo, ensure print and scr.echo are consistent
-- [ ] refactor code so import and simulation is easier
+- [ ] refactor code so import and simulation is easier — replace the BlueSky-style
+  module globals (`minisky.traf`, `minisky.sim`, ...) with a simulation object that
+  owns them, e.g. `sim = minisky.Sim(); sim.traf.cre(...); sim.stack("..."); sim.step()`.
+  Pain points this solves:
+  - `minisky.init()` can only be called once per process: no teardown, no re-init, and
+    no way to run two independent simulations (parameter sweeps, parallel scenario
+    evaluation, RL-style environments)
+  - the singletons are `None` until `init()` runs, so `from minisky import traf`
+    silently binds `None` forever (must always access via `minisky.traf`)
+  - import order is load-bearing (`traffic` must be imported last, see
+    `minisky/__init__.py`) and imports have side effects (settings/data loading)
+  - stack commands registered as bound methods of singletons go stale when an
+    instance is replaced (e.g. `RESO MVP`); registration should resolve objects at
+    call time, like the dispatcher wrappers in `traffic/asas/resolution.py`
+  - module-level proxies can keep the current `minisky.traf`/`minisky.sim` API
+    working during the transition
 - [x] add new tests
 - [x] add docstrings and documentation website (mkdocs)
 - [ ] remove stale `docs/commands.csv` and `docs/tutorial.pdf` (superseded by the generated command reference)
