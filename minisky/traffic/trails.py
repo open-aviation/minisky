@@ -72,10 +72,6 @@ class Trails(TrafficArrays):
         self.col: Any = []
         self.fcol = np.array([])
 
-        # Whether the (legacy) pygame GUI drawing buffer is used; always
-        # False in headless MiniSky.
-        self.pygame = False
-
         # background copy of data
         self.bglat0 = np.array([])
         self.bglon0 = np.array([])
@@ -83,6 +79,7 @@ class Trails(TrafficArrays):
         self.bglon1 = np.array([])
         self.bgtime = np.array([])
         self.bgcol: Any = []
+        self.bgacid: list = []
 
         with self.settrafarrays():
             self.accolor = []
@@ -165,20 +162,11 @@ class Trails(TrafficArrays):
             self.lasttim[i] = minisky.sim.simt
 
         # When a/c is no longer part of trail semgment,
-        # it is no longer a/c data => move to the GUI buffer (send or draw)
-        if self.pygame:
-            # Pygame: send to drawing buffer
-            self.lat0 = np.concatenate((self.lat0, np.array(lstlat0)))
-            self.lon0 = np.concatenate((self.lon0, np.array(lstlon0)))
-            self.lat1 = np.concatenate((self.lat1, np.array(lstlat1)))
-            self.lon1 = np.concatenate((self.lon1, np.array(lstlon1)))
-            self.time = np.concatenate((self.time, np.array(lsttime)))
-        else:
-            # QtGL: add to send buffer
-            self.newlat0.extend(lstlat0)
-            self.newlon0.extend(lstlon0)
-            self.newlat1.extend(lstlat1)
-            self.newlon1.extend(lstlon1)
+        # it is no longer a/c data => add to the GUI send buffer
+        self.newlat0.extend(lstlat0)
+        self.newlon0.extend(lstlon0)
+        self.newlat1.extend(lstlat1)
+        self.newlon1.extend(lstlon1)
         # Update colours
         self.fcol = 1.0 - np.minimum(self.tcol0, np.abs(minisky.sim.simt - self.time)) / self.tcol0
 

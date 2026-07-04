@@ -135,9 +135,9 @@ class Condition:
         self.ncond = len(self.id)
 
         if self.ncond != len(self.cmd):
-            print("self.ncond=", self.ncond)
-            print("self.cmd=", self.cmd)
-            print("traffic/conditional.py: self.delcondition: invalid condition array size")
+            minisky.scr.echo(
+                f"delcondition: invalid condition array size (ncond={self.ncond}, cmd={self.cmd})"
+            )
         return
 
     def ataltcmd(self, acidx: int, targalt: float, cmdtxt: str) -> bool:
@@ -172,7 +172,7 @@ class Condition:
         Returns:
             bool: True (the condition is always added).
         """
-        actspd = minisky.traf.tas[acidx]
+        actspd = minisky.traf.cas[acidx]
         self.addcondition(acidx, spdtype, targspd, actspd, cmdtxt)
         return True
 
@@ -252,7 +252,7 @@ class Condition:
         # When renamed, call this method to update list
         # rename ids in list of ids
         # Call this if RENAME command is implemented
-        if self.id.count(old.id) == 0:
+        if self.id.count(oldid) == 0:
             return
         for i in range(len(self.id)):
             if self.id[i] == oldid:

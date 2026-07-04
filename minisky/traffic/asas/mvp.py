@@ -88,7 +88,7 @@ class MVP(ConflictResolution):
             return False, "Priority code Not Understood. Available Options: " + str(options)
         return super().setprio(flag, priocode)
 
-    def setresometh(self, value: "txt" = "") -> "tuple | None":
+    def setresometh(self, value: "txt" = "") -> tuple:
         """Processes the RMETHH command. Sets swresovert = False.
 
         Selects which horizontal degrees of freedom MVP may use for
@@ -100,8 +100,7 @@ class MVP(ConflictResolution):
                 "OF". When empty, the current settings are reported.
 
         Returns:
-            tuple or None: (success (bool), message (str)) when reporting or
-                on invalid input; None after applying a valid setting.
+            tuple: (success (bool), message (str)) for the command stack.
         """
         # Acceptable arguments for this command
         options = ["BOTH", "SPD", "HDG", "NONE", "ON", "OFF", "OF"]
@@ -142,8 +141,9 @@ class MVP(ConflictResolution):
                 self.swresospd = False
                 self.swresohdg = True
                 self.swresovert = False
+            return True, f"Horizontal resolution method set to {value}"
 
-    def setresometv(self, value: "txt" = "") -> "tuple | None":
+    def setresometv(self, value: "txt" = "") -> tuple:
         """Processes the RMETHV command. Sets swresohoriz = False.
 
         Enables (ON/"V/S") or disables (OFF/NONE) vertical-speed-only
@@ -154,8 +154,7 @@ class MVP(ConflictResolution):
                 the current setting is reported.
 
         Returns:
-            tuple or None: (success (bool), message (str)) when reporting or
-                on invalid input; None after applying a valid setting.
+            tuple: (success (bool), message (str)) for the command stack.
         """
         # Acceptable arguments for this command
         options = ["NONE", "ON", "OFF", "OF", "V/S"]
@@ -180,6 +179,7 @@ class MVP(ConflictResolution):
         elif value == "OFF" or value == "OF" or value == "NONE":
             # Do NOT swtich off self.swresohoriz if value == OFF
             self.swresovert = False
+        return True, f"Vertical resolution method set to {value}"
 
     def applyprio(
         self,

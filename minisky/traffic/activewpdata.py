@@ -131,7 +131,7 @@ class ActiveWaypoint(TrafficArrays):
         self.nextturnrad[-n:] = -999.0  # [m]   Next turn WP radius
         self.nextturnhdgr[-n:] = -999.0  # [deg/s] Next turn WP heading rate (<0 => not specified)
         self.nextturnidx[-n:] = -999.0  # [-] Next turn WP index
-        self.nextaltco[-n] = -999.0  # [m] Altitude to arrive at after distance xtoalt
+        self.nextaltco[-n:] = -999.0  # [m] Altitude to arrive at after distance xtoalt
         self.xtoalt[-n:] = 0.0  # [m] Distance to next altitude constraint
         self.nextspd[-n:] = -999.0  # [CAS[m/s]/Mach]Next leg speed from current WP
         self.spd[-n:] = -999.0  # [CAS[m/s]/Mach]Active WP speed

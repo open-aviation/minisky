@@ -197,7 +197,7 @@ class Navdatabase:
 
         # DEL command: give info on waypoint (shudl work wit or without lat,lon, may be clicked by accident
         elif (wptype != None and (wptype.upper() == "DEL" or wptype.upper() == "DELETE")) or (
-            type(lon) == str and (lon.upper() == "DEL" or lon.upper == "DELETE")
+            type(lon) == str and (lon.upper() == "DEL" or lon.upper() == "DELETE")
         ):
             return self.delwpt(name)
 
@@ -252,12 +252,12 @@ class Navdatabase:
         if self.wpid.count(name.upper()) <= 0:
             return False, "Waypoint " + name.upper() + " does not exist."
 
-        idx = len(self.wpid) - self.wpid[::-1].index(name) - 1  # Search from back of list
+        idx = len(self.wpid) - self.wpid[::-1].index(name.upper()) - 1  # Search from back of list
 
         del self.wpid[idx]  # wp name
 
-        np.delete(self.wplat, idx)  # wp lat
-        np.delete(self.wplon, idx)  # wp lon
+        self.wplat = np.delete(self.wplat, idx)  # wp lat
+        self.wplon = np.delete(self.wplon, idx)  # wp lon
 
         del self.wptype[idx]  # Waypoint type
         del self.wpelev[idx]  # elevation [m]

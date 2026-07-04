@@ -384,7 +384,7 @@ class PandirArg(Parser):
         """
         arg, argstring = _match_groups(argstring)
         pandir = arg.upper()
-        if pandir not in ("LEFT", "RIGHT", "UP", "ABOVE", "RIGHT", "DOWN"):
+        if pandir not in ("LEFT", "RIGHT", "UP", "ABOVE", "DOWN"):
             raise ArgumentError(f"{arg} is not a valid pan direction")
         return pandir, argstring
 

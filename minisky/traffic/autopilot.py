@@ -60,8 +60,6 @@ class Autopilot(TrafficArrays):
         swtod (ndarray): Switch: Top-of-Descent logic (descend late) enabled.
         dist2vs (ndarray): Distance to the active waypoint at which the
             VNAV climb/descent should start [m].
-        dist2accel (ndarray): Distance needed for a speed change before the
-            next waypoint [nm].
         swvnavvs (ndarray): Switch: use the VNAV-computed vertical speed.
         vnavvs (ndarray): Vertical speed used in VNAV mode [m/s].
         qdr2wp (ndarray): Bearing to the active waypoint [deg].
@@ -105,9 +103,6 @@ class Autopilot(TrafficArrays):
 
             # Distance from current waypoint to Top of Descent
             self.dist2vs = np.array([])
-
-            # Distance needed for speed change before next waypoint [nm]
-            self.dist2accel = np.array([])
 
             # Switch to use provided vertical speed
             self.swvnavvs = np.array([])
@@ -174,9 +169,6 @@ class Autopilot(TrafficArrays):
 
         # VNAV Variables
         self.dist2vs[-n:] = -999.0
-
-        # Distance to go to acceleration(deceleration) for turn next waypoint [nm]
-        self.dist2accel[-n:] = -999.0
 
         # LNAV variables
 
@@ -1185,15 +1177,13 @@ class Autopilot(TrafficArrays):
         for i in idx:
             if flag is None:
                 msg = (
-                    minisky.traf.callsign[i] + ": VNAV is " + "ON"
-                    if minisky.traf.swvnav[i]
-                    else "OFF"
+                    minisky.traf.callsign[i]
+                    + ": VNAV is "
+                    + ("ON" if minisky.traf.swvnav[i] else "OFF")
                 )
                 if not minisky.traf.swvnavspd[i]:
                     msg += " but VNAVSPD is OFF"
-                output.append(
-                    minisky.traf.id[i] + ": VNAV is " + "ON" if minisky.traf.swvnav[i] else "OFF"
-                )
+                output.append(msg)
 
             elif flag:
                 if not minisky.traf.swlnav[i]:
@@ -1273,7 +1263,7 @@ class Autopilot(TrafficArrays):
                     )
                 elif not minisky.traf.swlnav[i]:
                     minisky.traf.swlnav[i] = True
-                    route.direct(i, route.wpname[route.findact(i)])
+                    minisky.traffic.route.direct(i, route.wpname[route.findact(i)])
             else:
                 minisky.traf.swlnav[i] = False
         if flag is None:
@@ -1354,7 +1344,7 @@ class Autopilot(TrafficArrays):
         for i in idx:
             if flag is None:
                 output.append(
-                    minisky.traf.callsign[i] + ": SWTOD is " + ("ON" if self.swtoc[i] else "OFF")
+                    minisky.traf.callsign[i] + ": SWTOD is " + ("ON" if self.swtod[i] else "OFF")
                 )
 
             elif flag:

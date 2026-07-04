@@ -291,9 +291,9 @@ class Command:
                 else len(arguments)
             )
 
-            types = arguments[:cut].strip("[,]").split(",")
+            types = [t.strip() for t in arguments[:cut].strip("[,] ").split(",")]
             # Returned argtypes are tuples of type and optional status
-            argtypes += zip(types, [opt or t == "..." for t in types], strict=False)
+            argtypes += [(t, opt or t == "...") for t in types if t]
             arguments = arguments[cut:].lstrip(",]")
 
         return tuple(argtypes)
@@ -459,7 +459,7 @@ def readscn(scn: "str | Path | StringIO") -> Iterator[tuple[float, str]]:
     """Read a scenario file and yield its timestamped commands.
 
     Parses lines of the form ``HH:MM:SS.hh>CMDLINE``, skipping comments
-    (lines starting with "#") and short lines, and supporting line
+    (lines starting with "#") and empty lines, and supporting line
     continuation with a trailing backslash.
 
     Args:
@@ -487,7 +487,7 @@ def readscn(scn: "str | Path | StringIO") -> Iterator[tuple[float, str]]:
     for line in scn_input:
         line = line.strip()
         # Skip emtpy lines and comments
-        if len(line) < 12 or line[0] == "#":
+        if not line or line[0] == "#":
             continue
         line = prevline + line
 
@@ -511,7 +511,7 @@ def readscn(scn: "str | Path | StringIO") -> Iterator[tuple[float, str]]:
         except (ValueError, IndexError):
             # nice try, we will just ignore this syntax error
             if not (len(line.strip()) > 0 and line.strip()[0] == "#"):
-                print("except this:" + line)
+                minisky.scr.echo(f"Skipping invalid scenario line: {line.strip()}")
 
 
 def ic(scn: str) -> tuple[bool, str]:
@@ -656,10 +656,10 @@ def showhelp(cmd: "txt" = "", subcmd: "txt" = "") -> tuple[bool, str]:
 
         # Get info for all commands
         for obj in cmdobjs:
-            fname = obj.callback.__name__.replace("<", "").replace(">", "")
-            args = ",".join(str(p) for p in obj.parsers)  # type: ignore[attr-defined]
+            funcname = obj.callback.__name__.replace("<", "").replace(">", "")
+            args = ",".join(str(p) for p in obj.params)
             syn = ",".join(obj.aliases)
-            line = f"{obj.name}\t{obj.help}\t{obj.brief}\t{args}\t{fname}\t{syn}"
+            line = f"{obj.name}\t{obj.help}\t{obj.brief}\t{args}\t{funcname}\t{syn}"
             table.append(line)
 
         # Sort & write table

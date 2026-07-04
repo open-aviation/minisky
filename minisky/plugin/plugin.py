@@ -112,10 +112,8 @@ class Plugin:
             return True, f"Successfully loaded plugin {self.plugin_name}"
 
         except ImportError as e:
-            print(f"Plugin system failed to load {self.plugin_name}: {e}")
             return False, f"Failed to load {self.plugin_name}: {e}"
         except Exception as e:
-            print(f"Plugin system error loading {self.plugin_name}: {e}")
             import traceback
 
             traceback.print_exc()
@@ -257,38 +255,25 @@ class Plugin:
         config = {}
         if isinstance(ret_dicts[0], ast.Dict):
             for key, value in zip(ret_dicts[0].keys, ret_dicts[0].values, strict=False):
-                if hasattr(key, "s"):  # Python < 3.8 string constant
-                    key_str = key.s  # type: ignore[union-attr]
-                elif hasattr(key, "value"):  # Python 3.8+ Constant
-                    key_str = key.value  # type: ignore[union-attr]
-                else:
+                if not isinstance(key, ast.Constant):
                     continue
+                key_str = key.value
 
-                if hasattr(value, "s"):
-                    config[key_str] = value.s  # type: ignore[attr-defined]
-                elif hasattr(value, "value"):
-                    config[key_str] = value.value  # type: ignore[attr-defined]
+                if isinstance(value, ast.Constant):
+                    config[key_str] = value.value
 
         # Parse stack functions if present
         if len(ret_dicts) > 1 and isinstance(ret_dicts[1], ast.Dict):
             stack_funcs = []
             for key, value in zip(ret_dicts[1].keys, ret_dicts[1].values, strict=False):
-                if hasattr(key, "s"):
-                    cmd_name = key.s  # type: ignore[union-attr]
-                elif hasattr(key, "value"):
-                    cmd_name = key.value  # type: ignore[union-attr]
-                else:
+                if not isinstance(key, ast.Constant):
                     continue
+                cmd_name = key.value
 
                 # Extract help text (last element of the list/tuple)
                 if isinstance(value, (ast.List, ast.Tuple)) and value.elts:
                     last = value.elts[-1]
-                    if hasattr(last, "s"):
-                        help_text = last.s  # type: ignore[attr-defined]
-                    elif hasattr(last, "value"):
-                        help_text = last.value  # type: ignore[attr-defined]
-                    else:
-                        help_text = ""
+                    help_text = last.value if isinstance(last, ast.Constant) else ""
                     stack_funcs.append((cmd_name, help_text))
             config["stack_functions"] = stack_funcs
 
@@ -309,13 +294,13 @@ def load_enabled() -> None:
     """Load enabled plugins from settings.
 
     Loads every plugin listed under ``enabled_plugins`` in the settings and
-    prints the resulting status message for each. Called from
+    echoes the resulting status message for each. Called from
     :func:`minisky.load_plugins` after the simulator has been initialized.
     """
     enabled = getattr(settings, "enabled_plugins", [])
     for plugin_name in enabled:
         success, msg = Plugin.load(plugin_name)
-        print(msg)
+        minisky.scr.echo(msg)
 
 
 def manage_plugins(cmd: str = "LIST", plugin_name: str = "") -> tuple[bool, str]:

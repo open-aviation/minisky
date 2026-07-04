@@ -30,8 +30,9 @@ class Turbulence(TrafficArrays):
     """
 
     def __init__(self) -> None:
+        super().__init__()
         self.active = False
-        self.sd = np.array([])
+        self.SetStandards([0, 0.1, 0.1])
 
     def reset(self) -> None:
         """Switch turbulence off and restore the default standard deviations."""

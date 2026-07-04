@@ -435,7 +435,7 @@ def atmos(h: float) -> tuple[float, float, float]:
     # Calculate if sothermic layer
     if a[i] == 0:
         T = T0[i]
-        p = p0[i] * exp(-g0 / (R * T) * (h - h0[i]))
+        p = p0[i] * np.exp(-g0 / (R * T) * (h - h0[i]))
         rho = p / (R * T)
 
     # Calculate for temperature gradient

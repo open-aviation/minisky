@@ -159,7 +159,7 @@ class ConflictDetection(TrafficArrays):
         self.confpairs_all.clear()
         self.lospairs_all.clear()
         self.rpz_def = minisky.core.settings.asas_pzr * nm
-        self.hpz_def = (minisky.core.settings.asas_pzh - 1) * ft  # -1 for rounding margins
+        self.hpz_def = minisky.core.settings.asas_pzh * ft
         self.dtlookahead_def = minisky.core.settings.asas_dtlookahead
         self.dtnolook_def = 0.0
         self.global_rpz = self.global_hpz = True
@@ -248,7 +248,7 @@ class ConflictDetection(TrafficArrays):
         if height < 0.0:
             return (
                 True,
-                f"ZONEDH [height (ft), acid(s)/ac group]\nCurrent default PZ height: {self.hpz / ft:.2f} ft",
+                f"ZONEDH [height (ft), acid(s)/ac group]\nCurrent default PZ height: {self.hpz_def / ft:.2f} ft",
             )
         if len(acidx) > 0:
             idx: Any = acidx[0] if isinstance(acidx[0], np.ndarray) else acidx
@@ -410,10 +410,10 @@ class ConflictDetection(TrafficArrays):
 
         # qdrlst is for [i,j] qdr from i to j, from perception of ADSB and own coordinates
         qdr, dist = geo.kwikqdrdist_matrix(
-            np.asmatrix(ownship.lat),
-            np.asmatrix(ownship.lon),
-            np.asmatrix(intruder.lat),
-            np.asmatrix(intruder.lon),
+            np.atleast_2d(ownship.lat),
+            np.atleast_2d(ownship.lon),
+            np.atleast_2d(intruder.lat),
+            np.atleast_2d(intruder.lon),
         )
 
         # Convert back to array to allow element-wise array multiplications later on
@@ -450,7 +450,7 @@ class ConflictDetection(TrafficArrays):
 
         # Check for horizontal conflict
         # RPZ can differ per aircraft, get the largest value per aircraft pair
-        rpz = np.asarray(np.maximum(np.asmatrix(rpz), np.asmatrix(rpz).transpose()))
+        rpz = np.maximum(rpz[np.newaxis, :], rpz[:, np.newaxis])
         R2 = rpz * rpz
         swhorconf = dcpa2 < R2  # conflict or not
 
@@ -475,7 +475,7 @@ class ConflictDetection(TrafficArrays):
 
         # Check for passing through each others zone
         # hPZ can differ per aircraft, get the largest value per aircraft pair
-        hpz = np.asarray(np.maximum(np.asmatrix(hpz), np.asmatrix(hpz).transpose()))
+        hpz = np.maximum(hpz[np.newaxis, :], hpz[:, np.newaxis])
         tcrosshi = (dalt + hpz) / -dvs
         tcrosslo = (dalt - hpz) / -dvs
         tinver = np.minimum(tcrosshi, tcrosslo)
@@ -489,7 +489,7 @@ class ConflictDetection(TrafficArrays):
             swhorconf
             * (tinconf <= toutconf)
             * (toutconf > 0.0)
-            * np.asarray(tinconf < np.asmatrix(dtlookahead).T)
+            * (tinconf < np.asarray(dtlookahead)[:, np.newaxis])
             * (1.0 - eye),
             dtype=bool,
         )

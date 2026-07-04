@@ -4,6 +4,8 @@ Plugin loading imports modules and registers stack commands globally, so
 these tests run against the session singletons like other integration tests.
 """
 
+import warnings
+
 import pytest
 
 import minisky
@@ -30,6 +32,14 @@ class TestDiscovery:
         ok, msg = Plugin.load("NOSUCHPLUGIN")
         assert not ok
         assert "not found" in msg.lower()
+
+    def test_discovery_emits_no_deprecation_warning(self, bs):
+        # AST config parsing used the ast.Constant.s alias, deprecated
+        # since Python 3.12 and removed in 3.14.
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", DeprecationWarning)
+            minisky.plugin.discover()
+        assert "EXAMPLE" in Plugin.plugins
 
 
 @pytest.fixture

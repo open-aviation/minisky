@@ -32,6 +32,29 @@ class TestAtmosphere:
         _, rho, _ = aero.vatmos(alts)
         assert np.all(np.diff(rho) < 0)
 
+    def test_scalar_atmos_isothermal_layer(self):
+        # Regression: atmos() raised NameError (bare exp) in isothermal layers
+        p, rho, temp = aero.atmos(15000.0)  # 11-20 km layer
+        assert temp == pytest.approx(216.65, rel=1e-6)
+        assert p == pytest.approx(12045.0, rel=1e-3)  # ISA at 15 km
+        assert rho == pytest.approx(p / (aero.R * temp), rel=1e-6)
+
+    def test_scalar_atmos_upper_isothermal_layer(self):
+        # 47-51 km layer is also isothermal
+        p, rho, temp = aero.atmos(49000.0)
+        assert temp == pytest.approx(270.65, rel=1e-6)
+        assert p > 0.0
+        assert rho > 0.0
+
+    def test_scalar_atmos_matches_vectorized_in_stratosphere(self):
+        # vatmos uses a simplified two-layer ISA, valid up to ~22 km
+        for h in (12000.0, 15000.0, 19000.0):
+            p, rho, temp = aero.atmos(h)
+            p_v, rho_v, t_v = aero.vatmos(h)
+            assert p == pytest.approx(float(p_v), rel=1e-3)
+            assert rho == pytest.approx(float(rho_v), rel=1e-3)
+            assert temp == pytest.approx(float(t_v), rel=1e-3)
+
     def test_vatmos_vectorized_matches_scalar(self):
         alts = np.array([0.0, 5000.0, 10000.0])
         p_vec, rho_vec, t_vec = aero.vatmos(alts)
