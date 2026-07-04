@@ -184,3 +184,4 @@ class Variable:
         if self.index:
             v = getattr(self.parent, self.varname)
             return [v[i] for i in self.index]
+        return getattr(self.parent, self.varname)

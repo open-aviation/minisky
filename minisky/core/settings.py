@@ -14,9 +14,9 @@ import yaml
 filename_settings = Path(__file__).parent.parent.parent / "settings.yml"
 
 with open(filename_settings, encoding="utf-8") as file:
-    data = yaml.safe_load(file)
+    _settings = yaml.safe_load(file)
 
-for key, value in data.items():
+for key, value in _settings.items():
     globals()[key] = value
 
 # Explicit type declarations for pyright (set dynamically above via globals())
