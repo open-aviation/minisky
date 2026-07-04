@@ -147,4 +147,4 @@ uv run pytest -m api tests/test_api.py   # REST API smoke tests (separate proces
 - [x] add new tests
 - [x] add docstrings and documentation website (mkdocs)
 - [ ] remove stale `docs/commands.csv` and `docs/tutorial.pdf` (superseded by the generated command reference)
-- [ ] fix latent bugs found during the documentation pass (see [docs/known-issues.md](docs/known-issues.md))
+- [x] fix latent bugs found during the documentation pass (see [docs/known-issues.md](docs/known-issues.md))

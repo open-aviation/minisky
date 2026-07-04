@@ -65,7 +65,7 @@ waypoint, navaid, airport, or aircraft.
 | `POLY` | `POLY name,[lat,lon,lat,lon, ...]` | Define a polygon-shaped area | `POLYGON` |
 | `POLYALT` | `POLYALT name,top,bottom,lat,lon,lat,lon, ...` | Define a polygon-shaped area in 3D: between two altitudes |  |
 | `POLYLINE` | `POLYLINE name,lat,lon,lat,lon,...` | Draw a multi-segment line on the radar screen | `LINES`, `POLYLINES` |
-| `POS` | `POS callsign/waypoint` | Get info on aircraft, airport or waypoint | `AIRPORT`, `AWY`, `RUNWAYS` |
+| `POS` | `POS callsign/waypoint` | Get info on aircraft, airport or waypoint | `AIRPORT`, `AIRWAY`, `AIRWAYS`, `AWY`, `RUNWAYS` |
 | `PRIORULES` | `PRIORULES [flag, priocode]` | Define priority rules (right of way) for conflict resolution. |  |
 | `QUIT` | `QUIT` | Quit program/Stop simulation | `CLOSE`, `END`, `EXIT`, `STOP` |
 | `REALTIME` | `REALTIME [ON/OFF]` | En-/disable realtime running allowing a variable timestep. | `RT` |
@@ -90,6 +90,6 @@ waypoint, navaid, airport, or aircraft.
 | `UNGROUP` | `UNGROUP grname, callsign` | Remove aircraft from a group |  |
 | `VNAV` | `VNAV callsign,[ON/OFF]` | Switch on/off VNAV mode, the vertical FMS mode (autopilot). |  |
 | `VS` | `VS callsign,vspd (ft/min)` | Vertical speed command (autopilot). |  |
-| `WIND` | `WIND lat,lon,alt,dir,spd,[alt,dir,spd,alt,...]` | Define a wind vector as part of the 2D or 3D wind field. |  |
+| `WIND` | `WIND lat,lon,[alt],dir,spd[,alt,dir,spd,...] or WIND lat,lon,DEL` | Define a wind vector as part of the 2D or 3D wind field. |  |
 | `ZONEDH` | `ZONEDH [height, callsign...]` | Set the vertical separation distance (i.e., half of the protected zone height) in feet. |  |
 | `ZONER` | `ZONER [radius, callsign...]` | Set the horizontal separation distance (i.e., the radius of the protected zone) in nautical miles. |  |
