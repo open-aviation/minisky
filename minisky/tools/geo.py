@@ -194,7 +194,7 @@ def qdrdist_matrix(
     condition = prodla < 0
 
     r = np.zeros(prodla.shape)
-    r = np.where(condition, r, rwgs84_matrix(lat1.T + lat2))
+    r = np.where(condition, r, rwgs84_matrix(0.5 * (lat1.T + lat2)))
 
     a = 6378137.0
 
@@ -330,7 +330,7 @@ def latlondist_matrix(
     condition = prodla < 0
 
     r = np.zeros(prodla.shape)
-    r = np.where(condition, r, rwgs84_matrix(lat1.T + lat2))
+    r = np.where(condition, r, rwgs84_matrix(0.5 * (lat1.T + lat2)))
 
     a = 6378137.0
     r = np.where(
