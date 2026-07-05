@@ -25,7 +25,10 @@ python minisky-run.py --scenario scenarios/kl204.scn
 Start the simulator with a REST API endpoint for interactions:
 
 ```bash
-fastapi dev minisky-api.py
+fastapi dev minisky-api.py    # development server
+
+# or, after `pip install` / `uv sync`, the installed console script:
+minisky-server                # serves on 0.0.0.0:8000 (MINISKY_HOST / MINISKY_PORT)
 ```
 
 #### Interaction with API
@@ -48,7 +51,29 @@ In summary:
 - `stack/CMD` is the endpoint for any bluesky stack commands
 - `all` is the endpoint to show all aircraft
 - `conflicts` is the endpoint to show all conflicts
+- `commands` returns `{name: usage}` for every stack command (autocomplete/help)
 
+#### Real-time stream
+
+For clients that need live updates instead of polling, connect to the `/stream`
+WebSocket. It pushes one JSON snapshot per simulation step (rate-capped, default
+10 Hz) in SI units, containing `siminfo` (sim time, speed, state, ...) and
+`acdata` (parallel per-aircraft arrays plus conflict data):
+
+```python
+import json
+from websockets.sync.client import connect
+
+with connect("ws://localhost:8000/stream") as ws:
+    while True:
+        tick = json.loads(ws.recv())
+        print(tick["siminfo"]["simt"], tick["acdata"]["callsign"])
+```
+
+The stream is deliberately consumer-agnostic — raw SI on the wire, so any unit
+conversion or field mapping is left to the client. You can change the simulation
+speed from the stack with the `DTMULT` command (e.g. `DTMULT 10`) in addition to
+the `/speed/10` REST endpoint.
 
 #### Console interaction
 
@@ -138,6 +163,7 @@ uv run pytest -m api tests/test_api.py   # REST API smoke tests (separate proces
 - [x] remove signals and wall-time events
 - [x] refactor resource/cache data
 - [x] implement REST API
+- [x] add real-time streaming API (`/stream`, `/commands`) and installable `minisky-server`
 - [x] implement control console
 - [x] better time and simulation speed control
 - [x] refactor route functions
