@@ -366,9 +366,9 @@ class Autopilot(TrafficArrays):
             )  # update turn distance for VNAV
 
             # Get flyturn switches and data
-            minisky.traf.actwp.oldturnspd[i] = minisky.traf.actwp.turnspd[
-                i
-            ]  # old turn speed, turning by this waypoint            minisky.traf.actwp.flyturn[i] = flyturn
+            # old turn speed, turning by this waypoint
+            minisky.traf.actwp.oldturnspd[i] = minisky.traf.actwp.turnspd[i]
+            minisky.traf.actwp.flyturn[i] = flyturn
             minisky.traf.actwp.turnrad[i] = turnrad
             minisky.traf.actwp.turnspd[i] = turnspd
             minisky.traf.actwp.turnhdgr[i] = turnhdgr
