@@ -74,6 +74,8 @@ waypoint, navaid, airport, or aircraft.
 | `RESOOFF` | `RESOOFF callsign...` | ADD or Remove aircraft that will not avoid anybody else. |  |
 | `RFACH` | `RFACH [factor]` | Set resolution factor horizontal. |  |
 | `RFACV` | `RFACV [factor]` | Set resolution factor vertical. |  |
+| `RMETHH` | `RMETHH [ON / BOTH / OFF / NONE / SPD / HDG]` | Select the horizontal resolution method for MVP conflict resolution. |  |
+| `RMETHV` | `RMETHV [ON / V/S / OFF / NONE]` | Select the vertical resolution method for MVP conflict resolution. |  |
 | `RSZONEDH` | `RSZONEDH [zonedh]` | Set resolution factor vertical, but then with absolute value. |  |
 | `RSZONER` | `RSZONER [zoner]` | Set resolution factor horizontal, but then with absolute value. |  |
 | `RTA` | `RTA callsign, wpt, time` | Add RTA to waypoint record. |  |

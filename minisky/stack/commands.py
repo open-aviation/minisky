@@ -420,6 +420,18 @@ def get_commands() -> tuple:
             "RESOOFF callsign...",
             "ADD or Remove aircraft that will not avoid anybody else.",
         ],
+        "RMETHH": [
+            asasresolution.setresometh,
+            "[txt]",
+            "RMETHH [ON / BOTH / OFF / NONE / SPD / HDG]",
+            "Select the horizontal resolution method for MVP conflict resolution.",
+        ],
+        "RMETHV": [
+            asasresolution.setresometv,
+            "[txt]",
+            "RMETHV [ON / V/S / OFF / NONE]",
+            "Select the vertical resolution method for MVP conflict resolution.",
+        ],
         "RFACH": [
             asasresolution.setresofach,
             "[float]",
