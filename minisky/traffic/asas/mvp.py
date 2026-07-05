@@ -18,6 +18,7 @@ from typing import Any
 
 import numpy as np
 
+from minisky.stack.argparser import Txt
 from minisky.traffic.asas import ConflictResolution
 
 
@@ -88,7 +89,7 @@ class MVP(ConflictResolution):
             return False, "Priority code Not Understood. Available Options: " + str(options)
         return super().setprio(flag, priocode)
 
-    def setresometh(self, value: "txt" = "") -> tuple:
+    def setresometh(self, value: Txt = "") -> tuple:
         """Processes the RMETHH command. Sets swresovert = False.
 
         Selects which horizontal degrees of freedom MVP may use for
@@ -143,7 +144,7 @@ class MVP(ConflictResolution):
                 self.swresovert = False
             return True, f"Horizontal resolution method set to {value}"
 
-    def setresometv(self, value: "txt" = "") -> tuple:
+    def setresometv(self, value: Txt = "") -> tuple:
         """Processes the RMETHV command. Sets swresohoriz = False.
 
         Enables (ON/"V/S") or disables (OFF/NONE) vertical-speed-only

@@ -19,6 +19,7 @@ import numpy as np
 
 import minisky
 from minisky.core.trafficarrays import TrafficArrays
+from minisky.stack.argparser import Time, Txt
 from minisky.tools import geo
 from minisky.tools.aero import ft, nm
 
@@ -165,7 +166,7 @@ class ConflictDetection(TrafficArrays):
         self.global_rpz = self.global_hpz = True
         self.global_dtlook = self.global_dtnolook = True
 
-    def switch(self, name: "txt" = "ON") -> "tuple | None":
+    def switch(self, name: Txt = "ON") -> "tuple | None":
         """Turn Conflict Detection (CD) ON / OFF.
 
         Switching off also clears the current conflict database.
@@ -264,7 +265,7 @@ class ConflictDetection(TrafficArrays):
             minisky.stack.stack(f"RSZONEDH {minisky.traf.cr.resofacv * oldhpz / ft}")
         return True, f"Setting default PZ height to {height} ft"
 
-    def setdtlook(self, time: "time" = -1.0, *acidx: int) -> tuple:
+    def setdtlook(self, time: Time = -1.0, *acidx: int) -> tuple:
         """Set the lookahead time (in [hh:mm:]sec) for conflict detection.
 
         Implements the DTLOOK stack command.
@@ -291,7 +292,7 @@ class ConflictDetection(TrafficArrays):
             self.dtlookahead[:] = time
         return True, f"Setting default CD lookahead to {time} sec"
 
-    def setdtnolook(self, time: "time" = -1.0, *acidx: int) -> tuple:
+    def setdtnolook(self, time: Time = -1.0, *acidx: int) -> tuple:
         """Set the interval (in [hh:mm:]sec) in which conflict detection
         is skipped after a conflict resolution.
 

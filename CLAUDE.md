@@ -52,13 +52,15 @@ Full details in `docs/architecture.md` — read it before making structural chan
 
 Every text command — scenario file, REST `stack/` endpoint, or console — goes through `minisky.stack`. The built-in command table is `minisky/stack/commands.py`; plugins add commands with the `@command` decorator.
 
-**Stack commands annotate arguments with *string* annotations that are a runtime parser DSL, not type hints.** e.g. `def selaltcmd(self, idx: int, alt: "alt", vspd: "vspd" = None)`. `minisky/stack/argparser.py` reads `param.annotation` at runtime: a `str` is looked up in the `argparsers` dict (`"alt"`, `"latlon"`, `"wpt"`, `"spd"`, `"hdg"`, `"acid"`, `"time"`, `"txt"`, …); a real `type` gets wrapped in `Parser(type)`.
+**Stack command arguments are parsed at runtime from the parameter annotations.** `minisky/stack/argparser.py` inspects `param.annotation` when a command is registered:
+- **`Annotated` aliases (preferred):** `minisky/stack/argparser.py` exports `Acid`, `Wpt`, `Alt`, `Spd`, `Vspd`, `Hdg`, `Time`, `Txt`, `String`, `OnOff`, `Lat`, `Lon` — e.g. `def selaltcmd(self, idx: int, alt: Alt, vspd: Vspd | None = None)`. These are real type hints (lint- and pyright-clean) carrying the parser key as `Annotated` metadata; unions with `None` are unwrapped.
+- **Argument-spec strings in the command table** (`minisky/stack/commands.py`, e.g. `"callsign,alt,[vspd]"`) are plain data looked up in the `argparsers` dict and *override* function annotations.
+- **Legacy DSL strings** as annotations (`alt: "alt"`) still parse, but don't write new ones — use the `Annotated` aliases so linting works.
+- A real `type` annotation gets wrapped in `Parser(type)` (called on the argument text — fine for `int`/`float`/`str`, wrong for `bool`; use `OnOff`).
 
-Consequences when doing typing/lint work in command modules:
-- **Never** replace those DSL string annotations with real type hints — it breaks parsing.
-- **Never** add `from __future__ import annotations` to a module defining stack commands — it stringifies real hints like `idx: int` into `"int"`, which the argparser then fails to look up. Most dangerous possible change.
-- Return-type annotations and annotating clearly-non-DSL params are safe.
-- This is why `pyproject.toml` sets ruff `ignore = ["F821", ...]` and pyright `reportUndefinedVariable = false` — the DSL strings read as undefined forward-refs. `E711`/`E712`/`E721` are ignored because numpy overrides `==`/`is` elementwise, so `arr == None` is intentional and *not* equivalent to `arr is None`.
+`Command.callback` resolves signatures with `inspect.signature(func, eval_str=True)` (falling back to raw strings for legacy DSL annotations), so `from __future__ import annotations` is safe in command modules.
+
+`E711`/`E712`/`E721` are ignored in `pyproject.toml` because numpy overrides `==`/`is` elementwise, so `arr == None` is intentional and *not* equivalent to `arr is None`.
 
 `minisky/traffic/asas/__init__.py` has a deliberately non-alphabetical import block wrapped in `# isort: off/on` (resolution before mvp, since MVP subclasses ConflictResolution) — don't "fix" it.
 

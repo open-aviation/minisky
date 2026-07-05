@@ -22,6 +22,7 @@ import numpy as np
 
 import minisky
 from minisky.core.trafficarrays import TrafficArrays
+from minisky.stack.argparser import Acid, Alt, Hdg, OnOff, Spd, Vspd, Wpt
 from minisky.tools import geo
 from minisky.tools.aero import (
     cas2tas,
@@ -903,7 +904,9 @@ class Autopilot(TrafficArrays):
         else:
             return False
 
-    def selaltcmd(self, idx: "int | np.ndarray", alt: "alt", vspd: "vspd" = None) -> tuple[bool, str]:
+    def selaltcmd(
+        self, idx: "int | np.ndarray", alt: Alt, vspd: Vspd | None = None
+    ) -> tuple[bool, str]:
         """Select the autopilot altitude, optionally with a vertical speed.
 
         Implements the ALT stack command: ``ALT acid, alt, [vspd]``.
@@ -939,7 +942,7 @@ class Autopilot(TrafficArrays):
             minisky.traf.selvs[idxarr[oppositevs]] = 0.0
         return True, f"altitude set to {alt / ft} ft"
 
-    def selvspdcmd(self, idx: int, vspd: "vspd") -> tuple[bool, str]:
+    def selvspdcmd(self, idx: int, vspd: Vspd) -> tuple[bool, str]:
         """Select the autopilot vertical speed.
 
         Implements the VS stack command: ``VS acid, vspd (ft/min)``.
@@ -956,7 +959,7 @@ class Autopilot(TrafficArrays):
         minisky.traf.swvnav[idx] = False
         return True, f"vertical speed set to {vspd / fpm} ft/min"
 
-    def selhdgcmd(self, idx: int, hdg: "hdg") -> tuple[bool, str]:  # HDG command
+    def selhdgcmd(self, idx: int, hdg: Hdg) -> tuple[bool, str]:  # HDG command
         """Select the autopilot heading.
 
         Implements the HDG stack command: ``HDG acid, hdg (deg)``. When a
@@ -993,7 +996,7 @@ class Autopilot(TrafficArrays):
         minisky.traf.swlnav[idx] = False
         return True, f"heading set to {hdg} deg"
 
-    def selspdcmd(self, idx: int, casmach: "spd") -> tuple[bool, str]:  # SPD command
+    def selspdcmd(self, idx: int, casmach: Spd) -> tuple[bool, str]:  # SPD command
         """Select the autopilot speed.
 
         Implements the SPD stack command: ``SPD acid, casmach``. Switches
@@ -1025,7 +1028,7 @@ class Autopilot(TrafficArrays):
         return True, msg
 
     def setdest(
-        self, acidx: "acid", wpname: "wpt" = None, casmach: "spd" = None
+        self, acidx: Acid, wpname: Wpt | None = None, casmach: Spd | None = None
     ) -> tuple[bool, str]:
         """Set (or show) the destination of an aircraft.
 
@@ -1094,7 +1097,7 @@ class Autopilot(TrafficArrays):
 
         return True, f"destination set to {wpname}"
 
-    def setorig(self, acidx: int, wpname: "wpt" = None) -> tuple[bool, str]:
+    def setorig(self, acidx: int, wpname: Wpt | None = None) -> tuple[bool, str]:
         """Set (or show) the origin of an aircraft.
 
         Implements the ORIG stack command: ``ORIG acid, latlon/airport``.
@@ -1146,7 +1149,7 @@ class Autopilot(TrafficArrays):
 
         return True, f"origin set to {wpname}"
 
-    def setVNAV(self, idx: Any, flag: "bool" = None) -> tuple[bool, str]:  # type: ignore[assignment]
+    def setVNAV(self, idx: Any, flag: OnOff | None = None) -> tuple[bool, str]:
         """Switch VNAV (vertical FMS guidance) on or off, or show its state.
 
         Implements the VNAV stack command: ``VNAV acid, [ON/OFF]``. VNAV can
@@ -1218,7 +1221,7 @@ class Autopilot(TrafficArrays):
 
         return True, f"VNAV {'ON' if flag else 'OFF'}"
 
-    def setLNAV(self, idx: Any, flag: "bool" = None) -> tuple[bool, str]:  # type: ignore[assignment]
+    def setLNAV(self, idx: Any, flag: OnOff | None = None) -> tuple[bool, str]:
         """Switch LNAV (lateral FMS guidance) on or off, or show its state.
 
         Implements the LNAV stack command: ``LNAV acid, [ON/OFF]``. LNAV can
@@ -1271,7 +1274,7 @@ class Autopilot(TrafficArrays):
 
         return True, f"LNAV {'ON' if flag else 'OFF'}"
 
-    def setswtoc(self, idx: Any, flag: "bool" = None) -> tuple[bool, str]:  # type: ignore[assignment]
+    def setswtoc(self, idx: Any, flag: OnOff | None = None) -> tuple[bool, str]:
         """Switch the Top-of-Climb logic on or off, or show its state.
 
         Implements the SWTOC stack command: ``SWTOC acid, [ON/OFF]``. With
@@ -1314,7 +1317,7 @@ class Autopilot(TrafficArrays):
 
         return True, f"SWTOC {'ON' if flag else 'OFF'}"
 
-    def setswtod(self, idx: Any, flag: "bool" = None) -> tuple[bool, str]:  # type: ignore[assignment]
+    def setswtod(self, idx: Any, flag: OnOff | None = None) -> tuple[bool, str]:
         """Switch the Top-of-Descent logic on or off, or show its state.
 
         Implements the SWTOD stack command: ``SWTOD acid, [ON/OFF]``. With

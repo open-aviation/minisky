@@ -18,8 +18,8 @@ to the last parsed position or aircraft.
 import inspect
 import re
 from collections.abc import Callable
-from types import SimpleNamespace
-from typing import Any
+from types import SimpleNamespace, UnionType
+from typing import Annotated, Any, Union, get_args, get_origin
 
 import minisky
 from minisky.tools.convert import (
@@ -115,6 +115,7 @@ class Parameter:
         self.annotation = annotation or param.annotation
 
         # Make list of parsers
+        argkeys = _annotation_argkeys(self.annotation)
         if self.annotation is inspect._empty:
             # Without annotation the argument is passed on unchanged as string
             # (i.e., the 'word' argument type)
@@ -124,6 +125,12 @@ class Parameter:
             # If the annotation is a string we get our parsers from the argparsers dict
             pfuns = [argparsers.get(a) for a in self.annotation.split("/")]
             self.parsers = [p for p in pfuns if p is not None]
+        elif argkeys:
+            # Annotated type aliases (e.g. Alt, Spd) carry the argparsers key
+            # as metadata; unions of them (or with None) are also accepted
+            pfuns = [argparsers.get(a) for a in argkeys]
+            self.parsers = [p for p in pfuns if p is not None]
+            self.annotation = "/".join(argkeys)
         elif isinstance(param.annotation, type) and issubclass(param.annotation, Parser):
             # If the paramter annotation is a class derived from Parser
             self.parsers = [self.annotation()]
@@ -410,3 +417,39 @@ argparsers = {
     "hdg": Parser(lambda txt: txt2hdg(txt, refdata.lat, refdata.lon)),
     "time": Parser(txt2tim),
 }
+
+
+def _annotation_argkeys(annotation: Any) -> list[str]:
+    """Extract argparsers keys from an Annotated alias or a union of them.
+
+    Returns an empty list when the annotation is not based on Annotated
+    (e.g., a plain type or a DSL string).
+    """
+    origin = get_origin(annotation)
+    if origin is Annotated:
+        return [meta for meta in get_args(annotation)[1:] if isinstance(meta, str)]
+    if origin in (Union, UnionType):
+        keys = []
+        for member in get_args(annotation):
+            if member is not type(None):
+                keys.extend(_annotation_argkeys(member))
+        return keys
+    return []
+
+
+# Annotated type aliases for stack command parameters. The underlying type
+# is what the parser produces; the string metadata is the argparsers key.
+# Use these instead of bare DSL strings so type checkers and linters see
+# real types, e.g.: def selaltcmd(idx: Acid, alt: Alt, vspd: Vspd | None = None)
+Acid = Annotated[int, "callsign"]
+Wpt = Annotated[str, "wpt"]
+Alt = Annotated[float, "alt"]
+Spd = Annotated[float, "spd"]
+Vspd = Annotated[float, "vspd"]
+Hdg = Annotated[float, "hdg"]
+Time = Annotated[float, "time"]
+Txt = Annotated[str, "txt"]
+String = Annotated[str, "string"]
+OnOff = Annotated[bool, "onoff"]
+Lat = Annotated[float, "lat"]
+Lon = Annotated[float, "lon"]

@@ -30,7 +30,7 @@ import numpy as np
 import minisky
 from minisky.plugin.plugin_decorators import append_commands, command
 from minisky.stack import argparser, commands
-from minisky.stack.argparser import ArgumentError, Parameter, getnextarg
+from minisky.stack.argparser import ArgumentError, Parameter, String, Time, Txt, getnextarg
 
 
 def init() -> None:
@@ -79,7 +79,9 @@ class Command:
     cmddict: dict[str, "Command"] = {}
 
     @classmethod
-    def addcommand(cls, func: Callable, parent: "Command | None" = None, name: str = "", **kwargs: Any) -> None:
+    def addcommand(
+        cls, func: Callable, parent: "Command | None" = None, name: str = "", **kwargs: Any
+    ) -> None:
         """Add 'func' as a stack command.
 
         Creates a Command object for the given function and registers it
@@ -206,7 +208,13 @@ class Command:
     @callback.setter
     def callback(self, function):
         self._callback = function
-        spec = inspect.signature(function)
+        try:
+            # eval_str resolves stringified hints (from __future__ import annotations)
+            # to the actual objects, so Annotated aliases are recognised either way
+            spec = inspect.signature(function, eval_str=True)
+        except NameError:
+            # legacy style: parser-DSL strings ("alt", "wpt") as annotations
+            spec = inspect.signature(function)
         # Check if this is an unbound class/instance method
         self.valid = spec.parameters.get("self") is None and spec.parameters.get("cls") is None
 
@@ -571,7 +579,7 @@ def ic_StringIO(scn: StringIO, scn_name: str | None = None) -> tuple[bool, str]:
     return True, f"scenario {scn_name} loaded."
 
 
-def scenario(name: "string") -> tuple[bool, str]:
+def scenario(name: String) -> tuple[bool, str]:
     """SCENARIO: Set the scenario name for the current simulation.
 
     Args:
@@ -584,7 +592,7 @@ def scenario(name: "string") -> tuple[bool, str]:
     return True, "Starting scenario " + name
 
 
-def schedule(time: "time", cmdline: "string") -> bool:
+def schedule(time: Time, cmdline: String) -> bool:
     """SCHEDULE: Schedule a stack command at a specific simulation time.
 
     The command is inserted into the scenario buffer, keeping the buffer
@@ -605,7 +613,7 @@ def schedule(time: "time", cmdline: "string") -> bool:
     return True
 
 
-def delay(time: "time", cmdline: "string") -> bool:
+def delay(time: Time, cmdline: String) -> bool:
     """DELAY: Delay a stack command by a time interval.
 
     Like schedule(), but the given time is relative to the current
@@ -626,7 +634,7 @@ def delay(time: "time", cmdline: "string") -> bool:
     return True
 
 
-def showhelp(cmd: "txt" = "", subcmd: "txt" = "") -> tuple[bool, str]:
+def showhelp(cmd: Txt = "", subcmd: Txt = "") -> tuple[bool, str]:
     """HELP: Display general help text or help text for a specific command,
     or dump command reference in file when command is >filename.
 

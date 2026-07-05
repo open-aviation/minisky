@@ -19,6 +19,7 @@ import numpy as np
 
 import minisky
 from minisky.core.trafficarrays import TrafficArrays
+from minisky.stack.argparser import Txt
 from minisky.tools.aero import ft, nm
 
 
@@ -503,7 +504,7 @@ class ConflictResolution(TrafficArrays):
         )
 
     @staticmethod
-    def setmethod(name: "txt" = "") -> tuple:
+    def setmethod(name: Txt = "") -> tuple:
         """Select a Conflict Resolution method.
 
         Implements the RESO stack command. Selecting "MVP" replaces the
