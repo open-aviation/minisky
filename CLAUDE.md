@@ -28,9 +28,15 @@ The `api` marker is excluded via `addopts = -m 'not api'`; API tests start a rea
 
 ```bash
 python minisky-run.py --scenario scenarios/kl204.scn [--speed 10]  # headless scenario run
-fastapi dev minisky-api.py                                          # REST API server
+fastapi dev minisky-api.py                                          # REST API server (dev)
+minisky-server                                                      # installed API server (console script)
 python minisky-console.py                                           # interactive console against the API
 ```
+
+The FastAPI app lives in `minisky/server.py`; `minisky-api.py` re-exports it so
+`fastapi dev minisky-api.py` still works, and the `minisky-server` console script
+(`minisky.server:main`) is the installed entry point (`MINISKY_HOST`/`MINISKY_PORT`
+env vars, default `0.0.0.0:8000`).
 
 ## Architecture
 
@@ -47,6 +53,8 @@ Full details in `docs/architecture.md` — read it before making structural chan
 **Units.** Internal state is SI (m, m/s, deg). Aviation units (FL/ft, knots, Mach) exist only in stack commands / scenario files and are converted at the argument-parser boundary.
 
 **I/O.** Simulation code never prints directly — it echoes into `minisky.scr` (`ConsoleIO`), a buffer. The REST `stack/` endpoint sends a command, waits for the stack to process it, then reads the buffer back to the HTTP client.
+
+**Streaming.** Besides the poll-style REST endpoints, `minisky/streaming.py` provides a per-tick push feed. `build_snapshot()` reads the singletons and returns a JSON-serialisable, **SI-unit** `{siminfo, acdata}` dict; a `StreamHub` fans it out, published from the `update` plugin hook (rate-capped, default 10 Hz, and skipped when no client is connected). It surfaces over the `GET /stream` WebSocket. It is deliberately consumer-agnostic — raw SI on the wire, no client-specific unit conversion or field mapping. The server also exposes `GET /commands` (`{name: brief}` from `Command.cmddict`) for client autocomplete, and the `DTMULT` stack command sets the runner speed multiplier (`Runner.setspeed`) for clients that drive speed through the stack rather than the REST `/speed/{n}` endpoint.
 
 ## The command stack (critical convention)
 

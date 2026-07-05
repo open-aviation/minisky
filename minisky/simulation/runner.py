@@ -67,6 +67,27 @@ class Runner:
         self.jump_to = minisky.sim.simt + seconds - 2  #  -2 for the action margin
         self.jump = seconds
 
+    def setspeed(self, mult: float) -> tuple[bool, str]:
+        """Set the simulation speed multiplier (stack DTMULT command).
+
+        The loop targets one simulation step every ``1 / speed`` wall-clock
+        seconds, so a larger multiplier makes simulated time advance faster
+        relative to the wall clock. This is the wall-clock-pacing equivalent of
+        BlueSky's ``DTMULT``.
+
+        Args:
+            mult: Simulation speed factor relative to real time; must be
+                positive.
+
+        Returns:
+            Tuple of (success flag, message reporting the new speed, or an
+            error message when the multiplier is not positive).
+        """
+        if mult <= 0:
+            return False, "DTMULT: speed multiplier must be positive"
+        self.speed = mult
+        return True, f"Simulation speed set to {mult}x"
+
     def prevent_shutdown(self) -> None:
         """Disable shutdown so that :meth:`stop` requests are ignored.
 
