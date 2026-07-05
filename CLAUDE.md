@@ -68,4 +68,4 @@ Every text command — scenario file, REST `stack/` endpoint, or console — goe
 
 - Package/dependency management is **uv**. Prefix Python invocations with `uv run`.
 - After adding or changing a stack command, regenerate `docs/reference/commands.md` with the gen script.
-- `settings.yml` holds runtime config (ASAS protected-zone margins, plugin path, `enabled_plugins`). Known latent bugs are tracked in `docs/known-issues.md`.
+- `settings.yml` holds runtime config (ASAS protected-zone margins, plugin path, `enabled_plugins`).
