@@ -225,6 +225,12 @@ def get_commands() -> tuple:
             "DIRECT callsign, wpt",
             "Go direct to a specified waypoint in the route.",
         ],
+        "DTMULT": [
+            minisky.runner.setspeed,
+            "float",
+            "DTMULT multiplier",
+            "Set the simulation speed multiplier (wall-clock pacing, DTMULT equivalent).",
+        ],
         "DTLOOK": [
             minisky.traf.cd.setdtlook,
             "[time,callsign,...]",

@@ -41,6 +41,7 @@ waypoint, navaid, airport, or aircraft.
 | `DEST` | `DEST callsign, latlon/airport, casmach (= CASkts/Mach)` | Set destination of aircraft, aircraft will fly to this airport. |  |
 | `DIRECT` | `DIRECT callsign, wpt` | Go direct to a specified waypoint in the route. |  |
 | `DTLOOK` | `DTLOOK [time, callsign...]` | Set the lookahead time (in [hh:mm:]sec) for conflict detection. |  |
+| `DTMULT` | `DTMULT multiplier` | Set the simulation speed multiplier (wall-clock pacing, DTMULT equivalent). |  |
 | `DTNOLOOK` | `DTNOLOOK [time, callsign...]` | Set the interval (in [hh:mm:]sec) in which conflict detection is skipped after a conflict resolution. |  |
 | `ECHO` | `ECHO txt` | Show a text in command window for user to read | `PRINT` |
 | `GETWIND` | `GETWIND lat, lon, [alt]` | Get wind at a specified position (and optionally at altitude). |  |
