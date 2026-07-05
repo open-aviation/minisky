@@ -22,6 +22,7 @@ from minisky import stack
 
 # from minisky.core import Replaceable
 from minisky.stack import Command
+from minisky.stack.argparser import Alt, Spd, Time, Wpt
 from minisky.tools import geo
 from minisky.tools.aero import casormach2tas, ft, g0, kts, mach2cas, nm
 from minisky.tools.convert import degto180, txt2alt, txt2spd
@@ -1122,11 +1123,11 @@ def addwpt(ac: str | int, *args) -> bool | tuple:  # args: all arguments of addw
 
 def addwpt_before(
     acidx: int,
-    beforewp: "wpt",
+    beforewp: Wpt,
     addwptkey,
     waypoint,
-    alt: "alt" = None,
-    spd: "spd" = None,
+    alt: Alt | None = None,
+    spd: Spd | None = None,
 ) -> bool | tuple:
     """Add a waypoint to a route before an existing waypoint.
 
@@ -1150,11 +1151,11 @@ def addwpt_before(
 
 def addwpt_after(
     acidx: int,
-    afterwp: "wpt",
+    afterwp: Wpt,
     addwptkey,
     waypoint,
-    alt: "alt" = None,
-    spd: "spd" = None,
+    alt: Alt | None = None,
+    spd: Spd | None = None,
 ) -> bool | tuple:
     """Add a waypoint to a route after an existing waypoint.
 
@@ -1176,7 +1177,7 @@ def addwpt_after(
     return addwpt(acidx, waypoint, alt, spd, afterwp)
 
 
-def at_wpt(acidx: int, atwp: "wpt", *args) -> bool | tuple:
+def at_wpt(acidx: int, atwp: Wpt, *args) -> bool | tuple:
     """Show, set or delete constraints and commands at a route waypoint.
 
     Implements the AT stack command:
@@ -1394,7 +1395,7 @@ def at_wpt(acidx: int, atwp: "wpt", *args) -> bool | tuple:
     return True
 
 
-def direct(acidx: int, wpname: "wpt") -> bool:
+def direct(acidx: int, wpname: Wpt) -> bool:
     """Go direct to a specified waypoint in the route.
 
     Implements the DIRECT stack command: ``DIRECT acid wpname``. Makes the
@@ -1508,7 +1509,7 @@ def direct(acidx: int, wpname: "wpt") -> bool:
     return True
 
 
-def set_rta(acidx: int, wpname: "wpt", time: "time") -> bool:  # all arguments of setRTA
+def set_rta(acidx: int, wpname: Wpt, time: Time) -> bool:  # all arguments of setRTA
     """Set a required time of arrival (RTA) at a route waypoint.
 
     Implements the RTA stack command: ``RTA acid, wpname, time``. The RTA
@@ -1635,7 +1636,7 @@ def delrte(acidx: int | None = None) -> bool | tuple:
     return True
 
 
-def delwpt(acidx: int, wpname: "wpt") -> bool | tuple:
+def delwpt(acidx: int, wpname: Wpt) -> bool | tuple:
     """Delete a single waypoint from the route of an aircraft.
 
     Implements the DELWPT stack command: ``DELWPT acid, wpname``. When the

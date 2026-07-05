@@ -67,6 +67,23 @@ class TestResolutionCommands:
         result = bs.traf.cr.setresometv("ON")
         assert result == (True, "Vertical resolution method set to ON")
 
+    def test_rmethh_via_stack(self, bs, run_cmd):
+        run_cmd("RESO MVP")
+        output = run_cmd("RMETHH SPD")
+        assert "Horizontal resolution method set to SPD" in output
+        assert bs.traf.cr.swresospd
+        assert not bs.traf.cr.swresohdg
+
+    def test_rmethv_via_stack(self, bs, run_cmd):
+        run_cmd("RESO MVP")
+        output = run_cmd("RMETHV ON")
+        assert "Vertical resolution method set to ON" in output
+        assert bs.traf.cr.swresovert
+
+    def test_rmethh_requires_mvp(self, bs, run_cmd):
+        output = run_cmd("RMETHH SPD")
+        assert "not available" in output
+
     def test_resooff_report_mentions_resooff(self, bs, sim):
         success, message = bs.traf.cr.setresooff()
         assert success

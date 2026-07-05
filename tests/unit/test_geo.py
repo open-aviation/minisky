@@ -54,9 +54,6 @@ class TestDistanceFunctions:
 
 
 class TestMatrixVariants:
-    # Latitudes near the equator: the matrix variants evaluate the earth
-    # radius at lat1 + lat2 (without the 0.5 factor the scalar variants
-    # use), which is negligible only at low latitudes.
     LAT1 = np.array([2.0, -3.0])
     LON1 = np.array([4.0, 10.0])
     LAT2 = np.array([4.0, 6.0])
@@ -70,6 +67,16 @@ class TestMatrixVariants:
             for j in range(2):
                 expected_m = geo.latlondist(self.LAT1[i], self.LON1[i], self.LAT2[j], self.LON2[j])
                 assert dist[i, j] == pytest.approx(expected_m, rel=1e-3)
+
+    def test_latlondist_matrix_high_latitude_matches_scalar(self):
+        # Regression: the matrix variants evaluated the earth radius at
+        # lat1 + lat2 instead of 0.5 * (lat1 + lat2), skewing distances
+        # at higher latitudes
+        dist = geo.latlondist_matrix(
+            np.array([60.0]), np.array([10.0]), np.array([70.0]), np.array([20.0])
+        )
+        expected_m = geo.latlondist(60.0, 10.0, 70.0, 20.0)
+        assert dist[0, 0] == pytest.approx(expected_m, rel=1e-9)
 
     def test_latlondist_matrix_returns_plain_ndarray(self):
         # Regression: np.asmatrix is deprecated; result must not be np.matrix

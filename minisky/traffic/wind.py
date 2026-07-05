@@ -16,6 +16,7 @@ import numpy as np
 from scipy.interpolate import LinearNDInterpolator, interp1d
 
 from minisky.core.trafficarrays import TrafficArrays
+from minisky.stack.argparser import Alt, Lat, Lon
 from minisky.tools.aero import ft, kts
 
 
@@ -410,7 +411,7 @@ class Wind(TrafficArrays, Windfield):
     Available at runtime as ``minisky.traf.wind``.
     """
 
-    def add(self, lat: "lat", lon: "lon", *winddata: "float") -> "bool | tuple[bool, str]":
+    def add(self, lat: Lat, lon: Lon, *winddata: float) -> "bool | tuple[bool, str]":
         """Define a wind vector as part of the 2D or 3D wind field.
 
         Implements the WIND stack command.
@@ -459,7 +460,7 @@ class Wind(TrafficArrays, Windfield):
 
         return True
 
-    def get(self, lat: "lat", lon: "lon", alt: "alt" = None) -> "tuple[bool, str]":
+    def get(self, lat: Lat, lon: Lon, alt: Alt | None = None) -> "tuple[bool, str]":
         """Get wind at a specified position (and optionally at altitude)
 
         Implements the GETWIND stack command. The result is reported as

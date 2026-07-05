@@ -69,7 +69,6 @@ nav:
       - Writing plugins: guides/plugins.md
   - Reference:
       - Stack commands: reference/commands.md
-      - Known issues: known-issues.md
       - API:
           - minisky: api/minisky.md
           - simulation: api/simulation.md

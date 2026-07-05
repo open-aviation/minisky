@@ -27,8 +27,10 @@ def command(
         arguments: Argument specification string (e.g., "callsign,alt,[spd]")
 
     Example:
+        from minisky.stack.argparser import Txt
+
         @command
-        def mycommand(arg1: 'txt', arg2: int = 5):
+        def mycommand(arg1: Txt, arg2: int = 5):
             '''Help text for mycommand.'''
             return True, "Success"
 

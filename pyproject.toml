@@ -51,7 +51,6 @@ select = ["E", "W", "F", "I", "UP", "B", "SIM", "C4"]
 ignore = [
     "E501",   # line length is handled by the formatter
     "B008",   # FastAPI relies on function calls (Depends/File) in argument defaults
-    "F821",   # stack commands annotate args with parser-DSL strings ("alt", "wpt", ...)
     "E711",   # `== None` on numpy arrays is elementwise, not equivalent to `is None`
     "E712",   # `== True/False` on numpy arrays is elementwise and intentional
     "E721",   # `type(x) == y` comparisons are intentional in a few numeric paths
@@ -68,8 +67,4 @@ pythonVersion = "3.11"
 # "basic" surfaces real bugs without drowning a numpy/scipy-heavy fork in noise.
 typeCheckingMode = "basic"
 reportMissingTypeStubs = false
-# Stack commands annotate arguments with parser-DSL strings ("alt", "wpt", ...)
-# that pyright reads as forward references; the tools/plugins also use star
-# imports. Both are intentional BlueSky conventions, not undefined names.
-reportUndefinedVariable = false
 reportWildcardImportFromLibrary = false

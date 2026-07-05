@@ -19,6 +19,7 @@ import numpy as np
 
 import minisky
 from minisky.core.trafficarrays import TrafficArrays
+from minisky.stack.argparser import Txt
 from minisky.tools.aero import ft, nm
 
 
@@ -503,7 +504,7 @@ class ConflictResolution(TrafficArrays):
         )
 
     @staticmethod
-    def setmethod(name: "txt" = "") -> tuple:
+    def setmethod(name: Txt = "") -> tuple:
         """Select a Conflict Resolution method.
 
         Implements the RESO stack command. Selecting "MVP" replaces the
@@ -580,3 +581,23 @@ def setresozoner(zoner: float | None = None) -> tuple:
 def setresozonedh(zonedh: float | None = None) -> tuple:
     """RSZONEDH stack command; see ConflictResolution.setresozonedh()."""
     return minisky.traf.cr.setresozonedh(zonedh)
+
+
+def setresometh(value: Txt = "") -> tuple:
+    """RMETHH stack command; see MVP.setresometh()."""
+    from minisky.traffic.asas.mvp import MVP
+
+    cr = minisky.traf.cr
+    if not isinstance(cr, MVP):
+        return False, f"RMETHH is not available for CR method {type(cr).__name__}"
+    return cr.setresometh(value)
+
+
+def setresometv(value: Txt = "") -> tuple:
+    """RMETHV stack command; see MVP.setresometv()."""
+    from minisky.traffic.asas.mvp import MVP
+
+    cr = minisky.traf.cr
+    if not isinstance(cr, MVP):
+        return False, f"RMETHV is not available for CR method {type(cr).__name__}"
+    return cr.setresometv(value)
