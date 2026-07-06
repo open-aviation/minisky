@@ -377,7 +377,7 @@ class Windfield:
             return list(vnorth), list(veast)
 
         else:
-            return float(vnorth), float(veast)
+            return float(np.asarray(vnorth).item()), float(np.asarray(veast).item())
 
     def remove(self, idx: int) -> None:  # remove a point using the returned index when it was added
         """Remove a wind definition point by index.

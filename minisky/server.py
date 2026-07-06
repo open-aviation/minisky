@@ -24,6 +24,7 @@ Interactive OpenAPI docs are served at ``/docs``.
 
 import asyncio
 import os
+from contextlib import asynccontextmanager
 from io import StringIO
 from typing import Any
 
@@ -36,7 +37,16 @@ import minisky
 from minisky.streaming import hub, register_stream_hook
 from minisky.tools import aero
 
-app = FastAPI()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Start the simulation loop as a background task in the server's event loop."""
+    task = asyncio.create_task(minisky.runner.run())
+    yield
+    task.cancel()
+
+
+app = FastAPI(lifespan=lifespan)
 
 # Static files live at the repository root (../static relative to this package),
 # which resolves correctly for both a source checkout and an editable install.
@@ -48,14 +58,6 @@ minisky.init()
 minisky.load_plugins()
 # Publish a snapshot on every simulation step for the /stream endpoint.
 register_stream_hook()
-
-
-async def start_simulation() -> None:
-    """Start the simulation loop as a background task in the server's event loop."""
-    asyncio.create_task(minisky.runner.run())
-
-
-app.add_event_handler("startup", start_simulation)
 
 
 @app.get("/")

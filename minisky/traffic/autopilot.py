@@ -419,6 +419,7 @@ class Autopilot(TrafficArrays):
         for iac in np.where((minisky.traf.actwp.torta > -99.0) * (minisky.traf.actwp.spdcon < 0.0))[
             0
         ]:
+            iac = int(iac)
             iwp = self.route[iac].iactwp
             if self.route[iac].wprta[iwp] > -99.0:
                 # For all aircraft flying to an RTA waypoint, recalculate speed more often
