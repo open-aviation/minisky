@@ -25,7 +25,10 @@ python minisky-run.py --scenario scenarios/kl204.scn
 Start the simulator with a REST API endpoint for interactions:
 
 ```bash
-fastapi dev minisky-api.py
+fastapi dev minisky-api.py    # development server
+
+# or, after `pip install` / `uv sync`, the installed console script:
+minisky-server                # serves on 0.0.0.0:8000 (MINISKY_HOST / MINISKY_PORT)
 ```
 
 #### Interaction with API
@@ -48,7 +51,29 @@ In summary:
 - `stack/CMD` is the endpoint for any bluesky stack commands
 - `all` is the endpoint to show all aircraft
 - `conflicts` is the endpoint to show all conflicts
+- `commands` returns `{name: usage}` for every stack command (autocomplete/help)
 
+#### Real-time stream
+
+For clients that need live updates instead of polling, connect to the `/stream`
+WebSocket. It pushes one JSON snapshot per simulation step (rate-capped, default
+10 Hz) in SI units, containing `siminfo` (sim time, speed, state, ...) and
+`acdata` (parallel per-aircraft arrays plus conflict data):
+
+```python
+import json
+from websockets.sync.client import connect
+
+with connect("ws://localhost:8000/stream") as ws:
+    while True:
+        tick = json.loads(ws.recv())
+        print(tick["siminfo"]["simt"], tick["acdata"]["callsign"])
+```
+
+The stream is deliberately consumer-agnostic — raw SI on the wire, so any unit
+conversion or field mapping is left to the client. You can change the simulation
+speed from the stack with the `DTMULT` command (e.g. `DTMULT 10`) in addition to
+the `/speed/10` REST endpoint.
 
 #### Console interaction
 
@@ -92,6 +117,33 @@ for i in range(5):
     print(f"time-{minisky.sim.simt}s, positions: {minisky.traf.lat} {minisky.traf.lon}")
 ```
 
+## Documentation
+
+The documentation lives in `docs/` and is built with MkDocs Material; the API reference
+is generated from the docstrings with mkdocstrings.
+
+```bash
+uv sync --group docs
+uv run --group docs mkdocs serve     # live preview at http://localhost:8000
+uv run --group docs mkdocs build     # static site in site/
+```
+
+Regenerate the stack command reference after adding or changing commands:
+
+```bash
+uv run python scripts/gen_command_docs.py
+```
+
+## Tests
+
+Run the test suite with pytest:
+
+```bash
+uv run pytest                        # unit + integration tests
+uv run pytest tests/unit             # fast pure-function tests only
+uv run pytest -m api tests/test_api.py   # REST API smoke tests (separate process)
+```
+
 ## Tasks
 
 - [x] remove discoverable mode
@@ -111,10 +163,13 @@ for i in range(5):
 - [x] remove signals and wall-time events
 - [x] refactor resource/cache data
 - [x] implement REST API
+- [x] add real-time streaming API (`/stream`, `/commands`) and installable `minisky-server`
 - [x] implement control console
 - [x] better time and simulation speed control
 - [x] refactor route functions
 - [x] refactor acid to callsign
-- [ ] check all echo, ensure print and scr.echo are consistent
-- [ ] refactor code so import and simulation is easier
-- [ ] add new tests
+- [x] check all echo, ensure print and scr.echo are consistent
+- [x] add new tests
+- [x] add docstrings and documentation website (mkdocs)
+- [x] remove stale `docs/commands.csv` and `docs/tutorial.pdf` (superseded by the generated command reference)
+- [x] fix latent bugs found during the documentation pass

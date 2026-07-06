@@ -1,18 +1,46 @@
-# -*- coding: utf-8 -*-
+"""Parsing of position texts in MiniSky.
+
+Translates the position notations used in stack commands - lat/lon pairs
+(decimal or degrees/minutes/seconds), navaid and fix names, airport ICAO
+identifiers, runways (e.g. "EHAM/RW06"), and aircraft callsigns - into
+latitude/longitude coordinates [deg] via the Position class.
+"""
 
 import minisky
 
 from .convert import txt2lat, txt2lon
 
 
-def txt2pos(name, reflat, reflon):
+def txt2pos(name: str, reflat: float, reflon: float) -> "tuple[bool, Position | str]":
+    """Parse a position text into a Position object.
+
+    Args:
+        name: Position text: lat/lon pair, navaid/fix, airport, runway
+            (e.g. "EHAM/RW06"), or aircraft callsign.
+        reflat: Reference latitude [deg], used to resolve ambiguous names.
+        reflon: Reference longitude [deg], used to resolve ambiguous names.
+
+    Returns:
+        tuple: (True, Position) on success, or (False, error message).
+    """
     pos = Position(name.upper().strip(), reflat, reflon)
     if not pos.error:
         return True, pos
     return False, name + " not found in database"
 
 
-def islat(txt):
+def islat(txt: str) -> bool:
+    """Check whether a text looks like a latitude.
+
+    Accepts decimal or degrees/minutes/seconds notation, with an optional
+    leading N or S and sign.
+
+    Args:
+        txt: Candidate latitude text.
+
+    Returns:
+        bool: True when the text has a latitude-like format.
+    """
     # Is it a latitude-like format or not?
 
     # Take out non-digit chars which are allowed
@@ -40,12 +68,32 @@ def islat(txt):
 
 
 class Position:
-    """Position class: container for position data"""
+    """Position class: container for position data
+
+    Resolves a position text into coordinates, trying in order: lat/lon
+    pair, runway ("apt/RWxx"), airport, navaid/fix (closest occurrence to
+    the reference position), aircraft callsign, and pan direction keyword.
+
+    Attributes:
+        name: Source name (empty for plain lat/lon and aircraft positions).
+        lat: Latitude [deg] (set when parsing succeeded).
+        lon: Longitude [deg] (set when parsing succeeded).
+        type: Position type: "latlon", "rwy", "apt", "nav", or "dir".
+        refhdg: Runway heading [deg] for runway positions, else None.
+        error: True when the text could not be resolved to a position.
+    """
 
     # position types: "latlon","nav","apt","rwy"
 
     # Initialize using text
-    def __init__(self, name, reflat, reflon):
+    def __init__(self, name: str, reflat: float, reflon: float) -> None:
+        """Resolve a position text relative to a reference position.
+
+        Args:
+            name: Position text (upper case).
+            reflat: Reference latitude [deg].
+            reflon: Reference longitude [deg].
+        """
         self.name = name  # default: copy source name
         self.error = False  # we're optmistic about our succes
         self.refhdg = None
@@ -64,9 +112,7 @@ class Position:
             try:
                 aptname, rwytxt = name.split("/RW")
                 rwyname = rwytxt.lstrip("Y").upper()  # remove Y and spaces
-                self.lat, self.lon, self.refhdg = minisky.navdb.rwythresholds[aptname][
-                    rwyname
-                ]
+                self.lat, self.lon, self.refhdg = minisky.navdb.rwythresholds[aptname][rwyname]
             except KeyError:
                 self.error = True
             self.type = "rwy"

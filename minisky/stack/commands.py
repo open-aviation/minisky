@@ -39,9 +39,32 @@
 #
 # --------------------------------------------------------------------
 
+"""Definition of the base stack commands of the simulator.
 
-def get_commands():
+This module contains the command dictionary that couples every base text
+command of the simulator (e.g., CRE, ALT, HDG) to the Python function that
+implements it, its argument type specification, and its usage and help
+texts, plus a dictionary of command synonyms. Both dictionaries are
+registered with the command interpreter in minisky.stack.init().
+
+The strings in the command dictionary are the in-simulator help texts
+shown by the HELP command.
+"""
+
+
+def get_commands() -> tuple:
+    """Assemble the base command and synonym dictionaries of the simulator.
+
+    Imports minisky at call time so that command callbacks can be bound to
+    the fully initialised simulation objects (traf, sim, navdb, scr, ...).
+
+    Returns:
+        tuple: (cmddict, synonyms). cmddict maps a command name to a list
+        of [function, argument type string, brief usage text, help text];
+        synonyms maps a command name to a list of alias names.
+    """
     import minisky
+    from minisky.traffic.asas import resolution as asasresolution
 
     cmddict = {
         "ADDWPT": [
@@ -58,7 +81,7 @@ def get_commands():
         ],
         "AFTER": [
             minisky.traffic.route.addwpt_after,
-            "callsign, wpt, addwpt, waypoint, [alt, spd]",
+            "callsign,wpt,txt,wpt,[alt,spd]",
             "AFTER callsign, wpt, addwpt, waypoint, [alt, spd]",
             "Add a waypoint after another waypoint in the route.",
         ],
@@ -76,7 +99,7 @@ def get_commands():
         ],
         "AT": [
             minisky.traffic.route.at_wpt,
-            "callsign, wpt, [DEL] ALT/SPD/DO alt/spd/stack command",
+            "callsign,wpt,[txt,...]",
             "AT callsign, wpt, [DEL] ALT/SPD/DO alt/spd/stack command",
             "Set or show altitude and/or speed constraints at a waypoint.",
         ],
@@ -106,7 +129,7 @@ def get_commands():
         ],
         "BEFORE": [
             minisky.traffic.route.addwpt_before,
-            "callsign, wpt, addwpt, waypoint, [alt, spd]",
+            "callsign,wpt,txt,wpt,[alt,spd]",
             "BEFORE callsign, wpt, addwpt, waypoint, [alt, spd]",
             "Add a waypoint before another waypoint in the route.",
         ],
@@ -202,15 +225,21 @@ def get_commands():
             "DIRECT callsign, wpt",
             "Go direct to a specified waypoint in the route.",
         ],
+        "DTMULT": [
+            minisky.runner.setspeed,
+            "float",
+            "DTMULT multiplier",
+            "Set the simulation speed multiplier (wall-clock pacing, DTMULT equivalent).",
+        ],
         "DTLOOK": [
             minisky.traf.cd.setdtlook,
-            "[time, callsign...]",
+            "[time,callsign,...]",
             "DTLOOK [time, callsign...]",
             "Set the lookahead time (in [hh:mm:]sec) for conflict detection.",
         ],
         "DTNOLOOK": [
             minisky.traf.cd.setdtnolook,
-            "[time, callsign...]",
+            "[time,callsign,...]",
             "DTNOLOOK [time, callsign...]",
             "Set the interval (in [hh:mm:]sec) in which conflict detection is skipped after a conflict resolution.",
         ],
@@ -243,7 +272,7 @@ def get_commands():
         ],
         "HELP": [
             minisky.stack.showhelp,
-            "[cmd, subcmd]",
+            "[txt,txt]",
             "HELP [cmd, subcmd]",
             "Display general help text or help text for a specific command.",
         ],
@@ -267,7 +296,7 @@ def get_commands():
         ],
         "LISTRTE": [
             minisky.traffic.route.listrte,
-            "callsign, [pagenr]",
+            "callsign,[txt]",
             "LISTRTE callsign, [pagenr]",
             "Show list of route in window per page of 5 waypoints.",
         ],
@@ -308,8 +337,8 @@ def get_commands():
             "Turbulence/noise switch",
         ],
         "NORESO": [
-            minisky.traf.cr.setnoreso,
-            "callsign...",
+            asasresolution.setnoreso,
+            "[callsign,...]",
             "NORESO callsign...",
             "ADD or Remove aircraft that nobody will avoid.",
         ],
@@ -362,7 +391,7 @@ def get_commands():
             "Get info on aircraft, airport or waypoint",
         ],
         "PRIORULES": [
-            minisky.traf.cr.setprio,
+            asasresolution.setprio,
             "[bool, txt]",
             "PRIORULES [flag, priocode]",
             "Define priority rules (right of way) for conflict resolution.",
@@ -392,19 +421,31 @@ def get_commands():
             "Select a Conflict Resolution method.",
         ],
         "RESOOFF": [
-            minisky.traf.cr.setresooff,
-            "callsign...",
+            asasresolution.setresooff,
+            "[callsign,...]",
             "RESOOFF callsign...",
             "ADD or Remove aircraft that will not avoid anybody else.",
         ],
+        "RMETHH": [
+            asasresolution.setresometh,
+            "[txt]",
+            "RMETHH [ON / BOTH / OFF / NONE / SPD / HDG]",
+            "Select the horizontal resolution method for MVP conflict resolution.",
+        ],
+        "RMETHV": [
+            asasresolution.setresometv,
+            "[txt]",
+            "RMETHV [ON / V/S / OFF / NONE]",
+            "Select the vertical resolution method for MVP conflict resolution.",
+        ],
         "RFACH": [
-            minisky.traf.cr.setresofach,
+            asasresolution.setresofach,
             "[float]",
             "RFACH [factor]",
             "Set resolution factor horizontal.",
         ],
         "RFACV": [
-            minisky.traf.cr.setresofacv,
+            asasresolution.setresofacv,
             "[float]",
             "RFACV [factor]",
             "Set resolution factor vertical.",
@@ -416,13 +457,13 @@ def get_commands():
             "Add RTA to waypoint record.",
         ],
         "RSZONEDH": [
-            minisky.traf.cr.setresozonedh,
+            asasresolution.setresozonedh,
             "[float]",
             "RSZONEDH [zonedh]",
             "Set resolution factor vertical, but then with absolute value.",
         ],
         "RSZONER": [
-            minisky.traf.cr.setresozoner,
+            asasresolution.setresozoner,
             "[float]",
             "RSZONER [zoner]",
             "Set resolution factor horizontal, but then with absolute value.",
@@ -435,7 +476,7 @@ def get_commands():
         ],
         "SCENARIO": [
             minisky.stack.scenario,
-            "name",
+            "string",
             "SCENARIO name",
             "Sets the scenario name for the current simulation.",
         ],
@@ -507,19 +548,19 @@ def get_commands():
         ],
         "WIND": [
             minisky.traf.wind.add,
-            "latlon,[alt,float,float]...",
-            "WIND lat,lon,alt,dir,spd,[alt,dir,spd,alt,...]",
+            "latlon,[float/txt,float,float]...",
+            "WIND lat,lon,[alt],dir,spd[,alt,dir,spd,...] or WIND lat,lon,DEL",
             "Define a wind vector as part of the 2D or 3D wind field.",
         ],
         "ZONEDH": [
             minisky.traf.cd.sethpz,
-            "[float, callsign...]",
+            "[float,callsign,...]",
             "ZONEDH [height, callsign...]",
             "Set the vertical separation distance (i.e., half of the protected zone height) in feet.",
         ],
         "ZONER": [
             minisky.traf.cd.setrpz,
-            "[float, callsign...]",
+            "[float,callsign,...]",
             "ZONER [radius, callsign...]",
             "Set the horizontal separation distance (i.e., the radius of the protected zone) in nautical miles.",
         ],
@@ -527,18 +568,13 @@ def get_commands():
 
     # Command synonym dictionary
     synonyms = {
-        "ADDAWY": ["ADDAIRWAY"],
         "ASAS": ["CD", "CDMETHOD"],
-        "POS": ["AWY", "AIRPORT", "RUNWAYS"],
-        "AIRWAY": ["AIRWAYS"],
+        "POS": ["AWY", "AIRPORT", "RUNWAYS", "AIRWAY", "AIRWAYS"],
         "BANK": ["BANKLIM"],
-        "COLOUR": ["COL", "COLOR"],
         "OP": ["CONTINUE", "RUN", "START"],
         "CRE": ["CREATE"],
         "QUIT": ["CLOSE", "END", "EXIT", "STOP"],
-        "CALC": ["DEBUG"],
         "DEL": ["DELETE"],
-        "SWRAD": ["DISP"],
         "SELECTIMPL": ["IMPL", "IMPLEMENTATION", "IMPLEMENT"],
         "POLYLINE": ["LINES", "POLYLINES"],
         "MAGVAR": ["MAGDEC", "MAGDECL", "VAR"],
@@ -546,7 +582,6 @@ def get_commands():
         "POLY": ["POLYGON"],
         "ECHO": ["PRINT"],
         "REALTIME": ["RT"],
-        "DTMULT": ["RTF"],
         "TRAIL": ["TRAILS"],
         "PERFSTATS": ["PERFINFO", "PERFDATA"],
         "PLUGINS": ["PLUGIN"],

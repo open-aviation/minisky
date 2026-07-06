@@ -1,9 +1,22 @@
-"""Simulate wind in BlueSky."""
+"""Simulate wind in BlueSky.
+
+Implements a wind field defined by wind vectors at arbitrary lat/lon
+positions, optionally with altitude profiles. The field is interpolated
+(inverse-distance weighting horizontally, linear in altitude) to obtain
+the wind at any aircraft position. :class:`Windfield` contains the field
+data and interpolation; :class:`Wind` adds the stack-command interface
+(WIND to define wind, GETWIND to query it) and is available at runtime as
+``minisky.traf.wind``. The traffic model uses the wind to compute ground
+speed and track from heading and airspeed.
+"""
+
+from typing import Any
 
 import numpy as np
 from scipy.interpolate import LinearNDInterpolator, interp1d
 
 from minisky.core.trafficarrays import TrafficArrays
+from minisky.stack.argparser import Alt, Lat, Lon
 from minisky.tools.aero import ft, kts
 
 
@@ -41,7 +54,7 @@ class Windfield:
 
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         # For altitude use fixed axis to allow vectorisation later
         self.altmax = 45000.0 * ft  # [m]
         self.altstep = 100.0 * ft  # [m]
@@ -58,7 +71,8 @@ class Windfield:
         self.clear()
         return
 
-    def clear(self):  # Clear actual field
+    def clear(self) -> None:  # Clear actual field
+        """Remove all wind vectors, leaving a windless (winddim 0) field."""
         # Windfield dimension will automatically be detected:
         # 0 = no wind, 1 = constant wind, 2 = 2D field (no alt profiles),
         # 3 = 3D field (alt matters), used to speed up interpolation
@@ -72,10 +86,29 @@ class Windfield:
         self.fn = None
         return
 
-    def addpointvne(self, lat, lon, vnorth, veast, windalt=None):
-        """Add a vector of lat/lon positions (arrays) with a (2D vector of)
-        wind speed [m/s] in north and east component.
-        Optionally an array with altitudes can be used
+    def addpointvne(
+        self,
+        lat: np.ndarray,
+        lon: np.ndarray,
+        vnorth: np.ndarray,
+        veast: np.ndarray,
+        windalt: "np.ndarray | None" = None,
+    ) -> None:
+        """Add wind vectors given as north/east speed components.
+
+        Vectorized alternative to addpoint() for defining many wind points
+        at once. When altitudes are given, a scipy interpolator over
+        (altitude, lat, lon) is set up for regular grids; otherwise the
+        profiles are resampled onto the fixed altitude axis.
+
+        Args:
+            lat: Latitudes of the wind definition points [deg].
+            lon: Longitudes of the wind definition points [deg].
+            vnorth: North wind component [m/s]; 2D (altitude x position)
+                when windalt is given.
+            veast: East wind component [m/s]; same shape as vnorth.
+            windalt: Optional array of altitudes [m] belonging to the rows
+                of vnorth/veast; makes the field 3D.
         """
         if windalt is not None and len(windalt) > 1:
             # Set altitude interpolation functions
@@ -83,14 +116,14 @@ class Windfield:
                 windalt,
                 vnorth.T,
                 bounds_error=False,
-                fill_value=(vnorth[0], vnorth[-1]),
+                fill_value=(vnorth[0], vnorth[-1]),  # type: ignore[arg-type]
                 assume_sorted=True,
             )
             feast = interp1d(
                 windalt,
                 veast.T,
                 bounds_error=False,
-                fill_value=(veast[0], veast[-1]),
+                fill_value=(veast[0], veast[-1]),  # type: ignore[arg-type]
                 assume_sorted=True,
             )
 
@@ -121,7 +154,7 @@ class Windfield:
                         bounds_error=False,
                         fill_value=0.0,
                     )
-                except:
+                except Exception:
                     # Create vn, ve if RGI is not possible
                     vnaxis = fnorth(self.altaxis).T
                     veaxis = feast(self.altaxis).T
@@ -151,11 +184,32 @@ class Windfield:
         if self.winddim < 3:  # No 3D => set dim to 0,1 or 2 dep on nr of points
             self.winddim = min(2, len(self.lat))
 
-    def addpoint(self, lat, lon, winddir, windspd, windalt=None):
-        """addpoint: adds a lat,lon position with a wind direction [deg]
-                                                 and wind speedd [m/s]
-        Optionally an array with altitudes can be used in which case windspd
-        and wind speed need to have the same dimension
+    def addpoint(
+        self,
+        lat: float,
+        lon: float,
+        winddir: Any,
+        windspd: Any,
+        windalt: Any = None,
+    ) -> int:
+        """Add a wind vector (direction/speed) at a lat/lon position.
+
+        The wind is converted to north/east components and stored on the
+        fixed altitude axis. When an altitude array is given, the wind
+        profile is interpolated onto that axis and the field becomes 3D
+        (altitude dependent).
+
+        Args:
+            lat: Latitude of the wind definition point [deg].
+            lon: Longitude of the wind definition point [deg].
+            winddir: Direction the wind comes from [deg]; array when an
+                altitude profile is given.
+            windspd: Wind speed [m/s]; same dimension as winddir.
+            windalt: Optional altitudes [m] belonging to winddir/windspd,
+                defining an altitude profile at this position.
+
+        Returns:
+            int: Index of the added wind point (for use with remove()).
         """
 
         # If scalar, copy into table for altitude axis
@@ -204,15 +258,29 @@ class Windfield:
         return idx  # return index of added point
 
     def getdata(
-        self, userlat, userlon, useralt=0.0
-    ):  # in case no altitude specified and field is 3D, use sea level wind
+        self, userlat: Any, userlon: Any, useralt: Any = 0.0
+    ) -> "tuple[Any, Any]":  # in case no altitude specified and field is 3D, use sea level wind
+        """Interpolate the wind field at one or more positions.
+
+        Uses inverse-distance-squared weighting between the defined wind
+        points horizontally, and linear interpolation along the altitude
+        axis for 3D fields. Constant and empty fields are handled as
+        special cases. When no altitude is given for a 3D field, sea-level
+        wind is returned.
+
+        Args:
+            userlat: Latitude(s) [deg]; scalar, list or ndarray.
+            userlon: Longitude(s) [deg]; same shape as userlat.
+            useralt: Altitude(s) [m]; scalar, list or ndarray (default 0).
+
+        Returns:
+            tuple: (vnorth, veast): north and east wind components [m/s],
+            with the same type/shape as the given positions.
+        """
         eps = 1e-20  # [m2] to avoid divison by zero for using exact same points
 
         swvector = isinstance(userlat, (list, np.ndarray))
-        if swvector:
-            npos = len(userlat)
-        else:
-            npos = 1
+        npos = len(userlat) if swvector else 1
         # Convert user input to right shape: columns for positions
         lat = np.array(userlat).reshape((1, npos))
         lon = np.array(userlon).reshape((1, npos))
@@ -241,15 +309,11 @@ class Windfield:
                 vnorth = np.ones(npos) * self.vnorth[0, 0]
                 veast = np.ones(npos) * self.veast[0, 0]
 
-            elif (
-                self.winddim >= 2
-            ):  # 2D/3D field = more points defined but no altitude profile
+            elif self.winddim >= 2:  # 2D/3D field = more points defined but no altitude profile
                 # ---- Get horizontal weight factors
 
                 # Average cosine for flat-eartyh approximation
-                cavelat = np.cos(
-                    np.radians(0.5 * (lat + np.array([self.lat]).transpose()))
-                )
+                cavelat = np.cos(np.radians(0.5 * (lat + np.array([self.lat]).transpose())))
 
                 # Lat and lon distance in 60 nm units (1 lat degree)
                 dy = lat - np.array([self.lat]).transpose()  # (nvec,npos)
@@ -259,12 +323,8 @@ class Windfield:
                 invd2 = 1.0 / (eps + dx * dx + dy * dy)  # inverse of distance squared
 
                 # Normalize weights
-                sumsid2 = np.ones((1, self.nvec)).dot(
-                    invd2
-                )  # totals to normalize weights
-                totals = np.repeat(
-                    sumsid2, self.nvec, axis=0
-                )  # scale up dims to (nvec,npos)
+                sumsid2 = np.ones((1, self.nvec)).dot(invd2)  # totals to normalize weights
+                totals = np.repeat(sumsid2, self.nvec, axis=0)  # scale up dims to (nvec,npos)
 
                 horfact = invd2 / totals  # rows x col = nvec x npos, weight factors
 
@@ -285,9 +345,7 @@ class Windfield:
                     )  # find right index
 
                     # Convert to index and factor
-                    ialt = np.floor(idxalt).astype(
-                        int
-                    )  # index array for lower altitude
+                    ialt = np.floor(idxalt).astype(int)  # index array for lower altitude
                     falt = idxalt - ialt  # factor for upper value
 
                     # Altitude interpolation combined with horizontal
@@ -321,10 +379,16 @@ class Windfield:
         else:
             return float(vnorth), float(veast)
 
-    def remove(self, idx):  # remove a point using the returned index when it was added
+    def remove(self, idx: int) -> None:  # remove a point using the returned index when it was added
+        """Remove a wind definition point by index.
+
+        Args:
+            idx: Index of the point, as returned by addpoint(). The field
+                dimension (winddim) is re-evaluated after removal.
+        """
         if idx < len(self.lat):
             self.lat = np.delete(self.lat, idx)
-            self.lon = np.delete(self.lat, idx)
+            self.lon = np.delete(self.lon, idx)
 
             self.vnorth = np.delete(self.vnorth, idx, axis=1)
             self.veast = np.delete(self.veast, idx, axis=1)
@@ -339,8 +403,18 @@ class Windfield:
 
 
 class Wind(TrafficArrays, Windfield):
-    def add(self, lat: "lat", lon: "lon", *winddata: "float"):
+    """Wind field with the stack-command interface of the simulation.
+
+    Combines the :class:`Windfield` data and interpolation with the
+    TrafficArrays machinery so the field is cleared on simulation reset.
+    Implements the WIND (add()) and GETWIND (get()) stack commands.
+    Available at runtime as ``minisky.traf.wind``.
+    """
+
+    def add(self, lat: Lat, lon: Lon, *winddata: float) -> "bool | tuple[bool, str]":
         """Define a wind vector as part of the 2D or 3D wind field.
+
+        Implements the WIND stack command.
 
         Arguments:
         - lat/lon: Horizonal position to define wind vector(s)
@@ -355,13 +429,18 @@ class Wind(TrafficArrays, Windfield):
             - speed (magnitude) [knots]
             In this case, repeating combinations of alt/dir/spd can be provided
             to specify wind at multiple altitudes.
+          - If winddata contains "DEL" or "DELETE" the whole wind field is
+            deleted (e.g. WIND lat,lon,DEL), like the DEL WIND command.
         """
         ndata = len(winddata)
 
+        # Delete the wind field: WIND lat,lon,DEL(ETE)
+        # Check this first: it would otherwise be shadowed by the numeric forms
+        if "DEL" in winddata or "DELETE" in winddata:
+            self.clear()
+
         # No altitude or just one: same wind for all altitudes at this position
-        if ndata == 2 or (
-            ndata == 3 and winddata[0] is None
-        ):  # only one point, ignore altitude
+        elif ndata == 2 or (ndata == 3 and winddata[0] is None):  # only one point, ignore altitude
             if winddata[-2] is None or winddata[-1] is None:
                 return False, "Wind direction and speed needed."
 
@@ -376,26 +455,30 @@ class Wind(TrafficArrays, Windfield):
 
             self.addpoint(lat, lon, dirarr, spdarr, altarr)
 
-        elif winddata.count("DEL") > 0:
-            self.clear()
-
         else:  # Something is wrong
             return False, "Winddata not recognized"
 
         return True
 
-    def get(self, lat: "lat", lon: "lon", alt: "alt" = None):
+    def get(self, lat: Lat, lon: Lon, alt: Alt | None = None) -> "tuple[bool, str]":
         """Get wind at a specified position (and optionally at altitude)
+
+        Implements the GETWIND stack command. The result is reported as
+        direction/speed text (e.g. "270/25", speed in kts).
 
         Arguments:
         - lat, lon: Horizontal position where wind should be determined [deg]
-        - alt: Altitude at which wind should be determined [ft]
+        - alt: Altitude at which wind should be determined [m]
+          (stack input in ft)
+
+        Returns:
+            tuple: (True, text with wind direction [deg] and speed [kts]).
         """
         vn, ve = self.getdata(lat, lon, alt)
 
         wdir = (np.degrees(np.arctan2(ve, vn)) + 180.0) % 360.0
         wspd = np.sqrt(vn * vn + ve * ve)
 
-        txt = "WIND AT %.5f, %.5f: %03d/%d" % (lat, lon, round(wdir), round(wspd / kts))
+        txt = f"WIND AT {lat:.5f}, {lon:.5f}: {int(round(wdir)):03d}/{int(round(wspd / kts))}"
 
         return True, txt

@@ -6,10 +6,13 @@ Provides hooks that are triggered at specific points in the simulation cycle:
 - reset: On simulation reset
 - hold: When simulation pauses
 """
-import inspect
+
 import functools
+import inspect
 from collections import OrderedDict
+from collections.abc import Callable, ValuesView
 from types import SimpleNamespace
+from typing import ClassVar
 
 import minisky
 
@@ -17,27 +20,35 @@ import minisky
 class _Hook(OrderedDict):
     """Ordered dictionary of callbacks that can be triggered."""
 
-    def trigger(self):
+    def trigger(self) -> None:
         """Call all registered callbacks."""
         for callback in self.values():
             callback()
 
 
 # Dictionaries of timed functions for different trigger points
-hooks = SimpleNamespace(
-    update=_Hook(),
-    preupdate=_Hook(),
-    hold=_Hook(),
-    reset=_Hook()
-)
+hooks = SimpleNamespace(update=_Hook(), preupdate=_Hook(), hold=_Hook(), reset=_Hook())
 
 
 class Timer:
-    """Timer class for simulation-time periodic functions."""
+    """Timer class for simulation-time periodic functions.
 
-    _timers = {}
+    A timer fires every ``dt`` simulation seconds, quantised to whole simulation
+    timesteps: the requested interval is converted to a step count relative to the
+    current ``sim.simdt``, so the actual interval is never smaller than one timestep.
 
-    def __init__(self, name, dt):
+    Attributes:
+        name: Unique name of the timer (also the registry key).
+        dt_default: Interval the timer was created with [s].
+        dt_requested: Currently requested interval [s].
+        dt_act: Actual interval after quantisation to whole timesteps [s].
+        rel_freq: Number of simulation steps between firings.
+        readynext: True when the timer fires on the current step.
+    """
+
+    _timers: ClassVar[dict[str, "Timer"]] = {}
+
+    def __init__(self, name: str, dt: float) -> None:
         self.name = name
         self.dt_default = dt
         self.dt_requested = dt
@@ -48,43 +59,45 @@ class Timer:
         Timer._timers[name] = self
         self._update_freq()
 
-    def _update_freq(self):
+    def _update_freq(self) -> None:
         """Update the relative frequency based on current simdt."""
-        simdt = getattr(minisky.sim, 'simdt', 1.0) if minisky.sim else 1.0
+        simdt = getattr(minisky.sim, "simdt", 1.0) if minisky.sim else 1.0
         self.rel_freq = max(1, int(self.dt_requested / simdt))
         self.dt_act = self.rel_freq * simdt
 
-    def reset(self):
+    def reset(self) -> None:
         """Reset timer to default state."""
         self.dt_requested = self.dt_default
         self.counter = 0
         self._update_freq()
         self.readynext = True
 
-    def step(self):
+    def step(self) -> None:
         """Step is called each base timestep to update this timer."""
         self.counter = (self.counter or self.rel_freq) - 1
         self.readynext = self.counter == 0
 
     @classmethod
-    def timers(cls):
+    def timers(cls) -> ValuesView["Timer"]:
         """Return all registered timers."""
         return cls._timers.values()
 
     @classmethod
-    def step_all(cls):
+    def step_all(cls) -> None:
         """Step all timers."""
         for timer in cls._timers.values():
             timer.step()
 
     @classmethod
-    def reset_all(cls):
+    def reset_all(cls) -> None:
         """Reset all timers."""
         for timer in cls._timers.values():
             timer.reset()
 
 
-def timed_function(func=None, name='', dt=0, hook='update'):
+def timed_function(
+    func: Callable | None = None, name: str = "", dt: float = 0, hook: str = "update"
+) -> Callable:
     """Decorator to turn a function into a periodically timed function.
 
     Args:
@@ -99,32 +112,35 @@ def timed_function(func=None, name='', dt=0, hook='update'):
             # Called every 5 simulation seconds
             pass
     """
-    def deco(func):
+
+    def deco(func: Callable) -> Callable:
         # Generate a name if none is provided
         if not name:
             if inspect.ismethod(func):
                 if inspect.isclass(func.__self__):
-                    tname = f'{func.__self__.__name__}.{func.__name__}'
+                    tname = f"{func.__self__.__name__}.{func.__name__}"
                 else:
-                    tname = f'{func.__self__.__class__.__name__}.{func.__name__}'
+                    tname = f"{func.__self__.__class__.__name__}.{func.__name__}"
             else:
-                tname = f'{func.__module__}.{func.__name__}'
+                tname = f"{func.__module__}.{func.__name__}"
         else:
             tname = name
 
-        if 'update' in hook or 'preupdate' in hook:
+        if "update" in hook or "preupdate" in hook:
             # Create a timer for update/preupdate hooks
             timer = Timer(tname, dt)
 
             # Check if function accepts dt argument
-            has_dt_param = 'dt' in inspect.signature(func).parameters
+            has_dt_param = "dt" in inspect.signature(func).parameters
 
             if has_dt_param:
+
                 @functools.wraps(func)
                 def callback(*args):
                     if timer.readynext:
                         func(*args, dt=float(timer.dt_act))
             else:
+
                 @functools.wraps(func)
                 def callback(*args):
                     if timer.readynext:
@@ -140,10 +156,10 @@ def timed_function(func=None, name='', dt=0, hook='update'):
         for hookname in hooknames:
             target = getattr(hooks, hookname, None)
             if target is None:
-                raise KeyError(f'No timing hook found with name {hookname}')
+                raise KeyError(f"No timing hook found with name {hookname}")
             if tname not in target:
                 # For reset/hold, store the original function, for update/preupdate store callback
-                target[tname] = func if hookname in ('reset', 'hold') else callback
+                target[tname] = func if hookname in ("reset", "hold") else callback
 
         return func
 
@@ -159,23 +175,23 @@ class PluginManager:
     """
 
     @staticmethod
-    def preupdate():
+    def preupdate() -> None:
         """Called before traffic update each simulation step."""
         Timer.step_all()
         hooks.preupdate.trigger()
 
     @staticmethod
-    def update():
+    def update() -> None:
         """Called after traffic update each simulation step."""
         hooks.update.trigger()
 
     @staticmethod
-    def reset():
+    def reset() -> None:
         """Called on simulation reset."""
         Timer.reset_all()
         hooks.reset.trigger()
 
     @staticmethod
-    def hold():
+    def hold() -> None:
         """Called when simulation pauses."""
         hooks.hold.trigger()
