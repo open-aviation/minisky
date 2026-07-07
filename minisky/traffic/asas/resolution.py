@@ -227,6 +227,9 @@ class ConflictResolution(TrafficArrays):
 
         # Look at all conflicts, also the ones that are solved but CPA is yet to come
         for conflict in self.resopairs:
+            past_cpa = False
+            hor_los = False
+            is_bouncing = False
             idx1, idx2 = minisky.traf.idx(conflict)
             # If the ownship aircraft is deleted remove its conflict from the list
             if idx1 < 0:

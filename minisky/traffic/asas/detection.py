@@ -131,7 +131,7 @@ class ConflictDetection(TrafficArrays):
         self.inconf = np.zeros(minisky.traf.ntraf)
         self.tcpamax = np.zeros(minisky.traf.ntraf)
 
-    def create(self, n: int) -> None:
+    def create(self, n: int = 1) -> None:
         """Initialise per-aircraft detection parameters for new aircraft.
 
         Called by the traffic object when aircraft are created. Extends all

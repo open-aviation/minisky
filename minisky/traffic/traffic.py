@@ -543,7 +543,7 @@ class Traffic(TrafficArrays):
         self.ap.selaltcmd(len(self.lat) - 1, altref, acvs)
         self.vs[-1] = acvs
 
-    def delete(self, idx: int | np.ndarray) -> bool:
+    def delete(self, idx: int | np.ndarray) -> bool:  # type: ignore[override]
         """Delete one or more aircraft from the traffic database.
 
         Removes the corresponding entries from all (child) traffic arrays
@@ -747,7 +747,7 @@ class Traffic(TrafficArrays):
     @overload
     def idx(self, callsign: str) -> int: ...
     @overload
-    def idx(self, callsign: Iterable[str]) -> list: ...
+    def idx(self, callsign: list[str] | tuple[str, ...] | set[str]) -> list: ...
     def idx(self, callsign: str | Iterable[str]) -> int | list:
         """Find the traffic-array index for one or more callsigns.
 

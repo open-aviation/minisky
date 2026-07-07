@@ -295,6 +295,9 @@ class Windfield:
         else:
             alt = np.zeros(npos)
 
+        vnorth = np.zeros(npos)
+        veast = np.zeros(npos)
+
         # Check if RGI functions are present, if so use them for interpolation
         if self.fe is not None and self.fn is not None:
             vnorth = self.fn(np.concatenate((alt.reshape(1, -1), lat, lon), axis=0).T)

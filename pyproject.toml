@@ -74,7 +74,7 @@ ignore = [
 include = ["minisky", "minisky-api.py", "minisky-console.py", "minisky-run.py", "scripts"]
 exclude = ["**/__pycache__", ".venv", "build", "site"]
 pythonVersion = "3.11"
-# "basic" surfaces real bugs without drowning a numpy/scipy-heavy fork in noise.
-typeCheckingMode = "basic"
+# "standard" catches useful bugs while staying practical for this numpy/scipy-heavy fork.
+typeCheckingMode = "standard"
 reportMissingTypeStubs = false
 reportWildcardImportFromLibrary = false

@@ -513,6 +513,7 @@ class Navdatabase:
                 # Sort
                 wps = [left, right]
                 segment = []
+                nextwp = ""
 
                 segready = False
                 while not segready:

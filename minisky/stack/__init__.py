@@ -123,7 +123,7 @@ class Command:
                 )
         # Store reference to command object for function
         if not inspect.ismethod(func):
-            func.__stack_cmd__ = cmdobj
+            func.__stack_cmd__ = cmdobj  # type: ignore[reportFunctionMemberAccess]
 
     def __init__(self, func, parent: "Command | None" = None, name: str = "", **kwargs) -> None:
         self.name = name

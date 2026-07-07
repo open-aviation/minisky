@@ -279,14 +279,14 @@ class Shape:
         # but need to be manually removed from the rtree
         Shape.areatree.delete(self.area_id, self.bbox)
 
-    def checkInside(self, lat: np.ndarray, lon: np.ndarray, alt: np.ndarray):
+    def checkInside(self, lat: np.ndarray, lon: np.ndarray, alt: np.ndarray) -> np.ndarray:
         """Returns True (or boolean array) if coordinate lat, lon, alt lies
         within this shape.
 
         Reimplement this function in the derived shape classes for this to
         work.
         """
-        return False
+        return np.zeros(len(lat), dtype=bool)
 
     def _str_vrange(self) -> str:
         if self.top < 9e8:
