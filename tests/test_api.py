@@ -1,18 +1,15 @@
-"""Smoke tests for the FastAPI endpoints (minisky-api.py).
+"""Smoke tests for the FastAPI endpoints.
 
-Importing minisky-api.py calls minisky.init() at module import time, which
+Importing minisky.server calls minisky.init() at module import time, which
 would clobber the singletons used by the rest of the suite. These tests are
 therefore marked 'api' and excluded from the default run; execute them in a
 separate process:
 
-    uv run pytest -m api tests/test_api.py
+    uv run minisky test api
 
 The /stack/{cmd} endpoint requires the async runner loop and is not tested
 here (flaky under TestClient).
 """
-
-import importlib.util
-from pathlib import Path
 
 import pytest
 
@@ -23,13 +20,9 @@ pytestmark = pytest.mark.api
 def client():
     fastapi_testclient = pytest.importorskip("fastapi.testclient")
 
-    # module filename contains a hyphen, so import it via importlib
-    api_path = Path(__file__).parent.parent / "minisky-api.py"
-    spec = importlib.util.spec_from_file_location("minisky_api", api_path)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    from minisky.server import app
 
-    with fastapi_testclient.TestClient(module.app) as test_client:
+    with fastapi_testclient.TestClient(app) as test_client:
         yield test_client
 
 

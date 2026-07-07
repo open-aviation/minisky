@@ -114,7 +114,7 @@ Load plugins in any of three ways:
     ```
 
     (Requires the host program to call [`minisky.load_plugins()`][minisky.load_plugins]
-    after `init()` — `minisky-run.py` and `minisky-api.py` both do.)
+    after `init()` — `minisky run` and `minisky server` both do.)
 
 - **From the stack** — `PLUGINS LIST` to see what's available, `PLUGINS LOAD EXAMPLE` to
   load one (`PLUGIN` works as a synonym).

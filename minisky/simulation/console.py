@@ -3,7 +3,7 @@
 Defines :class:`ConsoleIO`, the text output channel of the simulator. Stack
 commands and simulation state changes report back through its :meth:`echo`
 method, which prints to stdout and stores the message in a buffer that remote
-clients (such as the HTTP API in ``minisky-api.py``) can read asynchronously.
+clients (such as the HTTP API served by ``minisky server``) can read asynchronously.
 A single instance is created by :func:`minisky.init` and available as
 ``minisky.scr``.
 """

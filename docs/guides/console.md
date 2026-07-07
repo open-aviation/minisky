@@ -1,12 +1,12 @@
 # Control console
 
-`minisky-console.py` is an interactive command-line client for a running
+`minisky console` is an interactive command-line client for a running
 [REST API server](rest-api.md). It gives you a prompt with history and path completion,
 and forwards what you type to the server.
 
 ```bash
-uv run python minisky-console.py                       # connect to localhost:8000
-uv run python minisky-console.py --server http://host --port 9000
+uv run minisky console                       # connect to localhost:8000
+uv run minisky console --server http://host --port 9000
 ```
 
 ## Command syntax

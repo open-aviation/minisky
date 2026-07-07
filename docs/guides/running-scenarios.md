@@ -1,11 +1,11 @@
 # Running scenarios
 
-`minisky-run.py` runs a scenario file without any interaction — useful for batch
+`minisky run` runs a scenario file without any interaction — useful for batch
 experiments and reproducing simulations.
 
 ```bash
-uv run python minisky-run.py --scenario scenarios/kl204.scn
-uv run python minisky-run.py --scenario scenarios/kl204.scn --speed 10
+uv run minisky run --scenario scenarios/kl204.scn
+uv run minisky run --scenario scenarios/kl204.scn --speed 10
 ```
 
 | Option | Default | Meaning |
@@ -38,7 +38,7 @@ Useful commands inside scenarios:
 - `DT dt` — set the simulation timestep in seconds.
 - `DTMULT factor` — fast-time multiplier.
 - `HOLD` / `OP` — pause and resume.
-- `QUIT` — end the simulation (this is what terminates a `minisky-run.py` run).
+- `QUIT` — end the simulation (this is what terminates a `minisky run` run).
 
 !!! tip
     Scenario timestamps are *simulation* time. Combined with `--speed`, a 30-minute

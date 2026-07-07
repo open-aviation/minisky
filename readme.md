@@ -17,7 +17,7 @@ MiniSky is being optimized for:
 Run the simulator with a scenario file:
 
 ```bash
-python minisky-run.py --scenario scenarios/kl204.scn
+uv run minisky run --scenario scenarios/kl204.scn
 ```
 
 ### 2. Run simulator with REST API server
@@ -25,10 +25,8 @@ python minisky-run.py --scenario scenarios/kl204.scn
 Start the simulator with a REST API endpoint for interactions:
 
 ```bash
-fastapi dev minisky-api.py    # development server
-
-# or, after `pip install` / `uv sync`, the installed console script:
-minisky-server                # serves on 0.0.0.0:8000 (MINISKY_HOST / MINISKY_PORT)
+uv run minisky server                 # serves on 0.0.0.0:8000
+uv run minisky server --reload        # development server with auto-reload
 ```
 
 #### Interaction with API
@@ -80,7 +78,7 @@ the `/speed/10` REST endpoint.
 You can also use the control console to interact with the API server:
 
 ```bash
-python minisky-console.py
+uv run minisky console
 
 # bluesky stack commands, without prefix "/"
 > POS EHAM                     # show all aircraft in EHAM
@@ -124,14 +122,14 @@ is generated from the docstrings with mkdocstrings.
 
 ```bash
 uv sync --group docs
-uv run --group docs mkdocs serve     # live preview at http://localhost:8000
-uv run --group docs mkdocs build     # static site in site/
+uv run minisky docs serve     # live preview at http://localhost:8000
+uv run minisky docs build     # static site in site/
 ```
 
 Regenerate the stack command reference after adding or changing commands:
 
 ```bash
-uv run python scripts/gen_command_docs.py
+uv run minisky commands docs
 ```
 
 ## Tests
@@ -139,9 +137,9 @@ uv run python scripts/gen_command_docs.py
 Run the test suite with pytest:
 
 ```bash
-uv run pytest                        # unit + integration tests
-uv run pytest tests/unit             # fast pure-function tests only
-uv run pytest -m api tests/test_api.py   # REST API smoke tests (separate process)
+uv run minisky test all              # unit + integration tests
+uv run minisky test unit             # fast pure-function tests only
+uv run minisky test api              # REST API smoke tests (separate process)
 ```
 
 ## Tasks
@@ -163,7 +161,7 @@ uv run pytest -m api tests/test_api.py   # REST API smoke tests (separate proces
 - [x] remove signals and wall-time events
 - [x] refactor resource/cache data
 - [x] implement REST API
-- [x] add real-time streaming API (`/stream`, `/commands`) and installable `minisky-server`
+- [x] add real-time streaming API (`/stream`, `/commands`) and `minisky server`
 - [x] implement control console
 - [x] better time and simulation speed control
 - [x] refactor route functions

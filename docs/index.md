@@ -14,7 +14,7 @@ reach a bare-minimum simulator that is easy to read, embed, and extend.
 - **Command line** — run a scenario file to completion, no interaction needed.
 
     ```bash
-    python minisky-run.py --scenario scenarios/kl204.scn
+    uv run minisky run --scenario scenarios/kl204.scn
     ```
 
     → [Running scenarios](guides/running-scenarios.md)
@@ -22,7 +22,7 @@ reach a bare-minimum simulator that is easy to read, embed, and extend.
 - **REST API** — start a FastAPI server and drive the simulation over HTTP.
 
     ```bash
-    fastapi dev minisky-api.py
+    uv run minisky server
     httpx "http://localhost:8000/stack/MCRE 3"
     ```
 

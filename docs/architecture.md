@@ -54,7 +54,7 @@ There are two ways to drive the loop:
 - **The runner** — `await minisky.runner.run()` steps the simulation once per wall-clock
   interval. `runner.speed = 10` makes simulated time pass 10× faster than wall time, and
   `runner.forward(seconds)` fast-forwards by stepping at the maximum rate until the target
-  simulation time is reached. The REST API server and `minisky-run.py` both use the runner.
+  simulation time is reached. The REST API server and `minisky run` both use the runner.
 
 ## Per-aircraft arrays: `TrafficArrays`
 

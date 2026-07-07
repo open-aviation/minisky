@@ -20,14 +20,14 @@ uv sync
 Run one of the bundled scenarios to completion:
 
 ```bash
-uv run python minisky-run.py --scenario scenarios/kl204.scn
+uv run minisky run --scenario scenarios/kl204.scn
 ```
 
 The simulator reads the scenario file, executes its timed stack commands, and steps the
 simulation until the scenario ends. Use `--speed` to run faster than real time:
 
 ```bash
-uv run python minisky-run.py --scenario scenarios/2ac_converging.scn --speed 10
+uv run minisky run --scenario scenarios/2ac_converging.scn --speed 10
 ```
 
 ## Interactive use
@@ -35,7 +35,7 @@ uv run python minisky-run.py --scenario scenarios/2ac_converging.scn --speed 10
 Start the REST API server:
 
 ```bash
-uv run fastapi dev minisky-api.py
+uv run minisky server
 ```
 
 Then, in another terminal, talk to it — either directly over HTTP:
@@ -48,14 +48,14 @@ httpx "http://localhost:8000/all"            # list all aircraft states
 or through the interactive console:
 
 ```bash
-uv run python minisky-console.py
+uv run minisky console
 > MCRE 3
 > POS KL204
 > /all
 ```
 
-See the [REST API](guides/rest-api.md) and [console](guides/console.md) guides for the
-full set of endpoints and console commands.
+See the [command-line interface](guides/cli.md), [REST API](guides/rest-api.md), and
+[console](guides/console.md) guides for the full set of commands and endpoints.
 
 ## From Python
 
@@ -96,9 +96,9 @@ plugin_path: example_plugins
 ## Running the tests
 
 ```bash
-uv run pytest                             # unit + integration tests
-uv run pytest tests/unit                  # fast pure-function tests only
-uv run pytest -m api tests/test_api.py    # REST API smoke tests (separate process)
+uv run minisky test all                   # unit + integration tests
+uv run minisky test unit                  # fast pure-function tests only
+uv run minisky test api                   # REST API smoke tests (separate process)
 ```
 
 ## Building this documentation
@@ -109,13 +109,13 @@ docstrings in the source code.
 
 ```bash
 uv sync --group docs
-uv run --group docs mkdocs serve    # live preview at http://localhost:8000
-uv run --group docs mkdocs build    # static site in site/
+uv run minisky docs serve    # live preview at http://localhost:8000
+uv run minisky docs build    # static site in site/
 ```
 
 To refresh the [stack command reference](reference/commands.md) after adding or changing
 commands:
 
 ```bash
-uv run python scripts/gen_command_docs.py
+uv run minisky commands docs
 ```

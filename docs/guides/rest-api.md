@@ -1,6 +1,6 @@
 # REST API server
 
-`minisky-api.py` wraps the simulator in a [FastAPI](https://fastapi.tiangolo.com/)
+`minisky server` wraps the simulator in a [FastAPI](https://fastapi.tiangolo.com/)
 application. The simulation runs continuously in the server's event loop (via
 [`Runner.run()`][minisky.simulation.runner.Runner.run]) and the endpoints read from and
 command the live simulation.
@@ -8,8 +8,8 @@ command the live simulation.
 ## Starting the server
 
 ```bash
-uv run fastapi dev minisky-api.py          # development mode with auto-reload
-uv run fastapi run minisky-api.py          # production mode
+uv run minisky server                      # production-style local server
+uv run minisky server --reload             # development mode with auto-reload
 ```
 
 FastAPI serves interactive OpenAPI docs at `http://localhost:8000/docs`.

@@ -62,6 +62,7 @@ nav:
   - Getting started: getting-started.md
   - Architecture: architecture.md
   - Guides:
+      - Command-line interface: guides/cli.md
       - Running scenarios: guides/running-scenarios.md
       - REST API server: guides/rest-api.md
       - Control console: guides/console.md

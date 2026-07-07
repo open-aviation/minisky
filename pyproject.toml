@@ -5,7 +5,7 @@ description = "A minimal command line air traffic simulator with REST API (a Blu
 readme = "readme.md"
 requires-python = ">=3.11"
 dependencies = [
-    "click>=8.1.8",
+    "typer>=0.15.0",
     "colorama>=0.4.6",
     "fastapi[standard]>=0.115.7",
     "matplotlib>=3.10.0",
@@ -21,7 +21,7 @@ dependencies = [
 ]
 
 [project.scripts]
-minisky-server = "minisky.server:main"
+minisky = "minisky.cli:app"
 
 [build-system]
 requires = ["hatchling"]
@@ -71,7 +71,7 @@ ignore = [
 "minisky/plugin/*.py" = ["F401"]  # plugin API surface re-exports
 
 [tool.pyright]
-include = ["minisky", "minisky-api.py", "minisky-console.py", "minisky-run.py", "scripts"]
+include = ["minisky"]
 exclude = ["**/__pycache__", ".venv", "build", "site"]
 pythonVersion = "3.11"
 # "standard" catches useful bugs while staying practical for this numpy/scipy-heavy fork.

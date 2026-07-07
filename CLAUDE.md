@@ -16,10 +16,10 @@ uv run pytest -m api tests/test_api.py     # REST API tests — spawn a separate
 
 uv run ruff check .                        # lint
 uv run ruff format .                       # format (line-length 100)
-uv run pyright                             # type check (basic mode)
+uv run pyright                             # type check (standard mode)
 
-uv run python scripts/gen_command_docs.py  # regenerate docs/reference/commands.md after changing commands
-uv run --group docs mkdocs serve           # docs live preview
+uv run minisky commands docs               # regenerate docs/reference/commands.md after changing commands
+uv run minisky docs serve                  # docs live preview
 ```
 
 The `api` marker is excluded via `addopts = -m 'not api'`; API tests start a real FastAPI process and must be run explicitly.
@@ -27,16 +27,13 @@ The `api` marker is excluded via `addopts = -m 'not api'`; API tests start a rea
 ### Running the simulator
 
 ```bash
-python minisky-run.py --scenario scenarios/kl204.scn [--speed 10]  # headless scenario run
-fastapi dev minisky-api.py                                          # REST API server (dev)
-minisky-server                                                      # installed API server (console script)
-python minisky-console.py                                           # interactive console against the API
+minisky run --scenario scenarios/kl204.scn [--speed 10]  # headless scenario run
+minisky server [--reload]                                  # REST API server
+minisky console                                            # interactive console against the API
 ```
 
-The FastAPI app lives in `minisky/server.py`; `minisky-api.py` re-exports it so
-`fastapi dev minisky-api.py` still works, and the `minisky-server` console script
-(`minisky.server:main`) is the installed entry point (`MINISKY_HOST`/`MINISKY_PORT`
-env vars, default `0.0.0.0:8000`).
+The FastAPI app lives in `minisky/server.py`; `minisky server` is the CLI entry point
+(`MINISKY_HOST`/`MINISKY_PORT` env vars, default `0.0.0.0:8000`).
 
 ## Architecture
 

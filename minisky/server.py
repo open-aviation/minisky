@@ -7,17 +7,13 @@ control, plugin management, a passthrough for any stack command, a per-tick
 push stream (``GET /stream``, WebSocket), and the command dictionary
 (``GET /commands``).
 
-This module holds the application object (``app``) and a :func:`main` entry
-point so the server can be launched as the ``minisky-server`` console script
-after ``pip install minisky``. For local development the app is also re-exported
-from the repository-root ``minisky-api.py`` so ``fastapi dev minisky-api.py``
-keeps working.
+This module holds the FastAPI application object (``app``). The supported CLI entry
+point is ``minisky server``.
 
 Run with::
 
-    minisky-server                 # installed console script (uvicorn)
-    fastapi dev minisky-api.py     # development, auto-reload
-    fastapi run minisky-api.py     # production
+    minisky server                 # CLI server command (uvicorn)
+    minisky server --reload        # development, auto-reload
 
 Interactive OpenAPI docs are served at ``/docs``.
 """
@@ -249,7 +245,7 @@ def main() -> None:
 
     Host and port are read from the ``MINISKY_HOST`` (default ``0.0.0.0``) and
     ``MINISKY_PORT`` (default ``8000``) environment variables. This is the
-    target of the ``minisky-server`` entry point in ``pyproject.toml``.
+    retained for direct module execution.
     """
     import uvicorn
 
