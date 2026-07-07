@@ -2,7 +2,7 @@
 
 MiniSky is a hackable air traffic control simulator, a fork of [BlueSky](https://github.com/TUDelft-CNS-ATM/bluesky).
 
-It is designed to be a minimal tool for coders. There will be no integrated graphical interface, no complex network architecture, and no support for plugins. Uncommon commands and features will be slowly removed to reach a bare minimum simulator.
+It is designed to be a minimal tool for coders. There will be no integrated graphical interface, no complex network architecture. Uncommon commands and features will be slowly removed to reach a bare minimum simulator.
 
 MiniSky is being optimized for:
 
