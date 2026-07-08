@@ -141,33 +141,3 @@ uv run minisky test all              # unit + integration tests
 uv run minisky test unit             # fast pure-function tests only
 uv run minisky test api              # REST API smoke tests (separate process)
 ```
-
-## Tasks
-
-- [x] remove discoverable mode
-- [x] remove server and client mode
-- [x] remove legacy performance model
-- [x] remove BADA performance model
-- [x] remove pygame
-- [x] remove GUI
-- [x] remove plugin
-- [x] remove multiple nodes
-- [x] remove calculator
-- [x] remove data logger 
-- [x] remove plotter
-- [x] removed metaclass and replaceable classes
-- [x] remove datalog
-- [x] remove cachefile, load data from parquet instead
-- [x] remove signals and wall-time events
-- [x] refactor resource/cache data
-- [x] implement REST API
-- [x] add real-time streaming API (`/stream`, `/commands`) and `minisky server`
-- [x] implement control console
-- [x] better time and simulation speed control
-- [x] refactor route functions
-- [x] refactor acid to callsign
-- [x] check all echo, ensure print and scr.echo are consistent
-- [x] add new tests
-- [x] add docstrings and documentation website (mkdocs)
-- [x] remove stale `docs/commands.csv` and `docs/tutorial.pdf` (superseded by the generated command reference)
-- [x] fix latent bugs found during the documentation pass
