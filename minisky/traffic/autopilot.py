@@ -15,7 +15,7 @@ commands (ALT, VS, HDG, SPD, DEST, ORIG, LNAV, VNAV, SWTOC, SWTOD).
 """
 
 from collections.abc import Collection
-from math import atan, sqrt
+from math import sqrt
 from typing import Any
 
 import numpy as np
@@ -25,7 +25,6 @@ from minisky.core.trafficarrays import TrafficArrays
 from minisky.stack.argparser import Acid, Alt, Hdg, OnOff, Spd, Vspd, Wpt
 from minisky.tools import geo
 from minisky.tools.aero import (
-    cas2tas,
     fpm,
     ft,
     g0,
@@ -226,189 +225,180 @@ class Autopilot(TrafficArrays):
             minisky.traf.actwp.swlastwp,
         )
 
-        # For the aircraft that have reached their active waypoint, update vectorized leg data for guidance
+        actwp = minisky.traf.actwp
+
+        # Save current waypoint speed for use on next leg when we pass this waypoint
+        # VNAV speeds are always FROM-speeds, so we accelerate/decelerate at the waypoint
+        # where this speed is specified, so we need to save it for use now
+        # before getting the new data for the next waypoint
+
+        # Get speed for next leg from the waypoint we pass now and set as active speed
+        actwp.spd[self.idxreached] = actwp.nextspd[self.idxreached]
+        actwp.spdcon[self.idxreached] = actwp.nextspd[self.idxreached]
+
+        # Event-driven part, per aircraft: stack commands attached to the passed
+        # waypoint and route iteration. These mutate the Route objects and queue
+        # stack commands, so they cannot be vectorized. Gather the returned
+        # scalar waypoint data in rows for the vectorized leg update below.
+        idxlast = []  # reached aircraft already at their last waypoint
+        idxnext = []  # reached aircraft with a next waypoint to activate
+        wpdata = []  # per aircraft in idxnext: getnextwp() + getnextturnwp() data
         for i in self.idxreached:
-            # Save current waypoint speed for use on next leg when we pass this waypoint
-            # VNAV speeds are always FROM-speeds, so we accelerate/decelerate at the waypoint
-            # where this speed is specified, so we need to save it for use now
-            # before getting the new data for the next waypoint
-
-            # Get speed for next leg from the waypoint we pass now and set as active speed
-            minisky.traf.actwp.spd[i] = minisky.traf.actwp.nextspd[i]
-            minisky.traf.actwp.spdcon[i] = minisky.traf.actwp.nextspd[i]
-
             # Execute stack commands for the still active waypoint, which we pass now
             self.route[i].runactwpstack()
 
-            # Get next waypoint, if there still is one
-            if not minisky.traf.actwp.swlastwp[i]:
-                (
-                    lat,
-                    lon,
-                    alt,
-                    minisky.traf.actwp.nextspd[i],
-                    minisky.traf.actwp.xtoalt[i],
-                    toalt,
-                    minisky.traf.actwp.xtorta[i],
-                    minisky.traf.actwp.torta[i],
-                    lnavon,
-                    flyby,
-                    flyturn,
-                    turnrad,
-                    turnspd,
-                    turnhdgr,
-                    minisky.traf.actwp.next_qdr[i],
-                    minisky.traf.actwp.swlastwp[i],
-                ) = self.route[i].getnextwp()
-                # [m] note: xtoalt,nextaltco are in meters
-
-                (
-                    minisky.traf.actwp.nextturnlat[i],
-                    minisky.traf.actwp.nextturnlon[i],
-                    minisky.traf.actwp.nextturnspd[i],
-                    minisky.traf.actwp.nextturnrad[i],
-                    minisky.traf.actwp.nextturnhdgr[i],
-                    minisky.traf.actwp.nextturnidx[i],
-                ) = self.route[i].getnextturnwp()
-
-            else:
+            if actwp.swlastwp[i]:
                 # Prevent trying to activate the next waypoint when it was already the last waypoint
-                # In case of end of route/no more waypoints: switch off LNAV using the lnavon
-                minisky.traf.swlnav[i] = False
-                minisky.traf.swvnav[i] = False
-                minisky.traf.swvnavspd[i] = False
-                continue  # Go to next aircraft which reached its active waypoint
+                idxlast.append(i)
+            else:
+                # Get next waypoint. [m] note: xtoalt,nextaltco are in meters
+                wpdata.append(
+                    tuple(self.route[i].getnextwp()) + tuple(self.route[i].getnextturnwp())
+                )
+                idxnext.append(i)
+
+        # In case of end of route/no more waypoints: switch off LNAV/VNAV
+        if idxlast:
+            last = np.array(idxlast)
+            minisky.traf.swlnav[last] = False
+            minisky.traf.swvnav[last] = False
+            minisky.traf.swvnavspd[last] = False
+
+        # Vectorized leg data update for guidance, over the aircraft that
+        # switched to a new waypoint
+        if idxnext:
+            nxt = np.array(idxnext)
+            (
+                lat,
+                lon,
+                alt,
+                nextspd,
+                xtoalt,
+                toalt,
+                xtorta,
+                torta,
+                lnavon,
+                flyby,
+                flyturn,
+                turnrad,
+                turnspd,
+                turnhdgr,
+                next_qdr,
+                swlastwp,
+                nextturnlat,
+                nextturnlon,
+                nextturnspd,
+                nextturnrad,
+                nextturnhdgr,
+                nextturnidx,
+            ) = (np.array(col) for col in zip(*wpdata, strict=True))
+            lnavon = lnavon.astype(bool)
+            flyturn = flyturn.astype(bool)
+
+            actwp.nextspd[nxt] = nextspd
+            actwp.xtorta[nxt] = xtorta
+            actwp.torta[nxt] = torta
+            actwp.next_qdr[nxt] = next_qdr
+            actwp.swlastwp[nxt] = swlastwp.astype(bool)
+            actwp.nextturnlat[nxt] = nextturnlat
+            actwp.nextturnlon[nxt] = nextturnlon
+            actwp.nextturnspd[nxt] = nextturnspd
+            actwp.nextturnrad[nxt] = nextturnrad
+            actwp.nextturnhdgr[nxt] = nextturnhdgr
+            actwp.nextturnidx[nxt] = nextturnidx
+
+            tas = minisky.traf.tas[nxt]
 
             # Special turns: specified by turn radius or bank angle
-            # If specified, use the given turn radius of passing waypoint for bank angle
-            if flyturn:
-                if turnspd <= 0.0:
-                    turnspd = minisky.traf.tas[i]
+            # If no turn speed specified, use current speed
+            turnspd = np.where(flyturn & (turnspd <= 0.0), tas, turnspd)
+            # Heading rate overrides turn radius
+            turnrad = np.where(
+                flyturn & (turnhdgr > 0.0), tas * 360.0 / (2.0 * np.pi * turnhdgr), turnrad
+            )
 
-                # Heading rate overrides turn radius
-                if turnhdgr > 0:
-                    turnrad = minisky.traf.tas[i] * 360.0 / (2 * np.pi * turnhdgr)
-
-                # Use last turn radius for bank angle in current turn
-                if minisky.traf.actwp.turnrad[i] > 0.0:
-                    self.turnphi[i] = atan(
-                        minisky.traf.actwp.turnspd[i]
-                        * minisky.traf.actwp.turnspd[i]
-                        / (minisky.traf.actwp.turnrad[i] * g0)
-                    )  # [rad]
-                else:
-                    self.turnphi[i] = 0.0  # [rad] or leave untouched???
-
-            else:
-                self.turnphi[i] = 0.0  # [rad] or leave untouched???
+            # Use last turn radius for bank angle in current turn
+            # (old values, from the waypoint we pass now; fancy indexing copies)
+            oldturnrad = actwp.turnrad[nxt]
+            oldturnspd = actwp.turnspd[nxt]
+            useoldturn = flyturn & (oldturnrad > 0.0)
+            self.turnphi[nxt] = np.where(
+                useoldturn,
+                np.arctan(oldturnspd * oldturnspd / (np.where(useoldturn, oldturnrad, 1.0) * g0)),
+                0.0,
+            )  # [rad]
 
             # Check LNAV switch returned by getnextwp
             # Switch off LNAV if it failed to get next waypoint data
-            if not lnavon and minisky.traf.swlnav[i]:
-                minisky.traf.swlnav[i] = False
-                # Last waypoint: copy last waypoint values for altitude and speed in autopilot
-                if minisky.traf.swvnavspd[i] and minisky.traf.actwp.nextspd[i] >= 0.0:
-                    minisky.traf.selspd[i] = minisky.traf.actwp.nextspd[i]
+            lnavoff = ~lnavon & minisky.traf.swlnav[nxt]
+            # Last waypoint: copy last waypoint values for altitude and speed in autopilot
+            uselastspd = lnavoff & minisky.traf.swvnavspd[nxt] & (nextspd >= 0.0)
+            minisky.traf.selspd[nxt] = np.where(uselastspd, nextspd, minisky.traf.selspd[nxt])
+            minisky.traf.swlnav[nxt] = minisky.traf.swlnav[nxt] & lnavon
 
             # In case of no LNAV, do not allow VNAV mode to be active
-            minisky.traf.swvnav[i] = minisky.traf.swvnav[i] and minisky.traf.swlnav[i]
+            minisky.traf.swvnav[nxt] = minisky.traf.swvnav[nxt] & minisky.traf.swlnav[nxt]
 
-            minisky.traf.actwp.lat[i] = lat  # [deg]
-            minisky.traf.actwp.lon[i] = lon  # [deg]
+            actwp.lat[nxt] = lat  # [deg]
+            actwp.lon[nxt] = lon  # [deg]
             # 1.0 in case of fly by, else fly over
-            minisky.traf.actwp.flyby[i] = int(flyby)
+            actwp.flyby[nxt] = flyby
 
             # Update qdr and turn distance for this new waypoint for ComputeVNAV
-            qdr[i], distnmi = geo.qdrdist(
-                minisky.traf.lat[i],
-                minisky.traf.lon[i],
-                minisky.traf.actwp.lat[i],
-                minisky.traf.actwp.lon[i],
-            )
+            qdrnxt, distnmi = geo.qdrdist(minisky.traf.lat[nxt], minisky.traf.lon[nxt], lat, lon)
+            qdr[nxt] = qdrnxt
+            self.dist2wp[nxt] = distnmi * nm
 
-            # dist[i] = distnmi * nm
-            self.dist2wp[i] = distnmi * nm
+            actwp.curlegdir[nxt] = qdrnxt
+            actwp.curleglen[nxt] = self.dist2wp[nxt]
 
-            minisky.traf.actwp.curlegdir[i] = qdr[i]
-            minisky.traf.actwp.curleglen[i] = self.dist2wp[i]
-
-            # User has entered an altitude for the new waypoint
-            if alt >= -0.01:  # positive altitude on this waypoint means altitude constraint
-                minisky.traf.actwp.nextaltco[i] = alt  # [m]
-                minisky.traf.actwp.xtoalt[i] = 0.0
-            else:
-                minisky.traf.actwp.nextaltco[i] = toalt  # [m]
-
-            # if not minisky.traf.swlnav[i]:
-            #    minisky.traf.actwp.spd[i] = -997.
+            # User has entered an altitude for the new waypoint:
+            # positive altitude on this waypoint means altitude constraint
+            altco = alt >= -0.01
+            actwp.nextaltco[nxt] = np.where(altco, alt, toalt)  # [m]
+            actwp.xtoalt[nxt] = np.where(altco, 0.0, xtoalt)  # [m]
 
             # VNAV speed mode: use speed of this waypoint as commanded speed
             # while passing waypoint and save next speed for passing next waypoint
             # Speed is now from speed! Next speed is ready in waypoint data
-            if minisky.traf.swvnavspd[i] and minisky.traf.actwp.spd[i] >= 0.0:
-                minisky.traf.selspd[i] = minisky.traf.actwp.spd[i]
+            usewpspd = minisky.traf.swvnavspd[nxt] & (actwp.spd[nxt] >= 0.0)
+            minisky.traf.selspd[nxt] = np.where(usewpspd, actwp.spd[nxt], minisky.traf.selspd[nxt])
 
             # Update turn distance so ComputeVNAV works, is there a next leg direction or not?
-            if minisky.traf.actwp.next_qdr[i] < -900.0:
-                local_next_qdr = qdr[i]
-            else:
-                local_next_qdr = minisky.traf.actwp.next_qdr[i]
+            local_next_qdr = np.where(next_qdr < -900.0, qdrnxt, next_qdr)
 
-            # Calculate turn distance (and radius which we do not use now, but later) now for scalar variable [i]
-            minisky.traf.actwp.turndist[i], dummy = minisky.traf.actwp.calcturn(
-                minisky.traf.tas[i],
-                self.bankdef[i],
-                qdr[i],
-                local_next_qdr,
-                turnrad,
-                turnhdgr,
-                flyturn,
+            # Calculate turn distance (and radius which we do not use now, but later)
+            actwp.turndist[nxt], _ = actwp.calcturn(
+                tas, self.bankdef[nxt], qdrnxt, local_next_qdr, turnrad, turnhdgr, flyturn
             )  # update turn distance for VNAV
 
             # Get flyturn switches and data
             # old turn speed, turning by this waypoint
-            minisky.traf.actwp.oldturnspd[i] = minisky.traf.actwp.turnspd[i]
-            minisky.traf.actwp.flyturn[i] = flyturn
-            minisky.traf.actwp.turnrad[i] = turnrad
-            minisky.traf.actwp.turnspd[i] = turnspd
-            minisky.traf.actwp.turnhdgr[i] = turnhdgr
+            actwp.oldturnspd[nxt] = oldturnspd
+            actwp.flyturn[nxt] = flyturn
+            actwp.turnrad[nxt] = turnrad
+            actwp.turnhdgr[nxt] = turnhdgr
+            # Keep both turning speeds: turn to leg and turn from leg
+            actwp.turnspd[nxt] = np.where(flyturn, turnspd, -990.0)
 
             # Pass on whether currently flyturn mode:
             # at beginning of leg, copy to next waypoint to last waypoint
             # set next turn False
-            minisky.traf.actwp.turnfromlastwp[i] = minisky.traf.actwp.turntonextwp[i]
-            minisky.traf.actwp.turntonextwp[i] = False
-
-            # Keep both turning speeds: turn to leg and turn from leg
-            if minisky.traf.actwp.flyturn[i]:
-                minisky.traf.actwp.turnspd[i] = turnspd  # new turn speed, turning by next waypoint
-            else:
-                minisky.traf.actwp.turnspd[i] = -990.0
+            actwp.turnfromlastwp[nxt] = actwp.turntonextwp[nxt]
+            actwp.turntonextwp[nxt] = False
 
             # Reduce turn distance for reduced turn speed
-            if (
-                minisky.traf.actwp.flyturn[i]
-                and minisky.traf.actwp.turnrad[i] < 0.0
-                and minisky.traf.actwp.turnspd[i] >= 0.0
-            ):
-                turntas = cas2tas(float(minisky.traf.actwp.turnspd[i]), float(minisky.traf.alt[i]))
-                minisky.traf.actwp.turndist[i] = (
-                    minisky.traf.actwp.turndist[i]
-                    * turntas
-                    * turntas
-                    / (minisky.traf.tas[i] * minisky.traf.tas[i])
-                )
-
-            # VNAV = FMS ALT/SPD mode including RTA
-            self.ComputeVNAV(
-                i,
-                toalt,
-                minisky.traf.actwp.xtoalt[i],
-                minisky.traf.actwp.torta[i],
-                minisky.traf.actwp.xtorta[i],
+            redturn = flyturn & (turnrad < 0.0) & (actwp.turnspd[nxt] >= 0.0)
+            turntas = vcas2tas(np.where(redturn, actwp.turnspd[nxt], 0.0), minisky.traf.alt[nxt])
+            actwp.turndist[nxt] = actwp.turndist[nxt] * np.where(
+                redturn, turntas * turntas / (tas * tas), 1.0
             )
 
-        # End of reached-loop: the per waypoint switching loop
+            # VNAV = FMS ALT/SPD mode including RTA: still scalar, per aircraft
+            for k, i in enumerate(idxnext):
+                self.ComputeVNAV(i, toalt[k], actwp.xtoalt[i], actwp.torta[i], actwp.xtorta[i])
+
+        # End of the waypoint switching update
 
         # Update qdr2wp with up-to-date qdr, now that we have checked passing waypoint
         self.qdr2wp = qdr % 360.0
