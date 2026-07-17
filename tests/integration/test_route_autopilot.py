@@ -233,3 +233,74 @@ class TestGuidanceGeometry:
 
         start = dist_nm()
         step_until(lambda: dist_nm() < start / 2, max_steps=600)
+
+
+class TestWaypointSwitching:
+    """End-to-end LNAV waypoint switching through wppassingcheck().
+
+    The scenario files perform no waypoint switches (kl204.scn disengages
+    LNAV with a HDG command), so these tests are the only coverage of the
+    switching path: getnextwp()/getnextturnwp() and the vectorized leg
+    update in the autopilot.
+    """
+
+    # Zig-zag legs of ~2 nm force a real heading change at every waypoint
+    WPTS = [(52.00, 4.05), (52.03, 4.10), (52.00, 4.15), (52.03, 4.20)]
+
+    @pytest.fixture
+    def route(self, bs, run_cmd, aircraft):
+        for lat, lon in self.WPTS:
+            run_cmd(f"ADDWPT {aircraft} {lat},{lon}")
+        run_cmd(f"LNAV {aircraft} ON")
+        run_cmd(f"VNAV {aircraft} ON")
+        return bs.traf.ap.route[0]
+
+    def test_switches_through_route_and_disengages_at_end(self, bs, step_until, route):
+        assert route.iactwp == 0
+        for target in range(1, len(self.WPTS)):
+            step_until(lambda target=target: route.iactwp == target, max_steps=200)
+            assert bs.traf.actwp.lat[0] == pytest.approx(self.WPTS[target][0])
+            assert bs.traf.actwp.lon[0] == pytest.approx(self.WPTS[target][1])
+        # Passing the final waypoint switches LNAV and VNAV off
+        step_until(lambda: not bs.traf.swlnav[0], max_steps=200)
+        assert not bs.traf.swvnav[0]
+
+    def test_next_qdr_matches_next_leg_bearing(self, bs, step_until, route):
+        step_until(lambda: route.iactwp == 1, max_steps=200)
+        expected, _ = geo.qdrdist(*self.WPTS[1], *self.WPTS[2])
+        assert bs.traf.actwp.next_qdr[0] == pytest.approx(expected)
+
+    def test_next_qdr_sentinel_on_last_waypoint(self, bs, step_until, route):
+        step_until(lambda: route.iactwp == len(self.WPTS) - 1, max_steps=600)
+        assert bs.traf.actwp.next_qdr[0] == -999.0
+
+    def test_nextturn_data_tracks_upcoming_flyturn(self, bs, run_cmd, step_until, aircraft):
+        # Waypoint 2 is a fly-turn waypoint with a turn speed; 0, 1 and 3 are fly-by
+        run_cmd(f"ADDWPT {aircraft} {self.WPTS[0][0]},{self.WPTS[0][1]}")
+        run_cmd(f"ADDWPT {aircraft} {self.WPTS[1][0]},{self.WPTS[1][1]}")
+        run_cmd(f"ADDWPT {aircraft} TURNSPD 250")
+        run_cmd(f"ADDWPT {aircraft} {self.WPTS[2][0]},{self.WPTS[2][1]}")
+        run_cmd(f"ADDWPT {aircraft} FLYBY")
+        run_cmd(f"ADDWPT {aircraft} {self.WPTS[3][0]},{self.WPTS[3][1]}")
+        run_cmd(f"LNAV {aircraft} ON")
+        route = bs.traf.ap.route[0]
+        assert route.wpflyturn == [False, False, True, False]
+
+        # After passing waypoint 0, the next fly-turn waypoint is index 2
+        step_until(lambda: route.iactwp == 1, max_steps=200)
+        assert bs.traf.actwp.nextturnidx[0] == 2
+        assert bs.traf.actwp.nextturnlat[0] == pytest.approx(self.WPTS[2][0])
+        assert bs.traf.actwp.nextturnlon[0] == pytest.approx(self.WPTS[2][1])
+        assert bs.traf.actwp.nextturnspd[0] == pytest.approx(250 * KTS, rel=1e-3)
+
+        # The active waypoint itself counts: still index 2 while flying to it
+        step_until(lambda: route.iactwp == 2, max_steps=200)
+        assert bs.traf.actwp.nextturnidx[0] == 2
+
+        # Once past the fly-turn waypoint there is no upcoming turn: defaults
+        step_until(lambda: route.iactwp == 3, max_steps=600)
+        assert bs.traf.actwp.nextturnidx[0] == -999
+
+    def test_no_flyturn_waypoints_gives_defaults(self, bs, step_until, route):
+        step_until(lambda: route.iactwp == 1, max_steps=200)
+        assert bs.traf.actwp.nextturnidx[0] == -999
