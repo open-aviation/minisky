@@ -8,20 +8,44 @@ cylindrical protected zone (radius ``rpz``, half-height ``hpz``) within the
 lookahead time ``dtlookahead``. A loss of separation (LoS) is flagged when the
 protected zone is already penetrated at the current time.
 
-All geometry is computed with vectorised numpy matrix operations over all
-aircraft pairs simultaneously. Internally SI units are used (m, m/s, s);
-user-facing (stack command) arguments are in aviation units (NM, ft).
+Rather than evaluating all N^2 aircraft pairs, detection first selects
+candidate pairs with a KD-tree on flat-earth-projected positions (only pairs
+close enough to possibly conflict within the lookahead time) and drops
+candidates that are vertically out of reach; the CPA geometry is then
+computed for the remaining pairs as flat vectorised numpy arrays. Internally
+SI units are used (m, m/s, s); user-facing (stack command) arguments are in
+aviation units (NM, ft).
 """
 
 from typing import Any
 
 import numpy as np
+from scipy.spatial import KDTree
 
 import minisky
 from minisky.core.trafficarrays import TrafficArrays
 from minisky.stack.argparser import Time, Txt
-from minisky.tools import geo
 from minisky.tools.aero import ft, nm
+
+# Mean earth radius [m], same value as the geo module's flat-earth helpers
+RE = 6371000.0
+
+
+def _noconflicts(ntraf: int) -> tuple:
+    """Detection result for a timestep without any conflicts or LoS."""
+    empty = np.array([])
+    return (
+        [],
+        [],
+        np.zeros(ntraf, dtype=bool),
+        np.zeros(ntraf),
+        empty,
+        empty,
+        empty,
+        empty,
+        empty,
+        empty,
+    )
 
 
 class ConflictDetection(TrafficArrays):
@@ -371,11 +395,15 @@ class ConflictDetection(TrafficArrays):
     ) -> tuple:
         """Conflict detection between ownship (traf) and intruder (traf/adsb).
 
-        State-based detection over all aircraft pairs at once. For every pair,
-        the time to the horizontal closest point of approach (tCPA) and the
-        distance at CPA are computed from the relative position and relative
-        ground velocity, assuming straight-line (constant velocity)
-        extrapolation. Horizontal conflict entry/exit times follow from the
+        State-based detection with spatial candidate pruning: a KD-tree on
+        flat-earth-projected positions selects the pairs within horizontal
+        reach (``max(rpz) + 2 * max(gs) * max(dtlookahead)``), pairs that are
+        vertically out of reach within the lookahead are dropped, and the CPA
+        geometry is evaluated only for the remaining candidates. For every
+        candidate pair, the time to the horizontal closest point of approach
+        (tCPA) and the distance at CPA are computed from the relative
+        position and relative ground velocity, assuming straight-line
+        (constant velocity) extrapolation. Horizontal conflict entry/exit times follow from the
         chord the relative track cuts through the protected zone circle;
         vertical entry/exit times follow from the relative vertical speed
         crossing the +/-hpz altitude band. A conflict requires the combined
@@ -404,59 +432,84 @@ class ConflictDetection(TrafficArrays):
                 - tinconf (ndarray): Time to start of LoS per conflict [s].
                 - dalt (ndarray): Current altitude difference per conflict [m].
         """
-        # Identity matrix of order ntraf: avoid ownship-ownship detected conflicts
-        eye = np.eye(ownship.ntraf)
+        ntraf = ownship.ntraf
+        if ntraf < 2:
+            return _noconflicts(ntraf)
+
+        # Candidate selection ------------------------------------------------------
+
+        # Flat-earth projection for the spatial index (same mean earth radius
+        # as geo.kwikqdrdist_matrix). A single reference cos(lat) keeps the
+        # projection consistent; the query radius is inflated by the
+        # worst-case cos(lat) ratio over the traffic extent, so the candidate
+        # set is a superset of all pairs that can possibly conflict. Assumes
+        # traffic does not straddle the antimeridian or sit at the poles.
+        lat = ownship.lat
+        lon = ownship.lon
+        coslat = np.cos(np.radians(lat))
+        x = RE * np.radians(lon) * np.mean(coslat)
+        y = RE * np.radians(lat)
+
+        # Farthest horizontal distance at which a conflict (or LoS) within
+        # the lookahead is geometrically possible
+        rmax = np.max(rpz) + 2.0 * np.max(ownship.gs) * np.max(dtlookahead)
+        rquery = rmax * (np.max(coslat) / max(np.min(coslat), 1e-9))
+
+        tree = KDTree(np.column_stack((x, y)))
+        pairs = tree.query_pairs(rquery, output_type="ndarray")
+        if len(pairs) == 0:
+            return _noconflicts(ntraf)
+        ii, jj = pairs[:, 0], pairs[:, 1]  # candidate pairs, ii < jj
+
+        # Vertical pre-filter: a pair separated by more than
+        # hpz + |dvs| * dtlookahead can neither conflict nor lose separation
+        # within the lookahead
+        dalt = intruder.alt[jj] - ownship.alt[ii]
+        dvs = np.abs(intruder.vs[jj] - ownship.vs[ii])
+        hpz = np.maximum(hpz[ii], hpz[jj])
+        dtl = np.maximum(dtlookahead[ii], dtlookahead[jj])
+        keep = np.abs(dalt) <= hpz + np.maximum(dvs, 1e-6) * dtl
+        if not np.all(keep):
+            ii, jj = ii[keep], jj[keep]
+            dalt, hpz = dalt[keep], hpz[keep]
+            if len(ii) == 0:
+                return _noconflicts(ntraf)
 
         # Horizontal conflict ------------------------------------------------------
 
-        # qdrlst is for [i,j] qdr from i to j, from perception of ADSB and own coordinates
-        qdr, dist = geo.kwikqdrdist_matrix(
-            np.atleast_2d(ownship.lat),
-            np.atleast_2d(ownship.lon),
-            np.atleast_2d(intruder.lat),
-            np.atleast_2d(intruder.lon),
-        )
+        # Flat-earth offsets per candidate pair; d* is the state of j
+        # relative to i (same formulation as geo.kwikqdrdist_matrix)
+        dlatrad = np.radians(intruder.lat[jj] - ownship.lat[ii])
+        dlonrad = np.radians(((intruder.lon[jj] - ownship.lon[ii]) + 180.0) % 360.0 - 180.0)
+        cavelat = np.cos(np.radians(intruder.lat[jj] + ownship.lat[ii]) * 0.5)
+        dx = RE * dlonrad * cavelat
+        dy = RE * dlatrad
+        dist = np.sqrt(dx * dx + dy * dy)
 
-        # Convert back to array to allow element-wise array multiplications later on
-        # Convert to meters and add large value to own/own pairs
-        qdr = np.asarray(qdr)
-        dist = np.asarray(dist) * nm + 1e9 * eye
-
-        # Calculate horizontal closest point of approach (CPA)
-        qdrrad = np.radians(qdr)
-        dx = dist * np.sin(qdrrad)  # is pos j rel to i
-        dy = dist * np.cos(qdrrad)  # is pos j rel to i
-
-        # Ownship track angle and speed
+        # Ground velocity components; du/dv is the velocity of j relative to i
         owntrkrad = np.radians(ownship.trk)
-        ownu = ownship.gs * np.sin(owntrkrad).reshape((1, ownship.ntraf))  # m/s
-        ownv = ownship.gs * np.cos(owntrkrad).reshape((1, ownship.ntraf))  # m/s
-
-        # Intruder track angle and speed
         inttrkrad = np.radians(intruder.trk)
-        intu = intruder.gs * np.sin(inttrkrad).reshape((1, ownship.ntraf))  # m/s
-        intv = intruder.gs * np.cos(inttrkrad).reshape((1, ownship.ntraf))  # m/s
-
-        du = ownu - intu.T  # Speed du[i,j] is perceived eastern speed of i to j
-        dv = ownv - intv.T  # Speed dv[i,j] is perceived northern speed of i to j
+        du = intruder.gs[jj] * np.sin(inttrkrad[jj]) - ownship.gs[ii] * np.sin(owntrkrad[ii])
+        dv = intruder.gs[jj] * np.cos(inttrkrad[jj]) - ownship.gs[ii] * np.cos(owntrkrad[ii])
 
         dv2 = du * du + dv * dv
         dv2 = np.where(np.abs(dv2) < 1e-6, 1e-6, dv2)  # limit lower absolute value
         vrel = np.sqrt(dv2)
 
-        tcpa = -(du * dx + dv * dy) / dv2 + 1e9 * eye
+        # Horizontal closest point of approach (CPA)
+        tcpa = -(du * dx + dv * dy) / dv2
 
-        # Calculate distance^2 at CPA (minimum distance^2)
+        # Distance^2 at CPA (minimum distance^2)
         dcpa2 = np.abs(dist * dist - tcpa * tcpa * dv2)
 
         # Check for horizontal conflict
         # RPZ can differ per aircraft, get the largest value per aircraft pair
-        rpz = np.maximum(rpz[np.newaxis, :], rpz[:, np.newaxis])
+        rpz = np.maximum(rpz[ii], rpz[jj])
         R2 = rpz * rpz
         swhorconf = dcpa2 < R2  # conflict or not
 
-        # Calculate times of entering and leaving horizontal conflict
-        dxinhor = np.sqrt(np.maximum(0.0, R2 - dcpa2))  # half the distance travelled inzide zone
+        # Times of entering and leaving horizontal conflict
+        dxinhor = np.sqrt(np.maximum(0.0, R2 - dcpa2))  # half the distance travelled inside zone
         dtinhor = dxinhor / vrel
 
         tinhor = np.where(swhorconf, tcpa - dtinhor, 1e8)  # Set very large if no conf
@@ -464,53 +517,80 @@ class ConflictDetection(TrafficArrays):
 
         # Vertical conflict --------------------------------------------------------
 
-        # Vertical crossing of disk (-dh,+dh)
-        dalt = (
-            ownship.alt.reshape((1, ownship.ntraf))
-            - intruder.alt.reshape((1, ownship.ntraf)).T
-            + 1e9 * eye
-        )
+        # The vertical test is evaluated for both directions of each pair:
+        # |dvs| is floored to +1e-6 irrespective of its sign, which makes the
+        # crossing times of the +/-hpz band direction-asymmetric for level
+        # pairs at exactly |dalt| == hpz (only the direction looking "down"
+        # flags a conflict). The horizontal geometry is fully symmetric.
+        dvs = intruder.vs[jj] - ownship.vs[ii]
 
-        dvs = ownship.vs.reshape(1, ownship.ntraf) - intruder.vs.reshape(1, ownship.ntraf).T
-        dvs = np.where(np.abs(dvs) < 1e-6, 1e-6, dvs)  # prevent division by zero
+        def vertical_interval(da: np.ndarray, dw: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+            """Vertical crossing interval of the disk (-hpz, +hpz)."""
+            dw = np.where(np.abs(dw) < 1e-6, 1e-6, dw)  # prevent division by zero
+            tcrosshi = (da + hpz) / -dw
+            tcrosslo = (da - hpz) / -dw
+            return np.minimum(tcrosshi, tcrosslo), np.maximum(tcrosshi, tcrosslo)
 
-        # Check for passing through each others zone
-        # hPZ can differ per aircraft, get the largest value per aircraft pair
-        hpz = np.maximum(hpz[np.newaxis, :], hpz[:, np.newaxis])
-        tcrosshi = (dalt + hpz) / -dvs
-        tcrosslo = (dalt - hpz) / -dvs
-        tinver = np.minimum(tcrosshi, tcrosslo)
-        toutver = np.maximum(tcrosshi, tcrosslo)
+        tinver_ij, toutver_ij = vertical_interval(dalt, dvs)
+        tinver_ji, toutver_ji = vertical_interval(-dalt, -dvs)
 
         # Combine vertical and horizontal conflict----------------------------------
-        tinconf = np.maximum(tinver, tinhor)
-        toutconf = np.minimum(toutver, touthor)
+        tinconf_ij = np.maximum(tinver_ij, tinhor)
+        toutconf_ij = np.minimum(toutver_ij, touthor)
+        tinconf_ji = np.maximum(tinver_ji, tinhor)
+        toutconf_ji = np.minimum(toutver_ji, touthor)
 
-        swconfl = np.array(
+        # The lookahead time is the ownship's, so it also differs per direction
+        sw_ij = (
             swhorconf
-            * (tinconf <= toutconf)
-            * (toutconf > 0.0)
-            * (tinconf < np.asarray(dtlookahead)[:, np.newaxis])
-            * (1.0 - eye),
-            dtype=bool,
+            & (tinconf_ij <= toutconf_ij)
+            & (toutconf_ij > 0.0)
+            & (tinconf_ij < dtlookahead[ii])
+        )
+        sw_ji = (
+            swhorconf
+            & (tinconf_ji <= toutconf_ji)
+            & (toutconf_ji > 0.0)
+            & (tinconf_ji < dtlookahead[jj])
         )
 
         # --------------------------------------------------------------------------
         # Update conflict lists
         # --------------------------------------------------------------------------
-        # Ownship conflict flag and max tCPA
-        inconf = np.any(swconfl, 1)
-        tcpamax = np.max(tcpa * swconfl, 1)
+        # Assemble both directions of each conflict and sort them into
+        # row-major (ownship, intruder) index order
+        iown = np.concatenate((ii[sw_ij], jj[sw_ji]))
+        jint = np.concatenate((jj[sw_ij], ii[sw_ji]))
+        qdr_ij = np.degrees(np.arctan2(dx, dy)) % 360.0
+        qdr_ji = np.degrees(np.arctan2(-dx, -dy)) % 360.0
+        qdrconf = np.concatenate((qdr_ij[sw_ij], qdr_ji[sw_ji]))
+        distconf = np.concatenate((dist[sw_ij], dist[sw_ji]))
+        dcpaconf = np.sqrt(np.concatenate((dcpa2[sw_ij], dcpa2[sw_ji])))
+        tcpaconf = np.concatenate((tcpa[sw_ij], tcpa[sw_ji]))
+        tinconfconf = np.concatenate((tinconf_ij[sw_ij], tinconf_ji[sw_ji]))
+        daltconf = np.concatenate((dalt[sw_ij], -dalt[sw_ji]))
+
+        order = np.lexsort((jint, iown))
+        iown, jint = iown[order], jint[order]
 
         # Select conflicting pairs: each a/c gets their own record
         confpairs = [
-            (ownship.callsign[i], ownship.callsign[j])
-            for i, j in zip(*np.where(swconfl), strict=False)
+            (ownship.callsign[i], ownship.callsign[j]) for i, j in zip(iown, jint, strict=False)
         ]
-        swlos = (dist < rpz) * (np.abs(dalt) < hpz)
+
+        # Ownship conflict flag and max tCPA
+        inconf = np.zeros(ntraf, dtype=bool)
+        inconf[iown] = True
+        tcpamax = np.zeros(ntraf)
+        np.maximum.at(tcpamax, iown, tcpaconf[order])
+
+        swlos = (dist < rpz) & (np.abs(dalt) < hpz)
+        ilos = np.concatenate((ii[swlos], jj[swlos]))
+        jlos = np.concatenate((jj[swlos], ii[swlos]))
+        losorder = np.lexsort((jlos, ilos))
         lospairs = [
             (ownship.callsign[i], ownship.callsign[j])
-            for i, j in zip(*np.where(swlos), strict=False)
+            for i, j in zip(ilos[losorder], jlos[losorder], strict=False)
         ]
 
         return (
@@ -518,10 +598,10 @@ class ConflictDetection(TrafficArrays):
             lospairs,
             inconf,
             tcpamax,
-            qdr[swconfl],
-            dist[swconfl],
-            np.sqrt(dcpa2[swconfl]),
-            tcpa[swconfl],
-            tinconf[swconfl],
-            dalt[swconfl],
+            qdrconf[order],
+            distconf[order],
+            dcpaconf[order],
+            tcpaconf[order],
+            tinconfconf[order],
+            daltconf[order],
         )
