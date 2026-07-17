@@ -283,7 +283,8 @@ class Autopilot(TrafficArrays):
                 turnrad,
                 turnspd,
                 turnhdgr,
-                next_qdr,
+                nextleglat,
+                nextleglon,
                 swlastwp,
                 nextturnlat,
                 nextturnlon,
@@ -294,6 +295,18 @@ class Autopilot(TrafficArrays):
             ) = (np.array(col) for col in zip(*wpdata, strict=True))
             lnavon = lnavon.astype(bool)
             flyturn = flyturn.astype(bool)
+
+            # Bearing of the leg after the new active waypoint, batched over
+            # all switching aircraft (-999.0 sentinel when there is no next
+            # leg; dummy coordinates keep the masked lanes NaN-free)
+            has_nextleg = nextleglat > -900.0
+            batched_qdr, _ = geo.qdrdist(
+                lat,
+                lon,
+                np.where(has_nextleg, nextleglat, lat),
+                np.where(has_nextleg, nextleglon, lon),
+            )
+            next_qdr = np.where(has_nextleg, batched_qdr, -999.0)
 
             actwp.nextspd[nxt] = nextspd
             actwp.xtorta[nxt] = xtorta
