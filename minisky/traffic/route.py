@@ -364,16 +364,15 @@ class Route:
             (zeros / -999) are returned when the route has no upcoming turn
             waypoint.
         """
-        # Starting point
-        wpidx = self.iactwp
-        # Find next turn waypoint index
-        turnidx_all = np.where(self.wpflyturn)[0]
-        argwhere_arr = np.argwhere(turnidx_all >= wpidx)
-        if argwhere_arr.size == 0:
+        # Scan forward from the active waypoint; called for every switching
+        # aircraft, so avoid converting the whole route to a numpy array
+        trnidx = next(
+            (j for j in range(max(self.iactwp, 0), len(self.wpflyturn)) if self.wpflyturn[j]),
+            None,
+        )
+        if trnidx is None:
             # No turn waypoints, return default values
             return [0.0, 0.0, -999.0, -999.0, -999, -999.0]
-
-        trnidx = turnidx_all[np.argwhere(turnidx_all >= wpidx)[0]][0]
 
         # Return the next turn waypoint info
         return [
@@ -401,7 +400,9 @@ class Route:
             constraint [m], next altitude constraint [m], distance to next
             RTA [m], next RTA [s], lnavon switch, fly-by switch, fly-turn
             switch, turn radius, turn speed (CAS), turn heading rate
-            [deg/s], bearing of the next leg [deg], last-waypoint switch).
+            [deg/s], next-leg endpoint lat [deg], next-leg endpoint lon
+            [deg] (-999.0 pair when there is no next leg), last-waypoint
+            switch).
         """
 
         n_wpt = len(self.wpname)
@@ -411,7 +412,8 @@ class Route:
             lnavon = False
 
             # no further waypoint
-            nextqdr = -999.0
+            nextleglat = -999.0
+            nextleglon = -999.0
 
             # and the aircraft just needs a fixed heading to
             # remain on the runway
@@ -458,7 +460,8 @@ class Route:
                 self.wpturnrad[self.iactwp],
                 self.wpturnspd[self.iactwp],
                 self.wpturnhdgr[self.iactwp],
-                nextqdr,
+                nextleglat,
+                nextleglon,
                 swlastwp,
             )
 
@@ -472,7 +475,15 @@ class Route:
         # Activate switch to indicate that this is the last waypoint (for lenient passing logic in actwp.Reached function)
         swlastwp = self.iactwp == n_wpt - 1
 
-        nextqdr = self.getnextqdr()
+        # Endpoint of the leg after the new active waypoint; the autopilot
+        # computes the next-leg bearings for all switching aircraft in one
+        # vectorised qdrdist call (see wppassingcheck).
+        if -1 < self.iactwp < n_wpt - 1:
+            nextleglat = self.wplat[self.iactwp + 1]
+            nextleglon = self.wplon[self.iactwp + 1]
+        else:
+            nextleglat = -999.0
+            nextleglon = -999.0
 
         # in case that there is a runway, the aircraft should remain on it
         # instead of deviating to the airport centre
@@ -502,7 +513,8 @@ class Route:
             self.wpturnrad[self.iactwp],
             self.wpturnspd[self.iactwp],
             self.wpturnhdgr[self.iactwp],
-            nextqdr,
+            nextleglat,
+            nextleglon,
             swlastwp,
         )
 
