@@ -364,16 +364,15 @@ class Route:
             (zeros / -999) are returned when the route has no upcoming turn
             waypoint.
         """
-        # Starting point
-        wpidx = self.iactwp
-        # Find next turn waypoint index
-        turnidx_all = np.where(self.wpflyturn)[0]
-        argwhere_arr = np.argwhere(turnidx_all >= wpidx)
-        if argwhere_arr.size == 0:
+        # Scan forward from the active waypoint; called for every switching
+        # aircraft, so avoid converting the whole route to a numpy array
+        trnidx = next(
+            (j for j in range(max(self.iactwp, 0), len(self.wpflyturn)) if self.wpflyturn[j]),
+            None,
+        )
+        if trnidx is None:
             # No turn waypoints, return default values
             return [0.0, 0.0, -999.0, -999.0, -999, -999.0]
-
-        trnidx = turnidx_all[np.argwhere(turnidx_all >= wpidx)[0]][0]
 
         # Return the next turn waypoint info
         return [
