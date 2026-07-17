@@ -107,6 +107,19 @@ class Kinematics(TrafficArrays):
 base implementation; a trivial subclass registered from a test can be selected and reverts on
 reset (mirror the existing `tests/integration/test_plugin.py` replaceable test).
 
+### Phase 1 checklist
+
+- [ ] Create `minisky/traffic/kinematics.py`: `Kinematics(TrafficArrays)` with
+      `update_airspeed` / `update_groundspeed` / `update_pos` and the `ax`, `az`, `swhdgsel`,
+      `swaltsel` arrays moved over from `Traffic`
+- [ ] Instantiate as `self.kinematics = Kinematics()` inside `Traffic.__init__`'s
+      `settrafarrays()` block; `Traffic.update()` calls `self.kinematics.update()`
+- [ ] Grep external readers of the moved arrays (`streaming.py`, `perfoap.py`, tests) and expose
+      delegating properties on `Traffic` where needed
+- [ ] Verify `SELECTIMPL KINEMATICS` lists the base implementation
+- [ ] Test: register a trivial subclass, select it, verify it takes effect and reverts on reset
+- [ ] `uv run pytest`, `uv run ruff check .`, `uv run pyright` all green
+
 ## Phase 2 — the `multicopter` plugin: membership + kinematics
 
 New file `plugins/multicopter.py` (plugin name `MULTICOPTER`), no core changes.
@@ -200,6 +213,22 @@ subclass calling `super()` and adjusting only the masked multicopter rows.
 - A fixed-wing aircraft in the same simulation behaves byte-identically to `main` (regression
   guard for the fleet-wide hooks).
 
+### Phase 2 checklist
+
+- [ ] `plugins/multicopter.py` skeleton: `init_plugin()`, plugin name `MULTICOPTER`
+- [ ] `MULTICOPTER_TYPES` set + `Entity` with `ismulticopter`, `selhdg`, `yawrate` arrays,
+      auto-set from typecode in `create()`
+- [ ] Stack commands: `MCOPT`, `YAW`, `YAWRATE`
+- [ ] `MulticopterKinematics(Kinematics)`: yaw-rate-limited heading, track-driven velocity
+      vector, single `update_pos()` pass
+- [ ] `MulticopterAPorASAS(APorASAS)`: skip trk→hdg coupling for multicopter rows
+- [ ] `MulticopterAutopilot(Autopilot)`: `HOVER`, `DELIVER`, capture-radius clamp,
+      fly-over route defaults
+- [ ] Plugin issues the three `SELECTIMPL` swaps on load; defaults restored on reset
+- [ ] Integration tests: hover-hold, yaw at gs = 0, strafe (fixed nose, moving track),
+      leg-to-leg course capture, `HOVER`, `DELIVER`, fixed-wing regression guard
+- [ ] `uv run pytest`, `uv run ruff check .`, `uv run pyright` all green
+
 ## Phase 3 — `MulticopterPerf`: electric performance from PyThrust *data*
 
 `class MulticopterPerf(OpenAP)`, selected with `SELECTIMPL OPENAP MULTICOPTERPERF`. Fixed-wing
@@ -257,6 +286,22 @@ simulator.
 `BATT` reports monotonically decreasing SoC; envelope shrinks below a SoC threshold; unit tests
 for the map interpolation against a few hand-computed points from the source CSV.
 
+### Phase 3 checklist
+
+- [ ] Vendor the needed prop CSVs + motor JSONs under `plugins/data/multicopter/pythrust/`
+      with PyThrust's LICENSE and an attribution note
+- [ ] Per-typecode config: `{prop, motor, cell, series/parallel, n_rotors, mass, CdS}`
+- [ ] `scripts/gen_multicopter_perf.py` (numpy-only, no pythrust import) emitting per-type
+      `(airspeed, thrust) → (power, current, feasible)` maps + battery curves
+- [ ] Check in the generated artifacts (`plugins/data/multicopter/*.npz`)
+- [ ] `MulticopterPerf(OpenAP)`: required-thrust model, vectorised map interpolation,
+      per-aircraft SoC integration, envelope feedback in `limits()`
+- [ ] Stack command: `BATT`
+- [ ] Unit tests: interpolation vs hand-computed CSV points; SoC monotonically decreasing;
+      envelope tightens below SoC threshold
+- [ ] Sanity: MAVIC-class hover endurance in the 20–35 min range
+- [ ] `uv run pytest`, `uv run ruff check .`, `uv run pyright` all green
+
 ## Phase 4 — docs, scenarios, cleanup
 
 - New guide `docs/guides/multicopters.md`: creating multicopters, hover/yaw commands, battery
@@ -267,6 +312,14 @@ for the map interpolation against a few hand-computed points from the source CSV
 - Regenerate `docs/reference/commands.md` (`uv run minisky commands docs`) after adding the
   stack commands (`MCOPT`, `YAW`, `YAWRATE`, `HOVER`, `DELIVER`, `BATT`).
 - `ruff`, `pyright`, full test suite green at every phase boundary.
+
+### Phase 4 checklist
+
+- [ ] `docs/guides/multicopters.md` (usage, commands, battery model, adding a new type)
+- [ ] Update `docs/architecture.md`: `Kinematics` entity + replaceable list
+- [ ] `scenarios/multicopter_delivery.scn` exercising create → route → `DELIVER` → return
+- [ ] Regenerate `docs/reference/commands.md` (`uv run minisky commands docs`)
+- [ ] Final sweep: `uv run pytest`, `uv run ruff check .`, `uv run pyright`
 
 ## Sequencing and effort
 
