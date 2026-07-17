@@ -162,12 +162,41 @@ Implementation notes:
   simple first: the immediate-course-capture behaviour falls out of step 2 automatically because
   `aporasas.trk` snaps to the new leg bearing at waypoint switch.
 
+### `MulticopterAutopilot(Autopilot)` — thin, mission-level
+
+A full autopilot rewrite is **not** needed: LNAV already outputs a *track* command
+(`ap.trk = qdr2wp`), which is exactly what the decoupled kinematics consumes; fly-over waypoints
+already exist (`ADDWPTMODE FLYOVER`); the vertical channel (`ALT`/`selvs`) is speed-independent,
+so hover-climb/descend works with the plain `ALT` command; and turn-speed deceleration only
+activates for `FLYTURN` waypoints, which multicopters won't use.
+
+A thin subclass (`SELECTIMPL AUTOPILOT MULTICOPTERAUTOPILOT`) covers what the stock FMS cannot:
+
+- **Mission primitives** the FMS has no concept of:
+  - `HOVER acid [time]` — suspend LNAV, hold position (commanded gs = 0), auto-resume the route
+    after the optional duration. The conditional-command machinery (ATALT/ATDIST) cannot express
+    "hold for 90 s".
+  - `DELIVER acid alt [time]` — at the current position: vertical descent to `alt`, dwell, climb
+    back, continue the route. Implemented as a small per-aircraft state machine on top of
+    `super().update()`.
+- **Low-speed guards**: `calcturn()` and the turn-distance/deceleration formulas are bank- and
+  speed-based; clamp `actwp.turndist` for multicopter rows to a fixed capture radius (~5–10 m)
+  so waypoint switching stays sane at creeping speeds and at hover on top of a waypoint.
+- **Route defaults**: set fly-over + capture radius automatically for `ismulticopter` aircraft
+  when waypoints are added, so scenario authors need no extra commands.
+
+With this, the plugin issues three swaps on load — `KINEMATICS`, `APORASAS`, `AUTOPILOT` — each
+subclass calling `super()` and adjusting only the masked multicopter rows.
+
 **Acceptance (integration tests, driven through the stack like `test_stack.py`):**
 
 - `CRE D1 MAVIC ... ; SPD D1 0` → ground speed reaches 0 and stays; aircraft holds position.
 - At `gs == 0`, `HDG D1 90` → heading slews at `yawrate`, position unchanged.
 - In cruise, `YAW D1 0` while flying track 090 → `trk` stays 090, `hdg` goes to 0.
 - Waypoint passage: course changes leg-to-leg with no overshoot arc.
+- `HOVER D1 90` mid-route → position frozen for 90 s of sim time, then the route resumes.
+- `DELIVER D1 50 30` → vertical descent to 50 ft, 30 s dwell, climb back, route resumes;
+  lat/lon unchanged throughout.
 - A fixed-wing aircraft in the same simulation behaves byte-identically to `main` (regression
   guard for the fleet-wide hooks).
 
@@ -236,7 +265,7 @@ for the map interpolation against a few hand-computed points from the source CSV
 - Example scenario `scenarios/multicopter_delivery.scn`: create, fly a route, hover at a
   delivery point, yaw for "camera", return; exercises everything above.
 - Regenerate `docs/reference/commands.md` (`uv run minisky commands docs`) after adding the
-  stack commands (`MCOPT`, `YAW`, `YAWRATE`, `BATT`).
+  stack commands (`MCOPT`, `YAW`, `YAWRATE`, `HOVER`, `DELIVER`, `BATT`).
 - `ruff`, `pyright`, full test suite green at every phase boundary.
 
 ## Sequencing and effort
@@ -258,6 +287,7 @@ Each phase is a separately reviewable PR; phase 1 is intentionally the only one 
 | Name | **multicopter** (not drone/rotorcraft) | Names the lift/control type actually modelled; scope excludes helicopters (EC35) |
 | Where behaviour lives | Plugin + replaceable subclasses | Matches "minimal core, hack from outside"; hot-swappable via `SELECTIMPL`; reverts on reset |
 | Kinematics override mechanism | New first-level `Kinematics` entity (Phase 1) | `Traffic` itself can't be hot-swapped (root object); post-hoc plugin-hook correction would double-integrate state |
+| Custom autopilot | Thin `MulticopterAutopilot` for mission primitives (HOVER/DELIVER), capture-radius clamp and fly-over defaults only | LNAV's track output already suits decoupled kinematics; no guidance rewrite needed |
 | Membership predicate | Plugin-owned typecode set + `ismulticopter` array | `LIFT_ROTOR` includes helicopters |
 | PyThrust | Data only, vendored with attribution; self-contained gen script; nothing at runtime | Prop CSVs already tabulate thrust & power; keeps dependency tree untouched (Apache 2.0 permits) |
 | Perf evaluation | Precomputed per-type maps, vectorised interp | Keeps the numpy discipline; fleet-size independent; regen convention already exists in repo |
