@@ -330,8 +330,8 @@ for the map interpolation against a few hand-computed points from the source CSV
 | 3 | Perf: data vendoring, gen script, `MulticopterPerf`, battery | Medium — model calibration/sanity | 2 (usable after 1) |
 | 4 | Docs, scenario, polish | Low | 2, 3 |
 
-Each phase is a separately reviewable PR; phase 1 is intentionally the only one touching
-`minisky/`.
+Implementation lands on this branch phase by phase, checking off the checklists above as items
+complete; phase 1 is intentionally the only one touching `minisky/`.
 
 ## Decision log
 
