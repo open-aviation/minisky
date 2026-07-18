@@ -109,6 +109,13 @@ class Simulation:
 
             # Plugin post-update hooks
             PluginManager.update()
+        else:
+            # Plugin hooks (and with them the stream snapshot hook) only run
+            # in OP; publish here too so stream consumers still see state
+            # changes while in INIT/HOLD/END. No-op without subscribers.
+            from minisky.streaming import hub
+
+            hub.publish_tick()
 
     def stop(self) -> None:
         """Stop the simulation (stack STOP/QUIT command).

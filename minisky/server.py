@@ -146,7 +146,7 @@ def conflicts() -> list[dict[str, Any]] | dict[str, str]:
     return conflict_info
 
 
-@app.get("/stack/{cmd}")
+@app.get("/stack/{cmd:path}")
 async def stack(cmd: str) -> dict[str, Any]:
     """Execute a stack command and return the output"""
     minisky.scr.event.clear()
@@ -192,7 +192,9 @@ async def stream(websocket: WebSocket) -> None:
             await hub.wait()
             if hub.latest is not None:
                 await websocket.send_json(hub.latest)
-    except WebSocketDisconnect:
+    except (WebSocketDisconnect, RuntimeError):
+        # RuntimeError: the transport closed between the disconnect and our
+        # next send (uvicorn raises it instead of WebSocketDisconnect).
         pass
     finally:
         hub.unsubscribe()
