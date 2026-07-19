@@ -9,3 +9,8 @@ asas_marv: 1.05 # ASAS protected zone factors - vertical
 # Plugin settings
 plugin_path: example_plugins # Directory to search for plugins
 # enabled_plugins: ['CUSTOMAUTOPILOT', 'EXAMPLE'] # Plugins to load at startup (e.g., ['EXAMPLE'])
+
+# Tangram bridge plugin (enabled_plugins: ['TANGRAM'], needs `uv sync --extra tangram`)
+# tangram_redis_url: redis://127.0.0.1:6379 # Redis used by the tangram deployment
+# tangram_channel: minisky # publishes to:<channel>:*, listens on from:<channel>:*
+# tangram_max_hz: 5 # wall-clock cap on snapshot publish rate

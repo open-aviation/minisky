@@ -20,6 +20,9 @@ dependencies = [
     "scipy>=1.15.1",
 ]
 
+[project.optional-dependencies]
+tangram = ["redis>=5.0"]
+
 [project.scripts]
 minisky = "minisky.cli:app"
 
@@ -36,6 +39,7 @@ dev = [
     "pytest>=9.1.1",
     "ruff>=0.8.0",
     "pyright>=1.1.390",
+    "fakeredis>=2.26",
 ]
 docs = [
     "mkdocs-material>=9.5.0",
