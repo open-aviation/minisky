@@ -16,7 +16,11 @@ uv run pytest -m api tests/test_api.py     # REST API tests — spawn a separate
 
 uv run ruff check .                        # lint
 uv run ruff format .                       # format (line-length 100)
-uv run pyright                             # type check (standard mode)
+uv run pyright                             # type check (standard mode; covers example_plugins — needs `uv sync --all-packages`)
+
+# tangram frontend plugin (uv workspace member; run in example_plugins/tangram_minisky)
+npm run check                              # eslint + vue-tsc + tsc (vite config)
+npm run build                              # bundle into dist-frontend/
 
 uv run minisky commands docs               # regenerate docs/reference/commands.md after changing commands
 uv run minisky docs serve                  # docs live preview

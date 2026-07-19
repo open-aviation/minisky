@@ -35,22 +35,38 @@ again, only this package needs touching.
 (`tangram_channel` in MiniSky's `settings.yml`, `channel` in tangram's
 `tangram.toml` under `[plugins.tangram_minisky]`).
 
-## Build & install
+## Build, check & install
+
+This package is a **uv workspace member** of the MiniSky repository and its
+layout follows the
+[tangram out-of-tree plugin guide](https://mode-s.org/tangram/plugins/frontend/)
+(`tsconfig.json` extends tangram-core's `tsconfig.plugin.json`,
+`tsconfig.vite.json` extends `tsconfig.node.json`; `vite.config.ts` carries a
+`// @ts-expect-error` because tangram-core v0.5.0 ships no declarations for
+the vite-plugin subpath).
 
 ```bash
 npm install
+npm run check          # eslint + vue-tsc + tsc (vite config)
 npm run build          # produces dist-frontend/ (bundle + plugin.json)
 ```
 
-Then install it into the environment that runs `tangram serve` — with the
-`uv tool` route that is:
+Python side (from the MiniSky repo root): `uv sync --all-packages` installs
+`tangram_core` and this package editable into the repo `.venv`; ruff and
+pyright cover it via the normal repo-root commands, and
+`uv run tangram check-plugin example_plugins/tangram_minisky` validates the
+packaging.
+
+With that workspace install, `uv run tangram serve` from the repo root loads
+the plugin directly — a rebuild only needs `npm run build` plus a serve
+restart. To install into a *separate* environment instead:
 
 ```bash
 uv tool install tangram_core --with ./ --force
 ```
 
 (or `uv pip install ./` into a plain venv). Rerun the install after every
-`npm run build`. Enable it in `tangram.toml`:
+`npm run build`. Either way, enable it in `tangram.toml`:
 
 ```toml
 [core]
@@ -66,7 +82,7 @@ troubleshooting) is in the MiniSky docs:
 In the MiniSky repo:
 
 ```bash
-uv sync --extra tangram
+uv sync --all-packages --extra tangram
 # settings.yml: enabled_plugins: ['TANGRAM'], tangram_redis_url pointing at
 # the same Redis instance tangram uses
 minisky server        # or: minisky run --scenario scenarios/kl204.scn

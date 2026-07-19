@@ -5,15 +5,30 @@
     :style="{ left: `${tooltip.x}px`, top: `${tooltip.y}px` }"
   >
     <div class="tooltip-grid">
-      <div class="callsign">{{ tooltip.object.state.callsign }}</div>
-      <div class="typecode">{{ tooltip.object.state.typecode }}</div>
-      <div v-if="tooltip.object.state.altitude != null" class="detail">
+      <div class="callsign">
+        {{ tooltip.object.state.callsign }}
+      </div>
+      <div class="typecode">
+        {{ tooltip.object.state.typecode }}
+      </div>
+      <div
+        v-if="tooltip.object.state.altitude != null"
+        class="detail"
+      >
         FL{{ Math.round((tooltip.object.state.altitude ?? 0) / 100) }}
       </div>
-      <div v-if="tooltip.object.state.groundspeed != null" class="detail right">
+      <div
+        v-if="tooltip.object.state.groundspeed != null"
+        class="detail right"
+      >
         {{ Math.round(tooltip.object.state.groundspeed ?? 0) }} kt
       </div>
-      <div v-if="tooltip.object.state.inconf" class="conflict">CONFLICT</div>
+      <div
+        v-if="tooltip.object.state.inconf"
+        class="conflict"
+      >
+        CONFLICT
+      </div>
     </div>
   </div>
 </template>

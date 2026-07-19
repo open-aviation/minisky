@@ -33,6 +33,9 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["minisky"]
 
+[tool.uv.workspace]
+members = ["example_plugins/tangram_minisky"]
+
 [dependency-groups]
 dev = [
     "ipykernel>=6.29.5",
@@ -75,8 +78,8 @@ ignore = [
 "minisky/plugin/*.py" = ["F401"]  # plugin API surface re-exports
 
 [tool.pyright]
-include = ["minisky"]
-exclude = ["**/__pycache__", ".venv", "build", "site"]
+include = ["minisky", "example_plugins"]
+exclude = ["**/__pycache__", "**/node_modules", ".venv", "build", "site"]
 pythonVersion = "3.11"
 # "standard" catches useful bugs while staying practical for this numpy/scipy-heavy fork.
 typeCheckingMode = "standard"

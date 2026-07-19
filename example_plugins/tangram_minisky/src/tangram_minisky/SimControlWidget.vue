@@ -1,6 +1,9 @@
 <template>
   <div class="minisky-control">
-    <div v-if="!miniskyStore.connected" class="offline">
+    <div
+      v-if="!miniskyStore.connected"
+      class="offline"
+    >
       Simulator offline — start MiniSky with the TANGRAM plugin enabled
     </div>
 
@@ -15,14 +18,20 @@
         <span class="label">Aircraft</span>
         <span class="value">
           {{ siminfo?.ntraf ?? 0 }}
-          <span v-if="(siminfo?.nconf_cur ?? 0) > 0" class="conflicts">
+          <span
+            v-if="(siminfo?.nconf_cur ?? 0) > 0"
+            class="conflicts"
+          >
             · {{ siminfo?.nconf_cur }} conflict(s)
           </span>
         </span>
       </div>
 
       <div class="button-row">
-        <button :class="{ active: siminfo?.state_name === 'OP' }" @click="send('OP')">
+        <button
+          :class="{ active: siminfo?.state_name === 'OP' }"
+          @click="send('OP')"
+        >
           ▶ Run
         </button>
         <button
@@ -31,7 +40,9 @@
         >
           ⏸ Hold
         </button>
-        <button @click="send('RESET')">↺ Reset</button>
+        <button @click="send('RESET')">
+          ↺ Reset
+        </button>
       </div>
 
       <div class="button-row">
@@ -45,7 +56,10 @@
         </button>
       </div>
 
-      <form class="command-form" @submit.prevent="submitCommand">
+      <form
+        class="command-form"
+        @submit.prevent="submitCommand"
+      >
         <input
           v-model="command"
           type="text"
@@ -53,11 +67,18 @@
           spellcheck="false"
           @keydown.up.prevent="historyUp"
           @keydown.down.prevent="historyDown"
-        />
+        >
       </form>
 
-      <div v-if="miniskyStore.log.length" class="command-log">
-        <div v-for="(entry, i) in miniskyStore.log" :key="i" :class="entry.kind">
+      <div
+        v-if="miniskyStore.log.length"
+        class="command-log"
+      >
+        <div
+          v-for="(entry, i) in miniskyStore.log"
+          :key="i"
+          :class="entry.kind"
+        >
           {{ entry.text }}
         </div>
       </div>

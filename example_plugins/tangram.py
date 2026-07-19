@@ -258,7 +258,7 @@ class TangramBridge:
         last = self._last_payload or {"aircraft": [], "count": 0, "siminfo": {}}
         sim = minisky.sim
         state = int(sim.state)
-        siminfo = {"nconf_cur": 0, "nlos_cur": 0}
+        siminfo: dict[str, Any] = {"nconf_cur": 0, "nlos_cur": 0}
         siminfo.update(last["siminfo"])
         siminfo.update(
             {

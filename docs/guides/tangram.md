@@ -52,8 +52,14 @@ meet on the channel name, not on any shared configuration.
 ### 2. MiniSky side (the producer)
 
 ```bash
-uv sync --extra tangram        # installs the redis client
+uv sync --all-packages --extra tangram
 ```
+
+`tangram_minisky` is a [uv workspace](https://docs.astral.sh/uv/concepts/projects/workspaces/)
+member of this repository, so `--all-packages` installs everything at once:
+the `redis` client for the bridge, plus `tangram_core` and the plugin itself
+(editable) into the same `.venv`. If you only want the MiniSky side,
+`uv sync --extra tangram` suffices.
 
 In `settings.yml`:
 
@@ -100,7 +106,22 @@ npm install
 npm run build                  # bundles into dist-frontend/
 ```
 
+Sanity-check the packaging from the repo root:
+
+```bash
+uv run tangram check-plugin example_plugins/tangram_minisky
+```
+
 ### 4. Install tangram + the plugin on the host
+
+**Workspace route (recommended in this repo).** Nothing to install: step 2's
+`uv sync --all-packages` already put `tangram_core` and the (editable) plugin
+into `.venv`, and tangram resolves an editable install's `dist-frontend`
+straight from the source tree. `npm run build` output is picked up on the
+next `tangram serve` restart — no reinstall needed.
+
+**Separate-environment route.** To run tangram outside this repository's
+venv (e.g. a standalone deployment):
 
 ```bash
 uv tool install tangram_core --with ./example_plugins/tangram_minisky --force
@@ -142,7 +163,8 @@ Every name in `plugins = [...]` must be installed in the environment running
 `tangram serve`.
 
 ```bash
-tangram serve --config /path/to/tangram.toml
+uv run tangram serve --config /path/to/tangram.toml   # workspace route
+# or, with the uv tool route: tangram serve --config /path/to/tangram.toml
 ```
 
 Open <http://localhost:2346>. With MiniSky running you should see, within a
@@ -151,6 +173,81 @@ sim time), the "MiniSky Simulator" sidebar widget, and any aircraft on the
 map (yellow; orange when in conflict). Click an aircraft to select it and a
 trail grows behind it. The widget's Run/Hold/speed buttons and command box go
 through the same `from:minisky:command` path verified in step 2.
+
+## Developing the plugin
+
+The layout follows the
+[tangram out-of-tree plugin guide](https://mode-s.org/tangram/plugins/frontend/):
+`tsconfig.json` extends tangram-core's exported `tsconfig.plugin.json`
+(browser plugin code), `tsconfig.vite.json` extends `tsconfig.node.json`
+(the vite config itself). One known wart, straight from that guide:
+tangram-core v0.5.0 publishes no type declaration for its `vite-plugin`
+subpath, so `vite.config.ts` carries a `// @ts-expect-error` on the import —
+drop it once upstream ships declarations.
+
+Frontend checks, from `example_plugins/tangram_minisky/`:
+
+```bash
+npm run lint             # eslint (typescript-eslint + eslint-plugin-vue)
+npm run lint:fix
+npm run typecheck        # vue-tsc over src/ (.ts + .vue)
+npm run typecheck:vite   # tsc over vite.config.ts
+npm run check            # all of the above
+npm run build            # bundle into dist-frontend/
+```
+
+Python checks run from the repo root — the plugin is a uv workspace member,
+so the usual repo commands cover it (`uv run ruff check .`,
+`uv run ruff format .`, and `uv run pyright`, whose include spans
+`example_plugins/`; it needs `uv sync --all-packages` so `tangram_core` is
+importable).
+
+The edit loop with the workspace route: edit → `npm run check` →
+`npm run build` → restart `uv run tangram serve`. Only the uv tool route
+needs the `uv tool install ... --force` reinstall after a rebuild.
+
+### Running against a local tangram checkout (`tangram_exe`)
+
+To develop against a tangram *checkout* instead of the published
+`tangram_core`, use the
+[`tangram_exe` pattern from the tangram backend guide](https://mode-s.org/tangram/plugins/backend/):
+a small execution-environment project outside both repositories whose
+`uv.sources` point at each local tree, e.g.
+
+```
+workspace/
+├── tangram/          # tangram checkout
+├── minisky/          # this repository
+└── tangram_exe/
+    ├── pyproject.toml
+    └── tangram.toml
+```
+
+```toml
+# tangram_exe/pyproject.toml
+[project]
+name = "tangram-exe"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = ["tangram-core", "tangram-minisky"]
+
+[tool.uv.sources]
+tangram-core = { path = "../tangram/packages/tangram_core", editable = true }
+tangram-minisky = { path = "../minisky/example_plugins/tangram_minisky", editable = true }
+```
+
+```bash
+cd tangram_exe
+uv sync
+uv run tangram serve --config tangram.toml
+```
+
+Both installs are editable, so rebuilding either frontend (tangram-core's
+own, or this plugin's `npm run build`) only needs a serve restart. Note that
+`tangram check-plugin` compares the plugin's npm dependency ranges against
+the *installed* tangram-core's expectations, so its verdict can differ
+between a checkout and the published release; the ranges in this repo track
+the published `tangram_core`.
 
 ## Troubleshooting
 

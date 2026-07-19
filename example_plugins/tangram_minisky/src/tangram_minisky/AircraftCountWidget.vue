@@ -1,11 +1,20 @@
 <template>
-  <div class="minisky-count" :title="title">
+  <div
+    class="minisky-count"
+    :title="title"
+  >
     <span class="plane-icon">▲</span>
     <span class="count">{{ miniskyStore.siminfo?.ntraf ?? 0 }}</span>
-    <span class="state" :class="stateClass">
+    <span
+      class="state"
+      :class="stateClass"
+    >
       {{ miniskyStore.connected ? (miniskyStore.siminfo?.state_name ?? "—") : "OFF" }}
     </span>
-    <span v-if="miniskyStore.connected && miniskyStore.siminfo" class="simt">
+    <span
+      v-if="miniskyStore.connected && miniskyStore.siminfo"
+      class="simt"
+    >
       {{ simTime }}
     </span>
   </div>

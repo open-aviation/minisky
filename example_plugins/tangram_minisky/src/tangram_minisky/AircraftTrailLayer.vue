@@ -1,6 +1,6 @@
 <template>
   <!-- renders only into the deck.gl overlay -->
-  <span style="display: none"></span>
+  <span style="display: none" />
 </template>
 
 <script setup lang="ts">
