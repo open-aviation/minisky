@@ -10,6 +10,9 @@ A single instance is created by :func:`minisky.init` and available as
 
 import asyncio
 import io
+import sys
+
+from colorama import Fore, Style
 
 import minisky
 
@@ -82,8 +85,14 @@ class ConsoleIO:
         """
         self.output_buffer.truncate(0)
         self.output_buffer.seek(0)
+        prefix = self.prefix
+        if sys.stdout.isatty():
+            # Blue to stand apart from uvicorn's green INFO:, only for
+            # interactive terminals so redirected logs stay free of ANSI codes.
+            tag = self.prefix.rstrip()
+            prefix = f"{Fore.BLUE}{tag}{Style.RESET_ALL}{self.prefix[len(tag) :]}"
         for line in text.splitlines() or [""]:
-            print(f"{self.prefix}{line}")
+            print(f"{prefix}{line}")
         print(text, file=self.output_buffer, end="")
         self.event.set()
 
