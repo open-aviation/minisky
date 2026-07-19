@@ -1,0 +1,4 @@
+{
+  "extends": "@open-aviation/tangram-core/tsconfig.plugin.json",
+  "include": ["src/**/*.ts", "src/**/*.vue"]
+}

@@ -2,6 +2,10 @@
 # Automatically generated directories and files
 output
 cache
+
+# tangram_minisky frontend build
+node_modules/
+example_plugins/tangram_minisky/dist-frontend/
 bluesky/resources/grib
 bluesky/resources/netcdf
 
