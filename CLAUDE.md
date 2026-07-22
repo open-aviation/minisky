@@ -6,6 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 MiniSky is a minimal, hackable command-line air traffic simulator — a fork of [BlueSky](https://github.com/TUDelft-CNS-ATM/bluesky) that strips out the GUI, networking, and multi-node architecture. It targets three uses: running scenario files, driving the simulator over a REST API, and embedding the simulation in your own Python code. The ongoing refactor direction (see `readme.md` task list) is to *remove* features toward a bare minimum, not add them.
 
+Before evaluating or porting an upstream BlueSky PR/feature, check `docs/upstream.md` — it logs upstream changes that were already considered and deliberately rejected (with rationale).
+
 ## Commands
 
 ```bash

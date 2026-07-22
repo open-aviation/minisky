@@ -61,6 +61,7 @@ nav:
   - Home: index.md
   - Getting started: getting-started.md
   - Architecture: architecture.md
+  - Upstream decisions: upstream.md
   - Guides:
       - Command-line interface: guides/cli.md
       - Running scenarios: guides/running-scenarios.md
