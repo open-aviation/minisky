@@ -22,7 +22,6 @@ import minisky
 from minisky.core.trafficarrays import TrafficArrays
 from minisky.tools import geo
 from minisky.tools.aero import (
-    Rearth,
     casormach,
     casormach2tas,
     fpm,
@@ -36,7 +35,7 @@ from minisky.tools.aero import (
     vtas2cas,
     vtas2mach,
 )
-from minisky.tools.convert import latlon2txt
+from minisky.tools.convert import degto180, latlon2txt
 from minisky.traffic.asas import ConflictDetection, ConflictResolution
 
 from .activewpdata import ActiveWaypoint
@@ -730,8 +729,8 @@ class Traffic(TrafficArrays):
 
         Altitude follows the vertical speed while the altitude-select mode is
         engaged, and snaps to the commanded altitude otherwise. Latitude and
-        longitude are advanced with the ground speed components using a
-        spherical-Earth approximation, and the flown distance is accumulated.
+        longitude are advanced with a great-circle step via ``geo.qdrpos``,
+        keeping positions valid near the poles and across the antimeridian.
         """
         # Update position
         self.alt = np.where(
@@ -739,10 +738,11 @@ class Traffic(TrafficArrays):
             np.round(self.alt + self.vs * minisky.sim.simdt, 6),
             self.aporasas.alt,
         )
-        self.lat = self.lat + np.degrees(minisky.sim.simdt * self.gsnorth / Rearth)
+        dist = self.gs * minisky.sim.simdt  # metres this tick
+        self.lat, self.lon = geo.qdrpos(self.lat, self.lon, self.trk, dist / nm)
+        self.lon = degto180(self.lon)
         self.coslat = np.cos(np.deg2rad(self.lat))
-        self.lon = self.lon + np.degrees(minisky.sim.simdt * self.gseast / self.coslat / Rearth)
-        self.distflown += self.gs * minisky.sim.simdt
+        self.distflown += dist
 
     @overload
     def idx(self, callsign: str) -> int: ...
