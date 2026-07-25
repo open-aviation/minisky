@@ -40,7 +40,7 @@ import queue
 import threading
 import time
 from collections import deque
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from pydantic import BaseModel
@@ -82,9 +82,13 @@ def convert_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
     state = int(siminfo.get("state", 0))
     simutc = siminfo.get("simutc")
     try:
-        timestamp = datetime.fromisoformat(simutc).timestamp() if simutc else None
+        utc = datetime.fromisoformat(simutc) if simutc else None
     except ValueError:
-        timestamp = None
+        utc = None
+    if utc is not None and utc.tzinfo is None:
+        # sim.utc is UTC by definition; never let a naive string be read as local time.
+        utc = utc.replace(tzinfo=UTC)
+    timestamp = utc.timestamp() if utc is not None else None
 
     out_siminfo = {
         "simt": float(siminfo.get("simt", 0.0)),

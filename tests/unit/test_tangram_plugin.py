@@ -11,7 +11,7 @@ def make_snapshot() -> dict:
             "speed": 5.0,
             "simdt": 1.0,
             "simt": 42.0,
-            "simutc": "2026-01-01T00:00:00",
+            "simutc": "2026-01-01T00:00:00+00:00",
             "ntraf": 1,
             "state": 2,
             "scenname": "kl204",
@@ -61,7 +61,7 @@ def test_convert_snapshot_units_and_fields():
     assert ac["track"] == 90.0
     assert ac["inconf"] is False
     # simutc converted to an epoch timestamp usable as a trajectory point time
-    assert ac["timestamp"] == pytest.approx(1767225600.0, abs=86400)
+    assert ac["timestamp"] == 1767225600.0
 
 
 def test_convert_snapshot_empty():
@@ -82,6 +82,14 @@ def test_convert_snapshot_empty():
             "nlos_cur": 0,
         },
     }
+
+
+def test_convert_snapshot_naive_simutc_is_utc():
+    # A simutc without tzinfo must be interpreted as UTC, never local time.
+    snapshot = make_snapshot()
+    snapshot["siminfo"]["simutc"] = "2026-01-01T00:00:00"
+    payload = convert_snapshot(snapshot)
+    assert payload["aircraft"][0]["timestamp"] == 1767225600.0
 
 
 def test_convert_snapshot_bad_simutc():
