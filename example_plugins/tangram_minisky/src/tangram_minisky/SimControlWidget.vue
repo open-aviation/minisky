@@ -28,24 +28,44 @@
       </div>
 
       <div class="button-row">
-        <button
-          :class="{ active: siminfo?.state_name === 'OP' }"
+        <IconButton
+          class="ctrl-btn"
+          :icon-only="false"
+          variant="surface"
+          size="sm"
+          title="Run"
+          :active="siminfo?.state_name === 'OP'"
           @click="send('OP')"
         >
-          ▶ Run
-        </button>
-        <button
-          :class="{ active: siminfo?.state_name === 'HOLD' }"
+          <SvgIcon :path="ICON_PATHS.play" />
+          Run
+        </IconButton>
+        <IconButton
+          class="ctrl-btn"
+          :icon-only="false"
+          variant="surface"
+          size="sm"
+          title="Hold"
+          :active="siminfo?.state_name === 'HOLD'"
           @click="send('HOLD')"
         >
-          ⏸ Hold
-        </button>
-        <button @click="send('RESET')">
-          ↺ Reset
-        </button>
+          <SvgIcon :path="ICON_PATHS.pause" />
+          Hold
+        </IconButton>
+        <IconButton
+          class="ctrl-btn"
+          :icon-only="false"
+          variant="surface"
+          size="sm"
+          title="Reset"
+          @click="send('RESET')"
+        >
+          <SvgIcon :path="ICON_PATHS.autorenew" />
+          Reset
+        </IconButton>
       </div>
 
-      <div class="button-row">
+      <div class="button-row speed-row">
         <button
           v-for="s in [1, 5, 10, 50]"
           :key="s"
@@ -88,6 +108,8 @@
 
 <script setup lang="ts">
 import { computed, inject, ref } from "vue";
+import { IconButton, SvgIcon } from "@open-aviation/tangram-core/components";
+import { ICON_PATHS } from "@open-aviation/tangram-core/utils";
 import type { TangramApi } from "@open-aviation/tangram-core/api";
 import { miniskyStore, pushLog } from "./store";
 
@@ -191,7 +213,19 @@ const historyDown = () => {
   gap: 0.35rem;
 }
 
-.button-row button {
+.ctrl-btn {
+  flex: 1;
+  font-size: 9pt;
+}
+
+/* Preserve the green "running/holding" highlight on the control buttons. */
+.ctrl-btn.ui-button-active {
+  background: #1c7c2e;
+  border-color: #1c7c2e;
+  color: #ffffff;
+}
+
+.speed-row button {
   flex: 1;
   padding: 3px 6px;
   font-size: 9pt;
@@ -202,11 +236,11 @@ const historyDown = () => {
   cursor: pointer;
 }
 
-.button-row button:hover {
+.speed-row button:hover {
   border-color: var(--t-fg);
 }
 
-.button-row button.active {
+.speed-row button.active {
   background: #1c7c2e;
   border-color: #1c7c2e;
   color: #ffffff;
