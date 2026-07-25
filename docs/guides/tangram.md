@@ -56,11 +56,9 @@ uv sync --extra tangram
 ```
 
 This installs the `redis` client the `TANGRAM` bridge needs into the repo-root
-`.venv`. The MiniSky producer is deliberately decoupled from the tangram
-frontend: `tangram_core` and the plugin live in their own self-contained
-workspace at `example_plugins/tangram/` (a separate `.venv`, so its heavy,
-platform-specific `tangram_core` wheel never touches the MiniSky env). That
-half is set up in steps 3–4.
+`.venv`. The tangram half (`tangram_core` + the frontend plugin) lives in its
+own workspace at `example_plugins/tangram/` with a separate `.venv`, set up in
+steps 3–4 — the heavy `tangram_core` wheel never touches the MiniSky env.
 
 In `settings.toml`:
 
@@ -167,10 +165,9 @@ jwt_expiration_secs = 315360000
 # channel = "minisky"
 ```
 
-`jwt_secret` is used by tangram's channel service to sign and verify its own
-WebSocket tokens; it does not need to match anything on the MiniSky side.
-Every name in `plugins = [...]` must be installed in the environment running
-`tangram serve`.
+`jwt_secret` only signs tangram's own WebSocket tokens — it does not need to
+match anything on the MiniSky side. Every name in `plugins = [...]` must be
+installed in the environment running `tangram serve`.
 
 ```bash
 cd example_plugins/tangram
@@ -178,41 +175,25 @@ uv run tangram serve --config /path/to/tangram.toml   # workspace route
 # or, with the uv tool route (from anywhere): tangram serve --config /path/to/tangram.toml
 ```
 
-Open <http://localhost:2346>. With MiniSky running you should see, within a
-couple of seconds: the MiniSky chip in the top bar (state, aircraft count,
-sim time), the "MiniSky Simulator" sidebar widget, and any aircraft on the
-map (yellow; orange when in conflict). Click an aircraft to select it and a
-trail grows behind it. The widget's Run/Hold/speed buttons and command box go
-through the same `from:minisky:command` path verified in step 2.
+Open <http://localhost:2346>. With MiniSky running you should see the MiniSky
+chip in the top bar, the "MiniSky Simulator" sidebar widget, and any aircraft
+on the map (yellow; orange when in conflict; click one for a trail). The
+widget's Run/Hold/speed buttons and command box go through the same
+`from:minisky:command` path verified in step 2.
 
 ## Developing the plugin
 
 The layout follows the
-[tangram out-of-tree plugin guide](https://mode-s.org/tangram/plugins/frontend/):
-`tsconfig.json` extends tangram-core's exported `tsconfig.plugin.json`
-(browser plugin code), `tsconfig.vite.json` extends `tsconfig.node.json`
-(the vite config itself). One known wart, straight from that guide:
-tangram-core v0.5.0 publishes no type declaration for its `vite-plugin`
-subpath, so `vite.config.ts` carries a `// @ts-expect-error` on the import —
-drop it once upstream ships declarations.
+[tangram out-of-tree plugin guide](https://mode-s.org/tangram/plugins/frontend/).
+One known wart from that guide: tangram-core v0.5.0 publishes no type
+declaration for its `vite-plugin` subpath, so `vite.config.ts` carries a
+`// @ts-expect-error` on the import — drop it once upstream ships declarations.
 
-All checks run from the workspace root, `example_plugins/tangram/`. The
-`justfile` bundles the Python (ruff/pyright) and frontend (eslint/vue-tsc/tsc)
-checks so the pre-commit loop is just two commands:
+All checks run from the workspace root, `example_plugins/tangram/`:
 
 ```bash
 just fmt      # ruff --fix + ruff format + pnpm lint:fix
 just check    # ruff, ruff format --check, pyright, and pnpm check
-```
-
-The underlying frontend scripts (run them directly for a tighter loop):
-
-```bash
-pnpm --filter ./tangram_minisky lint             # eslint (typescript-eslint + eslint-plugin-vue)
-pnpm --filter ./tangram_minisky typecheck        # vue-tsc over src/ (.ts + .vue)
-pnpm --filter ./tangram_minisky typecheck:vite   # tsc over vite.config.ts
-pnpm check                                        # all frontend checks, every workspace package
-pnpm build                                        # bundle into dist-frontend/
 ```
 
 Python type-checking lives in this workspace (not the repo root) precisely so
@@ -223,56 +204,22 @@ The edit loop with the workspace route: edit → `just check` →
 `pnpm build` → restart `uv run tangram serve`. Only the uv tool route needs
 the `uv tool install ... --force` reinstall after a rebuild.
 
-### Running against a local tangram checkout (`tangram_exe`)
+### Running against a local tangram checkout
 
 To develop against a tangram *checkout* instead of the published
-`tangram_core`, use the
-[`tangram_exe` pattern from the tangram backend guide](https://mode-s.org/tangram/plugins/backend/):
-a small execution-environment project outside both repositories whose
-`uv.sources` point at each local tree, e.g.
+`tangram_core`, follow the
+[`tangram_exe` pattern in the tangram backend guide](https://mode-s.org/tangram/plugins/backend/):
+a small execution-environment project whose `uv.sources` point (editable) at
+your tangram checkout and at
+`minisky/example_plugins/tangram/tangram_minisky`. Both installs being
+editable, rebuilding either frontend only needs a `tangram serve` restart.
 
-```
-workspace/
-├── tangram/          # tangram checkout
-├── minisky/          # this repository
-└── tangram_exe/
-    ├── pyproject.toml
-    └── tangram.toml
-```
-
-```toml
-# tangram_exe/pyproject.toml
-[project]
-name = "tangram-exe"
-version = "0.1.0"
-requires-python = ">=3.11"
-dependencies = ["tangram-core", "tangram-minisky"]
-
-[tool.uv.sources]
-tangram-core = { path = "../tangram/packages/tangram_core", editable = true }
-tangram-minisky = { path = "../minisky/example_plugins/tangram/tangram_minisky", editable = true }
-```
-
-```bash
-cd tangram_exe
-uv sync
-uv run tangram serve --config tangram.toml
-```
-
-Both installs are editable, so rebuilding either frontend (tangram-core's
-own, or this plugin's `pnpm build`) only needs a serve restart. Note that
-`tangram check-plugin` compares the plugin's npm dependency ranges against
-the *installed* tangram-core's expectations, so its verdict can differ
-between a checkout and the published release; the ranges in this repo track
-the published `tangram_core`.
-
-The `tangram_exe` project above wires up the *Python* side against a local
-tangram. The `@open-aviation/tangram-core` **npm** dependency is independent —
-to build this plugin's bundle against a local tangram-core JavaScript checkout,
-uncomment the `overrides` block in `example_plugins/tangram/pnpm-workspace.yaml`
-(pointing it at your local `packages/tangram_core`) and run `pnpm i`. It is a
-deliberately ugly manual toggle: **re-comment it and rerun `pnpm i` before
-committing**, so the lockfile never pins a machine-local `link:` path.
+That wires up the *Python* side; the `@open-aviation/tangram-core` **npm**
+dependency is independent. To build this plugin's bundle against a local
+tangram-core JavaScript checkout, uncomment the `overrides` block in
+`example_plugins/tangram/pnpm-workspace.yaml` and run `pnpm i` —
+**re-comment it and rerun `pnpm i` before committing**, so the lockfile never
+pins a machine-local `link:` path.
 
 ## Troubleshooting
 
