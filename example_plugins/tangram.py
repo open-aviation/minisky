@@ -3,32 +3,32 @@
 This plugin makes a running MiniSky process act as an *external simulator*
 for `tangram <https://github.com/open-aviation/tangram>`_. It talks to
 tangram exclusively through Redis, using tangram's stable channel
-convention (see ``docs/architecture/channel.md`` in the tangram repo):
+convention (see `docs/architecture/channel.md` in the tangram repo):
 
-- ``to:<channel>:<event>``   -- published by us, pushed to the browser by
+- `to:<channel>:<event>`   -- published by us, pushed to the browser by
   tangram's Channel service over WebSocket.
-- ``from:<channel>:<event>`` -- pushed by the browser, re-published to
+- `from:<channel>:<event>` -- pushed by the browser, re-published to
   Redis by the Channel service, consumed by us.
 
 Wire contract (all published payloads are JSON):
 
-- ``to:<channel>:new-data``: ``{"aircraft": [...], "count": n, "siminfo": {...}}``
+- `to:<channel>:new-data`: `{"aircraft": [...], "count": n, "siminfo": {...}}`
   with per-aircraft fields in aviation units (altitude ft, speeds kt,
   vertical rate fpm) under jet1090-style names.
-- ``to:<channel>:console``: ``{"lines": [...]}`` -- echoed simulator output.
-- ``from:<channel>:command``: ``{"command": "OP"}`` -- a stack command to run.
+- `to:<channel>:console`: `{"lines": [...]}` -- echoed simulator output.
+- `from:<channel>:command`: `{"command": "OP"}` -- a stack command to run.
 
 All Redis I/O happens on a background thread so the simulation loop never
 blocks on the network, and so commands are still received while the
 simulation is paused (plugin update hooks only fire in the OP state; the
 command stack itself is processed in every state).
 
-Settings (optional, in ``settings.yml``):
+Settings (optional, in `settings.yml`):
 
-- ``tangram_redis_url``: Redis connection URL (default
-  ``redis://127.0.0.1:6379``).
-- ``tangram_channel``: channel/topic name (default ``minisky``).
-- ``tangram_max_hz``: wall-clock cap on snapshot publish rate (default 5).
+- `tangram_redis_url`: Redis connection URL (default
+  `redis://127.0.0.1:6379`).
+- `tangram_channel`: channel/topic name (default `minisky`).
+- `tangram_max_hz`: wall-clock cap on snapshot publish rate (default 5).
 
 Debug the transport without any frontend::
 
@@ -125,10 +125,10 @@ def convert_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
 
 
 def extract_command(payload: str | bytes) -> str | None:
-    """Extract the stack command from a ``from:<channel>:command`` payload.
+    """Extract the stack command from a `from:<channel>:command` payload.
 
     Accepts the JSON envelope pushed by the tangram frontend
-    (``{"command": "..."}``) and, for convenience when testing with
+    (`{"command": "..."}`) and, for convenience when testing with
     redis-cli, a bare string.
     """
     if isinstance(payload, bytes):
@@ -152,10 +152,10 @@ class TangramBridge:
     """Owns the Redis connection and shuttles data between it and the sim.
 
     The simulation thread only ever touches thread-safe queues/deques: the
-    ``update`` hook enqueues converted snapshots, and a tee on ``scr.echo``
+    `update` hook enqueues converted snapshots, and a tee on `scr.echo`
     enqueues console lines. A daemon thread does all Redis I/O: draining
     those queues, republishing a heartbeat while the sim is not advancing,
-    and listening for browser commands on ``from:<channel>:*``.
+    and listening for browser commands on `from:<channel>:*`.
     """
 
     def __init__(

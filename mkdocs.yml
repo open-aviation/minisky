@@ -79,3 +79,4 @@ nav:
           - plugin: api/plugin.md
           - core: api/core.md
           - tools: api/tools.md
+          - tangram_minisky: api/tangram-minisky.md

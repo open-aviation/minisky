@@ -3,15 +3,15 @@
 This package is deliberately frontend-only: it registers no API routes and
 runs no background services inside tangram. All simulator-side logic (unit
 conversion, snapshot publishing, command handling) lives in MiniSky's own
-``TANGRAM`` plugin (``example_plugins/tangram.py`` in the MiniSky repo),
+`TANGRAM` plugin (`example_plugins/tangram.py` in the MiniSky repo),
 which talks to tangram exclusively over Redis pub/sub:
 
-- ``to:<channel>:new-data``  full state snapshots (aviation units)
-- ``to:<channel>:console``   echoed simulator console output
-- ``from:<channel>:command`` stack commands pushed from the browser
+- `to:<channel>:new-data`  full state snapshots (aviation units)
+- `to:<channel>:console`   echoed simulator console output
+- `from:<channel>:command` stack commands pushed from the browser
 
 The only thing tangram needs from this package is the compiled frontend
-bundle in ``dist-frontend`` and the configuration schema below.
+bundle in `dist-frontend` and the configuration schema below.
 """
 
 from dataclasses import dataclass
@@ -24,19 +24,28 @@ from tangram_core.config import FrontendMutable
 @dataclass(frozen=True)
 class MiniskyConfig:
     channel: str = "minisky"
-    """Redis channel name; must match ``tangram_channel`` in MiniSky's settings.yml."""
+    """Redis channel name; must match `tangram_channel` in MiniSky's settings.yml."""
     topbar_order: int = 45
+    """Ordering hint for the sim-control widget in tangram's topbar (lower is earlier)."""
     sidebar_order: int = 45
+    """Ordering hint for the aircraft-layer entry in tangram's sidebar (lower is earlier)."""
 
 
 @dataclass(frozen=True)
 class MiniskyFrontendConfig:
+    """The subset of [`MiniskyConfig`][tangram_minisky.MiniskyConfig] served to the
+    browser. `topbar_order` and `sidebar_order` are marked `FrontendMutable` so
+    tangram can let the user reorder the widgets at runtime."""
+
     channel: str
     topbar_order: Annotated[int, FrontendMutable()]
     sidebar_order: Annotated[int, FrontendMutable()]
 
 
 def into_frontend(config: MiniskyConfig) -> MiniskyFrontendConfig:
+    """Lower a [`MiniskyConfig`][tangram_minisky.MiniskyConfig] into the
+    frontend-facing [`MiniskyFrontendConfig`][tangram_minisky.MiniskyFrontendConfig]
+    that tangram serves to the browser."""
     return MiniskyFrontendConfig(
         channel=config.channel,
         topbar_order=config.topbar_order,
