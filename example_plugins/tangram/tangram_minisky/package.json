@@ -10,7 +10,7 @@
     "lint:fix": "eslint --fix",
     "typecheck": "vue-tsc --noEmit -p tsconfig.json",
     "typecheck:vite": "tsc --noEmit -p tsconfig.vite.json",
-    "check": "npm run lint && npm run typecheck && npm run typecheck:vite"
+    "check": "pnpm run lint && pnpm run typecheck && pnpm run typecheck:vite"
   },
   "dependencies": {
     "@open-aviation/tangram-core": "^0.5.0"

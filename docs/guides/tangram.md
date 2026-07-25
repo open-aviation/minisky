@@ -24,7 +24,7 @@ minisky process (TANGRAM plugin)          tangram process
   browser. MiniSky talks to tangram *only* through Redis pub/sub — tangram's
   transport convention (`to:<topic>:<event>` / `from:<topic>:<event>`) that
   has stayed stable across its plugin API changes.
-- **`example_plugins/tangram_minisky/`** is a separately packaged, thin
+- **`example_plugins/tangram/tangram_minisky/`** is a separately packaged, thin
   tangram frontend plugin: it registers a `minisky_aircraft` entity type, a
   deck.gl layer, trail rendering via tangram's shared trajectory store, and
   the control widget. No business logic lives there, so it is cheap to rewrite
@@ -52,22 +52,26 @@ meet on the channel name, not on any shared configuration.
 ### 2. MiniSky side (the producer)
 
 ```bash
-uv sync --all-packages --extra tangram
+uv sync --extra tangram
 ```
 
-`tangram_minisky` is a [uv workspace](https://docs.astral.sh/uv/concepts/projects/workspaces/)
-member of this repository, so `--all-packages` installs everything at once:
-the `redis` client for the bridge, plus `tangram_core` and the plugin itself
-(editable) into the same `.venv`. If you only want the MiniSky side,
-`uv sync --extra tangram` suffices.
+This installs the `redis` client the `TANGRAM` bridge needs into the repo-root
+`.venv`. The MiniSky producer is deliberately decoupled from the tangram
+frontend: `tangram_core` and the plugin live in their own self-contained
+workspace at `example_plugins/tangram/` (a separate `.venv`, so its heavy,
+platform-specific `tangram_core` wheel never touches the MiniSky env). That
+half is set up in steps 3–4.
 
-In `settings.yml`:
+In `settings.toml`:
 
-```yaml
-enabled_plugins: ['TANGRAM']
-# tangram_redis_url: redis://127.0.0.1:6379  # default
-# tangram_channel: minisky                   # default
-# tangram_max_hz: 5                          # default
+```toml
+enabled_plugins = ["TANGRAM"]
+
+# [tangram] is optional; uncomment to override the defaults shown here.
+# [tangram]
+# redis_url = "redis://127.0.0.1:6379"
+# channel = "minisky"
+# max_hz = 5
 ```
 
 Start MiniSky (any front — the bridge works the same in all of them):
@@ -93,43 +97,49 @@ redis-cli publish "from:minisky:command" '{"command": "HOLD"}'
 redis-cli publish "from:minisky:command" '{"command": "OP"}'
 ```
 
-Expect `to:minisky:new-data` snapshots (~`tangram_max_hz`/s while running,
+Expect `to:minisky:new-data` snapshots (~`[tangram].max_hz`/s while running,
 1/s heartbeat otherwise) reacting to the commands, plus `to:minisky:console`
 lines. If this works, the simulator side is done; everything after this point
 is tangram-side only.
 
 ### 3. Build the frontend plugin
 
+The frontend lives in its own uv + pnpm workspace at `example_plugins/tangram/`
+(mirroring [tangram's own `tangram/` layout](https://github.com/open-aviation/tangram)).
+Set it up and build:
+
 ```bash
-cd example_plugins/tangram_minisky
-npm install
-npm run build                  # bundles into dist-frontend/
+cd example_plugins/tangram
+just sync                      # uv sync --all-packages + pnpm install
+pnpm build                     # bundles each plugin into dist-frontend/
 ```
 
-Sanity-check the packaging from the repo root:
+Sanity-check the packaging:
 
 ```bash
-uv run tangram check-plugin example_plugins/tangram_minisky
+uv run tangram check-plugin tangram_minisky
 ```
 
 ### 4. Install tangram + the plugin on the host
 
-**Workspace route (recommended in this repo).** Nothing to install: step 2's
-`uv sync --all-packages` already put `tangram_core` and the (editable) plugin
-into `.venv`, and tangram resolves an editable install's `dist-frontend`
-straight from the source tree. `npm run build` output is picked up on the
-next `tangram serve` restart — no reinstall needed.
+**Workspace route (recommended in this repo).** Nothing to install: step 3's
+`just sync` already put `tangram_core` and the (editable) plugin into
+`example_plugins/tangram/.venv`, and tangram resolves an editable install's
+`dist-frontend` straight from the source tree. `pnpm build` output is picked
+up on the next `tangram serve` restart — no reinstall needed. Run tangram from
+that workspace (`cd example_plugins/tangram && uv run tangram serve ...`, see
+step 5).
 
-**Separate-environment route.** To run tangram outside this repository's
-venv (e.g. a standalone deployment):
+**Separate-environment route.** To run tangram outside this workspace's venv
+(e.g. a standalone deployment):
 
 ```bash
-uv tool install tangram_core --with ./example_plugins/tangram_minisky --force
+uv tool install tangram_core --with ./example_plugins/tangram/tangram_minisky --force
 ```
 
-(Or with a plain venv: `uv pip install tangram_core ./example_plugins/tangram_minisky`.
+(Or with a plain venv: `uv pip install tangram_core ./example_plugins/tangram/tangram_minisky`.
 The `--force`/reinstall is also the update path: rerun it after every
-`npm run build`.)
+`pnpm build`.)
 
 ### 5. Configure and run tangram
 
@@ -152,7 +162,7 @@ jwt_secret = "any-random-string-you-like"
 jwt_expiration_secs = 315360000
 
 # Optional — only needed if you change the channel name; it must then match
-# tangram_channel in MiniSky's settings.yml.
+# [tangram].channel in MiniSky's settings.toml.
 # [plugins.tangram_minisky]
 # channel = "minisky"
 ```
@@ -163,8 +173,9 @@ Every name in `plugins = [...]` must be installed in the environment running
 `tangram serve`.
 
 ```bash
+cd example_plugins/tangram
 uv run tangram serve --config /path/to/tangram.toml   # workspace route
-# or, with the uv tool route: tangram serve --config /path/to/tangram.toml
+# or, with the uv tool route (from anywhere): tangram serve --config /path/to/tangram.toml
 ```
 
 Open <http://localhost:2346>. With MiniSky running you should see, within a
@@ -185,26 +196,32 @@ tangram-core v0.5.0 publishes no type declaration for its `vite-plugin`
 subpath, so `vite.config.ts` carries a `// @ts-expect-error` on the import —
 drop it once upstream ships declarations.
 
-Frontend checks, from `example_plugins/tangram_minisky/`:
+All checks run from the workspace root, `example_plugins/tangram/`. The
+`justfile` bundles the Python (ruff/pyright) and frontend (eslint/vue-tsc/tsc)
+checks so the pre-commit loop is just two commands:
 
 ```bash
-npm run lint             # eslint (typescript-eslint + eslint-plugin-vue)
-npm run lint:fix
-npm run typecheck        # vue-tsc over src/ (.ts + .vue)
-npm run typecheck:vite   # tsc over vite.config.ts
-npm run check            # all of the above
-npm run build            # bundle into dist-frontend/
+just fmt      # ruff --fix + ruff format + pnpm lint:fix
+just check    # ruff, ruff format --check, pyright, and pnpm check
 ```
 
-Python checks run from the repo root — the plugin is a uv workspace member,
-so the usual repo commands cover it (`uv run ruff check .`,
-`uv run ruff format .`, and `uv run pyright`, whose include spans
-`example_plugins/`; it needs `uv sync --all-packages` so `tangram_core` is
-importable).
+The underlying frontend scripts (run them directly for a tighter loop):
 
-The edit loop with the workspace route: edit → `npm run check` →
-`npm run build` → restart `uv run tangram serve`. Only the uv tool route
-needs the `uv tool install ... --force` reinstall after a rebuild.
+```bash
+pnpm --filter ./tangram_minisky lint             # eslint (typescript-eslint + eslint-plugin-vue)
+pnpm --filter ./tangram_minisky typecheck        # vue-tsc over src/ (.ts + .vue)
+pnpm --filter ./tangram_minisky typecheck:vite   # tsc over vite.config.ts
+pnpm check                                        # all frontend checks, every workspace package
+pnpm build                                        # bundle into dist-frontend/
+```
+
+Python type-checking lives in this workspace (not the repo root) precisely so
+`pyright` can resolve `tangram_core`; the repo-root pyright excludes
+`example_plugins/tangram`.
+
+The edit loop with the workspace route: edit → `just check` →
+`pnpm build` → restart `uv run tangram serve`. Only the uv tool route needs
+the `uv tool install ... --force` reinstall after a rebuild.
 
 ### Running against a local tangram checkout (`tangram_exe`)
 
@@ -233,7 +250,7 @@ dependencies = ["tangram-core", "tangram-minisky"]
 
 [tool.uv.sources]
 tangram-core = { path = "../tangram/packages/tangram_core", editable = true }
-tangram-minisky = { path = "../minisky/example_plugins/tangram_minisky", editable = true }
+tangram-minisky = { path = "../minisky/example_plugins/tangram/tangram_minisky", editable = true }
 ```
 
 ```bash
@@ -243,11 +260,19 @@ uv run tangram serve --config tangram.toml
 ```
 
 Both installs are editable, so rebuilding either frontend (tangram-core's
-own, or this plugin's `npm run build`) only needs a serve restart. Note that
+own, or this plugin's `pnpm build`) only needs a serve restart. Note that
 `tangram check-plugin` compares the plugin's npm dependency ranges against
 the *installed* tangram-core's expectations, so its verdict can differ
 between a checkout and the published release; the ranges in this repo track
 the published `tangram_core`.
+
+The `tangram_exe` project above wires up the *Python* side against a local
+tangram. The `@open-aviation/tangram-core` **npm** dependency is independent —
+to build this plugin's bundle against a local tangram-core JavaScript checkout,
+uncomment the `overrides` block in `example_plugins/tangram/pnpm-workspace.yaml`
+(pointing it at your local `packages/tangram_core`) and run `pnpm i`. It is a
+deliberately ugly manual toggle: **re-comment it and rerun `pnpm i` before
+committing**, so the lockfile never pins a machine-local `link:` path.
 
 ## Troubleshooting
 
@@ -266,8 +291,8 @@ Work upstream-to-downstream:
    tangram container) is squatting ports 2346/2347: `lsof -i :2346 -i :2347`.
 3. **Channel joins succeed but the widget says "Simulator offline"** — no
    snapshot or heartbeat arrived for 5 seconds. Almost always a Redis URL
-   mismatch: `tangram.toml`'s `redis_url` and `settings.yml`'s
-   `tangram_redis_url` must point at the *same* Redis instance (mind
+   mismatch: `tangram.toml`'s `redis_url` and `settings.toml`'s
+   `[tangram].redis_url` must point at the *same* Redis instance (mind
    host-vs-container addressing: a dockerised tangram reaches a compose
    Redis at `redis://redis:6379`, a host process at `redis://127.0.0.1:6379`).
    A channel-name mismatch between the two sides has the same symptom.
@@ -284,7 +309,7 @@ happens in the MiniSky plugin, keeping `minisky.streaming` consumer-agnostic.
   groundspeed, tas, ias, vertical_rate, track, inconf, timestamp}],
   "count": n, "siminfo": {simt, simdt, simutc, speed, ntraf, state,
   state_name, scenname, nconf_cur, nlos_cur}}`.
-  Published on every simulation step (wall-clock capped at `tangram_max_hz`).
+  Published on every simulation step (wall-clock capped at `[tangram].max_hz`).
   Whenever the simulation is not advancing — including a freshly started
   simulator with no scenario — a heartbeat with refreshed `siminfo` (and the
   last aircraft list) is republished every second, so the frontend always

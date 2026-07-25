@@ -32,7 +32,7 @@ again, only this package needs touching.
 - `from:<channel>:command` — `{command: "OP"}` stack commands from the browser
 
 `<channel>` defaults to `minisky` and is configurable on both sides
-(`tangram_channel` in MiniSky's `settings.yml`, `channel` in tangram's
+(`[tangram].channel` in MiniSky's `settings.toml`, `channel` in tangram's
 `tangram.toml` under `[plugins.tangram_minisky]`).
 
 ## Build, check & install
@@ -75,16 +75,16 @@ plugins = ["tangram_minisky"]
 
 The full end-to-end walkthrough (Redis, MiniSky side, tangram.toml,
 troubleshooting) is in the MiniSky docs:
-[Streaming to a tangram map](../../docs/guides/tangram.md).
+[Streaming to a tangram map](../../../docs/guides/tangram.md).
 
 ## Run the simulator side
 
 In the MiniSky repo:
 
 ```bash
-uv sync --all-packages --extra tangram
-# settings.yml: enabled_plugins: ['TANGRAM'], tangram_redis_url pointing at
-# the same Redis instance tangram uses
+uv sync --extra tangram
+# settings.toml: enabled_plugins = ["TANGRAM"], and (optionally) a [tangram] table
+# with redis_url pointing at the same Redis instance tangram uses
 minisky server        # or: minisky run --scenario scenarios/kl204.scn
 ```
 

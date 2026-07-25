@@ -23,12 +23,11 @@ blocks on the network, and so commands are still received while the
 simulation is paused (plugin update hooks only fire in the OP state; the
 command stack itself is processed in every state).
 
-Settings (optional, in `settings.yml`):
+Settings (optional, under a ``[tangram]`` table in `settings.toml`):
 
-- `tangram_redis_url`: Redis connection URL (default
-  `redis://127.0.0.1:6379`).
-- `tangram_channel`: channel/topic name (default `minisky`).
-- `tangram_max_hz`: wall-clock cap on snapshot publish rate (default 5).
+- `redis_url`: Redis connection URL (default `redis://127.0.0.1:6379`).
+- `channel`: channel/topic name (default `minisky`).
+- `max_hz`: wall-clock cap on snapshot publish rate (default 5).
 
 Debug the transport without any frontend::
 
@@ -44,11 +43,22 @@ from collections import deque
 from datetime import datetime
 from typing import Any
 
+from pydantic import BaseModel
+
 import minisky
 from minisky import stack
 from minisky.core import settings
 from minisky.streaming import build_snapshot
 from minisky.tools.aero import fpm, ft, kts
+
+
+class TangramSettings(BaseModel):
+    """Validated ``[tangram]`` config from ``settings.toml`` (all keys optional)."""
+
+    redis_url: str = "redis://127.0.0.1:6379"
+    channel: str = "minisky"
+    max_hz: float = 5.0
+
 
 # How often the background thread republishes state while the simulation is
 # not advancing (paused/init), so the frontend still sees state changes.
@@ -353,10 +363,11 @@ def init_plugin():
     """Create the bridge and register its simulation hooks."""
     global bridge
 
+    cfg = TangramSettings(**getattr(settings, "tangram", {}))
     bridge = TangramBridge(
-        redis_url=getattr(settings, "tangram_redis_url", "redis://127.0.0.1:6379"),
-        channel=getattr(settings, "tangram_channel", "minisky"),
-        max_hz=float(getattr(settings, "tangram_max_hz", 5.0)),
+        redis_url=cfg.redis_url,
+        channel=cfg.channel,
+        max_hz=cfg.max_hz,
     )
     success, msg = bridge.start()
     minisky.scr.echo(msg)

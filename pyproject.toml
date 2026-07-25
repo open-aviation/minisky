@@ -14,14 +14,13 @@ dependencies = [
     "pandas>=2.2.3",
     "prompt-toolkit>=3.0.50",
     "pyarrow>=19.0.1",
-    "pyyaml>=6.0.2",
     "requests>=2.32.3",
     "rtree>=1.3.0",
     "scipy>=1.15.1",
 ]
 
 [project.optional-dependencies]
-tangram = ["redis>=5.0"]
+tangram = ["redis>=5.0", "pydantic>=2"]
 
 [project.scripts]
 minisky = "minisky.cli:app"
@@ -33,8 +32,9 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["minisky"]
 
-[tool.uv.workspace]
-members = ["example_plugins/tangram_minisky"]
+# The tangram frontend plugin is its own self-contained workspace at
+# `example_plugins/tangram/` (separate .venv, so ruff/pyright can resolve `tangram_core`).
+# It is intentionally NOT a member of this workspace. See example_plugins/tangram/pyproject.toml.
 
 [dependency-groups]
 dev = [
@@ -79,7 +79,8 @@ ignore = [
 
 [tool.pyright]
 include = ["minisky", "example_plugins"]
-exclude = ["**/__pycache__", "**/node_modules", ".venv", "build", "site"]
+# example_plugins/tangram is its own workspace/.venv (needs tangram_core); type-checked there.
+exclude = ["**/__pycache__", "**/node_modules", ".venv", "build", "site", "example_plugins/tangram"]
 pythonVersion = "3.11"
 # "standard" catches useful bugs while staying practical for this numpy/scipy-heavy fork.
 typeCheckingMode = "standard"

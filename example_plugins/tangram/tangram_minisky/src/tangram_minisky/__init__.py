@@ -24,7 +24,7 @@ from tangram_core.config import FrontendMutable
 @dataclass(frozen=True)
 class MiniskyConfig:
     channel: str = "minisky"
-    """Redis channel name; must match `tangram_channel` in MiniSky's settings.yml."""
+    """Redis channel name; must match `[tangram].channel` in MiniSky's settings.toml."""
     topbar_order: int = 45
     """Ordering hint for the sim-control widget in tangram's topbar (lower is earlier)."""
     sidebar_order: int = 45

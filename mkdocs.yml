@@ -33,6 +33,10 @@ plugins:
   - mkdocstrings:
       handlers:
         python:
+          # tangram_minisky lives in its own workspace/.venv and is not installed
+          # in the docs env; point griffe at its source so it can analyse it
+          # statically (no import, so tangram_core is not required here).
+          paths: [example_plugins/tangram/tangram_minisky/src]
           options:
             docstring_style: google
             docstring_section_style: table

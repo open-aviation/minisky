@@ -80,7 +80,7 @@ and stepping the simulation yourself.
 
 ## Configuration
 
-Runtime settings live in `settings.yml` at the repository root, e.g. conflict-detection
+Runtime settings live in `settings.toml` at the repository root, e.g. conflict-detection
 lookahead time and protected-zone sizes, the plugin search directory, and which plugins to
 load at startup:
 

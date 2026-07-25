@@ -16,11 +16,13 @@ uv run pytest -m api tests/test_api.py     # REST API tests — spawn a separate
 
 uv run ruff check .                        # lint
 uv run ruff format .                       # format (line-length 100)
-uv run pyright                             # type check (standard mode; covers example_plugins — needs `uv sync --all-packages`)
+uv run pyright                             # type check (standard mode; covers example_plugins EXCEPT example_plugins/tangram)
 
-# tangram frontend plugin (uv workspace member; run in example_plugins/tangram_minisky)
-npm run check                              # eslint + vue-tsc + tsc (vite config)
-npm run build                              # bundle into dist-frontend/
+# tangram frontend plugin — its own self-contained uv + pnpm workspace (separate .venv);
+# all commands run from example_plugins/tangram/ (see its justfile)
+cd example_plugins/tangram && just check    # ruff + pyright + pnpm (eslint + vue-tsc + tsc)
+cd example_plugins/tangram && just fmt      # ruff --fix/format + pnpm lint:fix
+cd example_plugins/tangram && pnpm build    # bundle each plugin into dist-frontend/
 
 uv run minisky commands docs               # regenerate docs/reference/commands.md after changing commands
 uv run minisky docs serve                  # docs live preview
@@ -43,7 +45,7 @@ The FastAPI app lives in `minisky/server.py`; `minisky server` is the CLI entry 
 
 Full details in `docs/architecture.md` — read it before making structural changes. The essentials:
 
-**Singletons.** `minisky.init()` constructs module-level singletons everything else references: `sim` (clock/state machine), `traf` (all aircraft state + flight-dynamics update), `runner` (async loop stepping at a controllable rate), `scr` (`ConsoleIO` output buffer), `navdb` (waypoints/airports/airways from parquet). They are `None` until `init()` runs. Call `load_plugins()` after `init()` to activate plugins from `settings.yml`.
+**Singletons.** `minisky.init()` constructs module-level singletons everything else references: `sim` (clock/state machine), `traf` (all aircraft state + flight-dynamics update), `runner` (async loop stepping at a controllable rate), `scr` (`ConsoleIO` output buffer), `navdb` (waypoints/airports/airways from parquet). They are `None` until `init()` runs. Call `load_plugins()` after `init()` to activate plugins from `settings.toml`.
 
 **Import order in `minisky/__init__.py` is load-bearing.** `traffic` is imported last and separately because the performance model runs module-level code touching `minisky.data` (set up by the settings import). Reordering causes a circular import.
 
@@ -77,4 +79,4 @@ Every text command — scenario file, REST `stack/` endpoint, or console — goe
 
 - Package/dependency management is **uv**. Prefix Python invocations with `uv run`.
 - After adding or changing a stack command, regenerate `docs/reference/commands.md` with the gen script.
-- `settings.yml` holds runtime config (ASAS protected-zone margins, plugin path, `enabled_plugins`).
+- `settings.toml` holds runtime config (ASAS protected-zone margins, plugin path, `enabled_plugins`).

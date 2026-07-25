@@ -21,7 +21,7 @@ of the code refers to:
 import minisky
 
 minisky.init()          # create the singletons
-minisky.load_plugins()  # optional: load plugins enabled in settings.yml
+minisky.load_plugins()  # optional: load plugins enabled in settings.toml
 ```
 
 ## The simulation loop
@@ -104,7 +104,7 @@ subsystems that act on it each timestep:
   LNAV/VNAV logic following a [`Route`][minisky.traffic.route.Route] of waypoints.
 - **Conflict detection** (`traffic/asas/detection.py`) — pairwise state-based detection
   within a lookahead time against a protected zone (default 5 NM / 1000 ft, configurable
-  in `settings.yml`). Candidate pairs are pre-selected with a KD-tree on projected
+  in `settings.toml`). Candidate pairs are pre-selected with a KD-tree on projected
   positions plus a vertical reachability filter, so cost scales with local traffic
   density rather than N².
 - **Conflict resolution** (`traffic/asas/mvp.py`) — Modified Voltage Potential resolution

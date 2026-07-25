@@ -3,9 +3,9 @@
 output
 cache
 
-# tangram_minisky frontend build
+# tangram frontend plugin builds (example_plugins/tangram/*)
 node_modules/
-example_plugins/tangram_minisky/dist-frontend/
+dist-frontend/
 bluesky/resources/grib
 bluesky/resources/netcdf
 
