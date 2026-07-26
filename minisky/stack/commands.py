@@ -45,102 +45,109 @@ This module contains the command dictionary that couples every base text
 command of the simulator (e.g., CRE, ALT, HDG) to the Python function that
 implements it, its argument type specification, and its usage and help
 texts, plus a dictionary of command synonyms. Both dictionaries are
-registered with the command interpreter in minisky.stack.init().
+registered with the command interpreter in `CommandStack.init()`.
 
 The strings in the command dictionary are the in-simulator help texts
 shown by the HELP command.
 """
 
+from __future__ import annotations
 
-def get_commands() -> tuple:
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from minisky.stack import CommandStack
+
+
+def get_commands(command_stack: CommandStack) -> tuple:
     """Assemble the base command and synonym dictionaries of the simulator.
 
-    Imports minisky at call time so that command callbacks can be bound to
-    the fully initialised simulation objects (traf, sim, navdb, scr, ...).
+    Binds callbacks to the objects owned by the provided runtime command stack.
 
     Returns:
         tuple: (cmddict, synonyms). cmddict maps a command name to a list
         of [function, argument type string, brief usage text, help text];
         synonyms maps a command name to a list of alias names.
     """
-    import minisky
+    from minisky import core, plugin, tools
+    from minisky.traffic import route
     from minisky.traffic.asas import resolution as asasresolution
 
     cmddict = {
         "ADDWPT": [
-            minisky.traffic.route.addwpt,
+            route.addwpt,
             "callsign,wpt,[alt,spd,wpt,wpt]",
             "ADDWPT callsign, wpt, [alt, spd, wpt, wpt]",
             "Add a waypoint to the route.",
         ],
         "ADDWPTMODE": [
-            minisky.traffic.route.change_wpt_mode,
+            route.change_wpt_mode,
             "callsign, [wpt,alt]",
             "ADDWPTMODE callsign, [wpt,alt]",
             "Changes the mode of the ADDWPT command to add waypoints of type 'mode'.",
         ],
         "AFTER": [
-            minisky.traffic.route.addwpt_after,
+            route.addwpt_after,
             "callsign,wpt,txt,wpt,[alt,spd]",
             "AFTER callsign, wpt, addwpt, waypoint, [alt, spd]",
             "Add a waypoint after another waypoint in the route.",
         ],
         "ALT": [
-            minisky.traf.ap.selaltcmd,
+            command_stack.traffic.ap.selaltcmd,
             "callsign,alt,[vspd]",
             "ALT callsign, alt, [vspd]",
             "Select autopilot altitude command.",
         ],
         "ASAS": [
-            minisky.traf.cd.switch,
+            command_stack.traffic.cd.switch,
             "[txt]",
             "ASAS [ON/OFF]",
             "Select a Conflict Detection method.",
         ],
         "AT": [
-            minisky.traffic.route.at_wpt,
+            route.at_wpt,
             "callsign,wpt,[txt,...]",
             "AT callsign, wpt, [DEL] ALT/SPD/DO alt/spd/stack command",
             "Set or show altitude and/or speed constraints at a waypoint.",
         ],
         "ATALT": [
-            minisky.traf.cond.ataltcmd,
+            command_stack.traffic.cond.ataltcmd,
             "callsign,alt,string",
             "callsign ATALT alt cmd ",
             "When aircraft at given altitude , execute the command",
         ],
         "ATDIST": [
-            minisky.traf.cond.atdistcmd,
+            command_stack.traffic.cond.atdistcmd,
             "callsign,latlon,float,string",
             "callsign ATDIST pos dist cmd ",
             "When aircraft passing this distance (in nm) to position, execute the command",
         ],
         "ATSPD": [
-            minisky.traf.cond.atspdcmd,
+            command_stack.traffic.cond.atspdcmd,
             "callsign,spd,string",
             "callsign ATSPD spd cmd ",
             "When aircraft reaches given speed, execute the command",
         ],
         "BANK": [
-            minisky.traf.setbanklim,
+            command_stack.traffic.setbanklim,
             "callsign,[float]",
             "BANK callsign bankangle[deg]",
             "Set or show bank limit for this vehicle",
         ],
         "BEFORE": [
-            minisky.traffic.route.addwpt_before,
+            route.addwpt_before,
             "callsign,wpt,txt,wpt,[alt,spd]",
             "BEFORE callsign, wpt, addwpt, waypoint, [alt, spd]",
             "Add a waypoint before another waypoint in the route.",
         ],
         "BOX": [
-            minisky.tools.areafilter.define_box_area,
+            tools.areafilter.define_box_area,
             "txt,latlon,latlon,[alt,alt]",
             "BOX name,lat,lon,lat,lon,[top,bottom]",
             "Define a box-shaped area",
         ],
         "CASMACHTHR": [
-            minisky.tools.aero.casmachthr,
+            tools.aero.casmachthr,
             "float",
             "CASMACHTHR threshold",
             """Set a threshold below which speeds should be considered as Mach numbers
@@ -148,115 +155,115 @@ def get_commands() -> tuple:
                 never be considered as Mach number(e.g., when simulating drones).""",
         ],
         "CIRCLE": [
-            minisky.tools.areafilter.define_circle_area,
+            tools.areafilter.define_circle_area,
             "txt,latlon,float,[alt,alt]",
             "CIRCLE name,lat,lon,radius,[top,bottom]",
             "Define a circle-shaped area",
         ],
         "CLRCRECMD": [
-            minisky.traf.clrcrecmd,
+            command_stack.traffic.clrcrecmd,
             "",
             "CLRCRECMD",
             "CLRCRECMD will clear CRECMD list of commands aircraft creation",
         ],
         "CRE": [
-            minisky.traf.cre,
+            command_stack.traffic.cre,
             "txt,txt,float,float,[hdg,alt,spd]",
             "CRE callsign,type,lat,lon,hdg,alt,spd",
             "Create an aircraft",
         ],
         "CRECMD": [
-            minisky.traf.crecmd,
+            command_stack.traffic.crecmd,
             "string",
             "CRECMD cmdline (to be added after aircraft id )",
             "Add a command for each aircraft to be issued after creation of aircraft",
         ],
         "CRECONFS": [
-            minisky.traf.creconfs,
+            command_stack.traffic.creconfs,
             "txt,txt,callsign,hdg,float,time,[alt,time,spd]",
             "CRECONFS id, type, targetid, dpsi, cpa, tlos_hor, dH, tlos_ver, spd",
             "Create an aircraft that is in conflict with 'targetid'",
         ],
         "DATE": [
-            minisky.sim.setutc,
+            command_stack.simulation.setutc,
             "[int,int,int,txt]",
             "DATE [day,month,year,HH:MM:SS.hh]",
             "Set simulation date",
         ],
         "DEFWPT": [
-            minisky.navdb.defwpt,
+            command_stack.navigation.defwpt,
             "txt,latlon,[txt]",
             "DEFWPT wpname,lat,lon,[DELETE/FIX/VOR/DME/NDB/DEL]",
             "Define (or delete) a waypoint only for this scenario/run",
         ],
         "DEL": [
-            minisky.stack.delete_element,
+            command_stack.delete_element,
             "callsign/txt,...",
             "DEL callsign/ALL/WIND/shape",
             "Delete command (aircraft, wind, area)",
         ],
         "DELAY": [
-            minisky.stack.delay,
+            command_stack.delay,
             "time, string",
             "DELAY time, cmdline",
             "Delay a stack command until a specific simulation time.",
         ],
         "DELRTE": [
-            minisky.traffic.route.delrte,
+            route.delrte,
             "callsign",
             "DELRTE callsign",
             "Delete the complete route for an aircraft.",
         ],
         "DELWPT": [
-            minisky.traffic.route.delwpt,
+            route.delwpt,
             "callsign,wpt",
             "DELWPT callsign,wpt",
             "Delete a waypoint from a route.",
         ],
         "DEST": [
-            minisky.traf.ap.setdest,
+            command_stack.traffic.ap.setdest,
             "callsign,wpt,[spd]",
             "DEST callsign, latlon/airport, casmach (= CASkts/Mach)",
             "Set destination of aircraft, aircraft will fly to this airport.",
         ],
         "DIRECT": [
-            minisky.traffic.route.direct,
+            route.direct,
             "callsign, wpt",
             "DIRECT callsign, wpt",
             "Go direct to a specified waypoint in the route.",
         ],
         "DTMULT": [
-            minisky.runner.setspeed,
+            command_stack.runner.setspeed,
             "float",
             "DTMULT multiplier",
             "Set the simulation speed multiplier (wall-clock pacing, DTMULT equivalent).",
         ],
         "DTLOOK": [
-            minisky.traf.cd.setdtlook,
+            command_stack.traffic.cd.setdtlook,
             "[time,callsign,...]",
             "DTLOOK [time, callsign...]",
             "Set the lookahead time (in [hh:mm:]sec) for conflict detection.",
         ],
         "DTNOLOOK": [
-            minisky.traf.cd.setdtnolook,
+            command_stack.traffic.cd.setdtnolook,
             "[time,callsign,...]",
             "DTNOLOOK [time, callsign...]",
             "Set the interval (in [hh:mm:]sec) in which conflict detection is skipped after a conflict resolution.",
         ],
         "ECHO": [
-            minisky.scr.echo,
+            command_stack.console.echo,
             "string",
             "ECHO txt",
             "Show a text in command window for user to read",
         ],
         "GETWIND": [
-            minisky.traf.wind.get,
+            command_stack.traffic.wind.get,
             "lat, lon, [alt]",
             "GETWIND lat, lon, [alt]",
             "Get wind at a specified position (and optionally at altitude).",
         ],
         "GROUP": [
-            minisky.traf.groups.group,
+            command_stack.traffic.groups.group,
             "[txt,callsign/txt,...]",
             "GROUP [grname, (areaname OR callsign,...) ]",
             "Add aircraft to a group. OR all aircraft in given area.\n"
@@ -265,73 +272,73 @@ def get_commands() -> tuple:
             + "A group is created when a group with the given name doesn't exist yet.",
         ],
         "HDG": [
-            minisky.traf.ap.selhdgcmd,
+            command_stack.traffic.ap.selhdgcmd,
             "callsign,hdg",
             "HDG callsign,hdg (deg,True or Magnetic)",
             "Autopilot select heading command.",
         ],
         "HELP": [
-            minisky.stack.showhelp,
+            command_stack.showhelp,
             "[txt,txt]",
             "HELP [cmd, subcmd]",
             "Display general help text or help text for a specific command.",
         ],
         "HOLD": [
-            minisky.sim.hold,
+            command_stack.simulation.hold,
             "",
             "HOLD",
             "Pause(hold) simulation",
         ],
         "IC": [
-            minisky.stack.ic,
+            command_stack.ic,
             "string",
             "IC scenario_filename",
             "Load a scenario filename.",
         ],
         "LINE": [
-            minisky.tools.areafilter.define_line_area,
+            tools.areafilter.define_line_area,
             "txt,latlon,latlon",
             "LINE name,lat,lon,lat,lon",
             "Draw a line on the radar screen",
         ],
         "LISTRTE": [
-            minisky.traffic.route.listrte,
+            route.listrte,
             "callsign,[txt]",
             "LISTRTE callsign, [pagenr]",
             "Show list of route in window per page of 5 waypoints.",
         ],
         "LNAV": [
-            minisky.traf.ap.setLNAV,
+            command_stack.traffic.ap.setLNAV,
             "callsign,[bool]",
             "LNAV callsign,[ON/OFF]",
             "LNAV (lateral FMS mode) switch for autopilot.",
         ],
         "LSVAR": [
-            minisky.core.varexplorer.lsvar,
+            core.varexplorer.lsvar,
             "[word]",
             "LSVAR path.to.variable",
             "Inspect any variable in a simulation",
         ],
         "MAGVAR": [
-            minisky.tools.geo.magdeccmd,
+            tools.geo.magdeccmd,
             "lat,lon",
             "MAGVAR lat,lon",
             "Show magnetic variation/declination at position",
         ],
         "MCRE": [
-            minisky.traf.mcre,
+            command_stack.traffic.mcre,
             "int,[float,float,float,float,txt,alt,spd]",
             "MCRE n,[lat,lon,lat,lon,type,alt,spd]",
             "Multiple random create of n aircraft in current view",
         ],
         "MOVE": [
-            minisky.traf.move,
+            command_stack.traffic.move,
             "callsign,latlon,[alt,hdg,spd,vspd]",
             "MOVE callsign,lat,lon,[alt,hdg,spd,vspd]",
             "Move an aircraft to a new position",
         ],
         "NOISE": [
-            minisky.traf.setnoise,
+            command_stack.traffic.setnoise,
             "[onoff]",
             "NOISE [ON/OFF]",
             "Turbulence/noise switch",
@@ -343,49 +350,49 @@ def get_commands() -> tuple:
             "ADD or Remove aircraft that nobody will avoid.",
         ],
         "OP": [
-            minisky.sim.op,
+            command_stack.simulation.op,
             "",
             "OP",
             "Start/Run simulation or continue after hold",
         ],
         "PERFSTATS": [
-            minisky.traf.perf.show_performance,
+            command_stack.traffic.perf.show_performance,
             "callsign",
             "PERFSTATS callsign",
             "Show the performace information of an aircraft.",
         ],
         "ORIG": [
-            minisky.traf.ap.setorig,
+            command_stack.traffic.ap.setorig,
             "callsign,wpt",
             "ORIG callsign, latlon/airport",
             "Set origin of aircraft.",
         ],
         "PLUGINS": [
-            minisky.plugin.manage_plugins,
+            plugin.manage_plugins,
             "[txt,txt]",
             "PLUGINS [LIST/LOAD, plugin_name]",
             "List available plugins or load a plugin",
         ],
         "POLY": [
-            minisky.tools.areafilter.define_poly_area,
+            tools.areafilter.define_poly_area,
             "txt,[latlon,...]",
             "POLY name,[lat,lon,lat,lon, ...]",
             "Define a polygon-shaped area",
         ],
         "POLYALT": [
-            minisky.tools.areafilter.define_polyalt_area,
+            tools.areafilter.define_polyalt_area,
             "txt,alt,alt,latlon,...",
             "POLYALT name,top,bottom,lat,lon,lat,lon, ...",
             "Define a polygon-shaped area in 3D: between two altitudes",
         ],
         "POLYLINE": [
-            minisky.tools.areafilter.define_polyline_area,
+            tools.areafilter.define_polyline_area,
             "txt,latlon,...",
             "POLYLINE name,lat,lon,lat,lon,...",
             "Draw a multi-segment line on the radar screen",
         ],
         "POS": [
-            minisky.traf.position,
+            command_stack.traffic.position,
             "callsign/wpt",
             "POS callsign/waypoint",
             "Get info on aircraft, airport or waypoint",
@@ -397,25 +404,25 @@ def get_commands() -> tuple:
             "Define priority rules (right of way) for conflict resolution.",
         ],
         "QUIT": [
-            minisky.sim.stop,
+            command_stack.simulation.stop,
             "",
             "QUIT",
             "Quit program/Stop simulation",
         ],
         "REALTIME": [
-            minisky.sim.realtime,
+            command_stack.simulation.realtime,
             "[bool]",
             "REALTIME [ON/OFF]",
             "En-/disable realtime running allowing a variable timestep.",
         ],
         "RESET": [
-            minisky.sim.reset,
+            command_stack.simulation.reset,
             "",
             "RESET",
             "Reset simulation",
         ],
         "RESO": [
-            minisky.traf.cr.setmethod,
+            command_stack.traffic.cr.setmethod,
             "[txt]",
             "RESO [name]",
             "Select a Conflict Resolution method.",
@@ -451,7 +458,7 @@ def get_commands() -> tuple:
             "Set resolution factor vertical.",
         ],
         "RTA": [
-            minisky.traffic.route.set_rta,
+            route.set_rta,
             "callsign, wpt, time",
             "RTA callsign, wpt, time",
             "Add RTA to waypoint record.",
@@ -469,97 +476,97 @@ def get_commands() -> tuple:
             "Set resolution factor horizontal, but then with absolute value.",
         ],
         "SCHEDULE": [
-            minisky.stack.schedule,
+            command_stack.schedule,
             "time,string",
             "SCHEDULE a stack command at a specific simulation time.",
             "Schedule a stack command at a specific simulation time.",
         ],
         "SCENARIO": [
-            minisky.stack.scenario,
+            command_stack.scenario,
             "string",
             "SCENARIO name",
             "Sets the scenario name for the current simulation.",
         ],
         "SEED": [
-            minisky.sim.setseed,
+            command_stack.simulation.setseed,
             "int",
             "SEED value",
             "Set seed for all functions using a randomizer (e.g.mcre,noise)",
         ],
         "SELECTIMPL": [
-            minisky.core.trafficarrays.select_implementation,
+            command_stack.select_implementation,
             "[txt,txt]",
             "SELECTIMPL [classname, implname]",
             "Select implementation for a replaceable class (e.g., SELECTIMPL AUTOPILOT MYAUTOPILOT)",
         ],
         "SPD": [
-            minisky.traf.ap.selspdcmd,
+            command_stack.traffic.ap.selspdcmd,
             "callsign,spd",
             "SPD callsign,casmach (= CASkts/Mach)",
             "Select autopilot speed.",
         ],
         "SWTOC": [
-            minisky.traf.ap.setswtoc,
+            command_stack.traffic.ap.setswtoc,
             "callsign,[bool]",
             "SWTOC callsign,[ON/OFF]",
             "Switch ToC logic (=climb early) on/off.",
         ],
         "SWTOD": [
-            minisky.traf.ap.setswtod,
+            command_stack.traffic.ap.setswtod,
             "callsign,[bool]",
             "SWTOD callsign,[ON/OFF]",
             "Switch ToD logic (=climb early) on/off.",
         ],
         "THR": [
-            minisky.traf.setthrottle,
+            command_stack.traffic.setthrottle,
             "callsign[,txt]",
             "THR callsign, IDLE/0.0/throttlesetting/1.0/AUTO(default)",
             "Set throttle or autotothrottle(default)",
         ],
         "TIME": [
-            minisky.sim.setutc,
+            command_stack.simulation.setutc,
             "[txt]",
             "TIME RUN(default) / HH:MM:SS.hh / REAL / UTC ",
             "Set simulated clock time",
         ],
         "TRAIL": [
-            minisky.traf.trails.setTrails,
+            command_stack.traffic.trails.setTrails,
             "[callsign/bool],[float/txt]",
             "TRAIL ON/OFF, [dt] OR TRAIL callsign colour",
             "Toggle aircraft trails on/off",
         ],
         "UNGROUP": [
-            minisky.traf.groups.ungroup,
+            command_stack.traffic.groups.ungroup,
             "txt,callsign,...",
             "UNGROUP grname, callsign",
             "Remove aircraft from a group",
         ],
         "VNAV": [
-            minisky.traf.ap.setVNAV,
+            command_stack.traffic.ap.setVNAV,
             "callsign,[bool]",
             "VNAV callsign,[ON/OFF]",
             "Switch on/off VNAV mode, the vertical FMS mode (autopilot).",
         ],
         "VS": [
-            minisky.traf.ap.selvspdcmd,
+            command_stack.traffic.ap.selvspdcmd,
             "callsign,vspd",
             "VS callsign,vspd (ft/min)",
             "Vertical speed command (autopilot).",
         ],
         "WIND": [
-            minisky.traf.wind.add,
+            command_stack.traffic.wind.add,
             "latlon,[float/txt,float,float]...",
             "WIND lat,lon,[alt],dir,spd[,alt,dir,spd,...] or WIND lat,lon,DEL",
             "Define a wind vector as part of the 2D or 3D wind field.",
         ],
         "ZONEDH": [
-            minisky.traf.cd.sethpz,
+            command_stack.traffic.cd.sethpz,
             "[float,callsign,...]",
             "ZONEDH [height, callsign...]",
             "Set the vertical separation distance (i.e., half of the protected zone height) in feet.",
         ],
         "ZONER": [
-            minisky.traf.cd.setrpz,
+            command_stack.traffic.cd.setrpz,
             "[float,callsign,...]",
             "ZONER [radius, callsign...]",
             "Set the horizontal separation distance (i.e., the radius of the protected zone) in nautical miles.",

@@ -17,18 +17,18 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-from minisky import stack
 from minisky.core.trafficarrays import reset_replaceables
 from minisky.plugin import PluginManager
 from minisky.tools import areafilter
 
 if TYPE_CHECKING:
     from minisky.simulation.console import ConsoleIO
+    from minisky.stack import CommandStack
     from minisky.tools.navdata import Navdatabase
     from minisky.traffic import Traffic
 
 # Simulation states
-INIT, HOLD, OP, END = (0, 1, 2, 3) # TODO(abraham): use IntEnum.
+INIT, HOLD, OP, END = (0, 1, 2, 3)  # TODO(abraham): use IntEnum.
 
 # Minimum sleep interval
 MINSLEEP = 1e-3
@@ -63,11 +63,13 @@ class Simulation:
         traffic: Traffic,
         navigation: Navdatabase,
         console: ConsoleIO,
+        command_stack: CommandStack,
         stop_runner: Callable[[], None],
     ) -> None:
         self.traffic = traffic
         self.navigation = navigation
         self.console = console
+        self.commands = command_stack
         self.stop_runner = stop_runner
         self.state = INIT
         self.prevstate = None
@@ -108,11 +110,13 @@ class Simulation:
            timers), update all aircraft, then run plugin `update` hooks.
         """
         # Simulation starts as soon as there is traffic, or pending commands
-        if self.state == INIT and (self.traffic.ntraf > 0 or len(stack.get_scendata()[0]) > 0):
+        if self.state == INIT and (
+            self.traffic.ntraf > 0 or len(self.commands.get_scendata()[0]) > 0
+        ):
             self.op()
 
         # Always update stack
-        stack.process()
+        self.commands.process()
 
         if self.state == OP:
             self.simt += self.simdt
@@ -187,11 +191,11 @@ class Simulation:
         )
         self.navigation.reset()
         self.traffic.reset()
-        stack.reset()
+        self.commands.reset()
         areafilter.reset()
         self.console.reset()
         # Reset replaceables (Autopilot, PerfBase, etc.) to defaults
-        reset_replaceables(self.traffic)
+        reset_replaceables(self.traffic, self.commands.cmddict)
         # Reset plugins (timers + reset hooks)
         PluginManager.reset()
         self.console.echo("Simulation reset")
@@ -240,13 +244,13 @@ class Simulation:
 
         if eventname == b"STACK":
             # We received a single stack command. Add it to the existing stack
-            stack.stack(eventdata, sender_id=sender_rte)
+            self.commands.stack(eventdata, sender_id=sender_rte)
             event_processed = True
 
         elif eventname == b"BATCH":
             # We are in a batch simulation, and received an entire scenario. Assign it to the stack.
             self.reset()
-            stack.set_scendata(eventdata["scentime"], eventdata["scencmd"])
+            self.commands.set_scendata(eventdata["scentime"], eventdata["scencmd"])
             self.op()
             event_processed = True
 
