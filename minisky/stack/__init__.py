@@ -346,16 +346,17 @@ class Stack:
 
     @classmethod
     def commands(cls) -> Iterator[str]:
-        """Generator function to iterate over stack commands."""
-        # Return commands from PCALL if passed, otherwise own command stack
-        # (assigning to cls attributes on purpose, so cls.current tracks the loop)
-        for cls.current, cls.sender_rte in cls.cmdstack:  # noqa: B020
-            yield cls.current
+        """Generator function to iterate over stack commands.
 
-    @classmethod
-    def clear(cls) -> None:
-        """Remove all commands from the command stack."""
-        cls.cmdstack.clear()
+        Detaches the pending command list before iterating so that a
+        stack() call from another thread (e.g. a plugin I/O thread) can
+        never race with processing: a command lands either on the old
+        list (processed this step) or on the fresh one (next step).
+        """
+        pending, cls.cmdstack = cls.cmdstack, []
+        # (assigning to cls attributes on purpose, so cls.current tracks the loop)
+        for cls.current, cls.sender_rte in pending:  # noqa: B020
+            yield cls.current
 
 
 def delete_element(*arg):
@@ -402,7 +403,9 @@ def process() -> None:
     in which case the second word is the command, defaulting to POS), the
     remaining text is passed to the Command object for argument parsing and
     execution, and any resulting message is echoed to the screen. The
-    command stack is cleared afterwards.
+    pending commands are detached from the stack up front (see
+    Stack.commands), so commands stacked while processing runs — including
+    from other threads — are kept for the next step instead of being lost.
     """
     # First check for commands in scenario file
     checkscen()
@@ -458,9 +461,6 @@ def process() -> None:
 
         if echotext:
             minisky.scr.echo(echotext)
-
-    # Clear the processed commands
-    Stack.clear()
 
 
 def readscn(scn: "str | Path | StringIO") -> Iterator[tuple[float, str]]:
