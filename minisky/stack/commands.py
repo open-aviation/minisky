@@ -69,7 +69,7 @@ def get_commands(command_stack: CommandStack) -> tuple:
         of [function, argument type string, brief usage text, help text];
         synonyms maps a command name to a list of alias names.
     """
-    from minisky import core, plugin, tools
+    from minisky import plugin, tools
     from minisky.traffic import route
     from minisky.traffic.asas import resolution as asasresolution
 
@@ -141,7 +141,7 @@ def get_commands(command_stack: CommandStack) -> tuple:
             "Add a waypoint before another waypoint in the route.",
         ],
         "BOX": [
-            tools.areafilter.define_box_area,
+            command_stack.areas.define_box_area,
             "txt,latlon,latlon,[alt,alt]",
             "BOX name,lat,lon,lat,lon,[top,bottom]",
             "Define a box-shaped area",
@@ -155,7 +155,7 @@ def get_commands(command_stack: CommandStack) -> tuple:
                 never be considered as Mach number(e.g., when simulating drones).""",
         ],
         "CIRCLE": [
-            tools.areafilter.define_circle_area,
+            command_stack.areas.define_circle_area,
             "txt,latlon,float,[alt,alt]",
             "CIRCLE name,lat,lon,radius,[top,bottom]",
             "Define a circle-shaped area",
@@ -296,7 +296,7 @@ def get_commands(command_stack: CommandStack) -> tuple:
             "Load a scenario filename.",
         ],
         "LINE": [
-            tools.areafilter.define_line_area,
+            command_stack.areas.define_line_area,
             "txt,latlon,latlon",
             "LINE name,lat,lon,lat,lon",
             "Draw a line on the radar screen",
@@ -314,7 +314,7 @@ def get_commands(command_stack: CommandStack) -> tuple:
             "LNAV (lateral FMS mode) switch for autopilot.",
         ],
         "LSVAR": [
-            core.varexplorer.lsvar,
+            command_stack.variables.lsvar,
             "[word]",
             "LSVAR path.to.variable",
             "Inspect any variable in a simulation",
@@ -374,19 +374,19 @@ def get_commands(command_stack: CommandStack) -> tuple:
             "List available plugins or load a plugin",
         ],
         "POLY": [
-            tools.areafilter.define_poly_area,
+            command_stack.areas.define_poly_area,
             "txt,[latlon,...]",
             "POLY name,[lat,lon,lat,lon, ...]",
             "Define a polygon-shaped area",
         ],
         "POLYALT": [
-            tools.areafilter.define_polyalt_area,
+            command_stack.areas.define_polyalt_area,
             "txt,alt,alt,latlon,...",
             "POLYALT name,top,bottom,lat,lon,lat,lon, ...",
             "Define a polygon-shaped area in 3D: between two altitudes",
         ],
         "POLYLINE": [
-            tools.areafilter.define_polyline_area,
+            command_stack.areas.define_polyline_area,
             "txt,latlon,...",
             "POLYLINE name,lat,lon,lat,lon,...",
             "Draw a multi-segment line on the radar screen",

@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 from minisky import tools
-from minisky.core import varexplorer
 from minisky.core.settings import MiniSkySettings, data
+from minisky.core.varexplorer import VariableExplorer
 from minisky.simulation import ConsoleIO, Runner, Simulation
 from minisky.simulation.simulation import OP
 from minisky.stack import CommandStack
+from minisky.tools.areafilter import AreaFilter
 from minisky.tools.navdata import Navdatabase
 from minisky.traffic import Traffic
 
@@ -21,11 +22,15 @@ class MiniSky:
 
         self.console = ConsoleIO(lambda: self.simulation.state == OP)
         self.navigation = Navdatabase(data("navigation"), self.console)
-        self.traffic = Traffic(settings)
+        self.areas = AreaFilter()
+        self.variables = VariableExplorer()
+        self.traffic = Traffic(settings, self.areas)
         self.commands = CommandStack(
             traffic=self.traffic,
             navigation=self.navigation,
             console=self.console,
+            areas=self.areas,
+            variables=self.variables,
             get_simulation=lambda: self.simulation,
             get_runner=lambda: self.runner,
         )
@@ -34,16 +39,17 @@ class MiniSky:
             navigation=self.navigation,
             console=self.console,
             command_stack=self.commands,
+            areas=self.areas,
             stop_runner=self._stop_runner,
         )
         self.runner = Runner(self.simulation, self.console)
+        self.variables.init(self.simulation, self.traffic)
 
         # the compatibility facade must be active before commands and variable
         # explorer parents are registered against this runtime.
         import minisky
 
         minisky._activate(self)
-        varexplorer.init()
         self.commands.init()
 
         if scenario:
