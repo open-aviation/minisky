@@ -1,18 +1,22 @@
 """Node encapsulates the sim process, and manages process I/O.
 
-Defines the :class:`Runner`, the asyncio-based main loop of MiniSky. It calls
-``minisky.sim.step()`` repeatedly at an interval derived from the requested
+Defines the `Runner`, the asyncio-based main loop of MiniSky. It calls
+`self.simulation.step()` repeatedly at an interval derived from the requested
 simulation speed, and supports fast-forward jumps where the sleep interval is
 reduced to a minimum until a target simulation time is reached. A single
-instance is created by :func:`minisky.init` and available as
-``minisky.runner``.
+instance is owned by `MiniSky` and temporarily available as `minisky.runner`
+through the compatibility facade.
 """
+
+from __future__ import annotations
 
 import asyncio
 import os
-from typing import Any
+from typing import TYPE_CHECKING
 
-import minisky
+if TYPE_CHECKING:
+    from minisky.simulation.console import ConsoleIO
+    from minisky.simulation.simulation import Simulation
 
 MIN_UPDATE_INTERVAL = 0.0001
 
@@ -20,37 +24,40 @@ MIN_UPDATE_INTERVAL = 0.0001
 class Runner:
     """Asyncio loop that drives the simulation at a configurable speed.
 
-    Each loop iteration performs one call to ``minisky.sim.step()`` (which
-    advances simulation time by one ``simdt``) and then sleeps so that steps
-    occur every ``1 / speed`` wall-clock seconds. During a fast-forward jump
-    (see :meth:`forward`) the sleep is shortened to the minimum interval so
+    Each loop iteration performs one call to `self.simulation.step()` (which
+    advances simulation time by one `simdt`) and then sleeps so that steps
+    occur every `1 / speed` wall-clock seconds. During a fast-forward jump
+    (see `forward`) the sleep is shortened to the minimum interval so
     the target simulation time is reached as fast as possible.
 
     Attributes:
         node_id: Random 5-byte identifier for this simulation node.
         host_id: Identifier of the host this node belongs to (empty by default).
         running: True while the run loop is active.
-        allow_shutdown: If False, :meth:`stop` is ignored and the loop keeps
+        allow_shutdown: If False, `stop` is ignored and the loop keeps
             running (used when the simulator should idle without a scenario).
         speed: Simulation speed factor relative to real time; the loop targets
-            one simulation step every ``1 / speed`` wall-clock seconds.
+            one simulation step every `1 / speed` wall-clock seconds.
         jump: Remaining fast-forward request [s of simulation time]; 0 when
             no jump is active.
         jump_to: Target simulation time of the active fast-forward jump [s].
     """
 
-    def __init__(self, **kwargs: Any) -> None:
+    def __init__(self, simulation: Simulation, console: ConsoleIO, speed: float = 1) -> None:
         """Initialize the runner.
 
         Args:
-            **kwargs: Optional settings. Supports ``speed`` (simulation speed
-                factor relative to real time, default 1).
+            simulation: Simulation stepped by the run loop.
+            console: Output channel used for lifecycle messages.
+            speed: Simulation speed factor relative to real time, default 1.
         """
+        self.simulation = simulation
+        self.console = console
         self.node_id: bytes = b"\x00" + os.urandom(4)
         self.host_id: bytes = b""
         self.running: bool = False
         self.allow_shutdown: bool = True
-        self.speed = kwargs.get("speed", 1)
+        self.speed = speed
         self.jump: float = 0
         self.jump_to: float = 0
 
@@ -64,16 +71,16 @@ class Runner:
         Args:
             seconds: Amount of simulation time to jump forward [s].
         """
-        self.jump_to = minisky.sim.simt + seconds - 2  #  -2 for the action margin
+        self.jump_to = self.simulation.simt + seconds - 2  # -2 for the action margin
         self.jump = seconds
 
     def setspeed(self, mult: float) -> tuple[bool, str]:
         """Set the simulation speed multiplier (stack DTMULT command).
 
-        The loop targets one simulation step every ``1 / speed`` wall-clock
+        The loop targets one simulation step every `1 / speed` wall-clock
         seconds, so a larger multiplier makes simulated time advance faster
         relative to the wall clock. This is the wall-clock-pacing equivalent of
-        BlueSky's ``DTMULT``.
+        BlueSky's `DTMULT`.
 
         Args:
             mult: Simulation speed factor relative to real time; must be
@@ -89,7 +96,7 @@ class Runner:
         return True, f"Simulation speed set to {mult}x"
 
     def prevent_shutdown(self) -> None:
-        """Disable shutdown so that :meth:`stop` requests are ignored.
+        """Disable shutdown so that `stop` requests are ignored.
 
         Used when the simulator runs without a scenario (e.g. behind the HTTP
         API) and should keep accepting commands even after a scenario ends or
@@ -101,12 +108,12 @@ class Runner:
         """Run the main simulation loop until stopped.
 
         Repeatedly steps the simulation, sleeping between steps so that steps
-        occur every ``1 / speed`` wall-clock seconds. While a fast-forward
+        occur every `1 / speed` wall-clock seconds. While a fast-forward
         jump is active the sleep interval is reduced to the minimum until the
         target simulation time is reached. The loop exits when
-        :meth:`stop` sets ``running`` to False (and shutdown is allowed).
+        `stop` sets `running` to False (and shutdown is allowed).
         """
-        minisky.scr.echo("Starting simulation")
+        self.console.echo("Starting simulation")
         self.running = True
 
         while self.running:
@@ -115,7 +122,7 @@ class Runner:
                 update_interval = MIN_UPDATE_INTERVAL
 
                 # Check if jump is completed
-                if self.jump_to <= minisky.sim.simt:
+                if self.jump_to <= self.simulation.simt:
                     self.jump = 0
                     self.jump_to = 0
             else:
@@ -123,7 +130,7 @@ class Runner:
 
             next_time = asyncio.get_event_loop().time() + update_interval
 
-            minisky.sim.step()
+            self.simulation.step()
 
             current_time = asyncio.get_event_loop().time()
 
@@ -131,16 +138,16 @@ class Runner:
 
             await asyncio.sleep(sleep_time)
 
-        minisky.scr.echo("Simulation completed")
+        self.console.echo("Simulation completed")
 
     def stop(self) -> None:
         """Request the run loop to stop.
 
         Has no effect when shutdown has been disabled with
-        :meth:`prevent_shutdown`; in that case a message is printed and the
+        `prevent_shutdown`; in that case a message is printed and the
         loop keeps running.
         """
         if self.allow_shutdown:
             self.running = False
         else:
-            minisky.scr.echo("Shutdown is prevented")
+            self.console.echo("Shutdown is prevented")

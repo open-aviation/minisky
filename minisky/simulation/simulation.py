@@ -1,24 +1,34 @@
 """BlueSky simulation control object.
 
-Defines the :class:`Simulation` class, the central clock and state machine of
+Defines the `Simulation` class, the central clock and state machine of
 the simulator. It advances simulation time, processes the command stack,
 triggers plugin pre-/post-update hooks, and updates all aircraft in the
 traffic object once per timestep. A single instance is created by
-:func:`minisky.init` and made available as ``minisky.sim``.
+`minisky.init` and made available as `minisky.sim`.
 """
+
+from __future__ import annotations
 
 import datetime
 import time
+from collections.abc import Callable
 from random import seed
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-# Local imports
-import minisky
+from minisky import stack
 from minisky.core.trafficarrays import reset_replaceables
 from minisky.plugin import PluginManager
 from minisky.tools import areafilter
+
+if TYPE_CHECKING:
+    from minisky.simulation.console import ConsoleIO
+    from minisky.tools.navdata import Navdatabase
+    from minisky.traffic import Traffic
+
+# Simulation states
+INIT, HOLD, OP, END = (0, 1, 2, 3) # TODO(abraham): use IntEnum.
 
 # Minimum sleep interval
 MINSLEEP = 1e-3
@@ -28,28 +38,38 @@ class Simulation:
     """The simulation object: clock, state machine, and per-step update driver.
 
     Holds simulation time and state, and advances the simulation one timestep
-    at a time. Each :meth:`step` processes pending stack commands and, while
+    at a time. Each `step` processes pending stack commands and, while
     operating, increments simulation time, triggers plugin hooks and updates
-    the traffic. State transitions are driven by the ``OP``/``HOLD``/``RESET``
-    and ``QUIT`` stack commands, which map onto :meth:`op`, :meth:`hold`,
-    :meth:`reset` and :meth:`stop`.
+    the traffic. State transitions are driven by the `OP`/`HOLD`/`RESET`
+    and `QUIT` stack commands, which map onto `op`, `hold`,
+    `reset` and `stop`.
 
     Attributes:
-        state: Current simulation state, one of ``minisky.INIT``,
-            ``minisky.HOLD``, ``minisky.OP`` or ``minisky.END``.
+        state: Current simulation state, one of `minisky.INIT`,
+            `minisky.HOLD`, `minisky.OP` or `minisky.END`.
         prevstate: Previous simulation state (unused placeholder).
         simt: Elapsed simulation time [s].
         simdt: Simulation timestep [s].
         syst: System (wall-clock) time reference [s].
-        utc: Simulated UTC clock time as a ``datetime``; settable with
-            :meth:`setutc`.
+        utc: Simulated UTC clock time as a `datetime`; settable with
+            `setutc`.
         rtmode: Flag indicating whether the timestep may be varied to keep
             the simulation running in real time.
         clients: Set of known client identifiers connected to this simulation.
     """
 
-    def __init__(self) -> None:
-        self.state = minisky.INIT
+    def __init__(
+        self,
+        traffic: Traffic,
+        navigation: Navdatabase,
+        console: ConsoleIO,
+        stop_runner: Callable[[], None],
+    ) -> None:
+        self.traffic = traffic
+        self.navigation = navigation
+        self.console = console
+        self.stop_runner = stop_runner
+        self.state = INIT
         self.prevstate = None
 
         # Simulation time [seconds]
@@ -80,23 +100,21 @@ class Simulation:
 
         A step consists of:
 
-        1. Auto-start: while in ``INIT``, switch to ``OP`` as soon as there is
+        1. Auto-start: while in `INIT`, switch to `OP` as soon as there is
            traffic or there are pending scenario commands.
         2. Process the command stack (always, in every state).
-        3. While in ``OP``: advance ``simt`` and the simulated UTC clock by
-           ``simdt`` seconds, run plugin ``preupdate`` hooks (including
-           timers), update all aircraft, then run plugin ``update`` hooks.
+        3. While in `OP`: advance `simt` and the simulated UTC clock by
+           `simdt` seconds, run plugin `preupdate` hooks (including
+           timers), update all aircraft, then run plugin `update` hooks.
         """
         # Simulation starts as soon as there is traffic, or pending commands
-        if self.state == minisky.INIT and (
-            minisky.traf.ntraf > 0 or len(minisky.stack.get_scendata()[0]) > 0
-        ):
+        if self.state == INIT and (self.traffic.ntraf > 0 or len(stack.get_scendata()[0]) > 0):
             self.op()
 
         # Always update stack
-        minisky.stack.process()
+        stack.process()
 
-        if self.state == minisky.OP:
+        if self.state == OP:
             self.simt += self.simdt
 
             # Update UTC time
@@ -105,7 +123,7 @@ class Simulation:
             # Plugin pre-update (timers + preupdate hooks)
             PluginManager.preupdate()
 
-            minisky.traf.update()
+            self.traffic.update()
 
             # Plugin post-update hooks
             PluginManager.update()
@@ -120,36 +138,36 @@ class Simulation:
     def stop(self) -> None:
         """Stop the simulation (stack STOP/QUIT command).
 
-        Sets the simulation state to ``END`` and asks the runner to exit its
+        Sets the simulation state to `END` and asks the runner to exit its
         loop. If the runner was configured with
-        :meth:`~minisky.simulation.runner.Runner.prevent_shutdown`, the loop
+        `minisky.simulation.runner.Runner.prevent_shutdown`, the loop
         keeps running and only the state changes.
         """
-        self.state = minisky.END
-        minisky.runner.stop()
+        self.state = END
+        self.stop_runner()
 
     def op(self) -> None:
         """Set simulation state to OPERATE (stack OP command).
 
         Resumes (or starts) advancing simulation time. Also re-anchors the
-        system time reference ``syst`` to the current wall-clock time plus one
+        system time reference `syst` to the current wall-clock time plus one
         timestep [s].
         """
         self.syst = time.time() + self.simdt
-        self.state = minisky.OP
-        minisky.scr.echo("Simulation running")
+        self.state = OP
+        self.console.echo("Simulation running")
 
     def hold(self) -> None:
         """Set simulation state to HOLD (stack HOLD command).
 
-        Pauses the advance of simulation time and triggers the plugin ``hold``
+        Pauses the advance of simulation time and triggers the plugin `hold`
         hooks. Stack commands are still processed while holding, so the
-        simulation can be resumed with the ``OP`` command.
+        simulation can be resumed with the `OP` command.
         """
         self.syst = time.time() + self.simdt
-        self.state = minisky.HOLD
+        self.state = HOLD
         PluginManager.hold()
-        minisky.scr.echo("Simulation paused")
+        self.console.echo("Simulation paused")
 
     def reset(self) -> None:
         """Reset all simulation objects (stack RESET command).
@@ -160,23 +178,23 @@ class Simulation:
         console output, replaceable entities (autopilot, performance models,
         etc.) and plugin timers/hooks reset to their defaults.
         """
-        self.state = minisky.INIT
+        self.state = INIT
         self.syst = 0
         self.simt = 0
         self.simdt = 1
         self.utc = datetime.datetime.now(datetime.UTC).replace(
             hour=0, minute=0, second=0, microsecond=0
         )
-        minisky.navdb.reset()
-        minisky.traf.reset()
-        minisky.stack.reset()
+        self.navigation.reset()
+        self.traffic.reset()
+        stack.reset()
         areafilter.reset()
-        minisky.scr.reset()
+        self.console.reset()
         # Reset replaceables (Autopilot, PerfBase, etc.) to defaults
-        reset_replaceables()
+        reset_replaceables(self.traffic)
         # Reset plugins (timers + reset hooks)
         PluginManager.reset()
-        minisky.scr.echo("Simulation reset")
+        self.console.echo("Simulation reset")
 
     def realtime(self, flag: bool | None = None) -> tuple[bool, str]:
         """Get or set realtime mode (stack REALTIME command).
@@ -185,8 +203,8 @@ class Simulation:
         synchronized with the wall clock.
 
         Args:
-            flag: ``True``/``False`` to enable or disable realtime mode, or
-                ``None`` to only report the current setting.
+            flag: `True`/`False` to enable or disable realtime mode, or
+                `None` to only report the current setting.
 
         Returns:
             Tuple of (success flag, message stating whether realtime mode is
@@ -200,17 +218,17 @@ class Simulation:
     def event(self, eventname: bytes, eventdata: Any, sender_rte: Any) -> bool:
         """Handle events coming from the network.
 
-        Supports two event types: ``b"STACK"``, which appends a single stack
-        command line to the command stack, and ``b"BATCH"``, which resets the
+        Supports two event types: `b"STACK"`, which appends a single stack
+        command line to the command stack, and `b"BATCH"`, which resets the
         simulation, installs a full scenario (times + commands) on the stack,
         and immediately starts operating.
 
         Args:
-            eventname: Event type identifier as bytes (``b"STACK"`` or
-                ``b"BATCH"``).
-            eventdata: Event payload; the command string for ``STACK``, or a
-                dict with ``scentime`` (command times [s]) and ``scencmd``
-                (command strings) for ``BATCH``.
+            eventname: Event type identifier as bytes (`b"STACK"` or
+                `b"BATCH"`).
+            eventdata: Event payload; the command string for `STACK`, or a
+                dict with `scentime` (command times [s]) and `scencmd`
+                (command strings) for `BATCH`.
             sender_rte: Route/identifier of the sending client, passed on as
                 the stack command's sender id.
 
@@ -222,13 +240,13 @@ class Simulation:
 
         if eventname == b"STACK":
             # We received a single stack command. Add it to the existing stack
-            minisky.stack.stack(eventdata, sender_id=sender_rte)
+            stack.stack(eventdata, sender_id=sender_rte)
             event_processed = True
 
         elif eventname == b"BATCH":
             # We are in a batch simulation, and received an entire scenario. Assign it to the stack.
             self.reset()
-            minisky.stack.set_scendata(eventdata["scentime"], eventdata["scencmd"])
+            stack.set_scendata(eventdata["scentime"], eventdata["scencmd"])
             self.op()
             event_processed = True
 
@@ -242,12 +260,12 @@ class Simulation:
         Accepted argument forms:
 
         - no arguments: leave the clock unchanged (the new value is reported).
-        - ``RUN``: today's date at 00:00:00 UTC.
-        - ``REAL``: current local date and time.
-        - ``UTC``: current UTC date and time.
-        - a time string ``HH:MM:SS`` or ``HH:MM:SS.ff``: set the clock time.
-        - ``day month year``: set the date (three integers).
-        - ``day month year timestring``: set both date and time.
+        - `RUN`: today's date at 00:00:00 UTC.
+        - `REAL`: current local date and time.
+        - `UTC`: current UTC date and time.
+        - a time string `HH:MM:SS` or `HH:MM:SS.ff`: set the clock time.
+        - `day month year`: set the date (three integers).
+        - `day month year timestring`: set both date and time.
 
         Args:
             *args: Zero, one, three, or four arguments as described above.
@@ -299,11 +317,10 @@ class Simulation:
 
         return True, "Simulation UTC " + str(self.utc)
 
-    @staticmethod
-    def setseed(value: int) -> None:
+    def setseed(self, value: int) -> None:
         """Set the random seed for this simulation (stack SEED command).
 
-        Seeds both Python's :mod:`random` module and NumPy's random generator
+        Seeds both Python's `random` module and NumPy's random generator
         so that stochastic scenario elements are reproducible.
 
         Args:
@@ -311,4 +328,4 @@ class Simulation:
         """
         seed(value)
         np.random.seed(value)
-        minisky.scr.echo("random seed set")
+        self.console.echo("random seed set")

@@ -10,6 +10,7 @@ from __future__ import annotations
 from minisky import core, plugin, stack, tools
 from minisky.core.settings import MiniSkySettings, data, filename_settings
 from minisky.simulation import ConsoleIO, Runner, Simulation
+from minisky.simulation.simulation import END, HOLD, INIT, OP
 from minisky.tools.navdata import Navdatabase
 
 # isort: split
@@ -23,9 +24,6 @@ BS_OK = 0
 BS_ARGERR = 1
 BS_FUNERR = 2
 BS_CMDERR = 4
-
-# simulation states
-INIT, HOLD, OP, END = (0, 1, 2, 3)
 
 _current: MiniSky | None = None
 runner: Runner = None  # type: ignore[assignment]
