@@ -11,13 +11,28 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Install Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Build frontend plugin
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm check
+          pnpm build
+
       - name: Install uv
         uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
 
-      - name: Install dependencies
-        run: uv sync --locked
+      - name: Install Python dependencies
+        run: uv sync --locked --all-packages
 
       - name: Run unit and integration tests
         run: uv run pytest

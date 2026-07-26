@@ -8,6 +8,7 @@ version = "0.1.0"
 description = "tangram frontend plugin rendering live traffic from a MiniSky simulator"
 readme = "readme.md"
 requires-python = ">=3.11"
+# NOTE: we depend on redis and pydantic which is already included in tangram core.
 dependencies = ["tangram_core>=0.5.0"]
 classifiers = ["Private :: Do Not Upload"]
 authors = [{ name = "Andres Morfin Veytia" }]

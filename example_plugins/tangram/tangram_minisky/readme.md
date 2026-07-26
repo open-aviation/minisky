@@ -35,46 +35,33 @@ again, only this package needs touching.
 (`[tangram].channel` in MiniSky's `settings.toml`, `channel` in tangram's
 `tangram.toml` under `[plugins.tangram_minisky]`).
 
-## Build, check & install
+## Build and run
 
-This package is a **uv workspace member** of the MiniSky repository and its
-layout follows the
-[tangram out-of-tree plugin guide](https://mode-s.org/tangram/plugins/frontend/)
-(`tsconfig.json` extends tangram-core's `tsconfig.plugin.json`,
-`tsconfig.vite.json` extends `tsconfig.node.json`; `vite.config.ts` carries a
-`// @ts-expect-error` because tangram-core v0.5.0 ships no declarations for
-the vite-plugin subpath).
+From the MiniSky repository root:
 
 ```bash
-npm install
-npm run check          # eslint + vue-tsc + tsc (vite config)
-npm run build          # produces dist-frontend/ (bundle + plugin.json)
+just sync
+just check
 ```
 
-Python side (from the MiniSky repo root): `uv sync --all-packages` installs
-`tangram_core` and this package editable into the repo `.venv`; ruff and
-pyright cover it via the normal repo-root commands, and
-`uv run tangram check-plugin example_plugins/tangram_minisky` validates the
-packaging.
-
-With that workspace install, `uv run tangram serve` from the repo root loads
-the plugin directly — a rebuild only needs `npm run build` plus a serve
-restart. To install into a *separate* environment instead:
+Run with published tangram using either route:
 
 ```bash
-uv tool install tangram_core --with ./ --force
+uv tool install tangram_core \
+  --with ./example_plugins/tangram/tangram_minisky \
+  --force
+tangram serve --config ../tangram_minisky_exe/tangram.toml
 ```
 
-(or `uv pip install ./` into a plain venv). Rerun the install after every
-`npm run build`. Either way, enable it in `tangram.toml`:
+or:
 
-```toml
-[core]
-plugins = ["tangram_minisky"]
+```bash
+cd ../tangram_minisky_exe
+uv sync
+uv run tangram serve --config tangram.toml
 ```
 
-The full end-to-end walkthrough (Redis, MiniSky side, tangram.toml,
-troubleshooting) is in the MiniSky docs:
+The complete setup and temporary local-checkout overrides are documented in
 [Streaming to a tangram map](../../../docs/guides/tangram.md).
 
 ## Run the simulator side
@@ -82,7 +69,7 @@ troubleshooting) is in the MiniSky docs:
 In the MiniSky repo:
 
 ```bash
-uv sync --extra tangram
+just sync
 # settings.toml: enabled_plugins = ["TANGRAM"], and (optionally) a [tangram] table
 # with redis_url pointing at the same Redis instance tangram uses
 minisky server        # or: minisky run --scenario scenarios/kl204.scn

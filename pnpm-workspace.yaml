@@ -1,9 +1,9 @@
 packages:
-  - "tangram_*"
+  - example_plugins/tangram/*
 
 # to use a local version of tangram-core instead, uncomment this.
 # link paths are relative to this workspace root; the deck.gl links point at the
 # checkout's own copies so typechecking sees a single deck.gl installation.
 # before committing, remember to re-comment and run `pnpm i`!
 # overrides:
-#   "@open-aviation/tangram-core": "link:../../../tangram/packages/tangram_core"
+#   "@open-aviation/tangram-core": "link:../tangram/packages/tangram_core"
