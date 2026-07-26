@@ -1,16 +1,16 @@
 """Conflict resolution base class.
 
-This module provides :class:`ConflictResolution`, the base class for all
+This module provides [`ConflictResolution`][minisky.traffic.asas.resolution.ConflictResolution], the base class for all
 conflict resolution (CR) implementations in MiniSky. It manages the shared
 resolution machinery: per-aircraft resolution advisories (heading, speed,
 vertical speed, altitude), resolution zone margins relative to the detection
 protected zone, priority rules, per-aircraft opt-outs (NORESO/RESOOFF), and
 the logic that decides when an aircraft may resume normal navigation after a
-conflict has been resolved (:meth:`ConflictResolution.resumenav`).
+conflict has been resolved ([`ConflictResolution.resumenav`][minisky.traffic.asas.resolution.ConflictResolution.resumenav]).
 
 Actual resolution algorithms (e.g. the Modified Voltage Potential method in
-``minisky.traffic.asas.mvp``) subclass this class and override
-:meth:`ConflictResolution.resolve`.
+`minisky.traffic.asas.mvp`) subclass this class and override
+[`ConflictResolution.resolve`][minisky.traffic.asas.resolution.ConflictResolution.resolve].
 """
 
 from typing import Any
@@ -18,7 +18,8 @@ from typing import Any
 import numpy as np
 
 import minisky
-from minisky.core.trafficarrays import TrafficArrays
+from minisky.core.settings import MiniSkySettings
+from minisky.core.trafficarrays import TrafficArrays, select_implementation
 from minisky.stack.argparser import Txt
 from minisky.tools.aero import ft, nm
 
@@ -27,14 +28,14 @@ class ConflictResolution(TrafficArrays):
     """Base class for Conflict Resolution implementations.
 
     Each update step, when resolution is active and conflicts are detected,
-    :meth:`resolve` is called to compute resolution advisories for all
+    [`ConflictResolution.resolve`][minisky.traffic.asas.resolution.ConflictResolution.resolve] is called to compute resolution advisories for all
     aircraft. These advisories are stored in the per-aircraft arrays below and
-    are followed by the autopilot for aircraft whose ``active`` flag is True.
-    :meth:`resumenav` then decides per aircraft whether to keep following the
+    are followed by the autopilot for aircraft whose `active` flag is True.
+    [`ConflictResolution.resumenav`][minisky.traffic.asas.resolution.ConflictResolution.resumenav] then decides per aircraft whether to keep following the
     resolution or to resume the flight plan (after the conflict pair has
     passed its closest point of approach).
 
-    The base class itself performs no avoidance: its :meth:`resolve` simply
+    The base class itself performs no avoidance: its [`ConflictResolution.resolve`][minisky.traffic.asas.resolution.ConflictResolution.resolve] simply
     returns the autopilot values. Subclasses implement an actual algorithm.
 
     Attributes:
@@ -60,8 +61,9 @@ class ConflictResolution(TrafficArrays):
         vs (ndarray): Resolution vertical speed advisory [m/s].
     """
 
-    def __init__(self) -> None:
+    def __init__(self, settings: MiniSkySettings) -> None:
         super().__init__()
+        self.settings = settings
         self.activate = False
 
         # [-] switch to activate priority rules for conflict resolution
@@ -72,8 +74,8 @@ class ConflictResolution(TrafficArrays):
         # Resolution factors:
         # set < 1 to maneuver only a fraction of the resolution
         # set > 1 to add a margin to separation values
-        self.resofach = minisky.core.settings.asas_marh
-        self.resofacv = minisky.core.settings.asas_marv
+        self.resofach = self.settings.asas_marh
+        self.resofacv = self.settings.asas_marv
 
         # Switches to guarantee last reso zone commands keep valid if cd zone changes
         self.resodhrelative = (
@@ -90,6 +92,10 @@ class ConflictResolution(TrafficArrays):
             self.tas = np.array([])  # speed provided by the ASAS (eas) [m/s]
             self.alt = np.array([])  # alt provided by the ASAS [m]
             self.vs = np.array([])  # vspeed provided by the ASAS [m/s]
+
+    def new_implementation(self, implementation: type[TrafficArrays]) -> TrafficArrays:
+        """Construct a replacement with this runtime's settings."""
+        return implementation(self.settings)
 
     def switch(self, flag: bool | None = None) -> None:
         """Turn conflict resolution on or off.
@@ -110,8 +116,8 @@ class ConflictResolution(TrafficArrays):
         self.swprio = False
         self.priocode = ""
         self.resopairs.clear()
-        self.resofach = minisky.core.settings.asas_marh
-        self.resofacv = minisky.core.settings.asas_marv
+        self.resofach = self.settings.asas_marh
+        self.resofacv = self.settings.asas_marv
         self.resodhrelative = True
         self.resorrelative = True
 
@@ -177,8 +183,8 @@ class ConflictResolution(TrafficArrays):
         """Perform an update step of the Conflict Resolution implementation.
 
         When resolution is active, computes new resolution advisories with
-        :meth:`resolve` if there are current conflicts, and updates which
-        aircraft should keep following the resolution with :meth:`resumenav`.
+        [`ConflictResolution.resolve`][minisky.traffic.asas.resolution.ConflictResolution.resolve] if there are current conflicts, and updates which
+        aircraft should keep following the resolution with [`ConflictResolution.resumenav`][minisky.traffic.asas.resolution.ConflictResolution.resumenav].
 
         Args:
             conf: The ConflictDetection instance with the current conflicts.
@@ -308,7 +314,7 @@ class ConflictResolution(TrafficArrays):
 
         Implements the PRIORULES stack command. The base class only stores
         the settings; interpretation of the priority code is up to the
-        resolution algorithm (see e.g. ``MVP.applyprio``).
+        resolution algorithm (see e.g. `MVP.applyprio`).
 
         Args:
             flag (bool): True to enable priority rules, False to disable.
@@ -334,7 +340,7 @@ class ConflictResolution(TrafficArrays):
         """ADD or Remove aircraft that nobody will avoid.
         Multiple aircraft can be sent to this function at once.
 
-        Implements the NORESO stack command: toggles the ``noresoac`` flag
+        Implements the NORESO stack command: toggles the `noresoac` flag
         for the given aircraft. Flagged aircraft still avoid others, but
         other aircraft will not avoid them.
 
@@ -360,7 +366,7 @@ class ConflictResolution(TrafficArrays):
         """ADD or Remove aircraft that will not avoid anybody else.
         Multiple aircraft can be sent to this function at once.
 
-        Implements the RESOOFF stack command: toggles the ``resooffac`` flag
+        Implements the RESOOFF stack command: toggles the `resooffac` flag
         for the given aircraft. Flagged aircraft perform no resolution
         manoeuvres themselves, but others may still avoid them.
 
@@ -388,7 +394,7 @@ class ConflictResolution(TrafficArrays):
         (to maneuver only a fraction of a resolution vector).
 
         Implements the RFACH stack command. The horizontal resolution zone
-        radius is ``resofach`` times the detection protected zone radius:
+        radius is `resofach` times the detection protected zone radius:
         values below 1 manoeuvre only a fraction of the resolution, values
         above 1 add a separation margin.
 
@@ -415,7 +421,7 @@ class ConflictResolution(TrafficArrays):
         """Set resolution factor vertical (to maneuver only a fraction of a resolution vector).
 
         Implements the RFACV stack command. The vertical resolution zone
-        height is ``resofacv`` times the detection protected zone height.
+        height is `resofacv` times the detection protected zone height.
 
         Args:
             factor (float): Vertical resolution factor [-]. When None, the
@@ -439,7 +445,7 @@ class ConflictResolution(TrafficArrays):
         (to maneuver only a fraction of a resolution vector).
 
         Implements the RSZONER stack command: sets the horizontal resolution
-        zone as an absolute radius, from which ``resofach`` is derived. Only
+        zone as an absolute radius, from which `resofach` is derived. Only
         available when all aircraft share the same (global) protected zone
         radius.
 
@@ -475,7 +481,7 @@ class ConflictResolution(TrafficArrays):
         resolution vector), but then with absolute value.
 
         Implements the RSZONEDH stack command: sets the vertical resolution
-        zone as an absolute height, from which ``resofacv`` is derived. Only
+        zone as an absolute height, from which `resofacv` is derived. Only
         available when all aircraft share the same (global) protected zone
         height.
 
@@ -511,7 +517,7 @@ class ConflictResolution(TrafficArrays):
         """Select a Conflict Resolution method.
 
         Implements the RESO stack command. Selecting "MVP" replaces the
-        traffic object's resolution instance (``minisky.traf.cr``) with a new
+        traffic object's resolution instance (`minisky.traf.cr`) with a new
         MVP instance and activates it.
 
         Args:
@@ -535,10 +541,9 @@ class ConflictResolution(TrafficArrays):
             return True, "Conflict Resolution turned off."
 
         if name == "MVP":
-            from minisky.traffic.asas.mvp import MVP
-
-            # Replace the current conflict resolution instance with MVP
-            minisky.traf.cr = MVP()
+            success, message = select_implementation("CONFLICTRESOLUTION", name)
+            if not success:
+                return success, message
             minisky.traf.cr.switch(True)
             return True, "Selected MVP as Conflict Resolution method."
 

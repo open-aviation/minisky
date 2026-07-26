@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import tomllib
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated
 
 import annotated_types
 from pydantic import BaseModel, ConfigDict, Field
@@ -41,8 +41,6 @@ PACKAGE_DATA_DIR = Path(__file__).parent.parent / "data"
 
 filename_settings = DEFAULT_SETTINGS_FILE
 default_settings = MiniSkySettings.from_file(filename_settings)
-
-config: dict[str, Any] = default_settings.model_dump()
 prefer_compiled = default_settings.prefer_compiled
 asas_dtlookahead = default_settings.asas_dtlookahead
 asas_pzr = default_settings.asas_pzr

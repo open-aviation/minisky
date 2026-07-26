@@ -4,8 +4,8 @@ Conflict detection in MiniSky is pairwise and state-based: at every update the
 current position and velocity of each aircraft (the ownship) is linearly
 extrapolated and compared against every other aircraft (the intruder). A
 conflict is flagged when the extrapolated trajectories penetrate each other's
-cylindrical protected zone (radius ``rpz``, half-height ``hpz``) within the
-lookahead time ``dtlookahead``. A loss of separation (LoS) is flagged when the
+cylindrical protected zone (radius `rpz`, half-height `hpz`) within the
+lookahead time `dtlookahead`. A loss of separation (LoS) is flagged when the
 protected zone is already penetrated at the current time.
 
 Rather than evaluating all N^2 aircraft pairs, detection first selects
@@ -23,6 +23,7 @@ import numpy as np
 from scipy.spatial import KDTree
 
 import minisky
+from minisky.core.settings import MiniSkySettings
 from minisky.core.trafficarrays import TrafficArrays
 from minisky.stack.argparser import Time, Txt
 from minisky.tools.aero import ft, nm
@@ -58,9 +59,9 @@ class ConflictDetection(TrafficArrays):
     protected zone disk overlaps in time with the horizontal intrusion, and
     the conflict starts within the lookahead time.
 
-    The result of each update is stored both as pairwise lists (``confpairs``,
-    ``lospairs`` and the per-conflict geometry arrays) and as per-aircraft
-    arrays (``inconf``, ``tcpamax``). Separation minima and lookahead time can
+    The result of each update is stored both as pairwise lists (`confpairs`,
+    `lospairs` and the per-conflict geometry arrays) and as per-aircraft
+    arrays (`inconf`, `tcpamax`). Separation minima and lookahead time can
     be set globally or per aircraft.
 
     Attributes:
@@ -90,17 +91,18 @@ class ConflictDetection(TrafficArrays):
         dtnolook (ndarray): Per-aircraft detection hold-off interval [s].
     """
 
-    def __init__(self) -> None:
+    def __init__(self, settings: MiniSkySettings) -> None:
         super().__init__()
+        self.settings = settings
         ## Default values
         # [m] Horizontal separation minimum for detection
-        self.rpz_def = minisky.core.settings.asas_pzr * nm
+        self.rpz_def = self.settings.asas_pzr * nm
         self.global_rpz = True
         # [m] Vertical separation minimum for detection
-        self.hpz_def = minisky.core.settings.asas_pzh * ft
+        self.hpz_def = self.settings.asas_pzh * ft
         self.global_hpz = True
         # [s] lookahead time
-        self.dtlookahead_def = minisky.core.settings.asas_dtlookahead
+        self.dtlookahead_def = self.settings.asas_dtlookahead
         self.global_dtlook = True
         self.dtnolook_def = 0.0
         self.global_dtnolook = True
@@ -135,12 +137,16 @@ class ConflictDetection(TrafficArrays):
             self.dtlookahead = np.array([])
             self.dtnolook = np.array([])
 
+    def new_implementation(self, implementation: type[TrafficArrays]) -> TrafficArrays:
+        """Construct a replacement with this runtime's settings."""
+        return implementation(self.settings)
+
     def clearconfdb(self) -> None:
         """Clear the conflict database.
 
         Empties the pairwise conflict/LoS lists and geometry arrays of the
         current timestep and resets the per-aircraft conflict flags. The
-        historic lists (``confpairs_all``, ``lospairs_all``) are kept.
+        historic lists (`confpairs_all`, `lospairs_all`) are kept.
         """
         self.confpairs_unique.clear()
         self.lospairs_unique.clear()
@@ -159,7 +165,7 @@ class ConflictDetection(TrafficArrays):
         """Initialise per-aircraft detection parameters for new aircraft.
 
         Called by the traffic object when aircraft are created. Extends all
-        per-aircraft arrays and fills the last ``n`` elements with the current
+        per-aircraft arrays and fills the last `n` elements with the current
         default separation minima and lookahead times.
 
         Args:
@@ -183,9 +189,9 @@ class ConflictDetection(TrafficArrays):
         self.clearconfdb()
         self.confpairs_all.clear()
         self.lospairs_all.clear()
-        self.rpz_def = minisky.core.settings.asas_pzr * nm
-        self.hpz_def = minisky.core.settings.asas_pzh * ft
-        self.dtlookahead_def = minisky.core.settings.asas_dtlookahead
+        self.rpz_def = self.settings.asas_pzr * nm
+        self.hpz_def = self.settings.asas_pzh * ft
+        self.dtlookahead_def = self.settings.asas_dtlookahead
         self.dtnolook_def = 0.0
         self.global_rpz = self.global_hpz = True
         self.global_dtlook = self.global_dtnolook = True
@@ -202,7 +208,7 @@ class ConflictDetection(TrafficArrays):
             tuple: (success (bool), message (str)) for the command stack.
 
         Raises:
-            AssertionError: If ``name`` is not "ON" or "OFF".
+            AssertionError: If `name` is not "ON" or "OFF".
         """
         assert name in ["ON", "OFF"], f"Invalid CD method: {name}"
 
@@ -347,10 +353,10 @@ class ConflictDetection(TrafficArrays):
     def update(self, ownship: Any, intruder: Any) -> None:
         """Perform an update step of the Conflict Detection implementation.
 
-        Runs :meth:`detect` on the current traffic states and stores its
+        Runs [`ConflictDetection.detect`][minisky.traffic.asas.detection.ConflictDetection.detect] on the current traffic states and stores its
         results. Also maintains the sets of unique conflict/LoS pairs (where
         (a, b) and (b, a) count as one pair) and appends newly appearing
-        pairs to the cumulative ``confpairs_all``/``lospairs_all`` lists.
+        pairs to the cumulative `confpairs_all`/`lospairs_all` lists.
 
         Args:
             ownship: Traffic object with the states of the ownship aircraft.
@@ -397,7 +403,7 @@ class ConflictDetection(TrafficArrays):
 
         State-based detection with spatial candidate pruning: a KD-tree on
         flat-earth-projected positions selects the pairs within horizontal
-        reach (``max(rpz) + 2 * max(gs) * max(dtlookahead)``), pairs that are
+        reach (`max(rpz) + 2 * max(gs) * max(dtlookahead)`), pairs that are
         vertically out of reach within the lookahead are dropped, and the CPA
         geometry is evaluated only for the remaining candidates. For every
         candidate pair, the time to the horizontal closest point of approach

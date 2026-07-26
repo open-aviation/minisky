@@ -7,15 +7,15 @@ replaceable via SELECTIMPL - see minisky/plugin/ for usage examples.
 MiniSky stores aircraft state as parallel numpy arrays and lists, where
 index i in every array belongs to the same aircraft. Per-aircraft
 parameters are registered by assigning them inside a
-``with self.settrafarrays():`` block (implemented by
+`with self.settrafarrays():` block (implemented by
 RegisterElementParameters): every list or numpy array created inside the
 block is recorded in _LstVars or _ArrVars, and every nested TrafficArrays
 instance is re-parented to form a tree rooted at the traffic object.
 
-When aircraft are created, ``create(n)`` appends n default-valued elements
+When aircraft are created, `create(n)` appends n default-valued elements
 to every registered list and array; when aircraft are deleted,
-``delete(idx)`` removes the corresponding elements from all of them, and
-``reset()`` empties everything back to zero aircraft. Each of these
+`delete(idx)` removes the corresponding elements from all of them, and
+`reset()` empties everything back to zero aircraft. Each of these
 operations recurses through the tree of children, so all per-aircraft data
 in the simulation grows and shrinks in lockstep.
 """
@@ -88,7 +88,7 @@ def _replace_instance_on_traf(base: type["TrafficArrays"], impl: type["TrafficAr
     for attr_name, attr_value in minisky.traf.__dict__.items():
         if isinstance(attr_value, base):
             # Create new instance of selected implementation
-            new_instance = impl()
+            new_instance = attr_value.new_implementation(impl)
             # Copy over any per-aircraft array data from old instance (if they exist)
             for arr_var in getattr(attr_value, "_ArrVars", []):
                 if hasattr(new_instance, arr_var):
@@ -96,8 +96,10 @@ def _replace_instance_on_traf(base: type["TrafficArrays"], impl: type["TrafficAr
             for lst_var in getattr(attr_value, "_LstVars", []):
                 if hasattr(new_instance, lst_var):
                     setattr(new_instance, lst_var, getattr(attr_value, lst_var))
-            # Replace on traf
+            # Replace on traf and detach the old child from the traffic tree.
             setattr(minisky.traf, attr_name, new_instance)
+            if attr_value._parent is not None:
+                attr_value._parent._children.remove(attr_value)
             # Stack commands registered as bound methods of the old instance
             # would silently mutate the orphaned object; rebind them
             _rebind_stack_commands(attr_value, new_instance)
@@ -280,6 +282,12 @@ class TrafficArrays:
         self._children = []
         self._ArrVars = []
         self._LstVars = []
+
+    def new_implementation(
+        self, implementation: type["TrafficArrays"]
+    ) -> "TrafficArrays":
+        """Construct a selected replacement implementation."""
+        return implementation()
 
     def reparent(self, newparent: "TrafficArrays") -> None:
         """Give TrafficArrays object a new parent."""

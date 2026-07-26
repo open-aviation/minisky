@@ -407,7 +407,8 @@ def init_plugin() -> dict[str, Any]:
     """Create the bridge and register its simulation hooks."""
     global bridge
 
-    cfg = TangramPluginSettings.model_validate(settings.config).tangram
+    # TODO(abraham): we should namespace it under settings.plugins.tangram.
+    cfg = TangramPluginSettings.model_validate(settings.default_settings).tangram
     bridge = TangramBridge(
         redis_url=cfg.redis_url,
         channel=cfg.channel,
