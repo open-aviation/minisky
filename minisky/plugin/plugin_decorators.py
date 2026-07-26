@@ -1,9 +1,12 @@
-"""Stack command decorators for MiniSky plugins.
+"""Stack command declarations for MiniSky plugins.
 
-Provides the @command decorator for registering stack commands.
+The `@command` decorator stores command metadata on a function. It registers
+immediately when a runtime is active; otherwise the declaration is collected
+by `CommandStack.init()` when the runtime is constructed.
 """
 
 import inspect
+import sys
 from collections.abc import Callable
 from typing import Any
 
@@ -44,32 +47,44 @@ def command(
     """
 
     def deco(func):
-        # Import here to avoid circular import
-        from minisky.stack import Command
-
-        # Get the underlying function if decorated with staticmethod/classmethod
         actual_func = func.__func__ if isinstance(func, (staticmethod, classmethod)) else func
+        declaration = {
+            "name": name or actual_func.__name__,
+            "aliases": aliases,
+            "brief": brief,
+            "help": help or inspect.cleandoc(inspect.getdoc(actual_func) or ""),
+            "arguments": arguments,
+        }
+        actual_func.__stack_command__ = declaration  # type: ignore[reportFunctionMemberAccess]
 
-        # Determine command name
-        cmd_name = name or actual_func.__name__
+        try:
+            from minisky.stack import Command, current
 
-        # Use function docstring as help if not provided
-        cmd_help = help or inspect.cleandoc(inspect.getdoc(actual_func) or "")
+            current()
+        except (ImportError, RuntimeError):
+            return func
 
-        # Register the command
-        Command.addcommand(
-            actual_func,
-            name=cmd_name,
-            aliases=aliases,
-            brief=brief,
-            help=cmd_help,
-            arguments=arguments,
-        )
-
+        Command.addcommand(actual_func, **declaration)
         return func
 
     # Allow both @command and @command(args)
     return deco(func) if func else deco
+
+
+def register_declared_commands() -> None:
+    """Register command declarations from modules imported before runtime startup."""
+    from minisky.stack import Command
+
+    for module in tuple(sys.modules.values()):
+        if module is None:
+            continue
+        for value in vars(module).values():
+            actual_func = (
+                value.__func__ if isinstance(value, (staticmethod, classmethod)) else value
+            )
+            declaration = getattr(actual_func, "__stack_command__", None)
+            if declaration is not None:
+                Command.addcommand(actual_func, **declaration)
 
 
 def append_commands(newcommands: dict, syndict: dict | None = None) -> None:

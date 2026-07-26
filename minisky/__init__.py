@@ -43,6 +43,7 @@ def _activate(instance: MiniSky) -> None:
     navdb = instance.navigation
     sim = instance.simulation
     scr = instance.console
+    stack._activate(instance.commands)
 
 
 from minisky.runtime import MiniSky  # noqa: E402

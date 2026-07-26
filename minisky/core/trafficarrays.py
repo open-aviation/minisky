@@ -20,7 +20,7 @@ operations recurses through the tree of children, so all per-aircraft data
 in the simulation grows and shrinks in lockstep.
 """
 
-from typing import ClassVar
+from typing import Any, ClassVar
 
 import numpy as np
 
@@ -30,15 +30,20 @@ defaults = {"float": 0.0, "int": 0, "uint": 0, "bool": False, "S": "", "str": ""
 replaceables: dict[str, type["TrafficArrays"]] = {}
 
 
-def reset_replaceables(traffic: "TrafficArrays") -> None:
+def reset_replaceables(traffic: "TrafficArrays", cmddict: dict[str, Any]) -> None:
     """Reset all replaceables to their default implementation and reinstantiate on traf."""
     for base in replaceables.values():
         base.selectdefault()
         # Reinstantiate on traf with default implementation
-        _replace_instance_on_traf(base, base._generator, traffic)
+        _replace_instance_on_traf(base, base._generator, traffic, cmddict)
 
 
-def select_implementation(basename: str = "", implname: str = "") -> tuple[bool, str]:
+def select_implementation(
+    basename: str = "",
+    implname: str = "",
+    traffic: "TrafficArrays | None" = None,
+    cmddict: "dict[str, Any] | None" = None,
+) -> tuple[bool, str]:
     """Select an implementation for a replaceable class.
 
     Arguments:
@@ -68,10 +73,14 @@ def select_implementation(basename: str = "", implname: str = "") -> tuple[bool,
 
     impl.select()
 
-    # The stack command still targets the active compatibility runtime.
-    import minisky
+    if traffic is None or cmddict is None:
+        import minisky
+        from minisky.stack import Command
 
-    _replace_instance_on_traf(base, impl, minisky.traf)
+        traffic = minisky.traf
+        cmddict = Command.cmddict
+
+    _replace_instance_on_traf(base, impl, traffic, cmddict)
 
     return True, f"Selected {implname} for {basename}"
 
@@ -80,6 +89,7 @@ def _replace_instance_on_traf(
     base: type["TrafficArrays"],
     impl: type["TrafficArrays"],
     traffic: "TrafficArrays",
+    cmddict: dict[str, Any],
 ) -> None:
     """Replace existing instance of base class on traf with new impl instance.
 
@@ -103,17 +113,19 @@ def _replace_instance_on_traf(
                 attr_value._parent._children.remove(attr_value)
             # Stack commands registered as bound methods of the old instance
             # would silently mutate the orphaned object; rebind them
-            _rebind_stack_commands(attr_value, new_instance)
+            _rebind_stack_commands(attr_value, new_instance, cmddict)
             break
 
 
-def _rebind_stack_commands(old_instance: "TrafficArrays", new_instance: "TrafficArrays") -> None:
+def _rebind_stack_commands(
+    old_instance: "TrafficArrays",
+    new_instance: "TrafficArrays",
+    cmddict: dict[str, Any],
+) -> None:
     """Rebind stack command callbacks from old_instance to new_instance."""
     import inspect
 
-    from minisky.stack import Command
-
-    for cmdobj in set(Command.cmddict.values()):
+    for cmdobj in set(cmddict.values()):
         callback = cmdobj.callback
         if inspect.ismethod(callback) and callback.__self__ is old_instance:
             cmdobj.callback = getattr(new_instance, callback.__func__.__name__, callback)
