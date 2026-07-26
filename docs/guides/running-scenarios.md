@@ -14,7 +14,7 @@ uv run minisky run --scenario scenarios/kl204.scn --speed 10
 | `--speed` | `1` | Simulation speed multiplier relative to wall time |
 
 The script initialises the simulator with the scenario, loads any plugins enabled in
-`settings.yml`, and runs the [`Runner`][minisky.simulation.runner.Runner] loop until the
+`settings.toml`, and runs the [`Runner`][minisky.simulation.runner.Runner] loop until the
 scenario ends the simulation.
 
 ## Scenario files

@@ -14,7 +14,6 @@ dependencies = [
     "pandas>=2.2.3",
     "prompt-toolkit>=3.0.50",
     "pyarrow>=19.0.1",
-    "pyyaml>=6.0.2",
     "requests>=2.32.3",
     "rtree>=1.3.0",
     "scipy>=1.15.1",
@@ -30,12 +29,16 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["minisky"]
 
+[tool.uv.workspace]
+members = ["example_plugins/tangram/tangram_minisky"]
+
 [dependency-groups]
 dev = [
     "ipykernel>=6.29.5",
     "pytest>=9.1.1",
     "ruff>=0.8.0",
     "pyright>=1.1.390",
+    "fakeredis>=2.26",
 ]
 docs = [
     "mkdocs-material>=9.5.0",
@@ -56,8 +59,9 @@ target-version = "py311"
 
 [tool.ruff.lint]
 # E/W: pycodestyle, F: pyflakes, I: isort, UP: pyupgrade,
-# B: flake8-bugbear, SIM: flake8-simplify, C4: flake8-comprehensions
-select = ["E", "W", "F", "I", "UP", "B", "SIM", "C4"]
+# B: flake8-bugbear, SIM: flake8-simplify, C4: flake8-comprehensions,
+# DTZ: flake8-datetimez (no naive datetimes; sim.utc is timezone-aware UTC)
+select = ["E", "W", "F", "I", "UP", "B", "SIM", "C4", "DTZ"]
 ignore = [
     "E501",   # line length is handled by the formatter
     "B008",   # FastAPI relies on function calls (Depends/File) in argument defaults
@@ -71,10 +75,12 @@ ignore = [
 "minisky/plugin/*.py" = ["F401"]  # plugin API surface re-exports
 
 [tool.pyright]
-include = ["minisky"]
-exclude = ["**/__pycache__", ".venv", "build", "site"]
+include = ["minisky", "example_plugins"]
+exclude = ["**/__pycache__", "**/node_modules", ".venv", "build", "site"]
 pythonVersion = "3.11"
 # "standard" catches useful bugs while staying practical for this numpy/scipy-heavy fork.
 typeCheckingMode = "standard"
+# Fully-typed files where any leftover implicit Any should be an error.
+strict = ["example_plugins/*.py"]
 reportMissingTypeStubs = false
 reportWildcardImportFromLibrary = false

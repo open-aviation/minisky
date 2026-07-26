@@ -1,0 +1,20 @@
+prefer_compiled = true # geo functions
+
+asas_dtlookahead = 300 # ASAS lookahead time [sec]
+asas_pzr = 5 # ASAS horizontal PZ margin [nm]
+asas_pzh = 1000 # ASAS vertical PZ margin [ft]
+asas_marh = 1.05 # ASAS protected zone factors - horizontal
+asas_marv = 1.05 # ASAS protected zone factors - vertical
+
+# Plugin settings
+plugin_path = "example_plugins" # Directory to search for plugins
+enabled_plugins = ["TANGRAM"] # Plugins to load at startup
+
+# Tangram bridge plugin (enabled_plugins = ["TANGRAM"], installed by `just sync`).
+# Uncomment [tangram] and any key below to override its default. The whole table is
+# optional; when absent the defaults shown here apply. Keep it last in the file — in
+# TOML every bare key after a [table] header belongs to that table.
+# [tangram]
+# redis_url = "redis://127.0.0.1:6379" # Redis used by the tangram deployment
+# channel = "minisky"                  # publishes to:<channel>:*, listens on from:<channel>:*
+# max_hz = 5                           # wall-clock cap on snapshot publish rate

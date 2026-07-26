@@ -1,0 +1,5 @@
+{
+  // typechecks vite.config.ts (node context), separate from the browser plugin code
+  "extends": "@open-aviation/tangram-core/tsconfig.node.json",
+  "include": ["vite.config.ts"]
+}

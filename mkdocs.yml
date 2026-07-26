@@ -33,6 +33,10 @@ plugins:
   - mkdocstrings:
       handlers:
         python:
+          # tangram_minisky lives in its own workspace/.venv and is not installed
+          # in the docs env; point griffe at its source so it can analyse it
+          # statically (no import, so tangram_core is not required here).
+          paths: [example_plugins/tangram/tangram_minisky/src]
           options:
             docstring_style: google
             docstring_section_style: table
@@ -69,6 +73,7 @@ nav:
       - Control console: guides/console.md
       - Python library: guides/python-api.md
       - Writing plugins: guides/plugins.md
+      - Streaming to tangram: guides/tangram.md
   - Reference:
       - Stack commands: reference/commands.md
       - API:
@@ -79,3 +84,4 @@ nav:
           - plugin: api/plugin.md
           - core: api/core.md
           - tools: api/tools.md
+          - tangram_minisky: api/tangram-minisky.md

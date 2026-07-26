@@ -6,7 +6,7 @@ The `example_plugins/` directory contains working examples.
 
 ## Anatomy of a plugin
 
-A plugin is a Python file in the plugin directory (`plugin_path` in `settings.yml`,
+A plugin is a Python file in the plugin directory (`plugin_path` in `settings.toml`,
 default `example_plugins`) that defines an `init_plugin()` function:
 
 ```python
@@ -26,7 +26,7 @@ def init_plugin():
     example = Example()
 
     return {
-        "plugin_name": "EXAMPLE",     # name used by PLUGIN LOAD / settings.yml
+        "plugin_name": "EXAMPLE",     # name used by PLUGIN LOAD / settings.toml
         "update_interval": 5,         # seconds of sim time between update calls
         "update": example.update,     # called every update_interval
         # "preupdate": ...,           # called before traf.update()
@@ -106,11 +106,11 @@ the plugin is loaded), so a broken plugin can't crash the simulator at startup.
 
 Load plugins in any of three ways:
 
-- **At startup** — list them in `settings.yml`:
+- **At startup** — list them in `settings.toml`:
 
-    ```yaml
-    plugin_path: example_plugins
-    enabled_plugins: ['EXAMPLE']
+    ```toml
+    plugin_path = "example_plugins"
+    enabled_plugins = ["EXAMPLE"]
     ```
 
     (Requires the host program to call [`minisky.load_plugins()`][minisky.load_plugins]

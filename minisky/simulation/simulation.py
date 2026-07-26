@@ -61,8 +61,8 @@ class Simulation:
         # System time [seconds]
         self.syst: float = 0
 
-        # Simulated UTC clock time, can be set by setutc()
-        self.utc: datetime.datetime = datetime.datetime.today()
+        # Simulated UTC clock time (timezone-aware), can be set by setutc()
+        self.utc: datetime.datetime = datetime.datetime.now(datetime.UTC)
 
         # Flag indicating running at fixed rate or fast time
 
@@ -165,7 +165,7 @@ class Simulation:
         self.simt = 0
         self.simdt = 1
         self.utc = datetime.datetime.now(datetime.UTC).replace(
-            hour=0, minute=0, second=0, microsecond=0, tzinfo=None
+            hour=0, minute=0, second=0, microsecond=0
         )
         minisky.navdb.reset()
         minisky.traf.reset()
@@ -262,29 +262,27 @@ class Simulation:
         elif len(args) == 1:
             if args[0].upper() == "RUN":
                 self.utc = datetime.datetime.now(datetime.UTC).replace(
-                    hour=0, minute=0, second=0, microsecond=0, tzinfo=None
+                    hour=0, minute=0, second=0, microsecond=0
                 )
 
             elif args[0].upper() == "REAL":
-                self.utc = datetime.datetime.today().replace(microsecond=0)
+                self.utc = datetime.datetime.now(datetime.UTC).astimezone().replace(microsecond=0)
 
             elif args[0].upper() == "UTC":
-                self.utc = datetime.datetime.now(datetime.UTC).replace(
-                    microsecond=0, tzinfo=None
-                )
+                self.utc = datetime.datetime.now(datetime.UTC).replace(microsecond=0)
 
             else:
                 try:
                     self.utc = datetime.datetime.strptime(
                         args[0], "%H:%M:%S.%f" if "." in args[0] else "%H:%M:%S"
-                    )
+                    ).replace(tzinfo=datetime.UTC)
                 except ValueError:
                     return False, "Input time invalid"
 
         elif len(args) == 3:
             day, month, year = args
             try:
-                self.utc = datetime.datetime(int(year), int(month), int(day))
+                self.utc = datetime.datetime(int(year), int(month), int(day), tzinfo=datetime.UTC)
             except ValueError:
                 return False, "Input date invalid."
         elif len(args) == 4:
@@ -293,7 +291,7 @@ class Simulation:
                 self.utc = datetime.datetime.strptime(
                     f"{year},{month},{day},{timestring}",
                     ("%Y,%m,%d,%H:%M:%S.%f" if "." in timestring else "%Y,%m,%d,%H:%M:%S"),
-                )
+                ).replace(tzinfo=datetime.UTC)
             except ValueError:
                 return False, "Input date invalid."
         else:

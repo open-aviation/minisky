@@ -2,6 +2,10 @@
 # Automatically generated directories and files
 output
 cache
+
+# tangram frontend plugin builds (example_plugins/tangram/*)
+node_modules/
+dist-frontend/
 bluesky/resources/grib
 bluesky/resources/netcdf
 

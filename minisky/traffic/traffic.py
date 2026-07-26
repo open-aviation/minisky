@@ -136,8 +136,8 @@ class Traffic(TrafficArrays):
 
         with self.settrafarrays():
             # Aircraft Info
-            self.callsign = []  # identifier (string)
-            self.typecode = []  # aircaft type (string)
+            self.callsign: list[str] = []  # identifier (string)
+            self.typecode: list[str] = []  # aircaft type (string)
 
             # Positions
             self.lat = np.array([])  # latitude [deg]

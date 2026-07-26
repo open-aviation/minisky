@@ -9,9 +9,9 @@ from typing import Any
 
 
 def command(
-    func: Callable | None = None,
+    func: Callable[..., Any] | None = None,
     name: str = "",
-    aliases: tuple = (),
+    aliases: tuple[str, ...] = (),
     brief: str = "",
     help: str = "",
     arguments: str = "",

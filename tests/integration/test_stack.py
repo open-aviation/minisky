@@ -21,6 +21,19 @@ class TestQueueing:
         assert bs.traf.ntraf == 1
         assert bs.traf.callsign[0] == "KL204"
 
+    def test_command_stacked_during_processing_is_kept(self, bs, sim):
+        # A stack() call that lands while process() is draining the stack
+        # (e.g. from a plugin I/O thread) must not be lost: commands() detaches
+        # the pending list up front, so late arrivals run on the next step.
+        minisky.stack.stack("ECHO first")
+        drain = minisky.stack.Stack.commands()
+        assert next(drain) == "ECHO first"
+        minisky.stack.stack("CRE KL204,B744,52,4,45,FL250,350")  # racing append
+        with pytest.raises(StopIteration):
+            next(drain)
+        bs.sim.step()
+        assert bs.traf.ntraf == 1
+
 
 class TestCommands:
     def test_cre_via_stack(self, bs, run_cmd):

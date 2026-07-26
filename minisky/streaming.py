@@ -10,13 +10,8 @@ This is a generic streaming API: it emits raw SI state and takes no position on
 any particular client or wire contract. Unit conversion and field mapping to a
 specific consumer's format happen downstream, in that consumer, not here.
 
-Snapshot shape::
-
-    {
-        "siminfo": {speed, simdt, simt, simutc, ntraf, state, scenname},
-        "acdata":  {callsign, lat, lon, alt, trk, vs, tas, cas, gs, typecode,
-                    inconf, tcpamax, nconf_cur, nconf_tot, nlos_cur, nlos_tot},
-    }
+The snapshot shape is defined by the :class:`Snapshot` / :class:`SimInfo` /
+:class:`AcData` TypedDicts below.
 
 Units on the wire here are SI: positions in decimal degrees, ``alt`` in metres,
 speeds (``tas``/``cas``/``gs``) in m/s, ``vs`` in m/s, ``trk`` in degrees,
@@ -27,7 +22,7 @@ identified by ``callsign`` for their lifetime.
 
 import asyncio
 import time
-from typing import Any, cast
+from typing import Any, TypedDict, cast
 
 import numpy as np
 
@@ -39,28 +34,67 @@ import minisky
 STREAM_MAX_HZ = 10.0
 
 
-def _tolist(arr: Any) -> list:
+class SimInfo(TypedDict):
+    """Simulation-level snapshot fields."""
+
+    speed: float  # runner speed multiplier (x realtime)
+    simdt: float  # s
+    simt: float  # s
+    simutc: str  # ISO-8601, timezone-aware
+    ntraf: int
+    state: int  # 0=INIT, 1=HOLD, 2=OP, 3=END
+    scenname: str  # "" when no scenario is loaded
+
+
+class AcData(TypedDict):
+    """Per-aircraft snapshot columns (one element per aircraft, SI units)."""
+
+    callsign: list[str]
+    lat: list[float]  # deg
+    lon: list[float]  # deg
+    alt: list[float]  # m
+    trk: list[float]  # deg
+    vs: list[float]  # m/s
+    tas: list[float]  # m/s
+    cas: list[float]  # m/s
+    gs: list[float]  # m/s
+    typecode: list[str]
+    inconf: list[bool]
+    tcpamax: list[float]  # s
+    nconf_cur: int
+    nconf_tot: int
+    nlos_cur: int
+    nlos_tot: int
+
+
+class Snapshot(TypedDict):
+    """Full per-tick simulation snapshot."""
+
+    siminfo: SimInfo
+    acdata: AcData
+
+
+def _tolist(arr: Any) -> list[float]:
     """Convert a numpy array (or list) into a plain JSON-serialisable list."""
     if isinstance(arr, np.ndarray):
-        return cast(list, arr.tolist())
+        return cast(list[float], arr.tolist())
     return list(arr)
 
 
-def build_snapshot() -> dict[str, Any]:
+def build_snapshot() -> Snapshot:
     """Build a full snapshot of the current simulation state (SI units).
 
     Reads ``minisky.sim`` and ``minisky.traf`` and returns a plain dict of
     Python scalars and lists (no numpy types), safe to serialise as JSON.
 
     Returns:
-        A dict with ``siminfo`` and ``acdata`` keys as described in the module
-        docstring.
+        A :class:`Snapshot` with ``siminfo`` and ``acdata`` keys.
     """
     sim = minisky.sim
     traf = minisky.traf
     cd = traf.cd
 
-    siminfo = {
+    siminfo: SimInfo = {
         "speed": float(minisky.runner.speed),
         "simdt": float(sim.simdt),
         "simt": float(sim.simt),
@@ -70,7 +104,7 @@ def build_snapshot() -> dict[str, Any]:
         "scenname": minisky.stack.get_scenname(),
     }
 
-    acdata = {
+    acdata: AcData = {
         "callsign": [str(c) for c in traf.callsign],
         "lat": _tolist(traf.lat),
         "lon": _tolist(traf.lon),
@@ -83,7 +117,7 @@ def build_snapshot() -> dict[str, Any]:
         "typecode": [str(t) for t in traf.typecode],
         # Conflict data (traf.cd). The per-pair counters are derived from the
         # detection object's current/cumulative unique-pair collections.
-        "inconf": _tolist(cd.inconf),
+        "inconf": [bool(v) for v in cd.inconf],
         "tcpamax": _tolist(cd.tcpamax),
         "nconf_cur": len(cd.confpairs_unique),
         "nconf_tot": len(cd.confpairs_all),
@@ -117,7 +151,7 @@ class StreamHub:
         self._event = asyncio.Event()
         self._min_interval = 1.0 / max_hz if max_hz > 0 else 0.0
         self._last_publish = 0.0
-        self.latest: dict[str, Any] | None = None
+        self.latest: Snapshot | None = None
         self.generation = 0
 
     @property
@@ -152,7 +186,7 @@ class StreamHub:
             return
         self.publish(build_snapshot())
 
-    def publish(self, snapshot: dict[str, Any]) -> None:
+    def publish(self, snapshot: Snapshot) -> None:
         """Store a snapshot as :attr:`latest` and wake awaiting consumers."""
         self.latest = snapshot
         self.generation += 1

@@ -6,6 +6,8 @@ This plugin demonstrates the plugin system capabilities:
 - Stack commands
 """
 
+from __future__ import annotations
+
 from random import randint
 
 import numpy as np
@@ -14,7 +16,7 @@ import minisky
 from minisky import plugin, stack
 
 # Global reference to the example instance
-example = None
+example: Example | None = None
 
 
 def init_plugin():
@@ -26,13 +28,13 @@ def init_plugin():
     global example
 
     # Instantiate our example entity
-    example = Example()
+    example = instance = Example()
 
     # Configuration parameters
     config = {
         "plugin_name": "EXAMPLE",
         "update_interval": 5,  # Update every 5 seconds
-        "update": example.update,  # Register update function via config
+        "update": instance.update,  # Register update function via config
     }
 
     return config
@@ -48,7 +50,7 @@ class Example(plugin.Entity):
         with self.settrafarrays():
             self.npassengers = np.array([])
 
-    def create(self, n=1):
+    def create(self, n: int = 1):
         """Called automatically when new aircraft are created."""
         super().create(n)
         # Set passenger count for new aircraft
@@ -70,7 +72,8 @@ def passengers(callsign: str, count: int = -1):
     - callsign: Aircraft callsign
     - count: Number of passengers (optional, omit to query)
     """
-    global example
+    if example is None:
+        return False, "Example plugin not initialised"
 
     callsign = callsign.upper()
 

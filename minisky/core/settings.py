@@ -1,22 +1,22 @@
 """MiniSky settings loader.
 
-Reads settings.yml from the project root at import time and exposes every
+Reads settings.toml from the project root at import time and exposes every
 key/value pair as a module-level attribute (e.g.,
-``minisky.core.settings.prefer_compiled``). Also provides the data()
-helper that resolves paths inside the package data directory.
+``minisky.core.settings.prefer_compiled``). Nested tables (e.g. ``[tangram]``)
+are exposed as the corresponding ``dict``. Also provides the data() helper
+that resolves paths inside the package data directory.
 """
 
 # %%
+import tomllib
 from pathlib import Path
 
-import yaml
+filename_settings = Path(__file__).parent.parent.parent / "settings.toml"
 
-filename_settings = Path(__file__).parent.parent.parent / "settings.yml"
+with open(filename_settings, "rb") as file:
+    config = tomllib.load(file)
 
-with open(filename_settings, encoding="utf-8") as file:
-    _settings = yaml.safe_load(file)
-
-for key, value in _settings.items():
+for key, value in config.items():
     globals()[key] = value
 
 # Explicit type declarations for pyright (set dynamically above via globals())
