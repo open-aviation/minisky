@@ -44,6 +44,8 @@ def _activate(instance: MiniSky) -> None:
     sim = instance.simulation
     scr = instance.console
     stack._activate(instance.commands)
+    core.varexplorer._activate(instance.variables)
+    tools.areafilter._activate(instance.areas)
 
 
 from minisky.runtime import MiniSky  # noqa: E402

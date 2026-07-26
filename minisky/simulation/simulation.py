@@ -19,11 +19,11 @@ import numpy as np
 
 from minisky.core.trafficarrays import reset_replaceables
 from minisky.plugin import PluginManager
-from minisky.tools import areafilter
 
 if TYPE_CHECKING:
     from minisky.simulation.console import ConsoleIO
     from minisky.stack import CommandStack
+    from minisky.tools.areafilter import AreaFilter
     from minisky.tools.navdata import Navdatabase
     from minisky.traffic import Traffic
 
@@ -64,12 +64,14 @@ class Simulation:
         navigation: Navdatabase,
         console: ConsoleIO,
         command_stack: CommandStack,
+        areas: AreaFilter,
         stop_runner: Callable[[], None],
     ) -> None:
         self.traffic = traffic
         self.navigation = navigation
         self.console = console
         self.commands = command_stack
+        self.areas = areas
         self.stop_runner = stop_runner
         self.state = INIT
         self.prevstate = None
@@ -192,7 +194,7 @@ class Simulation:
         self.navigation.reset()
         self.traffic.reset()
         self.commands.reset()
-        areafilter.reset()
+        self.areas.reset()
         self.console.reset()
         # Reset replaceables (Autopilot, PerfBase, etc.) to defaults
         reset_replaceables(self.traffic, self.commands.cmddict)

@@ -37,10 +37,11 @@ from minisky.core import trafficarrays
 from minisky.plugin.plugin_decorators import append_commands, command, register_declared_commands
 from minisky.stack import argparser, commands
 from minisky.stack.argparser import ArgumentError, Parameter, String, Time, Txt, getnextarg
-from minisky.tools import areafilter
 
 if TYPE_CHECKING:
+    from minisky.core.varexplorer import VariableExplorer
     from minisky.simulation import ConsoleIO, Runner, Simulation
+    from minisky.tools.areafilter import AreaFilter
     from minisky.tools.navdata import Navdatabase
     from minisky.traffic import Traffic
 
@@ -298,6 +299,8 @@ class CommandStack:
         traffic: Traffic,
         navigation: Navdatabase,
         console: ConsoleIO,
+        areas: AreaFilter,
+        variables: VariableExplorer,
         get_simulation: Callable[[], Simulation],
         get_runner: Callable[[], Runner],
         scenario_root: Path | None = None,
@@ -305,6 +308,8 @@ class CommandStack:
         self.traffic = traffic
         self.navigation = navigation
         self.console = console
+        self.areas = areas
+        self.variables = variables
         self._get_simulation = get_simulation
         self._get_runner = get_runner
         self.scenario_root = scenario_root or Path(__file__).parent.parent.parent
@@ -435,7 +440,7 @@ class CommandStack:
         if isinstance(arg[0], str) and arg[0] == "WIND":
             return self.traffic.wind.clear()
         elif isinstance(arg[0], str):
-            return areafilter.deleteArea(arg[0])
+            return self.areas.deleteArea(arg[0])
         elif hasattr(arg[0], "groupname"):
             return self.traffic.groups.delgroup(arg[0])
         else:

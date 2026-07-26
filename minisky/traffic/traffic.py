@@ -37,6 +37,7 @@ from minisky.tools.aero import (
     vtas2cas,
     vtas2mach,
 )
+from minisky.tools.areafilter import AreaFilter
 from minisky.tools.convert import latlon2txt
 from minisky.traffic.asas import ConflictDetection, ConflictResolution
 
@@ -122,9 +123,10 @@ class Traffic(TrafficArrays):
     Created by: Jacco M. Hoekstra
     """
 
-    def __init__(self, settings: MiniSkySettings) -> None:
+    def __init__(self, settings: MiniSkySettings, areas: AreaFilter) -> None:
         super().__init__()
         self.settings = settings
+        self.areas = areas
 
         # Traffic is the toplevel trafficarrays object
         self.setroot(self)
@@ -196,7 +198,7 @@ class Traffic(TrafficArrays):
             self.perf = OpenAP()
 
             # Group Logic
-            self.groups = TrafficGroups()
+            self.groups = TrafficGroups(self, areas)
 
             # Traffic autopilot data
             self.swhdgsel = np.array([], dtype=bool)  # determines whether aircraft is turning
