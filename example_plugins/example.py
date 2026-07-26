@@ -48,7 +48,7 @@ class Example(plugin.Entity):
         with self.settrafarrays():
             self.npassengers = np.array([])
 
-    def create(self, n=1):
+    def create(self, n: int = 1):
         """Called automatically when new aircraft are created."""
         super().create(n)
         # Set passenger count for new aircraft

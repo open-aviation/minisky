@@ -3,9 +3,10 @@
 import pytest
 
 from example_plugins.tangram import convert_snapshot, extract_command
+from minisky.streaming import Snapshot
 
 
-def make_snapshot() -> dict:
+def make_snapshot() -> Snapshot:
     return {
         "siminfo": {
             "speed": 5.0,
@@ -64,20 +65,48 @@ def test_convert_snapshot_units_and_fields():
     assert ac["timestamp"] == 1767225600.0
 
 
-def test_convert_snapshot_empty():
-    payload = convert_snapshot({"siminfo": {}, "acdata": {}})
-    assert payload == {
+def test_convert_snapshot_no_traffic():
+    snapshot: Snapshot = {
+        "siminfo": {
+            "speed": 1.0,
+            "simdt": 1.0,
+            "simt": 0.0,
+            "simutc": "2026-01-01T00:00:00+00:00",
+            "ntraf": 0,
+            "state": 0,
+            "scenname": "",
+        },
+        "acdata": {
+            "callsign": [],
+            "lat": [],
+            "lon": [],
+            "alt": [],
+            "trk": [],
+            "vs": [],
+            "tas": [],
+            "cas": [],
+            "gs": [],
+            "typecode": [],
+            "inconf": [],
+            "tcpamax": [],
+            "nconf_cur": 0,
+            "nconf_tot": 0,
+            "nlos_cur": 0,
+            "nlos_tot": 0,
+        },
+    }
+    assert convert_snapshot(snapshot) == {
         "aircraft": [],
         "count": 0,
         "siminfo": {
             "simt": 0.0,
-            "simdt": 0.0,
-            "simutc": None,
+            "simdt": 1.0,
+            "simutc": "2026-01-01T00:00:00+00:00",
             "speed": 1.0,
             "ntraf": 0,
             "state": 0,
             "state_name": "INIT",
-            "scenname": None,
+            "scenname": "",
             "nconf_cur": 0,
             "nlos_cur": 0,
         },

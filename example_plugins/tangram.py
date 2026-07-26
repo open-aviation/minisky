@@ -40,15 +40,16 @@ import queue
 import threading
 import time
 from collections import deque
+from collections.abc import Callable
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, TypedDict, cast
 
 from pydantic import BaseModel
 
 import minisky
 from minisky import stack
 from minisky.core import settings
-from minisky.streaming import build_snapshot
+from minisky.streaming import Snapshot, build_snapshot
 from minisky.tools.aero import fpm, ft, kts
 
 
@@ -69,20 +70,61 @@ SIM_STATE_NAMES = {0: "INIT", 1: "HOLD", 2: "OP", 3: "END"}
 bridge = None
 
 
-def convert_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
+class TangramSimInfo(TypedDict):
+    """Simulation status block of the `new-data` wire payload."""
+
+    simt: float  # s
+    simdt: float  # s
+    simutc: str  # ISO-8601
+    speed: float  # runner speed multiplier (x realtime)
+    ntraf: int
+    state: int  # 0=INIT, 1=HOLD, 2=OP, 3=END
+    state_name: str
+    scenname: str  # "" when no scenario is loaded
+    nconf_cur: int
+    nlos_cur: int
+
+
+class TangramAircraft(TypedDict):
+    """One aircraft in the `new-data` wire payload (jet1090-style fields)."""
+
+    id: str
+    callsign: str
+    typecode: str
+    latitude: float  # deg
+    longitude: float  # deg
+    altitude: int  # ft
+    groundspeed: float  # kt
+    tas: float  # kt
+    ias: float  # kt
+    vertical_rate: int  # fpm
+    track: float  # deg
+    inconf: bool
+    timestamp: float | None  # epoch seconds; None when simutc fails to parse
+
+
+class TangramPayload(TypedDict):
+    """Full `to:<channel>:new-data` wire payload."""
+
+    aircraft: list[TangramAircraft]
+    count: int
+    siminfo: TangramSimInfo
+
+
+def convert_snapshot(snapshot: Snapshot) -> TangramPayload:
     """Convert a MiniSky SI-unit snapshot into the tangram wire payload.
 
     Aircraft come out with jet1090-style field names and aviation units
     (altitude in ft, speeds in kt, vertical rate in fpm). Pure function so
     it can be unit-tested without a running simulator.
     """
-    siminfo = snapshot.get("siminfo", {})
-    acdata = snapshot.get("acdata", {})
+    siminfo = snapshot["siminfo"]
+    acdata = snapshot["acdata"]
 
-    state = int(siminfo.get("state", 0))
-    simutc = siminfo.get("simutc")
+    state = siminfo["state"]
+    simutc = siminfo["simutc"]
     try:
-        utc = datetime.fromisoformat(simutc) if simutc else None
+        utc = datetime.fromisoformat(simutc)
     except ValueError:
         utc = None
     if utc is not None and utc.tzinfo is None:
@@ -90,52 +132,40 @@ def convert_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
         utc = utc.replace(tzinfo=UTC)
     timestamp = utc.timestamp() if utc is not None else None
 
-    out_siminfo = {
-        "simt": float(siminfo.get("simt", 0.0)),
-        "simdt": float(siminfo.get("simdt", 0.0)),
+    out_siminfo: TangramSimInfo = {
+        "simt": siminfo["simt"],
+        "simdt": siminfo["simdt"],
         "simutc": simutc,
-        "speed": float(siminfo.get("speed", 1.0)),
-        "ntraf": int(siminfo.get("ntraf", 0)),
+        "speed": siminfo["speed"],
+        "ntraf": siminfo["ntraf"],
         "state": state,
         "state_name": SIM_STATE_NAMES.get(state, "?"),
-        "scenname": siminfo.get("scenname"),
-        "nconf_cur": acdata.get("nconf_cur", 0),
-        "nlos_cur": acdata.get("nlos_cur", 0),
+        "scenname": siminfo["scenname"],
+        "nconf_cur": acdata["nconf_cur"],
+        "nlos_cur": acdata["nlos_cur"],
     }
 
-    callsigns = acdata.get("callsign", [])
-    n = len(callsigns)
-
-    def col(name: str) -> list:
-        values = acdata.get(name, [])
-        return values if len(values) == n else [None] * n
-
-    lat, lon = col("lat"), col("lon")
-    alt, trk, vs = col("alt"), col("trk"), col("vs")
-    tas, cas, gs = col("tas"), col("cas"), col("gs")
-    typecode, inconf = col("typecode"), col("inconf")
-
-    aircraft = []
-    for i in range(n):
+    aircraft: list[TangramAircraft] = []
+    for i, callsign in enumerate(acdata["callsign"]):
         aircraft.append(
             {
-                "id": str(callsigns[i]),
-                "callsign": str(callsigns[i]),
-                "typecode": typecode[i],
-                "latitude": lat[i],
-                "longitude": lon[i],
-                "altitude": round(alt[i] / ft) if alt[i] is not None else None,
-                "groundspeed": round(gs[i] / kts, 1) if gs[i] is not None else None,
-                "tas": round(tas[i] / kts, 1) if tas[i] is not None else None,
-                "ias": round(cas[i] / kts, 1) if cas[i] is not None else None,
-                "vertical_rate": round(vs[i] / fpm) if vs[i] is not None else None,
-                "track": trk[i],
-                "inconf": bool(inconf[i]) if inconf[i] is not None else False,
+                "id": callsign,
+                "callsign": callsign,
+                "typecode": acdata["typecode"][i],
+                "latitude": acdata["lat"][i],
+                "longitude": acdata["lon"][i],
+                "altitude": round(acdata["alt"][i] / ft),
+                "groundspeed": round(acdata["gs"][i] / kts, 1),
+                "tas": round(acdata["tas"][i] / kts, 1),
+                "ias": round(acdata["cas"][i] / kts, 1),
+                "vertical_rate": round(acdata["vs"][i] / fpm),
+                "track": acdata["trk"][i],
+                "inconf": acdata["inconf"][i],
                 "timestamp": timestamp,
             }
         )
 
-    return {"aircraft": aircraft, "count": n, "siminfo": out_siminfo}
+    return {"aircraft": aircraft, "count": len(aircraft), "siminfo": out_siminfo}
 
 
 def extract_command(payload: str | bytes) -> str | None:
@@ -155,7 +185,7 @@ def extract_command(payload: str | bytes) -> str | None:
     except ValueError:
         return text
     if isinstance(data, dict):
-        cmd = data.get("command")
+        cmd = cast("dict[str, Any]", data).get("command")
         return str(cmd).strip() or None if cmd is not None else None
     if isinstance(data, str):
         return data.strip() or None
@@ -177,7 +207,7 @@ class TangramBridge:
         redis_url: str,
         channel: str,
         max_hz: float,
-        redis_factory: Any | None = None,
+        redis_factory: Callable[[str], Any] | None = None,
     ) -> None:
         self.redis_url = redis_url
         self.channel = channel
@@ -189,8 +219,8 @@ class TangramBridge:
         self.last_error = ""
 
         self._last_build = 0.0
-        self._last_payload: dict[str, Any] | None = None
-        self._snapshots: queue.Queue[dict[str, Any]] = queue.Queue(maxsize=4)
+        self._last_payload: TangramPayload | None = None
+        self._snapshots: queue.Queue[TangramPayload] = queue.Queue(maxsize=4)
         self._console: deque[str] = deque(maxlen=200)
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
@@ -206,7 +236,11 @@ class TangramBridge:
             if self.redis_factory is None:
                 import redis
 
-                self.redis_factory = redis.Redis.from_url
+                # cast: from_url's untyped **kwargs would leak Unknown under strict mode.
+                self.redis_factory = cast(
+                    "Callable[[str], Any]",
+                    redis.Redis.from_url,  # pyright: ignore[reportUnknownMemberType]
+                )
         except ImportError:
             return False, (
                 "TANGRAM plugin needs the redis package: uv sync --extra tangram "
@@ -236,7 +270,7 @@ class TangramBridge:
         self._last_payload = None
         self._enqueue(convert_snapshot(build_snapshot()))
 
-    def _enqueue(self, payload: dict[str, Any]) -> None:
+    def _enqueue(self, payload: TangramPayload) -> None:
         self._last_payload = payload
         try:
             self._snapshots.put_nowait(payload)
@@ -262,30 +296,30 @@ class TangramBridge:
 
     # -- Redis-thread side -------------------------------------------------
 
-    def _siminfo_heartbeat(self) -> dict[str, Any]:
+    def _siminfo_heartbeat(self) -> TangramPayload:
         """Refresh the cheap scalar fields of the last payload.
 
         Only reads scalar attributes of the singletons (safe enough from a
-        second thread); the aircraft list is reused from the last snapshot
-        built on the simulation thread.
+        second thread); the aircraft list and conflict counters are reused
+        from the last snapshot built on the simulation thread.
         """
-        last = self._last_payload or {"aircraft": [], "count": 0, "siminfo": {}}
+        last = self._last_payload
         sim = minisky.sim
         state = int(sim.state)
-        siminfo: dict[str, Any] = {"nconf_cur": 0, "nlos_cur": 0}
-        siminfo.update(last["siminfo"])
-        siminfo.update(
-            {
-                "simt": float(sim.simt),
-                "simdt": float(sim.simdt),
-                "simutc": sim.utc.isoformat(),
-                "speed": float(minisky.runner.speed) if minisky.runner else 1.0,
-                "ntraf": int(minisky.traf.ntraf),
-                "state": state,
-                "state_name": SIM_STATE_NAMES.get(state, "?"),
-                "scenname": stack.get_scenname(),
-            }
-        )
+        siminfo: TangramSimInfo = {
+            "simt": float(sim.simt),
+            "simdt": float(sim.simdt),
+            "simutc": sim.utc.isoformat(),
+            "speed": float(minisky.runner.speed) if minisky.runner else 1.0,
+            "ntraf": int(minisky.traf.ntraf),
+            "state": state,
+            "state_name": SIM_STATE_NAMES.get(state, "?"),
+            "scenname": stack.get_scenname(),
+            "nconf_cur": last["siminfo"]["nconf_cur"] if last is not None else 0,
+            "nlos_cur": last["siminfo"]["nlos_cur"] if last is not None else 0,
+        }
+        if last is None:
+            return {"aircraft": [], "count": 0, "siminfo": siminfo}
         return {"aircraft": last["aircraft"], "count": last["count"], "siminfo": siminfo}
 
     def _run(self) -> None:
@@ -336,7 +370,7 @@ class TangramBridge:
                         last_publish = time.monotonic()
 
                     if self._console:
-                        lines = []
+                        lines: list[str] = []
                         while self._console:
                             lines.append(self._console.popleft())
                         client.publish(console_topic, json.dumps({"lines": lines}))
@@ -363,7 +397,7 @@ def tangram_status() -> tuple[bool, str]:
     return True, text
 
 
-def init_plugin():
+def init_plugin() -> dict[str, Any]:
     """Create the bridge and register its simulation hooks."""
     global bridge
 

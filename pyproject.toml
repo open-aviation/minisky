@@ -85,5 +85,7 @@ exclude = ["**/__pycache__", "**/node_modules", ".venv", "build", "site", "examp
 pythonVersion = "3.11"
 # "standard" catches useful bugs while staying practical for this numpy/scipy-heavy fork.
 typeCheckingMode = "standard"
+# Fully-typed files where any leftover implicit Any should be an error.
+strict = ["example_plugins"]
 reportMissingTypeStubs = false
 reportWildcardImportFromLibrary = false
