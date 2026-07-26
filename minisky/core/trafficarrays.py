@@ -30,12 +30,12 @@ defaults = {"float": 0.0, "int": 0, "uint": 0, "bool": False, "S": "", "str": ""
 replaceables: dict[str, type["TrafficArrays"]] = {}
 
 
-def reset_replaceables() -> None:
+def reset_replaceables(traffic: "TrafficArrays") -> None:
     """Reset all replaceables to their default implementation and reinstantiate on traf."""
     for base in replaceables.values():
         base.selectdefault()
         # Reinstantiate on traf with default implementation
-        _replace_instance_on_traf(base, base._generator)
+        _replace_instance_on_traf(base, base._generator, traffic)
 
 
 def select_implementation(basename: str = "", implname: str = "") -> tuple[bool, str]:
@@ -68,24 +68,25 @@ def select_implementation(basename: str = "", implname: str = "") -> tuple[bool,
 
     impl.select()
 
-    # Replace existing instance on traf if it exists
-    _replace_instance_on_traf(base, impl)
+    # The stack command still targets the active compatibility runtime.
+    import minisky
+
+    _replace_instance_on_traf(base, impl, minisky.traf)
 
     return True, f"Selected {implname} for {basename}"
 
 
-def _replace_instance_on_traf(base: type["TrafficArrays"], impl: type["TrafficArrays"]) -> None:
+def _replace_instance_on_traf(
+    base: type["TrafficArrays"],
+    impl: type["TrafficArrays"],
+    traffic: "TrafficArrays",
+) -> None:
     """Replace existing instance of base class on traf with new impl instance.
 
     This ensures SELECTIMPL takes effect immediately, not just for future instantiations.
     """
-    import minisky
-
-    if minisky.traf is None:
-        return
-
-    # Find attribute on traf that is an instance of the base class
-    for attr_name, attr_value in minisky.traf.__dict__.items():
+    # Find attribute on traffic that is an instance of the base class
+    for attr_name, attr_value in traffic.__dict__.items():
         if isinstance(attr_value, base):
             # Create new instance of selected implementation
             new_instance = attr_value.new_implementation(impl)
@@ -97,7 +98,7 @@ def _replace_instance_on_traf(base: type["TrafficArrays"], impl: type["TrafficAr
                 if hasattr(new_instance, lst_var):
                     setattr(new_instance, lst_var, getattr(attr_value, lst_var))
             # Replace on traf and detach the old child from the traffic tree.
-            setattr(minisky.traf, attr_name, new_instance)
+            setattr(traffic, attr_name, new_instance)
             if attr_value._parent is not None:
                 attr_value._parent._children.remove(attr_value)
             # Stack commands registered as bound methods of the old instance

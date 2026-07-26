@@ -1,30 +1,31 @@
 """Console I/O for the MiniSky simulation.
 
-Defines :class:`ConsoleIO`, the text output channel of the simulator. Stack
-commands and simulation state changes report back through its :meth:`echo`
+Defines `ConsoleIO`, the text output channel of the simulator. Stack
+commands and simulation state changes report back through its `echo`
 method, which prints to stdout and stores the message in a buffer that remote
-clients (such as the HTTP API served by ``minisky server``) can read asynchronously.
-A single instance is created by :func:`minisky.init` and available as
-``minisky.scr``.
+clients (such as the HTTP API served by `minisky server`) can read asynchronously.
+A single instance is owned by `MiniSky` and temporarily available as
+`minisky.scr` through the compatibility facade.
 """
+
+from __future__ import annotations
 
 import asyncio
 import io
 import sys
+from collections.abc import Callable
 
 from colorama import Fore, Style
-
-import minisky
 
 
 class ConsoleIO:
     """Class within sim task which sends/receives data to/from GUI task.
 
-    Acts as the simulator's screen/console object (``minisky.scr``). Output
-    produced with :meth:`echo` is printed to stdout and kept in an in-memory
-    buffer; an :class:`asyncio.Event` is set on every echo so that awaiting
-    consumers (e.g. the HTTP API's ``/stack`` endpoint) know new output is
-    available and can collect it with :meth:`read_output_buffer`.
+    Acts as the simulator's screen/console object (`minisky.scr`). Output
+    produced with `echo` is printed to stdout and kept in an in-memory
+    buffer; an `asyncio.Event` is set on every echo so that awaiting
+    consumers (e.g. the HTTP API's `/stack` endpoint) know new output is
+    available and can collect it with `read_output_buffer`.
 
     Attributes:
         siminfo_rate: Update rate of simulation info messages [Hz].
@@ -32,8 +33,8 @@ class ConsoleIO:
         prevtime: Simulation time of the previous info update [s].
         samplecount: Number of simulation samples counted while operating.
         prevcount: Sample count at the previous info update.
-        output_buffer: ``StringIO`` buffer holding the latest echoed text.
-        event: ``asyncio.Event`` set whenever new output has been echoed.
+        output_buffer: `StringIO` buffer holding the latest echoed text.
+        event: `asyncio.Event` set whenever new output has been echoed.
     """
 
     # Prefix for the stdout copy of echoed text, aligned with uvicorn's
@@ -47,7 +48,9 @@ class ConsoleIO:
     # Update rate of aircraft update messages [Hz]
     acupdate_rate: int = 5
 
-    def __init__(self) -> None:
+    def __init__(self, is_operating: Callable[[], bool]) -> None:
+        self.is_operating = is_operating
+
         # Timing bookkeeping counters
         self.prevtime: float = 0.0
         self.samplecount: int = 0
@@ -60,9 +63,9 @@ class ConsoleIO:
         """Count one simulation sample while the simulation is operating.
 
         Increments the sample counter only when the simulation state is
-        ``OP``; used for bookkeeping of the effective update rate.
+        `OP`; used for bookkeeping of the effective update rate.
         """
-        if minisky.sim.state == minisky.OP:
+        if self.is_operating():
             self.samplecount += 1
 
     def reset(self) -> None:
@@ -75,7 +78,7 @@ class ConsoleIO:
         """Print a message and store it in the output buffer.
 
         The previous buffer contents are discarded, the text is written both
-        to stdout (each line prefixed with :attr:`prefix`) and to the buffer
+        to stdout (each line prefixed with `prefix`) and to the buffer
         (verbatim), and the output event is set to wake up any consumer
         awaiting new output.
 

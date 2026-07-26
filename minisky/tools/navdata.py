@@ -3,27 +3,32 @@
 Loads waypoint, airport, airway, FIR, and country data from the package
 data directory and provides lookup functions to find navaids and airports
 by identifier or position. The global Navdatabase instance is available
-as ``minisky.navdb``; it backs the DEFWPT stack command and every position
+as `minisky.navdb`; it backs the DEFWPT stack command and every position
 argument that references a navaid, airport, or runway.
 """
 
+from __future__ import annotations
+
 import json
-from typing import Any
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pandas as pd
 
-import minisky
 from minisky.tools import geo
 from minisky.tools.aero import nm
+
+if TYPE_CHECKING:
+    from minisky.simulation.console import ConsoleIO
 
 
 def _tolist(column: Any) -> list:
     """Return a pandas column as a plain Python list.
 
-    Wrapper around ``Series.to_list()`` that gives a concrete ``list``
-    return type (the pandas ``__getitem__`` overloads otherwise widen the
-    result to include ``str``).
+    Wrapper around `Series.to_list()` that gives a concrete `list`
+    return type (the pandas `__getitem__` overloads otherwise widen the
+    result to include `str`).
     """
     return column.to_list()
 
@@ -100,10 +105,11 @@ class Navdatabase:
     Created by  : Jacco M. Hoekstra (TU Delft)
     """
 
-    def __init__(self) -> None:
+    def __init__(self, data_path: Path, console: ConsoleIO) -> None:
         """The navigation database: Contains waypoint, airport, airway, and sector data, but also
         geographical graphics data."""
-        # Variables are initialized in reset()
+        self.data_path = data_path
+        self.console = console
         self.reset()
 
     def reset(self) -> None:
@@ -111,7 +117,7 @@ class Navdatabase:
         # print("Loading global navigation database...")
         # wptdata, aptdata, awydata, firdata, codata, rwythresholds = load_navdata()
 
-        nav_data_path = minisky.data("navigation")
+        nav_data_path = self.data_path
 
         wptdata = pd.read_parquet(nav_data_path / "waypoint.parquet")
         aptdata = pd.read_parquet(nav_data_path / "airport.parquet")
@@ -171,7 +177,13 @@ class Navdatabase:
 
         self.rwythresholds = rwythresholds
 
-    def defwpt(self, name: str | None = None, lat: float | None = None, lon: float | None = None, wptype: str | None = None) -> tuple[bool, str]:
+    def defwpt(
+        self,
+        name: str | None = None,
+        lat: float | None = None,
+        lon: float | None = None,
+        wptype: str | None = None,
+    ) -> tuple[bool, str]:
         """DEFWPT: Define, inspect, or delete a scenario-specific waypoint.
 
         Without lat/lon, information about the existing waypoint is
@@ -203,7 +215,7 @@ class Navdatabase:
 
         # No data: give info on waypoint
         elif lat == None or lon == None:
-            reflat, reflon = minisky.scr.getviewctr()
+            reflat, reflon = self.console.getviewctr()
             if self.wpid.count(name.upper()) > 0:
                 i = self.getwpidx(name.upper(), reflat, reflon)
                 txt = self.wpid[i] + " : " + str(self.wplat[i]) + "," + str(self.wplon[i])
@@ -231,7 +243,7 @@ class Navdatabase:
         self.wpdesc.append("Custom waypoint")  # description
 
         # Update screen info
-        minisky.scr.addnavwpt(name.upper(), lat, lon)
+        self.console.addnavwpt(name.upper(), lat, lon)
 
         return True, name.upper() + " added to navdb."
 
@@ -266,7 +278,7 @@ class Navdatabase:
         del self.wpdesc[idx]  # description
 
         # Update screen info 9delete necessary there?)
-        minisky.scr.removenavwpt(name.upper())
+        self.console.removenavwpt(name.upper())
 
         return True, name.upper() + " deleted from navdb."
 
@@ -385,7 +397,9 @@ class Navdatabase:
         except ValueError:
             return -1
 
-    def getinear(self, wlat: "np.ndarray | list", wlon: "np.ndarray | list", lat: float, lon: float) -> int:  # lat,lon in degrees
+    def getinear(
+        self, wlat: np.ndarray | list, wlon: np.ndarray | list, lat: float, lon: float
+    ) -> int:  # lat,lon in degrees
         """Get the index of the entry nearest to a given position.
 
         Uses a fast flat-earth squared-distance comparison.
@@ -419,7 +433,15 @@ class Navdatabase:
         """Get the index of the airport closest to position (lat, lon) [deg]."""
         return self.getinear(self.aptlat, self.aptlon, lat, lon)
 
-    def getinside(self, wlat: "np.ndarray | list", wlon: "np.ndarray | list", lat0: float, lat1: float, lon0: float, lon1: float) -> list:
+    def getinside(
+        self,
+        wlat: np.ndarray | list,
+        wlon: np.ndarray | list,
+        lat0: float,
+        lat1: float,
+        lon0: float,
+        lon1: float,
+    ) -> list:
         """Get indices of positions inside the given lat/lon box.
 
         Args:

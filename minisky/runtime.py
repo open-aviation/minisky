@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from minisky import stack, tools
 from minisky.core import varexplorer
-from minisky.core.settings import MiniSkySettings
+from minisky.core.settings import MiniSkySettings, data
 from minisky.simulation import ConsoleIO, Runner, Simulation
+from minisky.simulation.simulation import OP
 from minisky.tools.navdata import Navdatabase
 from minisky.traffic import Traffic
 
@@ -17,14 +18,19 @@ class MiniSky:
         self.settings = settings
         tools.init()
 
-        self.navigation = Navdatabase()
+        self.console = ConsoleIO(lambda: self.simulation.state == OP)
+        self.navigation = Navdatabase(data("navigation"), self.console)
         self.traffic = Traffic(settings)
-        self.simulation = Simulation()
-        self.console = ConsoleIO()
-        self.runner = Runner()
+        self.simulation = Simulation(
+            traffic=self.traffic,
+            navigation=self.navigation,
+            console=self.console,
+            stop_runner=self._stop_runner,
+        )
+        self.runner = Runner(self.simulation, self.console)
 
-        # compatibility facade must be active before modules register
-        # commands and variable-explorer parents against the runtime.
+        # the compatibility facade must be active before commands and variable
+        # explorer parents are registered against this runtime.
         import minisky
 
         minisky._activate(self)
@@ -36,6 +42,9 @@ class MiniSky:
             self.runner.prevent_shutdown()
 
         stack.init()
+
+    def _stop_runner(self) -> None:
+        self.runner.stop()
 
     async def run(self) -> None:
         """Run the simulation until its runner stops."""
