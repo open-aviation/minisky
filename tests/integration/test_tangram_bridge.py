@@ -2,20 +2,30 @@
 
 import json
 import time
+from collections.abc import Callable, Iterator
+from types import ModuleType
+from typing import Any
 
 import fakeredis
 import pytest
+from redis.client import PubSub
 
 from example_plugins.tangram import TangramBridge
+from minisky.simulation import Simulation
+
+Observer = tuple[fakeredis.FakeRedis, PubSub]
+StepUntil = Callable[[Callable[[], bool]], int]
 
 
 @pytest.fixture
-def redis_server():
+def redis_server() -> fakeredis.FakeServer:
     return fakeredis.FakeServer()
 
 
 @pytest.fixture
-def bridge(bs, sim, redis_server):
+def bridge(
+    bs: ModuleType, sim: Simulation, redis_server: fakeredis.FakeServer
+) -> Iterator[TangramBridge]:
     bridge = TangramBridge(
         "redis://fake",
         "minisky",
@@ -32,7 +42,7 @@ def bridge(bs, sim, redis_server):
 
 
 @pytest.fixture
-def observer(redis_server):
+def observer(redis_server: fakeredis.FakeServer) -> Observer:
     """A second Redis client playing the role of tangram's Channel service."""
     client = fakeredis.FakeRedis(server=redis_server)
     pubsub = client.pubsub(ignore_subscribe_messages=True)
@@ -40,7 +50,12 @@ def observer(redis_server):
     return client, pubsub
 
 
-def wait_for(pubsub, topic_suffix, pred=lambda payload: True, timeout=5.0):
+def wait_for(
+    pubsub: PubSub,
+    topic_suffix: str,
+    pred: Callable[[dict[str, Any]], bool] = lambda payload: True,
+    timeout: float = 5.0,
+) -> dict[str, Any]:
     """Read pattern messages until one on the given topic satisfies pred."""
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -55,7 +70,13 @@ def wait_for(pubsub, topic_suffix, pred=lambda payload: True, timeout=5.0):
     pytest.fail(f"no message on *{topic_suffix} satisfying predicate within {timeout}s")
 
 
-def test_snapshot_published(bs, sim, bridge, observer, step_until):
+def test_snapshot_published(
+    bs: ModuleType,
+    sim: Simulation,
+    bridge: TangramBridge,
+    observer: Observer,
+    step_until: StepUntil,
+) -> None:
     _, pubsub = observer
     bs.stack.stack("CRE KL204 B744 52 4 90 FL300 250")
     step_until(lambda: bs.traf.ntraf == 1)
@@ -68,7 +89,13 @@ def test_snapshot_published(bs, sim, bridge, observer, step_until):
     assert payload["siminfo"]["ntraf"] == 1
 
 
-def test_command_roundtrip(bs, sim, bridge, observer, step_until):
+def test_command_roundtrip(
+    bs: ModuleType,
+    sim: Simulation,
+    bridge: TangramBridge,
+    observer: Observer,
+    step_until: StepUntil,
+) -> None:
     client, _ = observer
     bs.stack.stack("CRE KL204 B744 52 4 90 FL300 250")
     step_until(lambda: int(bs.sim.state) == bs.OP)
@@ -82,7 +109,13 @@ def test_command_roundtrip(bs, sim, bridge, observer, step_until):
     assert int(bs.sim.state) == bs.HOLD
 
 
-def test_heartbeat_while_paused(bs, sim, bridge, observer, step_until):
+def test_heartbeat_while_paused(
+    bs: ModuleType,
+    sim: Simulation,
+    bridge: TangramBridge,
+    observer: Observer,
+    step_until: StepUntil,
+) -> None:
     _, pubsub = observer
     bs.stack.stack("CRE KL204 B744 52 4 90 FL300 250")
     step_until(lambda: bs.traf.ntraf == 1)
@@ -98,7 +131,9 @@ def test_heartbeat_while_paused(bs, sim, bridge, observer, step_until):
     assert payload["aircraft"], "heartbeat should retain the last aircraft list"
 
 
-def test_heartbeat_before_any_traffic(bs, sim, bridge, observer):
+def test_heartbeat_before_any_traffic(
+    bs: ModuleType, sim: Simulation, bridge: TangramBridge, observer: Observer
+) -> None:
     """A freshly started, idle simulator (INIT, no aircraft, no ticks yet) must
     still announce itself, or the frontend shows 'simulator offline'."""
     _, pubsub = observer
@@ -109,7 +144,9 @@ def test_heartbeat_before_any_traffic(bs, sim, bridge, observer):
     assert payload["siminfo"]["nconf_cur"] == 0
 
 
-def test_console_relay(bs, sim, bridge, observer):
+def test_console_relay(
+    bs: ModuleType, sim: Simulation, bridge: TangramBridge, observer: Observer
+) -> None:
     _, pubsub = observer
     bs.scr.echo("hello tangram")
     payload = wait_for(pubsub, ":console", lambda p: "hello tangram" in p["lines"])
