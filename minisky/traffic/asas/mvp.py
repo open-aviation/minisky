@@ -18,6 +18,7 @@ from typing import Any
 
 import numpy as np
 
+from minisky.core.settings import MiniSkySettings
 from minisky.stack.argparser import Txt
 from minisky.traffic.asas import ConflictResolution
 
@@ -25,15 +26,15 @@ from minisky.traffic.asas import ConflictResolution
 class MVP(ConflictResolution):
     """Conflict resolution using the Modified Voltage Potential Method.
 
-    For each detected conflict pair, :meth:`MVP` computes a repulsive
+    For each detected conflict pair, [`MVP.MVP`][minisky.traffic.asas.mvp.MVP.MVP] computes a repulsive
     velocity-change vector that pushes the closest point of approach out of
-    the resolution zone (the protected zone scaled by ``resofach`` and
-    ``resofacv``). :meth:`resolve` accumulates these vectors for all
+    the resolution zone (the protected zone scaled by `resofach` and
+    `resofacv`). [`MVP.resolve`][minisky.traffic.asas.mvp.MVP.resolve] accumulates these vectors for all
     conflicts of each aircraft, adds them to the current velocity, and
     converts the result into track, ground speed, vertical speed, and
     altitude advisories, capped to the aircraft performance envelope.
 
-    Selected via the stack command ``RESO MVP``. Resolution manoeuvres can be
+    Selected via the stack command `RESO MVP`. Resolution manoeuvres can be
     restricted with RMETHH (horizontal: heading and/or speed) and RMETHV
     (vertical speed only).
 
@@ -44,8 +45,8 @@ class MVP(ConflictResolution):
         swresovert (bool): Limit resolutions to the vertical direction.
     """
 
-    def __init__(self) -> None:
-        super().__init__()
+    def __init__(self, settings: MiniSkySettings) -> None:
+        super().__init__(settings)
         # [-] switch to limit resolution to the horizontal direction
         self.swresohoriz = True
         # [-] switch to use only speed resolutions (works with swresohoriz = True)
@@ -59,7 +60,7 @@ class MVP(ConflictResolution):
         """Set the prio switch and the type of prio.
 
         Implements the PRIORULES stack command for MVP. Validates the
-        priority code against the codes supported by :meth:`applyprio`.
+        priority code against the codes supported by [`MVP.applyprio`][minisky.traffic.asas.mvp.MVP.applyprio].
 
         Args:
             flag (bool): True to enable priority rules, False to disable.
@@ -278,7 +279,7 @@ class MVP(ConflictResolution):
         """Resolve all current conflicts.
 
         Loops over all detected conflict pairs, computes the MVP resolution
-        vector for each with :meth:`MVP`, and accumulates the vectors per
+        vector for each with [`MVP.MVP`][minisky.traffic.asas.mvp.MVP.MVP], and accumulates the vectors per
         aircraft (applying priority rules and the NORESO/RESOOFF opt-outs).
         The summed velocity change is added to the current velocity vector
         and converted back to advisories, honouring the horizontal/vertical
@@ -423,7 +424,7 @@ class MVP(ConflictResolution):
 
         Computes the velocity change that displaces the predicted closest
         point of approach (CPA) of one conflict pair to the edge of the
-        resolution zone (protected zone scaled by ``resofach``/``resofacv``).
+        resolution zone (protected zone scaled by `resofach`/`resofacv`).
         Horizontally, the intrusion at CPA is divided by the time to CPA to
         obtain the required speed change along the CPA displacement
         direction; a geometric correction is applied when the intruder is

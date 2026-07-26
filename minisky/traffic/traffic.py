@@ -1,14 +1,14 @@
 """BlueSky traffic implementation.
 
-Defines the :class:`Traffic` class, the top-level traffic database of the
-simulator. It holds all per-aircraft state (position, attitude, speeds,
+Defines the [`Traffic`][minisky.traffic.traffic.Traffic] class, the top-level
+traffic database of the simulator. It holds all per-aircraft state (position, attitude, speeds,
 atmosphere, autopilot selections) as numpy arrays, owns the sub-models
 (autopilot, performance, conflict detection/resolution, wind, turbulence,
 trails, groups), and performs the numerical integration of the aircraft
 states each simulation time step.
 
 A single instance is created at simulator start-up and made available as
-``minisky.traf``. Several methods double as stack-command implementations
+`minisky.traf`. Several methods double as stack-command implementations
 (CRE, MCRE, CRECONFS, MOVE, POS, BANK, THR, NOISE, CRECMD, ...).
 """
 
@@ -19,6 +19,7 @@ from typing import overload
 import numpy as np
 
 import minisky
+from minisky.core.settings import MiniSkySettings
 from minisky.core.trafficarrays import TrafficArrays
 from minisky.tools import geo
 from minisky.tools.aero import (
@@ -54,13 +55,16 @@ from .wind import Wind
 class Traffic(TrafficArrays):
     """Central traffic database holding the state of all simulated aircraft.
 
-    Traffic is the top-level :class:`TrafficArrays` object: all per-aircraft
+    Traffic is the top-level
+    [`TrafficArrays`][minisky.core.trafficarrays.TrafficArrays] object: all per-aircraft
     arrays registered by its child entities (autopilot, active waypoint data,
     performance model, conflict detection/resolution, etc.) grow and shrink
     together when aircraft are created or deleted. A single instance is
-    available at runtime as ``minisky.traf``.
+    available at runtime as `minisky.traf`.
 
-    Every simulation step, :meth:`update` refreshes the atmosphere, runs the
+    Every simulation step,
+    [`Traffic.update`][minisky.traffic.traffic.Traffic.update] refreshes the atmosphere,
+    runs the
     autopilot and separation-assurance logic, applies performance limits, and
     numerically integrates airspeed, heading, vertical speed and position of
     all aircraft. All internal state is kept in SI units; stack commands use
@@ -118,8 +122,9 @@ class Traffic(TrafficArrays):
     Created by: Jacco M. Hoekstra
     """
 
-    def __init__(self) -> None:
+    def __init__(self, settings: MiniSkySettings) -> None:
         super().__init__()
+        self.settings = settings
 
         # Traffic is the toplevel trafficarrays object
         self.setroot(self)
@@ -181,8 +186,8 @@ class Traffic(TrafficArrays):
             self.swvnavspd = np.array([], dtype=bool)
 
             # Flight Models
-            self.cd = ConflictDetection()
-            self.cr = ConflictResolution()
+            self.cd = ConflictDetection(settings)
+            self.cr = ConflictResolution(settings)
             self.ap = Autopilot()
             self.aporasas = APorASAS()
             self.noise = SurveillanceUncertainty()
@@ -333,9 +338,7 @@ class Traffic(TrafficArrays):
         acalt_ = np.full(n, acalt) if acalt is not None else np.random.randint(2000, 39000, n) * ft
         acspd_ = np.full(n, acspd) if acspd is not None else np.random.randint(250, 450, n) * kts
 
-        self.__create_aircraft(
-            np.array(callsign), actype_, aclat, aclon, achdg, acalt_, acspd_
-        )
+        self.__create_aircraft(np.array(callsign), actype_, aclat, aclon, achdg, acalt_, acspd_)
 
         return True, f"{n} aircraft created"
 
@@ -490,8 +493,8 @@ class Traffic(TrafficArrays):
         tasref = self.tas[targetidx]  # m/s
         vsref = self.vs[targetidx]  # m/s
         cpa = dcpa * nm
-        pzr = minisky.core.settings.asas_pzr * nm
-        pzh = minisky.core.settings.asas_pzh * ft
+        pzr = self.settings.asas_pzr * nm
+        pzh = self.settings.asas_pzh * ft
         trk = trkref + np.radians(dpsi)
 
         if dH is None:
@@ -537,9 +540,7 @@ class Traffic(TrafficArrays):
         achdg = np.degrees(np.atan2(tase, tasn))
 
         # Create and, when necessary, set vertical speed
-        self.cre(
-            callsign, actype, float(aclat), float(aclon), float(achdg), acalt, float(acspd)
-        )
+        self.cre(callsign, actype, float(aclat), float(aclon), float(achdg), acalt, float(acspd))
         self.ap.selaltcmd(len(self.lat) - 1, altref, acvs)
         self.vs[-1] = acvs
 
@@ -852,8 +853,10 @@ class Traffic(TrafficArrays):
         """Show information on an aircraft, airport, waypoint or navaid.
 
         Implements the POS stack command. Dispatches to
-        :meth:`position_aircraft` when an aircraft index is given, and to
-        :meth:`position_by_name` for a name lookup.
+        [`Traffic.position_aircraft`][minisky.traffic.traffic.Traffic.position_aircraft]
+        when an aircraft index is given, and to
+        [`Traffic.position_by_name`][minisky.traffic.traffic.Traffic.position_by_name]
+        for a name lookup.
 
         Args:
             id_or_name: Aircraft index (int) or the name of an aircraft,
