@@ -6,6 +6,8 @@ This plugin demonstrates the plugin system capabilities:
 - Stack commands
 """
 
+from __future__ import annotations
+
 from random import randint
 
 import numpy as np
@@ -14,7 +16,7 @@ import minisky
 from minisky import plugin, stack
 
 # Global reference to the example instance
-example: "Example | None" = None
+example: Example | None = None
 
 
 def init_plugin():
