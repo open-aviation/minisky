@@ -44,7 +44,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any, TypedDict, cast
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
 import minisky
 from minisky import stack
@@ -54,11 +54,17 @@ from minisky.tools.aero import fpm, ft, kts
 
 
 class TangramSettings(BaseModel):
-    """Validated ``[tangram]`` config from ``settings.toml`` (all keys optional)."""
+    """Validated ``[tangram]`` config from ``settings.toml``."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
     redis_url: str = "redis://127.0.0.1:6379"
     channel: str = "minisky"
     max_hz: float = 5.0
+
+
+class TangramPluginSettings(BaseModel):
+    tangram: TangramSettings = Field(default_factory=TangramSettings)
 
 
 # How often the background thread republishes state while the simulation is
@@ -243,8 +249,8 @@ class TangramBridge:
                 )
         except ImportError:
             return False, (
-                "TANGRAM plugin needs the redis package: uv sync --extra tangram "
-                "(or pip install redis)"
+                "TANGRAM plugin needs the redis package; run `just sync` from the "
+                "MiniSky repository root"
             )
 
         self._tee_console()
@@ -401,7 +407,7 @@ def init_plugin() -> dict[str, Any]:
     """Create the bridge and register its simulation hooks."""
     global bridge
 
-    cfg = TangramSettings(**getattr(settings, "tangram", {}))
+    cfg = TangramPluginSettings.model_validate(settings.config).tangram
     bridge = TangramBridge(
         redis_url=cfg.redis_url,
         channel=cfg.channel,

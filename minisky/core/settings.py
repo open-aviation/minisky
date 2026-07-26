@@ -14,9 +14,9 @@ from pathlib import Path
 filename_settings = Path(__file__).parent.parent.parent / "settings.toml"
 
 with open(filename_settings, "rb") as file:
-    _settings = tomllib.load(file)
+    config = tomllib.load(file)
 
-for key, value in _settings.items():
+for key, value in config.items():
     globals()[key] = value
 
 # Explicit type declarations for pyright (set dynamically above via globals())

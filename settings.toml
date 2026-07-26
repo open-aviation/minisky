@@ -10,7 +10,7 @@ asas_marv = 1.05 # ASAS protected zone factors - vertical
 plugin_path = "example_plugins" # Directory to search for plugins
 enabled_plugins = ["TANGRAM"] # Plugins to load at startup
 
-# Tangram bridge plugin (enabled_plugins = ["TANGRAM"], needs `uv sync --extra tangram`).
+# Tangram bridge plugin (enabled_plugins = ["TANGRAM"], installed by `just sync`).
 # Uncomment [tangram] and any key below to override its default. The whole table is
 # optional; when absent the defaults shown here apply. Keep it last in the file — in
 # TOML every bare key after a [table] header belongs to that table.
