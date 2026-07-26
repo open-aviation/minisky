@@ -150,9 +150,9 @@ class TestArgumentSpecs:
         # their parameters were silently dropped, making the commands
         # unusable from the stack. Every annotation token must resolve to a
         # parser (or be a documented placeholder).
-        from minisky.stack import Command
-        from minisky.stack.argparser import argparsers
+        from minisky.stack import Command, current
 
+        argparsers = current().argument_parser.parsers
         placeholders = {"...", "lon", "*"}  # consumed by the preceding parser
         seen = set()
         bad = []
