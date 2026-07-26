@@ -10,6 +10,9 @@ A single instance is created by :func:`minisky.init` and available as
 
 import asyncio
 import io
+import sys
+
+from colorama import Fore, Style
 
 import minisky
 
@@ -32,6 +35,11 @@ class ConsoleIO:
         output_buffer: ``StringIO`` buffer holding the latest echoed text.
         event: ``asyncio.Event`` set whenever new output has been echoed.
     """
+
+    # Prefix for the stdout copy of echoed text, aligned with uvicorn's
+    # "INFO:     " column. Only the terminal print gets it; the output
+    # buffer read by remote clients stays unprefixed.
+    prefix: str = "MINISKY:  "
 
     # Update rate of simulation info messages [Hz]
     siminfo_rate: int = 1
@@ -67,8 +75,9 @@ class ConsoleIO:
         """Print a message and store it in the output buffer.
 
         The previous buffer contents are discarded, the text is written both
-        to stdout and to the buffer, and the output event is set to wake up
-        any consumer awaiting new output.
+        to stdout (each line prefixed with :attr:`prefix`) and to the buffer
+        (verbatim), and the output event is set to wake up any consumer
+        awaiting new output.
 
         Args:
             text: Message text to output.
@@ -76,7 +85,14 @@ class ConsoleIO:
         """
         self.output_buffer.truncate(0)
         self.output_buffer.seek(0)
-        print(text)
+        prefix = self.prefix
+        if sys.stdout.isatty():
+            # Blue to stand apart from uvicorn's green INFO:, only for
+            # interactive terminals so redirected logs stay free of ANSI codes.
+            tag = self.prefix.rstrip()
+            prefix = f"{Fore.BLUE}{tag}{Style.RESET_ALL}{self.prefix[len(tag) :]}"
+        for line in text.splitlines() or [""]:
+            print(f"{prefix}{line}")
         print(text, file=self.output_buffer, end="")
         self.event.set()
 
