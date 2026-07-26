@@ -65,6 +65,7 @@ class Command:
         brief: Brief usage text (command name plus argument list).
         aliases: Tuple of alternative names for this command.
         callback: The function that implements this command.
+        argument_parser: Runtime-owned argument parser used by the command.
         params: List of Parameter objects used to parse arguments.
         valid: False when the callback is an unbound class/instance method.
     """
@@ -94,7 +95,16 @@ class Command:
         """
         current().addcommand(func, parent=parent, name=name, command_type=cls, **kwargs)
 
-    def __init__(self, func, parent: Command | None = None, name: str = "", **kwargs) -> None:
+    def __init__(
+        self,
+        func,
+        parent: Command | None = None,
+        name: str = "",
+        *,
+        argument_parser: argparser.ArgumentParser,
+        **kwargs,
+    ) -> None:
+        self.argument_parser = argument_parser
         self.name = name
         self.help = inspect.cleandoc(kwargs.get("help", ""))
         self.brief = kwargs.get("brief", "")
@@ -211,7 +221,7 @@ class Command:
                         self.params[-1].gobble = True
                         break
 
-                    param = Parameter(paramspecs[pos], annot, isopt)
+                    param = self.argument_parser.parameter(paramspecs[pos], annot, isopt)
                     if param:
                         pos = min(pos + param.size(), len(paramspecs) - 1)
                         self.params.append(param)
@@ -224,7 +234,11 @@ class Command:
                         f"{self.callback.__name__} has arguments."
                     )
             else:
-                self.params = [p for p in map(Parameter, paramspecs) if p]
+                self.params = [
+                    parameter
+                    for spec in paramspecs
+                    if (parameter := self.argument_parser.parameter(spec))
+                ]
 
     def helptext(self, subcmd: str = "") -> str:
         """Return complete help text."""
@@ -292,6 +306,7 @@ class CommandStack:
         scentime: Execution times [s] of the buffered scenario commands.
         scencmd: Buffered scenario command lines.
         sender_rte: Network route to the sender of the current command.
+        argument_parser: Runtime-owned parser registry and reference data.
     """
 
     def __init__(
@@ -310,6 +325,7 @@ class CommandStack:
         self.console = console
         self.areas = areas
         self.variables = variables
+        self.argument_parser = argparser.ArgumentParser(traffic, navigation, console)
         self._get_simulation = get_simulation
         self._get_runner = get_runner
         self.scenario_root = scenario_root or Path(__file__).parent.parent.parent
@@ -353,7 +369,13 @@ class CommandStack:
 
         cmdobj = self.cmddict.get(name)
         if not cmdobj:
-            cmdobj = command_type(func, parent, name, **kwargs)
+            cmdobj = command_type(
+                func,
+                parent,
+                name,
+                argument_parser=self.argument_parser,
+                **kwargs,
+            )
             self.cmddict[name] = cmdobj
             for alias in cmdobj.aliases:
                 self.cmddict[alias] = cmdobj
@@ -453,7 +475,7 @@ class CommandStack:
         argument-parser reference data (position, heading, speed).
         """
         self._reset_state()
-        argparser.reset()
+        self.argument_parser.reset()
 
     def process(self) -> None:
         """Sim-side stack processing; called once per simulation step.

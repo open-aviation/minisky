@@ -2,26 +2,27 @@
 
 Converts the text arguments of stack commands into typed Python values.
 Every argument type that can appear in a command's argument specification
-(e.g., "alt", "spd", "latlon", "callsign") maps to a Parser object in the
-module-level ``argparsers`` dictionary. For each function parameter of a
-stack command a Parameter object is created, which selects the applicable
-parsers based on the command's annotation string; when multiple types are
-allowed (separated by "/"), each parser is tried in turn.
+(e.g., "alt", "spd", "latlon", "callsign") maps to a `Parser` object in
+the runtime-owned `ArgumentParser.parsers` dictionary. For each function
+parameter of a stack command a `Parameter` object is created, which selects
+the applicable parsers based on the command's annotation string; when
+multiple types are allowed (separated by "/"), each parser is tried in turn.
 
-The module-level ``refdata`` namespace stores reference data (position,
-aircraft index, heading, speed) taken from previously parsed arguments, so
-that context-dependent arguments - such as a bare waypoint name resolved to
-the closest occurrence, or a magnetic heading - can be interpreted relative
-to the last parsed position or aircraft.
+`ArgumentParser.refdata` stores reference data (position, aircraft index,
+heading, speed) taken from previously parsed arguments, so that
+context-dependent arguments - such as a bare waypoint name resolved to the
+closest occurrence, or a magnetic heading - can be interpreted relative to
+the last parsed position or aircraft.
 """
+
+from __future__ import annotations
 
 import inspect
 import re
 from collections.abc import Callable
 from types import SimpleNamespace, UnionType
-from typing import Annotated, Any, Union, get_args, get_origin
+from typing import TYPE_CHECKING, Annotated, Any, Union, get_args, get_origin
 
-import minisky
 from minisky.tools.convert import (
     txt2alt,
     txt2bool,
@@ -33,6 +34,11 @@ from minisky.tools.convert import (
     txt2vs,
 )
 from minisky.tools.position import Position, islat
+
+if TYPE_CHECKING:
+    from minisky.simulation.console import ConsoleIO
+    from minisky.tools.navdata import Navdatabase
+    from minisky.traffic import Traffic
 
 # Regular expression for argument parser
 # Reading the regular expression:
@@ -50,10 +56,6 @@ def _match_groups(argstring: str) -> tuple[str, str]:
     return m.groups()  # type: ignore[return-value]
 
 
-# Stack reference data namespace
-refdata = SimpleNamespace(lat=None, lon=None, alt=None, acidx=-1, hdg=None, cas=None)
-
-
 def getnextarg(cmdstring: str) -> tuple:
     """Return first argument and remainder of command string from cmdstring.
 
@@ -67,20 +69,6 @@ def getnextarg(cmdstring: str) -> tuple:
         tuple: (first argument (str), remaining command string (str)).
     """
     return _match_groups(cmdstring)
-
-
-def reset() -> None:
-    """Reset reference data.
-
-    Clears the stored reference position, aircraft index, heading, and
-    speed used to resolve context-dependent arguments.
-    """
-    refdata.lat = None
-    refdata.lon = None
-    refdata.alt = None
-    refdata.acidx = -1
-    refdata.hdg = None
-    refdata.cas = None
 
 
 class Parameter:
@@ -104,9 +92,14 @@ class Parameter:
     """
 
     def __init__(
-        self, param: inspect.Parameter, annotation: str = "", isopt: "bool | None" = None
+        self,
+        param: inspect.Parameter,
+        parsers: dict[str, Parser | None],
+        annotation: str = "",
+        isopt: bool | None = None,
     ) -> None:
         self.name = param.name
+        self.parser_registry = parsers
         self.default = param.default
         self.optional = (
             (self.hasdefault() or param.kind == param.VAR_POSITIONAL) if isopt is None else isopt
@@ -122,13 +115,13 @@ class Parameter:
             self.parsers = [Parser(str)]
             self.annotation = "word"
         elif isinstance(self.annotation, str):
-            # If the annotation is a string we get our parsers from the argparsers dict
-            pfuns = [argparsers.get(a) for a in self.annotation.split("/")]
+            # If the annotation is a string we get our parsers from the runtime registry
+            pfuns = [self.parser_registry.get(a) for a in self.annotation.split("/")]
             self.parsers = [p for p in pfuns if p is not None]
         elif argkeys:
-            # Annotated type aliases (e.g. Alt, Spd) carry the argparsers key
+            # Annotated type aliases (e.g. Alt, Spd) carry the parser-registry key
             # as metadata; unions of them (or with None) are also accepted
-            pfuns = [argparsers.get(a) for a in argkeys]
+            pfuns = [self.parser_registry.get(a) for a in argkeys]
             self.parsers = [p for p in pfuns if p is not None]
             self.annotation = "/".join(argkeys)
         elif isinstance(param.annotation, type) and issubclass(param.annotation, Parser):
@@ -224,7 +217,7 @@ class Parser:
     # Output size of this parser
     size = 1
 
-    def __init__(self, parsefun: "Callable[..., Any] | None" = None) -> None:
+    def __init__(self, parsefun: Callable[..., Any] | None = None) -> None:
         self.parsefun = parsefun
 
     def parse(self, argstring: str) -> tuple:
@@ -252,6 +245,10 @@ class StringArg(Parser):
 class CallsignArg(Parser):
     """Argument parser for aircraft callsigns and group ids."""
 
+    def __init__(self, argument_parser: ArgumentParser) -> None:
+        super().__init__()
+        self.argument_parser = argument_parser
+
     def parse(self, argstring: str) -> tuple:
         """Parse a callsign or group name into traffic index/indices.
 
@@ -264,17 +261,18 @@ class CallsignArg(Parser):
         """
         arg, argstring = _match_groups(argstring)
         callsign = arg.upper()
-        if callsign in minisky.traf.groups:
-            idx = minisky.traf.groups.listgroup(callsign)
+        traffic = self.argument_parser.traffic
+        if callsign in traffic.groups:
+            idx = traffic.groups.listgroup(callsign)
         else:
-            idx = minisky.traf.idx(callsign)
+            idx = traffic.idx(callsign)
             if idx < 0:
                 raise ArgumentError(f"Aircraft with callsign {callsign} not found")
 
             # Update ref position for navdb lookup
-            refdata.lat = minisky.traf.lat[idx]
-            refdata.lon = minisky.traf.lon[idx]
-            refdata.acidx = idx
+            self.argument_parser.refdata.lat = traffic.lat[idx]
+            self.argument_parser.refdata.lon = traffic.lon[idx]
+            self.argument_parser.refdata.acidx = idx
         return idx, argstring
 
 
@@ -290,6 +288,10 @@ class WptArg(Parser):
     Default values
     """
 
+    def __init__(self, argument_parser: ArgumentParser) -> None:
+        super().__init__()
+        self.argument_parser = argument_parser
+
     def parse(self, argstring: str) -> tuple:
         """Combine one or two arguments into a single waypoint position text.
 
@@ -300,9 +302,10 @@ class WptArg(Parser):
         name = arg.upper()
 
         # Try aircraft first: translate a/c id into a valid position text with a lat,lon
-        idx = minisky.traf.idx(name)
+        traffic = self.argument_parser.traffic
+        idx = traffic.idx(name)
         if idx >= 0:
-            name = f"{minisky.traf.lat[idx]},{minisky.traf.lon[idx]}"
+            name = f"{traffic.lat[idx]},{traffic.lon[idx]}"
 
         # Check if lat/lon combination
         elif islat(name):
@@ -311,7 +314,7 @@ class WptArg(Parser):
             name = name + "," + arg
 
         # apt,runway ? Combine into one string with a slash as separator
-        elif argstring[:2].upper() == "RW" and name in minisky.navdb.aptid:
+        elif argstring[:2].upper() == "RW" and name in self.argument_parser.navigation.aptid:
             arg, argstring = _match_groups(argstring)
             name = name + "/" + arg.upper()
 
@@ -333,6 +336,10 @@ class PosArg(Parser):
     # This parser's output size is 2 (lat, lon)
     size = 2
 
+    def __init__(self, argument_parser: ArgumentParser) -> None:
+        super().__init__()
+        self.argument_parser = argument_parser
+
     def parse(self, argstring: str) -> tuple:
         """Parse one or two arguments into a lat/lon position.
 
@@ -349,9 +356,11 @@ class PosArg(Parser):
         argu = arg.upper()
 
         # Try aircraft first: translate a/c id into a valid position text with a lat,lon
-        idx = minisky.traf.idx(argu)
+        traffic = self.argument_parser.traffic
+        refdata = self.argument_parser.refdata
+        idx = traffic.idx(argu)
         if idx >= 0:
-            return minisky.traf.lat[idx], minisky.traf.lon[idx], argstring
+            return traffic.lat[idx], traffic.lon[idx], argstring
 
         # Check if lat/lon combination
         if islat(argu):
@@ -361,12 +370,12 @@ class PosArg(Parser):
             return txt2lat(argu), txt2lon(nextarg), argstring
 
         # apt,runway ? Combine into one string with a slash as separator
-        if argstring[:2].upper() == "RW" and argu in minisky.navdb.aptid:
+        if argstring[:2].upper() == "RW" and argu in self.argument_parser.navigation.aptid:
             arg, argstring = _match_groups(argstring)
             argu = argu + "/" + arg.upper()
 
         if refdata.lat is None:
-            refdata.lat, refdata.lon = minisky.scr.getviewctr()
+            refdata.lat, refdata.lon = self.argument_parser.console.getviewctr()
 
         posobj = Position(argu, refdata.lat, refdata.lon)
         if posobj.error:
@@ -396,31 +405,80 @@ class PandirArg(Parser):
         return pandir, argstring
 
 
-argparsers = {
-    "*": None,
-    "txt": Parser(str.upper),
-    "word": Parser(str),
-    "string": StringArg(),
-    "float": Parser(float),
-    "int": Parser(int),
-    "onoff": Parser(txt2bool),
-    "bool": Parser(txt2bool),
-    "callsign": CallsignArg(),
-    "wpt": WptArg(),
-    "latlon": PosArg(),
-    "lat": PosArg(),
-    "lon": None,
-    "pandir": PandirArg(),
-    "spd": Parser(txt2spd),
-    "vspd": Parser(txt2vs),
-    "alt": Parser(txt2alt),
-    "hdg": Parser(lambda txt: txt2hdg(txt, refdata.lat, refdata.lon)),
-    "time": Parser(txt2tim),
-}
+class ArgumentParser:
+    """Own argument parser instances and reference data for one command stack.
+
+    The traffic, navigation database, and console references are explicit,
+    while the parser registry and reference data are isolated from other
+    MiniSky runtimes.
+
+    Attributes:
+        traffic: Traffic object used for callsign and aircraft-position lookup.
+        navigation: Navigation database used for airport and runway lookup.
+        console: Console used to obtain the current view centre.
+        refdata: Reference position, aircraft index, heading, and speed from
+            previously parsed arguments.
+        parsers: Mapping of argument type names to parser objects.
+    """
+
+    def __init__(self, traffic: Traffic, navigation: Navdatabase, console: ConsoleIO) -> None:
+        self.traffic = traffic
+        self.navigation = navigation
+        self.console = console
+
+        # Stack reference data namespace
+        self.refdata = SimpleNamespace(lat=None, lon=None, alt=None, acidx=-1, hdg=None, cas=None)
+
+        self.parsers: dict[str, Parser | None] = {
+            "*": None,
+            "txt": Parser(str.upper),
+            "word": Parser(str),
+            "string": StringArg(),
+            "float": Parser(float),
+            "int": Parser(int),
+            "onoff": Parser(txt2bool),
+            "bool": Parser(txt2bool),
+            "callsign": CallsignArg(self),
+            "wpt": WptArg(self),
+            "latlon": PosArg(self),
+            "lat": PosArg(self),
+            "lon": None,
+            "pandir": PandirArg(),
+            "spd": Parser(txt2spd),
+            "vspd": Parser(txt2vs),
+            "alt": Parser(txt2alt),
+            "hdg": Parser(self._parse_heading),
+            "time": Parser(txt2tim),
+        }
+
+    def parameter(
+        self,
+        param: inspect.Parameter,
+        annotation: str = "",
+        isopt: bool | None = None,
+    ) -> Parameter:
+        """Create a command parameter using this runtime's parser registry."""
+        return Parameter(param, self.parsers, annotation, isopt)
+
+    def reset(self) -> None:
+        """Reset reference data.
+
+        Clears the stored reference position, aircraft index, heading, and
+        speed used to resolve context-dependent arguments.
+        """
+        self.refdata.lat = None
+        self.refdata.lon = None
+        self.refdata.alt = None
+        self.refdata.acidx = -1
+        self.refdata.hdg = None
+        self.refdata.cas = None
+
+    def _parse_heading(self, text: str) -> float:
+        return txt2hdg(text, self.refdata.lat, self.refdata.lon)
 
 
 def _annotation_argkeys(annotation: Any) -> list[str]:
-    """Extract argparsers keys from an Annotated alias or a union of them.
+    """Extract parser-registry keys from an Annotated alias or a union of them.
 
     Returns an empty list when the annotation is not based on Annotated
     (e.g., a plain type or a DSL string).
@@ -438,7 +496,7 @@ def _annotation_argkeys(annotation: Any) -> list[str]:
 
 
 # Annotated type aliases for stack command parameters. The underlying type
-# is what the parser produces; the string metadata is the argparsers key.
+# is what the parser produces; the string metadata is the parser-registry key.
 # Use these instead of bare DSL strings so type checkers and linters see
 # real types, e.g.: def selaltcmd(idx: Acid, alt: Alt, vspd: Vspd | None = None)
 Acid = Annotated[int, "callsign"]
