@@ -55,21 +55,18 @@ waypoint, navaid, airport, or aircraft.
 
 
 def _new_runtime(scenario: str | None = None) -> MiniSky:
-    """Construct a runtime from the default settings and discover plugins."""
-    from minisky import MiniSky, MiniSkySettings, filename_settings, plugin
+    """Construct a runtime from the default settings."""
+    from minisky import MiniSky, MiniSkySettings, filename_settings
 
     settings = MiniSkySettings.from_file(filename_settings)
     runtime = MiniSky(settings, scenario)
-    plugin.discover()
     return runtime
 
 
 async def _run_scenario(scenario: str, speed: int) -> None:
     """Initialise the simulator with a scenario and run it to completion."""
-    from minisky import plugin
-
     runtime = _new_runtime(scenario)
-    plugin.load_enabled()
+    runtime.load_plugins()
     runtime.runner.speed = speed
 
     await runtime.run()

@@ -1,11 +1,16 @@
 # `minisky`
 
-The top-level package: initialisation, simulation-state constants, and the global
-singleton objects (`sim`, `traf`, `runner`, `scr`, `navdb`) described in
-[Architecture](../architecture.md#the-singletons).
+The top-level package exposes the explicit runtime owner, validated settings,
+simulation-state constants, and a temporary `init()` compatibility constructor.
 
-::: minisky
-    options:
-      members:
-        - init
-        - load_plugins
+## Runtime
+
+::: minisky.MiniSky
+
+## Settings
+
+::: minisky.MiniSkySettings
+
+## Compatibility constructor
+
+::: minisky.init

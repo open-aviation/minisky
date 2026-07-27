@@ -1,20 +1,26 @@
 # `minisky.plugin`
 
-Plugin discovery, loading, and the building blocks for writing plugins — see the
-[plugin guide](../guides/plugins.md).
+Runtime-owned plugin discovery, loading, timed hooks, per-aircraft entities,
+and command declarations. See the [plugin guide](../guides/plugins.md).
 
 ## Plugin management
 
-::: minisky.plugin.plugin
+::: minisky.plugin.plugin.PluginManager
+
+## Plugin records
+
+::: minisky.plugin.plugin.Plugin
 
 ## Entity
 
 ::: minisky.plugin.entity.Entity
 
-## Timed functions
+## Timed hooks
 
-::: minisky.plugin.timedfunction
+::: minisky.plugin.timedfunction.TimedFunctionManager
 
-## Stack command decorators
+::: minisky.plugin.timedfunction.Timer
 
-::: minisky.plugin.plugin_decorators
+## Stack command declarations
+
+::: minisky.plugin.plugin_decorators.command

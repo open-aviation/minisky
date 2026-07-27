@@ -46,17 +46,16 @@ import time
 from collections import deque
 from collections.abc import Callable
 from datetime import UTC, datetime
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, TypedDict, cast
 
 from pydantic import BaseModel, ConfigDict, Field
 
-import minisky
-from minisky import stack
-from minisky.core import settings
 from minisky.streaming import Snapshot, build_snapshot
 from minisky.tools.aero import fpm, ft, kts
 
 if TYPE_CHECKING:
+    from minisky import MiniSky
     from minisky.simulation import ConsoleIO, Runner, Simulation
     from minisky.traffic import Traffic
 
@@ -79,9 +78,8 @@ class TangramPluginSettings(BaseModel):
 # not advancing (paused/init), so the frontend still sees state changes.
 HEARTBEAT_SECS = 1.0
 
-SIM_STATE_NAMES = {0: "INIT", 1: "HOLD", 2: "OP", 3: "END"}
-
-bridge = None
+# Immutable mapping used when serializing simulation state names.
+SIM_STATE_NAMES = MappingProxyType({0: "INIT", 1: "HOLD", 2: "OP", 3: "END"})
 
 
 class TangramSimInfo(TypedDict):
@@ -285,6 +283,22 @@ class TangramBridge:
         if self._thread is not None:
             self._thread.join(timeout=2.0)
 
+    def status(self) -> tuple[bool, str]:
+        """Return the current Redis bridge status for the TANGRAM command.
+
+        Returns:
+            A `(True, message)` tuple reporting connection state, Redis URL,
+            channel, publication count, and the most recent transport error.
+        """
+        status = "connected" if self.connected else "disconnected"
+        text = (
+            f"Tangram bridge: {status} to {self.redis_url}\n"
+            f"Channel: to:{self.channel}:new-data ({self.published} messages published)"
+        )
+        if self.last_error:
+            text += f"\nLast error: {self.last_error}"
+        return True, text
+
     def tick(self) -> None:
         """Update hook: build and enqueue a snapshot (rate-capped). Runs in OP."""
         now = time.monotonic()
@@ -409,51 +423,58 @@ class TangramBridge:
                     return
 
 
-@stack.command(name="TANGRAM")
-def tangram_status() -> tuple[bool, str]:
-    """Show the status of the tangram Redis bridge."""
-    if bridge is None:
-        return False, "Tangram bridge not initialised"
-    status = "connected" if bridge.connected else "disconnected"
-    text = (
-        f"Tangram bridge: {status} to {bridge.redis_url}\n"
-        f"Channel: to:{bridge.channel}:new-data ({bridge.published} messages published)"
-    )
-    if bridge.last_error:
-        text += f"\nLast error: {bridge.last_error}"
-    return True, text
+def init_plugin(
+    runtime: MiniSky,
+) -> tuple[dict[str, Any], dict[str, list[Any]]]:
+    """Create the bridge and register its simulation hooks for one runtime.
 
+    The returned state, lifecycle callbacks, shutdown callback, and TANGRAM
+    command are all bound to the supplied runtime. Loading the plugin in a
+    second runtime therefore creates an independent Redis bridge.
 
-def init_plugin() -> dict[str, Any]:
-    """Create the bridge and register its simulation hooks."""
-    global bridge
+    Args:
+        runtime: MiniSky runtime loading the plugin.
 
+    Returns:
+        A `(config, stack_functions)` tuple consumed by the runtime-owned
+        plugin manager.
+    """
+    extras = runtime.settings.model_extra or {}
     # TODO(abraham): we should namespace it under settings.plugins.tangram.
-    cfg = TangramPluginSettings.model_validate(settings.default_settings).tangram
-    command_stack = stack.current()
+    cfg = TangramPluginSettings.model_validate({"tangram": extras.get("tangram", {})}).tangram
     bridge = TangramBridge(
         redis_url=cfg.redis_url,
         channel=cfg.channel,
         max_hz=cfg.max_hz,
         snapshot_builder=lambda: build_snapshot(
-            minisky.sim, minisky.traf, minisky.runner, command_stack
+            runtime.simulation, runtime.traffic, runtime.runner, runtime.commands
         ),
-        console=minisky.scr,
-        simulation=minisky.sim,
-        runner=minisky.runner,
-        traffic=minisky.traf,
-        get_scenname=command_stack.get_scenname,
-        stack_command=command_stack.stack,
+        console=runtime.console,
+        simulation=runtime.simulation,
+        runner=runtime.runner,
+        traffic=runtime.traffic,
+        get_scenname=runtime.commands.get_scenname,
+        stack_command=runtime.commands.stack,
     )
-    success, msg = bridge.start()
-    minisky.scr.echo(msg)
+    success, message = bridge.start()
+    runtime.console.echo(message)
     if not success:
-        raise RuntimeError(msg)
+        raise RuntimeError(message)
 
     config = {
         "plugin_name": "TANGRAM",
         "update_interval": 0.0,
         "update": bridge.tick,
         "reset": bridge.reset,
+        "shutdown": bridge.stop,
+        "state": bridge,
     }
-    return config
+    stack_functions = {
+        "TANGRAM": [
+            bridge.status,
+            "",
+            "TANGRAM",
+            "Show the status of the tangram Redis bridge.",
+        ]
+    }
+    return config, stack_functions

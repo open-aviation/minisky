@@ -65,7 +65,7 @@ class SurveillanceUncertainty(TrafficArrays):
 
         self.setnoise(False)
 
-    def new_implementation(self, implementation: type[TrafficArrays]) -> TrafficArrays:
+    def new_implementation(self, implementation: Callable[..., TrafficArrays]) -> TrafficArrays:
         """Construct a replacement with this runtime's traffic and simulation."""
         return implementation(self.traffic, self._get_simulation)
 

@@ -39,6 +39,8 @@ class MiniSkySettings(BaseModel):
 DEFAULT_SETTINGS_FILE = Path(__file__).parent.parent.parent / "settings.toml"
 PACKAGE_DATA_DIR = Path(__file__).parent.parent / "data"
 
+# TODO(abraham): remove these module-level compatibility settings once all
+# callers receive MiniSkySettings explicitly.
 filename_settings = DEFAULT_SETTINGS_FILE
 default_settings = MiniSkySettings.from_file(filename_settings)
 prefer_compiled = default_settings.prefer_compiled

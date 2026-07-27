@@ -184,6 +184,8 @@ def getvarsfromobj(obj: Any) -> list[str] | None:
         return None
 
 
+# TODO(abraham): remove this active explorer after compatibility callers use
+# `MiniSky.variables` directly.
 _active: VariableExplorer | None = None
 
 
@@ -197,11 +199,6 @@ def _current() -> VariableExplorer:
     if _active is None:
         raise RuntimeError("MiniSky variable explorer is not initialized")
     return _active
-
-
-def register_data_parent(obj: Any, name: str) -> None:
-    """Register a data source on the active runtime's variable explorer."""
-    _current().register_data_parent(obj, name)
 
 
 def findvar(varname: str) -> Variable | None:

@@ -9,7 +9,7 @@ How it works:
 2. Your subclass is automatically registered by name (uppercase class name)
 3. Select your implementation via scenario command or programmatically:
    - Scenario: SELECTIMPL AUTOPILOT CUSTOMAUTOPILOT
-   - Python:   CustomAutoPilot.select()
+   - Python:   runtime.replaceables.select("AUTOPILOT", "CUSTOMAUTOPILOT")
 4. On simulation reset, implementations revert to defaults
 
 The SELECTIMPL command replaces the existing instance on traf immediately,
@@ -30,11 +30,12 @@ from typing import TYPE_CHECKING
 from minisky.traffic.autopilot import Autopilot
 
 if TYPE_CHECKING:
+    from minisky import MiniSky
     from minisky.simulation import Simulation
     from minisky.traffic import Traffic
 
 
-def init_plugin():
+def init_plugin(_runtime: MiniSky) -> dict[str, str]:
     config = {"plugin_name": "CUSTOMAUTOPILOT"}
     return config
 

@@ -6,14 +6,16 @@ TrafficArrays and RegisterElementParameters, which all traffic-related
 simulation entities build on, are re-exported here for convenience.
 """
 
+from __future__ import annotations
+
 from minisky.core.trafficarrays import RegisterElementParameters, TrafficArrays
 
 from . import settings, trafficarrays, varexplorer
 
-__all__ = [
+__all__ = (
     "RegisterElementParameters",
     "TrafficArrays",
     "settings",
     "trafficarrays",
     "varexplorer",
-]
+)

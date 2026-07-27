@@ -1,14 +1,21 @@
 """Stack command declarations for MiniSky plugins.
 
-The `@command` decorator stores command metadata on a function. It registers
-immediately when a runtime is active; otherwise the declaration is collected
-by `CommandStack.init()` when the runtime is constructed.
+The `@command` decorator stores command metadata on a function. Importing a
+plugin module does not register that command globally. Instead, the
+[`PluginManager`][minisky.plugin.plugin.PluginManager] that loads the module
+registers its declarations with the owning runtime's
+[`CommandStack`][minisky.stack.CommandStack].
 """
 
+from __future__ import annotations
+
 import inspect
-import sys
 from collections.abc import Callable
-from typing import Any
+from types import ModuleType
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from minisky.stack import CommandStack
 
 
 def command(
@@ -19,35 +26,50 @@ def command(
     help: str = "",
     arguments: str = "",
 ) -> Any:
-    """Decorator to register a function as a stack command.
+    """Declare a function as a stack command.
+
+    The declaration is stored on the function and registered only when the
+    runtime-owned plugin manager loads the containing module. This keeps module
+    import free of command-registry side effects while preserving the familiar
+    decorator syntax.
 
     Args:
-        func: The function to decorate (can be omitted for @command() style)
-        name: Command name (defaults to function name in uppercase)
-        aliases: Tuple of command aliases
-        brief: Brief usage string
-        help: Detailed help text
-        arguments: Argument specification string (e.g., "callsign,alt,[spd]")
+        func: Function to decorate. It may be omitted when using
+            `@command(...)` syntax.
+        name: Command name. Defaults to the function name.
+        aliases: Alternative command names.
+        brief: Brief usage string.
+        help: Detailed help text. When omitted, the function docstring is used.
+        arguments: Argument specification string, for example
+            `callsign,alt,[spd]`.
 
     Example:
+        from minisky import stack
         from minisky.stack.argparser import Txt
 
-        @command
+        @stack.command
         def mycommand(arg1: Txt, arg2: int = 5):
             '''Help text for mycommand.'''
             return True, "Success"
 
-        @command(name='MYCMD', aliases=('MC',))
+        @stack.command(name="MYCMD", aliases=("MC",))
         def my_command(arg: str):
             '''Help text.'''
             return True, "Done"
 
     Returns:
-        The original function (unmodified)
+        The original function or descriptor, unmodified apart from the stored
+        declaration metadata.
     """
 
-    def deco(func):
-        actual_func = func.__func__ if isinstance(func, (staticmethod, classmethod)) else func
+    def deco(declared: Callable[..., Any]) -> Any:
+        # Static and class methods store their declaration on the underlying
+        # function so the plugin loader can inspect them uniformly.
+        actual_func = (
+            declared.__func__
+            if isinstance(declared, (staticmethod, classmethod))
+            else declared
+        )
         declaration = {
             "name": name or actual_func.__name__,
             "aliases": aliases,
@@ -56,65 +78,65 @@ def command(
             "arguments": arguments,
         }
         actual_func.__stack_command__ = declaration  # type: ignore[reportFunctionMemberAccess]
+        return declared
 
-        try:
-            from minisky.stack import Command, current
-
-            current()
-        except (ImportError, RuntimeError):
-            return func
-
-        Command.addcommand(actual_func, **declaration)
-        return func
-
-    # Allow both @command and @command(args)
+    # Allow both `@command` and `@command(...)` forms.
     return deco(func) if func else deco
 
 
-def register_declared_commands() -> None:
-    """Register command declarations from modules imported before runtime startup."""
-    from minisky.stack import Command
+def register_declared_commands(command_stack: CommandStack, module: ModuleType) -> None:
+    """Register command declarations from one plugin module.
 
-    for module in tuple(sys.modules.values()):
-        if module is None:
-            continue
-        for value in vars(module).values():
-            actual_func = (
-                value.__func__ if isinstance(value, (staticmethod, classmethod)) else value
-            )
-            declaration = getattr(actual_func, "__stack_command__", None)
-            if declaration is not None:
-                Command.addcommand(actual_func, **declaration)
-
-
-def append_commands(newcommands: dict, syndict: dict | None = None) -> None:
-    """Append additional functions to the stack command dictionary.
-
-    Used by plugin loader to register plugin commands.
+    Only the supplied module is inspected. This is intentionally narrower than
+    scanning `sys.modules`: loading a plugin into one runtime must not register
+    commands imported for another runtime.
 
     Args:
-        newcommands: Dict of command name -> [function, arguments, brief, help]
-        syndict: Optional dict of command name -> list of synonyms
+        command_stack: Runtime-owned command registry that receives the
+            declarations.
+        module: Imported plugin module whose decorated functions are inspected.
     """
-    # Import here to avoid circular import
-    from minisky.stack import Command
+    for value in vars(module).values():
+        actual_func = (
+            value.__func__ if isinstance(value, (staticmethod, classmethod)) else value
+        )
+        declaration = getattr(actual_func, "__stack_command__", None)
+        if declaration is not None:
+            command_stack.addcommand(actual_func, **declaration)
 
-    syndict = syndict or {}
+
+def append_commands(
+    command_stack: CommandStack,
+    newcommands: dict[str, list[Any] | tuple[Any, ...]],
+    syndict: dict[str, list[str]] | None = None,
+) -> None:
+    """Append a plugin command dictionary to one runtime's command registry.
+
+    This supports the original plugin return format in which `init_plugin`
+    returns a second dictionary mapping command names to a callback, argument
+    specification, brief usage text, and full help text.
+
+    Args:
+        command_stack: Runtime-owned command registry that receives the
+            commands.
+        newcommands: Mapping of command name to
+            `[function, arguments, brief, help]`. Missing trailing values are
+            treated as empty strings.
+        syndict: Optional mapping of command name to aliases.
+    """
+    synonyms = syndict or {}
 
     for name, values in newcommands.items():
-        if len(values) >= 4:
-            function, arguments, brief, help_text = values[:4]
-        else:
-            function = values[0]
-            arguments = values[1] if len(values) > 1 else ""
-            brief = values[2] if len(values) > 2 else ""
-            help_text = values[3] if len(values) > 3 else ""
+        function = values[0]
+        arguments = values[1] if len(values) > 1 else ""
+        brief = values[2] if len(values) > 2 else ""
+        help_text = values[3] if len(values) > 3 else ""
 
-        Command.addcommand(
+        command_stack.addcommand(
             function,
             name=name,
             arguments=arguments,
             brief=brief,
             help=help_text,
-            aliases=syndict.get(name, []),
+            aliases=synonyms.get(name, []),
         )

@@ -11,6 +11,7 @@ the DEL command.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -61,7 +62,7 @@ class TrafficGroups(TrafficArrays):
         with self.settrafarrays():
             self.ingroup = np.array([], dtype=np.int64)
 
-    def new_implementation(self, implementation: type[TrafficArrays]) -> TrafficArrays:
+    def new_implementation(self, implementation: Callable[..., TrafficArrays]) -> TrafficArrays:
         """Construct a replacement with this runtime's traffic and area store."""
         return implementation(self.traffic, self.areas)
 

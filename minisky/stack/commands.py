@@ -70,7 +70,7 @@ def get_commands(command_stack: CommandStack) -> tuple:
         of [function, argument type string, brief usage text, help text];
         synonyms maps a command name to a list of alias names.
     """
-    from minisky import plugin, tools
+    from minisky import tools
     from minisky.traffic import route
 
     cmddict = {
@@ -368,7 +368,7 @@ def get_commands(command_stack: CommandStack) -> tuple:
             "Set origin of aircraft.",
         ],
         "PLUGINS": [
-            plugin.manage_plugins,
+            command_stack.plugins.manage,
             "[txt,txt]",
             "PLUGINS [LIST/LOAD, plugin_name]",
             "List available plugins or load a plugin",
@@ -494,7 +494,7 @@ def get_commands(command_stack: CommandStack) -> tuple:
             "Set seed for all functions using a randomizer (e.g.mcre,noise)",
         ],
         "SELECTIMPL": [
-            command_stack.select_implementation,
+            command_stack.replaceables.select,
             "[txt,txt]",
             "SELECTIMPL [classname, implname]",
             "Select implementation for a replaceable class (e.g., SELECTIMPL AUTOPILOT MYAUTOPILOT)",

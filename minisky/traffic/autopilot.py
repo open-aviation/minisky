@@ -157,7 +157,7 @@ class Autopilot(TrafficArrays):
         """Return the simulation that owns this autopilot."""
         return self._get_simulation()
 
-    def new_implementation(self, implementation: type[TrafficArrays]) -> TrafficArrays:
+    def new_implementation(self, implementation: Callable[..., TrafficArrays]) -> TrafficArrays:
         """Construct a replacement with this runtime's dependencies."""
         return implementation(self.traffic, self._get_simulation)
 

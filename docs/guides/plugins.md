@@ -1,127 +1,158 @@
 # Writing plugins
 
-Plugins extend the simulator without touching its code: they can hold per-aircraft data,
-run periodic update functions inside the simulation loop, and add new stack commands.
-The `example_plugins/` directory contains working examples.
+Plugins extend a [`MiniSky`][minisky.MiniSky] runtime without modifying
+core code. A plugin can own per-aircraft data, register timed lifecycle hooks,
+and add stack commands. The `example_plugins/` directory contains working
+examples.
 
 ## Anatomy of a plugin
 
-A plugin is a Python file in the plugin directory (`plugin_path` in `settings.toml`,
-default `example_plugins`) that defines an `init_plugin()` function:
+A plugin is a Python file in the directory configured by `plugin_path` that
+defines `init_plugin(runtime)`:
 
 ```python
 """My example plugin."""
-from random import randint
+
+from typing import TYPE_CHECKING
+
 import numpy as np
 
-import minisky
-from minisky import plugin, stack
+from minisky import plugin
+
+if TYPE_CHECKING:
+    from minisky import MiniSky
+    from minisky.traffic import Traffic
 
 
-example = None
-
-def init_plugin():
-    """Required entry point. Returns the plugin config dict."""
-    global example
-    example = Example()
-
-    return {
-        "plugin_name": "EXAMPLE",     # name used by PLUGIN LOAD / settings.toml
-        "update_interval": 5,         # seconds of sim time between update calls
-        "update": example.update,     # called every update_interval
-        # "preupdate": ...,           # called before traf.update()
-        # "reset": ...,               # called on simulation reset
+def init_plugin(runtime: MiniSky):
+    instance = Example(runtime.traffic)
+    config = {
+        "plugin_name": "EXAMPLE",
+        "update_interval": 5,
+        "update": instance.update,
+        "state": instance,
     }
+    commands = {
+        "PASSENGERS": [
+            instance.passengers,
+            "txt,[int]",
+            "PASSENGERS callsign, [count]",
+            "Set or get the number of passengers on an aircraft.",
+        ]
+    }
+    return config, commands
 ```
 
-The config dict registers the plugin's hooks:
+The runtime is passed explicitly. Plugin code should retain only the specific
+runtime components it needs instead of reading package-level aliases.
+
+The config dictionary supports these lifecycle entries:
 
 | Key | Meaning |
 | --- | --- |
-| `plugin_name` | Uppercase name the plugin is known by |
-| `update_interval` | Simulation seconds between hook calls (minimum: `sim.simdt`) |
-| `preupdate` | Called each interval *before* the traffic update |
-| `update` | Called each interval *after* the traffic update |
-| `reset` | Called when the simulation resets |
+| `plugin_name` | Name used by `PLUGINS LOAD` and `enabled_plugins` |
+| `update_interval` | Simulation seconds between timed callbacks |
+| `preupdate` | Callback before the traffic update |
+| `update` | Callback after the traffic update |
+| `reset` | Callback when the simulation resets |
+| `hold` | Callback when the simulation enters hold |
+| `shutdown` | Callback when the owning runtime shuts down |
+| `state` | Optional plugin-owned object exposed through the variable explorer |
+
+Plugin records, loaded state, timers, hooks, and returned state belong to
+`runtime.plugins`. Loading the same plugin into two runtimes creates separate
+records and hook sets.
 
 ## Per-aircraft data: `Entity`
 
-Derive from [`Entity`][minisky.plugin.entity.Entity] and register arrays inside a
-`settrafarrays()` block — they then grow and shrink automatically with aircraft creation
-and deletion, staying index-aligned with `minisky.traf` (see
-[Architecture](../architecture.md#per-aircraft-arrays-trafficarrays)):
+Derive from [`Entity`][minisky.plugin.entity.Entity], pass the owning traffic
+object to `super().__init__()`, and register arrays inside a
+`settrafarrays()` block. They then grow, shrink, and reset with that traffic
+tree.
 
 ```python
 class Example(plugin.Entity):
-    def __init__(self):
-        super().__init__()
+    def __init__(self, traffic: Traffic) -> None:
+        super().__init__(traffic)
         with self.settrafarrays():
             self.npassengers = np.array([])
 
-    def create(self, n=1):
-        """Called automatically when n new aircraft are created."""
+    def create(self, n: int = 1) -> None:
         super().create(n)
-        self.npassengers[-n:] = [randint(50, 250) for _ in range(n)]
+        self.npassengers[-n:] = 100
 
-    def update(self):
-        if minisky.traf.ntraf > 0:
-            print(f"{minisky.traf.ntraf} aircraft, {int(sum(self.npassengers))} pax")
+    def update(self) -> None:
+        if self.traffic.ntraf:
+            print(f"{self.traffic.ntraf} aircraft")
 ```
+
+`Entity` is not a singleton and does not use a proxy. Each plugin load creates
+an ordinary object attached to one runtime's traffic-array tree.
 
 ## Adding stack commands
 
-Use the [`@stack.command`][minisky.plugin.plugin_decorators.command] decorator. The
-function's docstring becomes the in-simulator help text (shown by `HELP PASSENGERS`),
-and the `arguments` string declares the parameter types the
-[argument parser](../api/stack.md) should use:
+Return a command dictionary as the second value from `init_plugin()`. Binding a
+method from the plugin-owned state object keeps the command attached to the
+correct runtime:
 
 ```python
-@stack.command(name="PASSENGERS", arguments="txt,[int]")
-def passengers(callsign: str, count: int = -1):
-    """Set or get the number of passengers on an aircraft.
+class Example(plugin.Entity):
+    # ...
 
-    Arguments:
-    - callsign: Aircraft callsign
-    - count: Number of passengers (optional, omit to query)
-    """
-    callsign = callsign.upper()
-    if callsign not in minisky.traf.callsign:
-        return False, f"Aircraft {callsign} not found"
+    def passengers(self, callsign: str, count: int = -1):
+        callsign = callsign.upper()
+        if callsign not in self.traffic.callsign:
+            return False, f"Aircraft {callsign} not found"
 
-    idx = minisky.traf.callsign.index(callsign)
-    if count < 0:
-        return True, f"{callsign} has {int(example.npassengers[idx])} passengers"
+        index = self.traffic.callsign.index(callsign)
+        if count < 0:
+            return True, f"{callsign} has {int(self.npassengers[index])} passengers"
 
-    example.npassengers[idx] = count
-    return True, f"Set {callsign} passengers to {count}"
+        self.npassengers[index] = count
+        return True, f"Set {callsign} passengers to {count}"
 ```
 
-Command handlers return `(success, message)`; the message is echoed to the console or
-REST client. Returning `None` counts as success with no message.
+A command entry contains the callback, argument parser specification, brief
+usage text, and help text. Command handlers return `(success, message)`;
+returning `None` counts as success with no message.
+
+The [`@stack.command`][minisky.plugin.plugin_decorators.command] decorator is
+also available for stateless module-level declarations. Importing a decorated
+function only stores metadata. The command is registered when the owning
+runtime loads that plugin module.
 
 ## Discovery and loading
 
-Plugin files are *discovered* at startup by parsing their source (no import happens until
-the plugin is loaded), so a broken plugin can't crash the simulator at startup.
+Discovery parses plugin source without importing it. `MiniSky` performs this
+discovery during construction.
 
-Load plugins in any of three ways:
+Load plugins in any of these ways:
 
-- **At startup** — list them in `settings.toml`:
+- **At startup** — list names under `enabled_plugins`, then call
+  `runtime.load_plugins()`.
+- **From the stack** — use `PLUGINS LIST` and `PLUGINS LOAD EXAMPLE`.
+- **From Python** — call `runtime.plugins.load("EXAMPLE")`.
+- **Over the REST API** — use `GET /plugins` and
+  `GET /plugins/load/EXAMPLE`.
 
-    ```toml
-    plugin_path = "example_plugins"
-    enabled_plugins = ["EXAMPLE"]
-    ```
+```python
+from minisky import MiniSky, MiniSkySettings
 
-    (Requires the host program to call [`minisky.load_plugins()`][minisky.load_plugins]
-    after `init()` — `minisky run` and `minisky server` both do.)
+settings = MiniSkySettings.from_file("settings.toml")
+runtime = MiniSky(settings)
+runtime.load_plugins()
+```
 
-- **From the stack** — `PLUGINS LIST` to see what's available, `PLUGINS LOAD EXAMPLE` to
-  load one (`PLUGIN` works as a synonym).
+## Replaceable implementations
 
-- **Over the REST API** — `GET /plugins` and `GET /plugins/load/EXAMPLE`.
+A plugin can declare a subclass of a replaceable traffic component, such as
+[`Autopilot`][minisky.traffic.autopilot.Autopilot]. Importing the class adds it
+to the shared declaration catalog, while selection belongs to each runtime:
 
-## A complete second example
+```python
+runtime.replaceables.select("AUTOPILOT", "CUSTOMAUTOPILOT")
+```
 
-`example_plugins/customautopilot.py` shows a plugin that subclasses a core simulator
-class — have a look at both examples before writing your own.
+The `SELECTIMPL` stack command calls the same runtime-owned manager. Resetting a
+simulation restores base implementations only on that runtime's traffic tree.
+See `example_plugins/customautopilot.py` for a complete example.

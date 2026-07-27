@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from minisky import tools
 from minisky.core.settings import MiniSkySettings, data
+from minisky.core.trafficarrays import ReplaceableManager
 from minisky.core.varexplorer import VariableExplorer
+from minisky.plugin import PluginManager
 from minisky.simulation import ConsoleIO, Runner, Simulation
 from minisky.simulation.simulation import OP
 from minisky.stack import CommandStack
@@ -33,9 +35,16 @@ class MiniSky:
             get_simulation=lambda: self.simulation,
             stack_command=lambda *args, **kwargs: self.commands.stack(*args, **kwargs),
             get_command_registry=lambda: self.commands.cmddict,
-            select_implementation=lambda base, impl: self.commands.select_implementation(
-                base, impl
-            ),
+            select_implementation=lambda base, impl: self.replaceables.select(base, impl),
+        )
+        self.replaceables = ReplaceableManager(self.traffic, lambda: self.commands.cmddict)
+        self.plugins = PluginManager(
+            settings=settings,
+            console=self.console,
+            variables=self.variables,
+            get_runtime=lambda: self,
+            get_simulation=lambda: self.simulation,
+            get_command_stack=lambda: self.commands,
         )
         self.commands = CommandStack(
             traffic=self.traffic,
@@ -43,6 +52,8 @@ class MiniSky:
             console=self.console,
             areas=self.areas,
             variables=self.variables,
+            plugins=self.plugins,
+            replaceables=self.replaceables,
             get_simulation=lambda: self.simulation,
             get_runner=lambda: self.runner,
         )
@@ -55,6 +66,8 @@ class MiniSky:
             console=self.console,
             command_stack=self.commands,
             areas=self.areas,
+            plugins=self.plugins,
+            replaceables=self.replaceables,
             stop_runner=self._stop_runner,
             publish_tick=self.streaming.publish_tick,
         )
@@ -67,6 +80,7 @@ class MiniSky:
 
         minisky._activate(self)
         self.commands.init()
+        self.plugins.discover()
 
         if scenario:
             self.commands.stack(f"IC {scenario}")
@@ -75,6 +89,10 @@ class MiniSky:
 
     def _stop_runner(self) -> None:
         self.runner.stop()
+
+    def load_plugins(self) -> None:
+        """Load plugins enabled in this runtime's settings."""
+        self.plugins.load_enabled()
 
     async def run(self) -> None:
         """Run the simulation until its runner stops."""
