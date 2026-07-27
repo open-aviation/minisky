@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-from contextlib import suppress
 from random import Random
 
 import numpy as np
@@ -109,38 +108,76 @@ class MiniSky:
         """Start the simulation runner in an owned asyncio task."""
         if self._closed:
             raise RuntimeError("MiniSky runtime is closed")
-        if self._run_task is None or self._run_task.done():
-            self._run_task = asyncio.create_task(self.run())
+        task = self._run_task
+        if task is not None:
+            if not task.done():
+                return task
+            self._run_task = None
+            task.result()
+
+        self._run_task = asyncio.create_task(self.run())
         return self._run_task
+
+    def _close_resources(self) -> list[Exception]:
+        if self._closed:
+            return []
+
+        errors: list[Exception] = []
+        for cleanup in (self.runner.shutdown, self.streaming.close, self.plugins.shutdown):
+            try:
+                cleanup()
+            except Exception as exc:
+                errors.append(exc)
+        self._closed = True
+        return errors
+
+    @staticmethod
+    def _raise_errors(message: str, errors: list[Exception]) -> None:
+        if len(errors) == 1:
+            raise errors[0]
+        if errors:
+            raise ExceptionGroup(message, errors)
 
     def close(self) -> None:
         """Release synchronous resources owned by this runtime."""
-        if self._closed:
-            return
-        self.runner.shutdown()
-        self.streaming.close()
+        errors = self._close_resources()
+        task = self._run_task
         try:
-            self.plugins.shutdown()
-        finally:
-            self._closed = True
+            current = asyncio.current_task()
+        except RuntimeError:
+            current = None
+
+        if task is not None and task is not current:
+            if task.done():
+                self._run_task = None
+                try:
+                    task.result()
+                except asyncio.CancelledError:
+                    pass
+                except Exception as exc:
+                    errors.append(exc)
+            else:
+                task.cancel()
+
+        self._raise_errors("MiniSky cleanup failed", errors)
 
     async def aclose(self) -> None:
         """Stop the runner task and release all runtime-owned resources."""
-        error: BaseException | None = None
-        try:
-            self.close()
-        except BaseException as exc:  # cleanup the runner task before re-raising
-            error = exc
-
+        errors = self._close_resources()
         task = self._run_task
-        if task is not None and task is not asyncio.current_task() and not task.done():
-            task.cancel()
-            with suppress(asyncio.CancelledError):
+        if task is not None and task is not asyncio.current_task():
+            if not task.done():
+                task.cancel()
+            try:
                 await task
-        self._run_task = None
+            except asyncio.CancelledError:
+                pass
+            except Exception as exc:
+                errors.append(exc)
+            finally:
+                self._run_task = None
 
-        if error is not None:
-            raise error
+        self._raise_errors("MiniSky shutdown failed", errors)
 
     def __enter__(self) -> MiniSky:
         """Enter a synchronous runtime lifecycle context."""
