@@ -39,7 +39,7 @@ COMMAND_DOCS_HEADER = """\
 
 Every text command understood by the simulator — usable in scenario files, the
 [console](../guides/console.md), the REST [`stack/` endpoint](../guides/rest-api.md),
-or [`minisky.stack.stack()`](../api/stack.md) from Python. Commands are
+or `runtime.commands.stack()` from Python. Commands are
 case-insensitive.
 
 Argument conventions: optional arguments are enclosed in `[...]`; `callsign` is an
@@ -56,20 +56,19 @@ waypoint, navaid, airport, or aircraft.
 
 def _new_runtime(scenario: str | None = None) -> MiniSky:
     """Construct a runtime from the default settings."""
-    from minisky import MiniSky, MiniSkySettings, filename_settings
+    from minisky import DEFAULT_SETTINGS_FILE, MiniSky, MiniSkySettings
 
-    settings = MiniSkySettings.from_file(filename_settings)
+    settings = MiniSkySettings.from_file(DEFAULT_SETTINGS_FILE)
     runtime = MiniSky(settings, scenario)
     return runtime
 
 
 async def _run_scenario(scenario: str, speed: int) -> None:
     """Initialise the simulator with a scenario and run it to completion."""
-    runtime = _new_runtime(scenario)
-    runtime.load_plugins()
-    runtime.runner.speed = speed
-
-    await runtime.run()
+    async with _new_runtime(scenario) as runtime:
+        runtime.load_plugins()
+        runtime.runner.speed = speed
+        await runtime.run()
 
 
 @app.command("run")
@@ -183,24 +182,23 @@ def stream_cmd(
 def _build_command_rows() -> list[str]:
     from minisky.stack import Command
 
-    runtime = _new_runtime()
+    with _new_runtime() as runtime:
+        primary: dict[str, Command] = {}
+        synonyms: dict[str, list[str]] = {}
+        for name, cmdobj in sorted(runtime.commands.cmddict.items()):
+            if cmdobj.name == name:
+                primary[name] = cmdobj
+            else:
+                synonyms.setdefault(cmdobj.name, []).append(name)
 
-    primary: dict[str, Command] = {}
-    synonyms: dict[str, list[str]] = {}
-    for name, cmdobj in sorted(runtime.commands.cmddict.items()):
-        if cmdobj.name == name:
-            primary[name] = cmdobj
-        else:
-            synonyms.setdefault(cmdobj.name, []).append(name)
-
-    lines: list[str] = []
-    for name, cmdobj in sorted(primary.items()):
-        usage = (cmdobj.brief or "").replace("|", "\\|").replace("\n", " ")
-        help_text = (cmdobj.help or "").replace("|", "\\|")
-        help_text = help_text.strip().splitlines()[0] if help_text.strip() else ""
-        syns = ", ".join(f"`{s}`" for s in sorted(synonyms.get(name, [])))
-        lines.append(f"| `{name}` | `{usage}` | {help_text} | {syns} |\n")
-    return lines
+        lines: list[str] = []
+        for name, cmdobj in sorted(primary.items()):
+            usage = (cmdobj.brief or "").replace("|", "\\|").replace("\n", " ")
+            help_text = (cmdobj.help or "").replace("|", "\\|")
+            help_text = help_text.strip().splitlines()[0] if help_text.strip() else ""
+            syns = ", ".join(f"`{s}`" for s in sorted(synonyms.get(name, [])))
+            lines.append(f"| `{name}` | `{usage}` | {help_text} | {syns} |\n")
+        return lines
 
 
 @commands_app.command("list")

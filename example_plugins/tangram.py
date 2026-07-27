@@ -46,11 +46,11 @@ import time
 from collections import deque
 from collections.abc import Callable
 from datetime import UTC, datetime
-from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, TypedDict, cast
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from minisky.simulation import SimulationState
 from minisky.streaming import Snapshot, build_snapshot
 from minisky.tools.aero import fpm, ft, kts
 
@@ -78,8 +78,12 @@ class TangramPluginSettings(BaseModel):
 # not advancing (paused/init), so the frontend still sees state changes.
 HEARTBEAT_SECS = 1.0
 
-# Immutable mapping used when serializing simulation state names.
-SIM_STATE_NAMES = MappingProxyType({0: "INIT", 1: "HOLD", 2: "OP", 3: "END"})
+def _state_name(state: int) -> str:
+    """Return the enum member name for a serialized simulation state."""
+    try:
+        return SimulationState(state).name
+    except ValueError:
+        return "?"
 
 
 class TangramSimInfo(TypedDict):
@@ -90,7 +94,7 @@ class TangramSimInfo(TypedDict):
     simutc: str  # ISO-8601
     speed: float  # runner speed multiplier (x realtime)
     ntraf: int
-    state: int  # 0=INIT, 1=HOLD, 2=OP, 3=END
+    state: int  # Serialized SimulationState value.
     state_name: str
     scenname: str  # "" when no scenario is loaded
     nconf_cur: int
@@ -151,7 +155,7 @@ def convert_snapshot(snapshot: Snapshot) -> TangramPayload:
         "speed": siminfo["speed"],
         "ntraf": siminfo["ntraf"],
         "state": state,
-        "state_name": SIM_STATE_NAMES.get(state, "?"),
+        "state_name": _state_name(state),
         "scenname": siminfo["scenname"],
         "nconf_cur": acdata["nconf_cur"],
         "nlos_cur": acdata["nlos_cur"],
@@ -250,6 +254,7 @@ class TangramBridge:
         self._console: deque[str] = deque(maxlen=200)
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
+        self._original_echo: Callable[[str, int], None] | None = None
         self.ready = threading.Event()
         """Set once the command subscription is live (commands published
         before this are lost -- Redis pub/sub has no replay)."""
@@ -279,9 +284,14 @@ class TangramBridge:
         return True, f"Tangram bridge publishing to to:{self.channel}:* at {self.redis_url}"
 
     def stop(self) -> None:
+        """Stop Redis I/O and restore the runtime console."""
         self._stop.set()
         if self._thread is not None:
             self._thread.join(timeout=2.0)
+            self._thread = None
+        if self._original_echo is not None:
+            self.console.echo = self._original_echo  # type: ignore[method-assign]
+            self._original_echo = None
 
     def status(self) -> tuple[bool, str]:
         """Return the current Redis bridge status for the TANGRAM command.
@@ -326,10 +336,13 @@ class TangramBridge:
 
     def _tee_console(self) -> None:
         """Also capture everything echoed to the console, without consuming it."""
-        original_echo = self.console.echo
+        if self._original_echo is not None:
+            return
+        self._original_echo = self.console.echo
 
         def echo(text: str = "", flag: int = 0) -> None:
-            original_echo(text, flag)
+            assert self._original_echo is not None
+            self._original_echo(text, flag)
             if text:
                 self._console.extend(text.splitlines())
 
@@ -354,7 +367,7 @@ class TangramBridge:
             "speed": float(self.runner.speed),
             "ntraf": int(self.traffic.ntraf),
             "state": state,
-            "state_name": SIM_STATE_NAMES.get(state, "?"),
+            "state_name": _state_name(state),
             "scenname": self.get_scenname(),
             "nconf_cur": last["siminfo"]["nconf_cur"] if last is not None else 0,
             "nlos_cur": last["siminfo"]["nlos_cur"] if last is not None else 0,
@@ -440,7 +453,6 @@ def init_plugin(
         plugin manager.
     """
     extras = runtime.settings.model_extra or {}
-    # TODO(abraham): we should namespace it under settings.plugins.tangram.
     cfg = TangramPluginSettings.model_validate({"tangram": extras.get("tangram", {})}).tangram
     bridge = TangramBridge(
         redis_url=cfg.redis_url,

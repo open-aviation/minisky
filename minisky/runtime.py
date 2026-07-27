@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-from minisky import tools
+import asyncio
+from contextlib import suppress
+
 from minisky.core.settings import MiniSkySettings, data
 from minisky.core.trafficarrays import ReplaceableManager
 from minisky.core.varexplorer import VariableExplorer
 from minisky.plugin import PluginManager
-from minisky.simulation import ConsoleIO, Runner, Simulation
-from minisky.simulation.simulation import OP
+from minisky.simulation import ConsoleIO, Runner, Simulation, SimulationState
 from minisky.stack import CommandStack
 from minisky.streaming import StreamHub, build_snapshot
 from minisky.tools.areafilter import AreaFilter
@@ -21,9 +22,11 @@ class MiniSky:
 
     def __init__(self, settings: MiniSkySettings, scenario: str | None = None) -> None:
         self.settings = settings
-        tools.init()
-
-        self.console = ConsoleIO(lambda: self.simulation.state == OP)
+        self._run_task: asyncio.Task[None] | None = None
+        self._closed = False
+        self.console = ConsoleIO(
+            lambda: self.simulation.state == SimulationState.OP
+        )
         self.navigation = Navdatabase(data("navigation"), self.console)
         self.areas = AreaFilter()
         self.variables = VariableExplorer()
@@ -74,11 +77,6 @@ class MiniSky:
         self.runner = Runner(self.simulation, self.console)
         self.variables.init(self.simulation, self.traffic)
 
-        # the compatibility facade must be active before commands and variable
-        # explorer parents are registered against this runtime.
-        import minisky
-
-        minisky._activate(self)
         self.commands.init()
         self.plugins.discover()
 
@@ -96,4 +94,59 @@ class MiniSky:
 
     async def run(self) -> None:
         """Run the simulation until its runner stops."""
+        if self._closed:
+            raise RuntimeError("MiniSky runtime is closed")
         await self.runner.run()
+
+    def start(self) -> asyncio.Task[None]:
+        """Start the simulation runner in an owned asyncio task."""
+        if self._closed:
+            raise RuntimeError("MiniSky runtime is closed")
+        if self._run_task is None or self._run_task.done():
+            self._run_task = asyncio.create_task(self.run())
+        return self._run_task
+
+    def close(self) -> None:
+        """Release synchronous resources owned by this runtime."""
+        if self._closed:
+            return
+        self.runner.shutdown()
+        self.streaming.close()
+        try:
+            self.plugins.shutdown()
+        finally:
+            self._closed = True
+
+    async def aclose(self) -> None:
+        """Stop the runner task and release all runtime-owned resources."""
+        error: BaseException | None = None
+        try:
+            self.close()
+        except BaseException as exc:  # cleanup the runner task before re-raising
+            error = exc
+
+        task = self._run_task
+        if task is not None and task is not asyncio.current_task() and not task.done():
+            task.cancel()
+            with suppress(asyncio.CancelledError):
+                await task
+        self._run_task = None
+
+        if error is not None:
+            raise error
+
+    def __enter__(self) -> MiniSky:
+        """Enter a synchronous runtime lifecycle context."""
+        return self
+
+    def __exit__(self, exc_type: object, exc_value: object, traceback: object) -> None:
+        """Close the runtime when leaving a synchronous context."""
+        self.close()
+
+    async def __aenter__(self) -> MiniSky:
+        """Enter an asynchronous runtime lifecycle context."""
+        return self
+
+    async def __aexit__(self, exc_type: object, exc_value: object, traceback: object) -> None:
+        """Close the runtime when leaving an asynchronous context."""
+        await self.aclose()

@@ -51,6 +51,10 @@ class VariableExplorer:
         """
         self.varlist[name] = (obj, getvarsfromobj(obj))
 
+    def unregister_data_parent(self, name: str) -> None:
+        """Remove a previously registered top-level data source."""
+        self.varlist.pop(name, None)
+
     def lsvar(self, varname: str = "") -> tuple[bool, str]:
         """Stack function to list information on simulation variables in the
         BlueSky console."""
@@ -182,25 +186,3 @@ def getvarsfromobj(obj: Any) -> list[str] | None:
         return [name for name in vars(obj) if name[0] != "_"]
     except TypeError:
         return None
-
-
-# TODO(abraham): remove this active explorer after compatibility callers use
-# `MiniSky.variables` directly.
-_active: VariableExplorer | None = None
-
-
-def _activate(explorer: VariableExplorer) -> None:
-    """Activate a runtime variable explorer for temporary compatibility calls."""
-    global _active
-    _active = explorer
-
-
-def _current() -> VariableExplorer:
-    if _active is None:
-        raise RuntimeError("MiniSky variable explorer is not initialized")
-    return _active
-
-
-def findvar(varname: str) -> Variable | None:
-    """Find a variable on the active runtime's variable explorer."""
-    return _current().findvar(varname)

@@ -14,22 +14,18 @@ Latitudes, longitudes, bearings, and headings are in degrees; distances
 are in nautical miles unless stated otherwise.
 """
 
+from functools import cache
+
 import numpy as np
 import pandas as pd
 
-import minisky
+from minisky.core.settings import data
 
 # Type alias for values that may be a scalar or a numpy array
 FloatOrArray = float | np.ndarray
 
 # Constants
 nm = 1852.0  # m       1 nautical mile
-
-# Read data for declination switch
-# TODO(abraham): move the mutable magnetic-declination cache into an
-# explicit navigation/tool service instead of process-wide module state.
-decl_read = False
-
 
 def rwgs84(latd: FloatOrArray) -> FloatOrArray:
     """Calculate the earths radius with WGS'84 geoid definition.
@@ -625,10 +621,7 @@ def magdec(latd, lond) -> float:
     of the actual data. Axes were regularly spaced at one degree. The direct
     manual linear interpolation also 6 x times faster.
     """
-    global decl_read, decl_lat_lon
-    if not decl_read:
-        load_magnetic_declination()
-        decl_read = True
+    decl_lat_lon = load_magnetic_declination()
 
     # Use fact that whole degrees are used as ticks on both lat & lon axis
     i_lat = min(max(0, int(90.0 - latd)), 180)
@@ -651,6 +644,7 @@ def magdec(latd, lond) -> float:
     return d_hdg
 
 
+@cache
 def load_magnetic_declination() -> np.ndarray:
     """
     Called by Init
@@ -690,9 +684,7 @@ def load_magnetic_declination() -> np.ndarray:
     #
     # lat : 89 ... -90
     # Lon: -180 ... 179
-    global decl_read, decl_lat_lon
-
-    file_path = minisky.data("navigation") / "geo_declination_data.csv"
+    file_path = data("navigation") / "geo_declination_data.csv"
     df = pd.read_csv(file_path, comment="#", header=None)
 
     # Extract the declination column (index 4) as a NumPy array
@@ -710,8 +702,7 @@ def load_magnetic_declination() -> np.ndarray:
     # Result is a 181x361 table for
     # lat = 90 ... -90 (rows)
     # lon = -180 ... 180 (columns)
-    decl_read = True
-
+    decl_lat_lon.setflags(write=False)
     return decl_lat_lon
 
 

@@ -4,8 +4,8 @@ Loads and prepares aircraft performance coefficients for the OpenAP
 performance model: aircraft and engine properties, kinematic flight
 envelopes (WRAP model), and drag polars for fixed-wing aircraft from the
 OpenAP database, plus a small local JSON database for rotorcraft. All
-values are stored in SI units. The :class:`Coefficient` container is
-instantiated once by the performance model (``perfoap.OpenAP``).
+values are stored in SI units. The [`Coefficient`][] container is instantiated once by the
+[`OpenAP`][minisky.traffic.performance.perfoap.OpenAP] performance model.
 """
 
 import json
@@ -13,7 +13,7 @@ import json
 import numpy as np
 from openap import WRAP, drag, prop
 
-import minisky
+from minisky.core.settings import data
 
 LIFT_FIXWING = 1  # fixwing aircraft
 LIFT_ROTOR = 2  # rotor aircraft
@@ -22,7 +22,7 @@ ENG_TYPE_TF = 1  # turbofan, fixwing
 ENG_TYPE_TP = 2  # turboprop, fixwing
 ENG_TYPE_TS = 3  # turboshlft, rotor
 
-OPENAP_DIR = minisky.data("performance/openap")
+OPENAP_DIR = data("performance/openap")
 
 
 class Coefficient:

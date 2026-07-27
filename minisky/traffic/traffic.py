@@ -8,7 +8,7 @@ trails, groups), and performs the numerical integration of the aircraft
 states each simulation time step.
 
 A single instance is created at simulator start-up and made available as
-`minisky.traf`. Several methods double as stack-command implementations
+[`runtime.traffic`][minisky.traffic.traffic.Traffic]. Several methods double as stack-command implementations
 (CRE, MCRE, CRECONFS, MOVE, POS, BANK, THR, NOISE, CRECMD, ...).
 """
 
@@ -66,7 +66,7 @@ class Traffic(TrafficArrays):
     arrays registered by its child entities (autopilot, active waypoint data,
     performance model, conflict detection/resolution, etc.) grow and shrink
     together when aircraft are created or deleted. A single instance is
-    available at runtime as `minisky.traf`.
+    available as [`runtime.traffic`][minisky.traffic.traffic.Traffic].
 
     Every simulation step,
     [`Traffic.update`][minisky.traffic.traffic.Traffic.update] refreshes the atmosphere,

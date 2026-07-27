@@ -3,12 +3,14 @@
 Implements a wind field defined by wind vectors at arbitrary lat/lon
 positions, optionally with altitude profiles. The field is interpolated
 (inverse-distance weighting horizontally, linear in altitude) to obtain
-the wind at any aircraft position. :class:`Windfield` contains the field
-data and interpolation; :class:`Wind` adds the stack-command interface
+the wind at any aircraft position. [`Windfield`][] contains the field
+data and interpolation; [`Wind`][] adds the stack-command interface
 (WIND to define wind, GETWIND to query it) and is available at runtime as
-``minisky.traf.wind``. The traffic model uses the wind to compute ground
+[`runtime.traffic.wind`][minisky.traffic.wind.Wind]. The traffic model uses the wind to compute ground
 speed and track from heading and airspeed.
 """
+
+from __future__ import annotations
 
 from typing import Any
 
@@ -92,7 +94,7 @@ class Windfield:
         lon: np.ndarray,
         vnorth: np.ndarray,
         veast: np.ndarray,
-        windalt: "np.ndarray | None" = None,
+        windalt: np.ndarray | None = None,
     ) -> None:
         """Add wind vectors given as north/east speed components.
 
@@ -259,7 +261,7 @@ class Windfield:
 
     def getdata(
         self, userlat: Any, userlon: Any, useralt: Any = 0.0
-    ) -> "tuple[Any, Any]":  # in case no altitude specified and field is 3D, use sea level wind
+    ) -> tuple[Any, Any]:  # in case no altitude specified and field is 3D, use sea level wind
         """Interpolate the wind field at one or more positions.
 
         Uses inverse-distance-squared weighting between the defined wind
@@ -408,13 +410,13 @@ class Windfield:
 class Wind(TrafficArrays, Windfield):
     """Wind field with the stack-command interface of the simulation.
 
-    Combines the :class:`Windfield` data and interpolation with the
+    Combines the [`Windfield`][minisky.traffic.wind.Windfield] data and interpolation with the
     TrafficArrays machinery so the field is cleared on simulation reset.
     Implements the WIND (add()) and GETWIND (get()) stack commands.
-    Available at runtime as ``minisky.traf.wind``.
+    Available at runtime as [`runtime.traffic.wind`][minisky.traffic.wind.Wind].
     """
 
-    def add(self, lat: Lat, lon: Lon, *winddata: float) -> "bool | tuple[bool, str]":
+    def add(self, lat: Lat, lon: Lon, *winddata: float) -> bool | tuple[bool, str]:
         """Define a wind vector as part of the 2D or 3D wind field.
 
         Implements the WIND stack command.
@@ -463,7 +465,7 @@ class Wind(TrafficArrays, Windfield):
 
         return True
 
-    def get(self, lat: Lat, lon: Lon, alt: Alt | None = None) -> "tuple[bool, str]":
+    def get(self, lat: Lat, lon: Lon, alt: Alt | None = None) -> tuple[bool, str]:
         """Get wind at a specified position (and optionally at altitude)
 
         Implements the GETWIND stack command. The result is reported as

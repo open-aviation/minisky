@@ -26,7 +26,7 @@ class APorASAS(TrafficArrays):
     ASAS command is used when the corresponding conflict-resolution channel
     is active, otherwise the autopilot command is used. The desired heading
     is derived from the desired track with a wind-drift correction.
-    Available at runtime as `minisky.traf.aporasas`.
+    Available as [`runtime.traffic.aporasas`][minisky.traffic.aporasas.APorASAS].
 
     Attributes:
         alt (ndarray): Desired altitude [m].
@@ -93,7 +93,7 @@ class APorASAS(TrafficArrays):
 
         # Select asas if there is a conflict AND resolution is on
         # Determine desired states per channel whether to use value from ASAS or AP.
-        # `minisky.traf.cr.active` may be used as well, will set all of these channels
+        # `self.traffic.cr.active` may be used as well, will set all of these channels
         self.trk = np.where(self.traffic.cr.hdgactive, self.traffic.cr.trk, self.traffic.ap.trk)
         self.tas = np.where(self.traffic.cr.tasactive, asastas, self.traffic.ap.tas)
         self.alt = np.where(self.traffic.cr.altactive, self.traffic.cr.alt, self.traffic.ap.alt)

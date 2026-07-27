@@ -1,5 +1,3 @@
-prefer_compiled = true # geo functions
-
 asas_dtlookahead = 300 # ASAS lookahead time [sec]
 asas_pzr = 5 # ASAS horizontal PZ margin [nm]
 asas_pzh = 1000 # ASAS vertical PZ margin [ft]

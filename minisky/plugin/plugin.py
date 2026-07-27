@@ -22,6 +22,7 @@ from pathlib import Path
 from types import ModuleType
 from typing import TYPE_CHECKING, Any
 
+from minisky.core.trafficarrays import TrafficArrays
 from minisky.plugin.plugin_decorators import append_commands, register_declared_commands
 from minisky.plugin.timedfunction import TimedFunctionManager
 
@@ -52,6 +53,7 @@ class Plugin:
         module: Imported plugin module, or None until loaded.
         config: Config dictionary returned by `init_plugin(runtime)`.
         state: Optional runtime-owned state object returned in the config.
+        command_names: Command names and aliases registered by this plugin.
     """
 
     fullname: str
@@ -63,6 +65,7 @@ class Plugin:
     module: ModuleType | None = None
     config: dict[str, Any] = field(default_factory=dict)
     state: Any = None
+    command_names: set[str] = field(default_factory=set)
 
 
 class PluginManager:
@@ -231,9 +234,11 @@ class PluginManager:
                     )
 
             # Register stack functions only on this runtime.
+            command_names_before = set(self.commands.cmddict)
             register_declared_commands(self.commands, module)
             if stack_functions:
                 append_commands(self.commands, stack_functions)
+            command_names = set(self.commands.cmddict) - command_names_before
 
             # Register plugin state, or the module when no state object is returned.
             state = config.get("state")
@@ -246,6 +251,7 @@ class PluginManager:
             plugin.module = module
             plugin.config = config
             plugin.state = state
+            plugin.command_names = command_names
             self.loaded_plugins[plugin.plugin_name] = plugin
             return True, f"Successfully loaded plugin {plugin.plugin_name}"
 
@@ -303,20 +309,33 @@ class PluginManager:
         self.timed.hold()
 
     def shutdown(self) -> None:
-        """Run shutdown callbacks and clear runtime-owned hook state."""
-        # TODO(abraham): call this from the final `MiniSky` lifecycle/context
-        # manager and unregister plugin variable-explorer parents at the same
-        # time.
+        """Run shutdown callbacks and release all runtime-owned plugin state."""
+        errors: list[Exception] = []
         for plugin in reversed(tuple(self.loaded_plugins.values())):
-            callback = plugin.config.get("shutdown")
-            if callback is not None:
-                callback()
+            try:
+                callback = plugin.config.get("shutdown")
+                if callback is not None:
+                    callback()
+            except Exception as exc:  # noqa: BLE001 - finish releasing every plugin
+                errors.append(exc)
+            finally:
+                for command_name in plugin.command_names:
+                    self.commands.cmddict.pop(command_name, None)
+
+                self.variables.unregister_data_parent(plugin.plugin_name.lower())
+                if isinstance(plugin.state, TrafficArrays):
+                    plugin.state.detach()
+
+                plugin.loaded = False
+                plugin.module = None
+                plugin.config.clear()
+                plugin.state = None
+                plugin.command_names.clear()
+
         self.timed.clear()
         self.loaded_plugins.clear()
-        for plugin in self.plugins.values():
-            plugin.loaded = False
-            plugin.config.clear()
-            plugin.state = None
+        if errors:
+            raise ExceptionGroup("Plugin shutdown failed", errors)
 
     @staticmethod
     def _parse_init_plugin(func_node: ast.FunctionDef) -> dict[str, Any] | None:

@@ -27,7 +27,7 @@ class SurveillanceUncertainty(TrafficArrays):
 
     Keeps a noisy, periodically refreshed copy of the true aircraft state,
     representing what surveillance-based systems would observe. Available
-    at runtime as `minisky.traf.noise`.
+    as [`runtime.traffic.noise`][minisky.traffic.uncertainty.SurveillanceUncertainty].
 
     Attributes:
         lastupdate (ndarray): Simulation time of the last broadcast per

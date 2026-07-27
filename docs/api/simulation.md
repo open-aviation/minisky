@@ -7,6 +7,10 @@ console output.
 
 ::: minisky.simulation.simulation.Simulation
 
+## Simulation state
+
+::: minisky.simulation.simulation.SimulationState
+
 ## Runner
 
 ::: minisky.simulation.runner.Runner

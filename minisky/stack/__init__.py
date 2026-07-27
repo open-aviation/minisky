@@ -4,7 +4,7 @@ The stack is MiniSky's text-command interpreter. Every instruction to the
 simulator—typed by a user, read from a scenario (`.scn`) file, or issued by
 a plugin—enters as a line of text such as
 `CRE KL204 B744 52.0 4.0 90 FL300 250`. Command lines are queued with
-[stack][minisky.stack.stack] and executed once per simulation step by [`CommandStack.process`][minisky.stack.CommandStack.process].
+[`CommandStack.stack`][minisky.stack.CommandStack.stack] and executed once per simulation step by [`CommandStack.process`][minisky.stack.CommandStack.process].
 
 Each available command is represented by a [Command][minisky.stack.Command] object, which
 couples the command name to the Python function that implements it and to
@@ -13,9 +13,7 @@ command set is defined in `minisky.stack.commands` and registered by
 [`CommandStack.init`][minisky.stack.CommandStack.init].
 
 Each `CommandStack` owns one runtime's command registry, pending command
-queue, scenario buffer, and sender state. The remaining module-level
-functions and `Command.cmddict` are temporary compatibility aliases for
-the active runtime.
+queue, scenario buffer, and sender state.
 
 This module also implements scenario handling: [`CommandStack.ic`][minisky.stack.CommandStack.ic] loads a scenario file,
 whose timestamped command lines are buffered and moved onto the stack by
@@ -60,9 +58,6 @@ class Command:
     the callback. Calling a Command instance with an argument string parses
     the arguments and executes the callback.
 
-    `cmddict` is a compatibility alias for the active runtime registry and
-    maps command names and aliases to Command instances.
-
     Attributes:
         name: Command name in upper case (e.g., "CRE").
         help: Full help text shown by the HELP command.
@@ -74,9 +69,6 @@ class Command:
         valid: False when the callback is an unbound class/instance method.
     """
 
-    # TODO(abraham): remove this active-runtime registry alias when the
-    # remaining compatibility tests and public stack facade use CommandStack directly.
-    cmddict: dict[str, Command] = {}
 
     def __init__(
         self,
@@ -399,7 +391,7 @@ class CommandStack:
         """Iterate over the command lines pending for this simulation step.
 
         Detaches the pending command list before iterating so that a
-        [stack][minisky.stack.stack] call from another thread, such as a plugin I/O thread,
+        [`CommandStack.stack`][minisky.stack.CommandStack.stack] call from another thread, such as a plugin I/O thread,
         cannot race with processing: a command lands either on the detached
         list processed in this step or on the fresh list processed next step.
         """
@@ -469,7 +461,7 @@ class CommandStack:
         remaining text is passed to the Command object for argument parsing and
         execution, and any resulting message is echoed to the screen. The
         pending commands are detached from the stack up front (see
-        Stack.commands), so commands stacked while processing runs — including
+        CommandStack.commands), so commands stacked while processing runs — including
         from other threads — are kept for the next step instead of being lost.
         """
         # First check for commands in scenario file
@@ -800,109 +792,3 @@ class CommandStack:
         """Set the scenario data. This is used by the batch logic."""
         self.scentime = newtime
         self.scencmd = newcmd
-
-
-# TODO(abraham): remove the active stack pointer with the final module-level
-# stack facade migration.
-_active_stack: CommandStack | None = None
-
-
-def _activate(command_stack: CommandStack) -> None:
-    """Activate a runtime command stack for compatibility APIs."""
-    global _active_stack
-    _active_stack = command_stack
-    Command.cmddict = command_stack.cmddict
-
-
-def current() -> CommandStack:
-    """Return the active runtime command stack."""
-    if _active_stack is None:
-        raise RuntimeError("MiniSky command stack is not initialized")
-    return _active_stack
-
-
-class Stack:
-    """Compatibility namespace for the former static stack class.
-
-    The command queue and scenario state now belong to the active runtime's
-    `CommandStack`. This class preserves the former `Stack.reset()` and
-    `Stack.commands()` entry points by delegating to that active instance.
-    """
-
-    @classmethod
-    def reset(cls) -> None:
-        """Reset the active runtime's stack variables."""
-        current()._reset_state()
-
-    @classmethod
-    def commands(cls) -> Iterator[str]:
-        """Iterate over the active runtime's pending command lines.
-
-        The pending list is detached before iteration so commands added while
-        processing are retained for the next simulation step.
-        """
-        return current().commands()
-
-
-def readscn(scn: str | Path | StringIO) -> Iterator[tuple[float, str]]:
-    """Read a scenario file and yield its timestamped commands.
-
-    Parses lines of the form `HH:MM:SS.hh>CMDLINE`, skipping comments and empty
-    lines and supporting line continuation with a trailing backslash.
-
-    Args:
-        scn: Scenario source: a path to a `.scn` file, or a `StringIO` object.
-            The `.scn` suffix is added to paths when missing.
-
-    Yields:
-        A `(command time [s], command line)` tuple for each valid line.
-
-    Raises:
-        TypeError: When `scn` is neither a path nor a `StringIO` object.
-    """
-    return current().readscn(scn)
-
-
-def showhelp(cmd: Txt = "", subcmd: Txt = "") -> tuple[bool, str]:
-    """HELP: Display command help or write a command reference file.
-
-    Args:
-        cmd: Command name to display, or `>filename` to write a tab-delimited
-            command reference in the documentation directory.
-        subcmd: Optional subcommand to display.
-
-    Returns:
-        A `(success, help text or status message)` tuple.
-    """
-    return current().showhelp(cmd, subcmd)
-
-
-def stack(*cmdlines: str, sender_id: bytes | None = None) -> None:
-    """Stack one or more commands separated by semicolons.
-
-    Queued commands are executed on the next call to [`CommandStack.process`][minisky.stack.CommandStack.process].
-
-    Args:
-        *cmdlines: Command line strings. Each may contain multiple commands
-            separated by semicolons.
-        sender_id: Optional network route or identifier of the sender.
-    """
-    current().stack(*cmdlines, sender_id=sender_id)
-
-
-def get_scenname() -> str:
-    """Return the current scenario name.
-
-    This is the name defined by the `SCENARIO` command or, when no explicit
-    name was set, the scenario filename.
-    """
-    return current().get_scenname()
-
-
-for _name in (
-    "readscn",
-    "showhelp",
-    "stack",
-    "get_scenname",
-):
-    globals()[_name].__doc__ = getattr(CommandStack, _name).__doc__

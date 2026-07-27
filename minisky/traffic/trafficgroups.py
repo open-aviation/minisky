@@ -43,7 +43,7 @@ class TrafficGroups(TrafficArrays):
 
     Each group is assigned one bit of a 64-bit mask; an aircraft's
     `ingroup` value is the OR of the masks of all groups it belongs to.
-    Available at runtime as `minisky.traf.groups`. The special group
+    Available as [`runtime.traffic.groups`][minisky.traffic.trafficgroups.TrafficGroups]. The special group
     name `*` refers to all aircraft in the simulation.
 
     Attributes:
@@ -71,7 +71,7 @@ class TrafficGroups(TrafficArrays):
         # Check if a group with a name exists
         return groupname in self.groups or groupname == "*"
 
-    def group(self, groupname: str = "", *args) -> tuple[bool, str]:
+    def group(self, groupname: str = "", *args: Any) -> tuple[bool, str]:
         """Add aircraft to a group, list its members, or list all groups.
 
         Implements the GROUP stack command. Without arguments the existing
@@ -141,7 +141,7 @@ class TrafficGroups(TrafficArrays):
         if grouparray.groupname != "*":
             self.allmasks ^= self.groups.pop(grouparray.groupname)
 
-    def ungroup(self, groupname: str, *args) -> tuple[bool, str] | None:
+    def ungroup(self, groupname: str, *args: Any) -> tuple[bool, str] | None:
         """Remove members from a group by aircraft index.
 
         Implements the UNGROUP stack command.

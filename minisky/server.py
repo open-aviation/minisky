@@ -21,9 +21,8 @@ Interactive OpenAPI docs are served at `/docs`.
 
 from __future__ import annotations
 
-import asyncio
 import os
-from contextlib import asynccontextmanager, suppress
+from contextlib import asynccontextmanager
 from io import StringIO
 from typing import Annotated, Any, cast
 
@@ -42,12 +41,8 @@ from fastapi import (
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
-from minisky import MiniSky, MiniSkySettings, filename_settings
+from minisky import DEFAULT_SETTINGS_FILE, MiniSky, MiniSkySettings
 from minisky.tools import aero
-
-# TODO(abraham): move router construction into `create_app` when the final
-# lifecycle pass removes all remaining process-wide application declarations.
-router = APIRouter()
 
 
 def _get_runtime(request: Request) -> MiniSky:
@@ -62,27 +57,23 @@ Runtime = Annotated[MiniSky, Depends(_get_runtime)]
 async def lifespan(app: FastAPI):
     """Run the app-owned simulator for the lifetime of the API server."""
     runtime = cast(MiniSky, app.state.runtime)
-    task = asyncio.create_task(runtime.run())
+    runtime.load_plugins()
+    runtime.start()
     try:
         yield
     finally:
-        runtime.runner.running = False
-        task.cancel()
-        with suppress(asyncio.CancelledError):
-            await task
+        await runtime.aclose()
 
 
 def create_app(runtime: MiniSky | None = None) -> FastAPI:
     """Create a FastAPI application owning a simulator runtime."""
     if runtime is None:
-        settings = MiniSkySettings.from_file(filename_settings)
+        settings = MiniSkySettings.from_file(DEFAULT_SETTINGS_FILE)
         runtime = MiniSky(settings)
-
-    runtime.load_plugins()
 
     app = FastAPI(lifespan=lifespan)
     app.state.runtime = runtime
-    app.include_router(router)
+    app.include_router(create_router())
 
     # Static files live at the repository root (../static relative to this
     # package), which resolves correctly for both a source checkout and an
@@ -93,13 +84,11 @@ def create_app(runtime: MiniSky | None = None) -> FastAPI:
     return app
 
 
-@router.get("/")
 def root() -> dict[str, str]:
     """Health check: confirm the API is up."""
     return {"msg": "MiniSky API endpoint ready"}
 
 
-@router.get("/all")
 def all(runtime: Runtime) -> list[dict[str, Any]]:
     """Get all aircraft states."""
     traffic = runtime.traffic
@@ -126,27 +115,23 @@ def all(runtime: Runtime) -> list[dict[str, Any]]:
     return df.to_dict(orient="records")
 
 
-@router.get("/simtime")
 def simtime(runtime: Runtime) -> dict[str, float]:
     """Get the simulation time."""
     return {"simulation time (seconds)": runtime.simulation.simt}
 
 
-@router.get("/speed/{speed}")
 def speedup(speed: float, runtime: Runtime) -> dict[str, str]:
     """Speed up the simulation."""
     runtime.runner.speed = speed
     return {"msg": f"simulation speed set to {speed}x"}
 
 
-@router.get("/forward/{seconds}")
 def forward(seconds: float, runtime: Runtime) -> dict[str, str]:
     """Jump to a specific simulation time."""
     runtime.runner.forward(seconds)
     return {"msg": f"simulation time jump forward {seconds} seconds"}
 
 
-@router.get("/conflicts")
 def conflicts(runtime: Runtime) -> list[dict[str, Any]] | dict[str, str]:
     """Get all detected conflicts.
 
@@ -184,7 +169,6 @@ def conflicts(runtime: Runtime) -> list[dict[str, Any]] | dict[str, str]:
     return conflict_info
 
 
-@router.get("/stack/{cmd:path}")
 async def stack(cmd: str, runtime: Runtime) -> dict[str, Any]:
     """Execute a stack command and return the output."""
     runtime.console.event.clear()
@@ -195,7 +179,6 @@ async def stack(cmd: str, runtime: Runtime) -> dict[str, Any]:
     return {"command to minisky": cmd, "message": msg}
 
 
-@router.get("/commands")
 def commands(runtime: Runtime) -> dict[str, str]:
     """Return the command dictionary as `{name: brief usage}`.
 
@@ -209,7 +192,6 @@ def commands(runtime: Runtime) -> dict[str, str]:
     return dict(sorted(seen.items()))
 
 
-@router.websocket("/stream")
 async def stream(websocket: WebSocket) -> None:
     """Push a full simulation snapshot once per simulation step in SI units.
 
@@ -238,7 +220,6 @@ async def stream(websocket: WebSocket) -> None:
         hub.unsubscribe()
 
 
-@router.get("/scn")
 def upload_form() -> Response:
     """Serve a minimal HTML form for uploading a scenario file."""
     content = """
@@ -251,7 +232,6 @@ def upload_form() -> Response:
     return Response(content=content, media_type="text/html")
 
 
-@router.post("/scn")
 async def scn(runtime: Runtime, file: UploadFile = File(...)) -> dict[str, str]:
     """Load an uploaded scenario file into the running simulation."""
     runtime.console.event.clear()
@@ -262,22 +242,39 @@ async def scn(runtime: Runtime, file: UploadFile = File(...)) -> dict[str, str]:
     return {"msg": f"scenario {filename} loaded"}
 
 
-@router.get("/map")
 def show_map() -> RedirectResponse:
     """Display the aircraft map viewer."""
     return RedirectResponse(url="/static/display.html")
 
 
-@router.get("/plugins")
 def list_plugins(runtime: Runtime) -> Any:
     """List available and loaded plugins."""
     return runtime.plugins.manage("LIST")
 
 
-@router.get("/plugins/load/{name}")
 def load_plugin(name: str, runtime: Runtime) -> Any:
     """Load a plugin by name."""
     return runtime.plugins.manage("LOAD", name)
+
+
+def create_router() -> APIRouter:
+    """Create the API router for one FastAPI application."""
+    router = APIRouter()
+    router.add_api_route("/", root, methods=["GET"])
+    router.add_api_route("/all", all, methods=["GET"])
+    router.add_api_route("/simtime", simtime, methods=["GET"])
+    router.add_api_route("/speed/{speed}", speedup, methods=["GET"])
+    router.add_api_route("/forward/{seconds}", forward, methods=["GET"])
+    router.add_api_route("/conflicts", conflicts, methods=["GET"])
+    router.add_api_route("/stack/{cmd:path}", stack, methods=["GET"])
+    router.add_api_route("/commands", commands, methods=["GET"])
+    router.add_api_websocket_route("/stream", stream)
+    router.add_api_route("/scn", upload_form, methods=["GET"])
+    router.add_api_route("/scn", scn, methods=["POST"])
+    router.add_api_route("/map", show_map, methods=["GET"])
+    router.add_api_route("/plugins", list_plugins, methods=["GET"])
+    router.add_api_route("/plugins/load/{name}", load_plugin, methods=["GET"])
+    return router
 
 
 def main() -> None:

@@ -1,13 +1,13 @@
 """Integration tests for the navigation database (defwpt/delwpt).
 
-These need an initialized simulator: defwpt/delwpt update the screen
-singleton (minisky.scr), and sim.reset() reloads the navdatabase.
+These need an initialized runtime: defwpt/delwpt update its console, and
+simulation reset reloads the navigation database.
 """
 
 
 class TestDefwpt:
-    def test_defwpt_adds_waypoint(self, bs, sim):
-        navdb = bs.navdb
+    def test_defwpt_adds_waypoint(self, runtime, sim):
+        navdb = runtime.navigation
         n = len(navdb.wpid)
         ok, msg = navdb.defwpt("TSTWPT1", 52.0, 4.0, "FIX")
         assert ok
@@ -19,10 +19,10 @@ class TestDefwpt:
         assert navdb.wplat[idx] == 52.0
         assert navdb.wplon[idx] == 4.0
 
-    def test_delwpt_removes_coordinates(self, bs, sim):
+    def test_delwpt_removes_coordinates(self, runtime, sim):
         # Regression: delwpt discarded the result of np.delete, so
         # wplat/wplon kept the deleted waypoint's coordinates
-        navdb = bs.navdb
+        navdb = runtime.navigation
         n = len(navdb.wpid)
         navdb.defwpt("TSTWPTA", 52.0, 4.0, "FIX")
         navdb.defwpt("TSTWPTB", 10.0, 20.0, "FIX")
@@ -38,10 +38,10 @@ class TestDefwpt:
         assert navdb.wplat[idx] == 10.0
         assert navdb.wplon[idx] == 20.0
 
-    def test_defwpt_delete_via_lon_delete_keyword(self, bs, sim):
+    def test_defwpt_delete_via_lon_delete_keyword(self, runtime, sim):
         # Regression: `lon.upper == "DELETE"` (missing call parentheses)
         # made deletion via the DELETE keyword silently impossible
-        navdb = bs.navdb
+        navdb = runtime.navigation
         n = len(navdb.wpid)
         navdb.defwpt("TSTWPT2", 52.0, 4.0)
 
@@ -53,17 +53,17 @@ class TestDefwpt:
         assert len(navdb.wplat) == n
         assert len(navdb.wplon) == n
 
-    def test_defwpt_delete_via_wptype_del(self, bs, sim):
-        navdb = bs.navdb
+    def test_defwpt_delete_via_wptype_del(self, runtime, sim):
+        navdb = runtime.navigation
         navdb.defwpt("TSTWPT3", 52.0, 4.0)
         ok, msg = navdb.defwpt("TSTWPT3", 52.0, 4.0, "DEL")
         assert ok
         assert "TSTWPT3" not in navdb.wpid
 
-    def test_delwpt_accepts_lowercase_name(self, bs, sim):
+    def test_delwpt_accepts_lowercase_name(self, runtime, sim):
         # Regression: delwpt uppercased the name for the existence check but
         # searched wpid with the raw name, raising ValueError for lowercase input
-        navdb = bs.navdb
+        navdb = runtime.navigation
         navdb.defwpt("TSTWPT4", 52.0, 4.0, "FIX")
         ok, _ = navdb.delwpt("tstwpt4")
         assert ok

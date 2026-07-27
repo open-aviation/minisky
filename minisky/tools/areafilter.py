@@ -267,42 +267,6 @@ class AreaFilter:
         return [self.areas_by_id[area_id] for area_id in ids if area_id in self.areas_by_id]
 
 
-# TODO(abraham): remove this standalone active filter after compatibility
-# callers and unit tests construct or receive an AreaFilter explicitly.
-_active = AreaFilter()
-
-
-def _activate(area_filter: AreaFilter) -> None:
-    """Activate an area filter for temporary compatibility calls."""
-    global _active
-    _active = area_filter
-
-
-def has_area(areaname: str) -> bool:
-    """Compatibility escape hatch for `AreaFilter.has_area`."""
-    return _active.has_area(areaname)
-
-
-def define_area(
-    areaname: str,
-    areatype: str,
-    coordinates: tuple[float, ...] | list[float],
-    top: float = 1e9,
-    bottom: float = -1e9,
-) -> tuple[bool, str]:
-    """Compatibility escape hatch for `AreaFilter.define_area`."""
-    return _active.define_area(areaname, areatype, coordinates, top, bottom)
-
-
-def checkInside(areaname: str, lat: np.ndarray, lon: np.ndarray, alt: np.ndarray) -> np.ndarray:
-    """Compatibility escape hatch for `AreaFilter.checkInside`."""
-    return _active.checkInside(areaname, lat, lon, alt)
-
-
-def reset() -> None:
-    """Compatibility escape hatch for `AreaFilter.reset`."""
-    _active.reset()
-
 
 class Shape:
     """

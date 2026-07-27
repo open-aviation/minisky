@@ -2,33 +2,20 @@
 
 Bundles the utility modules used throughout the simulator: unit
 conversions and the ISA atmosphere (aero), geodesy functions (geo, or the
-compiled cgeo variant when available and preferred via settings),
+compiled cgeo variant when available),
 text/value converters (convert), named area shapes and inside-tests
 (areafilter), the navigation database (navdata), and position-text
 parsing (position).
 """
 
-from minisky.core import settings
+from typing import TYPE_CHECKING
 
-# Register settings defaults
-if settings.prefer_compiled:
+if TYPE_CHECKING:
+    from . import geo as geo
+else:
     try:
         from . import cgeo as geo  # type: ignore[import-not-found]
-
-        # print("Using compiled geo functions")
     except ImportError:
         from . import geo
 
-        # print("Using Python-based geo functions")
-else:
-    from . import geo
-
-    print("Using Python-based geo functions")
-
 from . import aero, areafilter, convert, navdata, position  # noqa: E402
-
-
-def init() -> None:
-    """Initialise the tools package by loading the magnetic declination table."""
-    # print("Reading magnetic variation data")
-    geo.load_magnetic_declination()
