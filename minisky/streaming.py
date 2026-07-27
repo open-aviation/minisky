@@ -1,32 +1,38 @@
 """Per-tick streaming of simulation state.
 
-Provides a small, transport-agnostic mechanism to push a full snapshot of the
-simulation once per timestep. :func:`build_snapshot` reads the singletons
-(``minisky.sim``, ``minisky.traf``) and returns a plain, JSON-serialisable dict
-in **SI units**; :class:`StreamHub` fans that snapshot out to any number of
-awaiting consumers (e.g. WebSocket connections in :mod:`minisky.server`).
+Provides a small, transport-agnostic mechanism to push a full snapshot of one
+simulation runtime once per timestep. [`build_snapshot`][] receives the runtime
+explicitly and returns a plain, JSON-serialisable dict in **SI units**;
+[`StreamHub`][] fans that snapshot out to any number of awaiting consumers
+(e.g. WebSocket connections in `minisky.server`).
 
 This is a generic streaming API: it emits raw SI state and takes no position on
 any particular client or wire contract. Unit conversion and field mapping to a
 specific consumer's format happen downstream, in that consumer, not here.
 
-The snapshot shape is defined by the :class:`Snapshot` / :class:`SimInfo` /
-:class:`AcData` TypedDicts below.
+The snapshot shape is defined by the [`Snapshot`][], [`SimInfo`][], and
+[`AcData`][] TypedDicts below.
 
-Units on the wire here are SI: positions in decimal degrees, ``alt`` in metres,
-speeds (``tas``/``cas``/``gs``) in m/s, ``vs`` in m/s, ``trk`` in degrees,
-``simt``/``simdt`` in seconds. ``state`` is the numeric simulation state
+Units on the wire here are SI: positions in decimal degrees, `alt` in metres,
+speeds (`tas`/`cas`/`gs`) in m/s, `vs` in m/s, `trk` in degrees,
+`simt`/`simdt` in seconds. `state` is the numeric simulation state
 (0=INIT, 1=HOLD, 2=OP, 3=END). Each tick is a full snapshot; aircraft are
-identified by ``callsign`` for their lifetime.
+identified by `callsign` for their lifetime.
 """
+
+from __future__ import annotations
 
 import asyncio
 import time
-from typing import Any, TypedDict, cast
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any, TypedDict, cast
 
 import numpy as np
 
-import minisky
+if TYPE_CHECKING:
+    from minisky.simulation import Runner, Simulation
+    from minisky.stack import CommandStack
+    from minisky.traffic import Traffic
 
 # Default upper bound on how often a snapshot is published, in Hz. The
 # simulation may step much faster than this in fast-forward; publishing is
@@ -81,27 +87,29 @@ def _tolist(arr: Any) -> list[float]:
     return list(arr)
 
 
-def build_snapshot() -> Snapshot:
-    """Build a full snapshot of the current simulation state (SI units).
-
-    Reads ``minisky.sim`` and ``minisky.traf`` and returns a plain dict of
-    Python scalars and lists (no numpy types), safe to serialise as JSON.
+def build_snapshot(
+    simulation: Simulation,
+    traffic: Traffic,
+    runner: Runner,
+    commands: CommandStack,
+) -> Snapshot:
+    """Build a full snapshot from explicit runtime components in SI units.
 
     Returns:
-        A :class:`Snapshot` with ``siminfo`` and ``acdata`` keys.
+        A [`Snapshot`][] with `siminfo` and `acdata` keys.
     """
-    sim = minisky.sim
-    traf = minisky.traf
+    sim = simulation
+    traf = traffic
     cd = traf.cd
 
     siminfo: SimInfo = {
-        "speed": float(minisky.runner.speed),
+        "speed": float(runner.speed),
         "simdt": float(sim.simdt),
         "simt": float(sim.simt),
         "simutc": sim.utc.isoformat(),
         "ntraf": int(traf.ntraf),
         "state": int(sim.state),
-        "scenname": minisky.stack.get_scenname(),
+        "scenname": commands.get_scenname(),
     }
 
     acdata: AcData = {
@@ -131,22 +139,25 @@ def build_snapshot() -> Snapshot:
 class StreamHub:
     """Fan-out hub distributing per-tick snapshots to awaiting consumers.
 
-    A single hub is shared by the streaming endpoint. The simulation loop calls
-    :meth:`publish_tick` once per step (via a plugin ``update`` hook); each
-    connected consumer awaits :meth:`wait` and then reads :attr:`latest`.
+    Each runtime owns a hub. Its simulation calls [`StreamHub.publish_tick`][]
+    once per step; each connected consumer awaits [`StreamHub.wait`][] and then
+    reads `latest`.
 
     Snapshot construction is skipped entirely when there are no subscribers,
-    and gated to at most ``max_hz`` publications per wall-clock second so that a
+    and gated to at most `max_hz` publications per wall-clock second so that a
     fast-forwarding simulation does not flood consumers.
 
     Attributes:
-        latest: The most recently published snapshot (``None`` until the first
+        latest: The most recently published snapshot (`None` until the first
             publish), used to seed newly connected consumers.
         generation: Monotonically increasing counter incremented on each
             publish; consumers may use it to detect missed ticks.
     """
 
-    def __init__(self, max_hz: float = STREAM_MAX_HZ) -> None:
+    def __init__(
+        self, build_snapshot: Callable[[], Snapshot], max_hz: float = STREAM_MAX_HZ
+    ) -> None:
+        self._build_snapshot = build_snapshot
         self._subscribers = 0
         self._event = asyncio.Event()
         self._min_interval = 1.0 / max_hz if max_hz > 0 else 0.0
@@ -179,15 +190,15 @@ class StreamHub:
         """Build and publish a snapshot if warranted (called each sim step).
 
         No-op when there are no subscribers or when the rate cap has not yet
-        elapsed, so the cost of :func:`build_snapshot` is only paid when a
+        elapsed, so the cost of [`build_snapshot`][] is only paid when a
         consumer will actually receive it.
         """
         if not self.active or not self._ready():
             return
-        self.publish(build_snapshot())
+        self.publish(self._build_snapshot())
 
     def publish(self, snapshot: Snapshot) -> None:
-        """Store a snapshot as :attr:`latest` and wake awaiting consumers."""
+        """Store a snapshot as `latest` and wake awaiting consumers."""
         self.latest = snapshot
         self.generation += 1
         # set()+clear() wakes all consumers currently awaiting wait(); the flag
@@ -198,19 +209,3 @@ class StreamHub:
     async def wait(self) -> None:
         """Block until the next snapshot is published."""
         await self._event.wait()
-
-
-# Shared hub used by the streaming endpoint.
-hub = StreamHub()
-
-
-def register_stream_hook() -> None:
-    """Register the per-step publish hook on the simulation's ``update`` cycle.
-
-    Attaches :meth:`StreamHub.publish_tick` to the plugin ``update`` hook so a
-    snapshot is published after every traffic update. Idempotent: registering
-    twice keeps a single hook. Must be called after :func:`minisky.init`.
-    """
-    from minisky.plugin.timedfunction import hooks
-
-    hooks.update.setdefault("stream_snapshot", hub.publish_tick)

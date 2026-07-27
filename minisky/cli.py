@@ -1,12 +1,14 @@
 """Command-line interface for MiniSky."""
 
+from __future__ import annotations
+
 import asyncio
 import json
 import os
 import subprocess
 from pathlib import Path
 from pprint import pprint
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated
 
 import requests
 import typer
@@ -15,6 +17,9 @@ from colorama import Fore, Style
 from prompt_toolkit import prompt
 from prompt_toolkit.completion import NestedCompleter, PathCompleter
 from prompt_toolkit.history import FileHistory
+
+if TYPE_CHECKING:
+    from minisky.runtime import MiniSky
 
 app = typer.Typer(help="MiniSky command-line tools.", no_args_is_help=True)
 commands_app = typer.Typer(help="Inspect or regenerate stack-command documentation.")
@@ -49,15 +54,25 @@ waypoint, navaid, airport, or aircraft.
 """
 
 
+def _new_runtime(scenario: str | None = None) -> MiniSky:
+    """Construct a runtime from the default settings and discover plugins."""
+    from minisky import MiniSky, MiniSkySettings, filename_settings, plugin
+
+    settings = MiniSkySettings.from_file(filename_settings)
+    runtime = MiniSky(settings, scenario)
+    plugin.discover()
+    return runtime
+
+
 async def _run_scenario(scenario: str, speed: int) -> None:
     """Initialise the simulator with a scenario and run it to completion."""
-    import minisky
+    from minisky import plugin
 
-    minisky.init(scenario=scenario)
-    minisky.load_plugins()
-    minisky.runner.speed = speed
+    runtime = _new_runtime(scenario)
+    plugin.load_enabled()
+    runtime.runner.speed = speed
 
-    await minisky.runner.run()
+    await runtime.run()
 
 
 @app.command("run")
@@ -82,7 +97,13 @@ def server_cmd(
     """Start the REST and WebSocket API server."""
     import uvicorn
 
-    uvicorn.run("minisky.server:app", host=host, port=port, reload=reload)
+    uvicorn.run(
+        "minisky.server:create_app",
+        factory=True,
+        host=host,
+        port=port,
+        reload=reload,
+    )
 
 
 @app.command("console")
@@ -163,14 +184,13 @@ def stream_cmd(
 
 
 def _build_command_rows() -> list[str]:
-    import minisky
     from minisky.stack import Command
 
-    minisky.init()
+    runtime = _new_runtime()
 
     primary: dict[str, Command] = {}
     synonyms: dict[str, list[str]] = {}
-    for name, cmdobj in sorted(Command.cmddict.items()):
+    for name, cmdobj in sorted(runtime.commands.cmddict.items()):
         if cmdobj.name == name:
             primary[name] = cmdobj
         else:

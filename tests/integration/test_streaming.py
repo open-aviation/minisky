@@ -1,7 +1,7 @@
 """Integration tests for the per-tick streaming API and DTMULT command.
 
-Covers :func:`minisky.streaming.build_snapshot` against a live simulation and
-the ``DTMULT`` stack command that sets the runner speed multiplier.
+Covers [`build_snapshot`][minisky.streaming.build_snapshot] against a live simulation and
+the `DTMULT` stack command that sets the runner speed multiplier.
 """
 
 import json
@@ -11,11 +11,11 @@ import pytest
 from minisky.streaming import STREAM_MAX_HZ, StreamHub, build_snapshot
 
 
-def test_snapshot_structure_and_units(bs, sim, run_cmd):
+def test_snapshot_structure_and_units(runtime, bs, sim, run_cmd):
     # Two steps: the first creates the aircraft, the second flips INIT -> OP.
     run_cmd("CRE KL001 A320 52.0 4.0 90 FL100 250", steps=2)
 
-    snap = build_snapshot()
+    snap = build_snapshot(runtime.simulation, runtime.traffic, runtime.runner, runtime.commands)
     assert set(snap) == {"siminfo", "acdata"}
 
     info = snap["siminfo"]
@@ -42,14 +42,16 @@ def test_snapshot_structure_and_units(bs, sim, run_cmd):
     assert ac["inconf"] == [False]
 
 
-def test_snapshot_is_json_serialisable(bs, sim, run_cmd):
+def test_snapshot_is_json_serialisable(runtime, bs, sim, run_cmd):
     run_cmd("CRE KL001 A320 52.0 4.0 90 FL100 250")
     # Must not raise: no numpy scalars leak into the snapshot.
-    json.dumps(build_snapshot())
+    json.dumps(
+        build_snapshot(runtime.simulation, runtime.traffic, runtime.runner, runtime.commands)
+    )
 
 
-def test_snapshot_empty_when_no_traffic(bs, sim):
-    snap = build_snapshot()
+def test_snapshot_empty_when_no_traffic(runtime, bs, sim):
+    snap = build_snapshot(runtime.simulation, runtime.traffic, runtime.runner, runtime.commands)
     assert snap["siminfo"]["ntraf"] == 0
     assert snap["acdata"]["callsign"] == []
     assert snap["acdata"]["alt"] == []
@@ -66,8 +68,12 @@ def test_dtmult_rejects_non_positive(bs, sim):
     assert "positive" in msg.lower()
 
 
-def test_hub_skips_publish_without_subscribers():
-    hub = StreamHub()
+def test_hub_skips_publish_without_subscribers(runtime):
+    hub = StreamHub(
+        lambda: build_snapshot(
+            runtime.simulation, runtime.traffic, runtime.runner, runtime.commands
+        )
+    )
     assert hub.active is False
     hub.publish_tick()  # no subscribers -> no snapshot built
     assert hub.latest is None
@@ -76,9 +82,14 @@ def test_hub_skips_publish_without_subscribers():
     assert hub.active is True
 
 
-def test_hub_rate_cap_gates_publishing():
+def test_hub_rate_cap_gates_publishing(runtime):
     # A very low cap means the second immediate tick is dropped.
-    hub = StreamHub(max_hz=1.0)
+    hub = StreamHub(
+        lambda: build_snapshot(
+            runtime.simulation, runtime.traffic, runtime.runner, runtime.commands
+        ),
+        max_hz=1.0,
+    )
     hub.subscribe()
     hub.publish_tick()
     first_gen = hub.generation
