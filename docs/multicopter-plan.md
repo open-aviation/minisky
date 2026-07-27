@@ -111,8 +111,9 @@ reset (mirror the existing `tests/integration/test_plugin.py` replaceable test).
 
 - [x] Create `minisky/traffic/kinematics.py`: `Kinematics(TrafficArrays)` with
       `update_airspeed` / `update_groundspeed` / `update_pos` and the `ax`, `az`, `swhdgsel`,
-      `swaltsel` arrays moved over from `Traffic` (`ax`/`swhdgsel` registered in `settrafarrays`;
-      `az`/`swaltsel` remain step-computed as before)
+      `swaltsel` arrays moved over from `Traffic` (all four registered in `settrafarrays` and
+      seeded in `create()`; `az`/`swaltsel` were previously undeclared attributes materialised
+      by `update_airspeed`)
 - [x] Instantiate as `self.kinematics = Kinematics()` inside `Traffic.__init__`'s
       `settrafarrays()` block; `Traffic.update()` calls `self.kinematics.update()`
 - [x] Grep external readers of the moved arrays: only `perfoap.py` reads `ax`
