@@ -14,7 +14,7 @@ Latitudes, longitudes, bearings, and headings are in degrees; distances
 are in nautical miles unless stated otherwise.
 """
 
-from functools import cache
+from typing import Final
 
 import numpy as np
 import pandas as pd
@@ -26,6 +26,7 @@ FloatOrArray = float | np.ndarray
 
 # Constants
 nm = 1852.0  # m       1 nautical mile
+
 
 def rwgs84(latd: FloatOrArray) -> FloatOrArray:
     """Calculate the earths radius with WGS'84 geoid definition.
@@ -426,7 +427,9 @@ def qdrpos(
     return np.degrees(lat2), np.degrees(lon2)
 
 
-def kwikdist(lata: FloatOrArray, lona: FloatOrArray, latb: FloatOrArray, lonb: FloatOrArray) -> FloatOrArray:
+def kwikdist(
+    lata: FloatOrArray, lona: FloatOrArray, latb: FloatOrArray, lonb: FloatOrArray
+) -> FloatOrArray:
     """Quick and dirty distance calculation.
 
     Equirectangular (flat-earth) approximation with the mean earth radius;
@@ -621,7 +624,7 @@ def magdec(latd, lond) -> float:
     of the actual data. Axes were regularly spaced at one degree. The direct
     manual linear interpolation also 6 x times faster.
     """
-    decl_lat_lon = load_magnetic_declination()
+    decl_lat_lon = MAGNETIC_DECLINATION
 
     # Use fact that whole degrees are used as ticks on both lat & lon axis
     i_lat = min(max(0, int(90.0 - latd)), 180)
@@ -644,7 +647,6 @@ def magdec(latd, lond) -> float:
     return d_hdg
 
 
-@cache
 def load_magnetic_declination() -> np.ndarray:
     """
     Called by Init
@@ -704,6 +706,9 @@ def load_magnetic_declination() -> np.ndarray:
     # lon = -180 ... 180 (columns)
     decl_lat_lon.setflags(write=False)
     return decl_lat_lon
+
+
+MAGNETIC_DECLINATION: Final[np.ndarray] = load_magnetic_declination()
 
 
 # Command MAGVAR to get magnetic variation at position lat,lon

@@ -85,13 +85,19 @@ class Turbulence(TrafficArrays):
 
         timescale = np.sqrt(self._get_simulation().simdt)
         # Horizontal flight direction
-        turbhf = np.random.normal(0, self.sd[0] * timescale, self.traffic.ntraf)  # [m]
+        turbhf = self.traffic.numpy_random.normal(
+            0, self.sd[0] * timescale, self.traffic.ntraf
+        )  # [m]
 
         # Horizontal wing direction
-        turbhw = np.random.normal(0, self.sd[1] * timescale, self.traffic.ntraf)  # [m]
+        turbhw = self.traffic.numpy_random.normal(
+            0, self.sd[1] * timescale, self.traffic.ntraf
+        )  # [m]
 
         # Vertical direction
-        turbalt = np.random.normal(0, self.sd[2] * timescale, self.traffic.ntraf)  # [m]
+        turbalt = self.traffic.numpy_random.normal(
+            0, self.sd[2] * timescale, self.traffic.ntraf
+        )  # [m]
 
         trkrad = np.radians(self.traffic.trk)
         # Lateral, longitudinal direction

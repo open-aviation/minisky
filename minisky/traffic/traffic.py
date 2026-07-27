@@ -15,7 +15,7 @@ A single instance is created at simulator start-up and made available as
 from __future__ import annotations
 
 from collections.abc import Callable, Collection, Iterable, Mapping
-from random import randint
+from random import Random
 from typing import TYPE_CHECKING, overload
 
 import numpy as np
@@ -24,6 +24,7 @@ from minisky.core.settings import MiniSkySettings
 from minisky.core.trafficarrays import TrafficArrays
 from minisky.tools import geo
 from minisky.tools.aero import (
+    DEFAULT_CASMACH_THRESHOLD,
     Rearth,
     casormach,
     casormach2tas,
@@ -78,6 +79,8 @@ class Traffic(TrafficArrays):
 
     Attributes:
         ntraf (int): Number of aircraft currently in the simulation.
+        casmach_threshold: Upper bound below which positive speed values are
+            interpreted as Mach numbers.
         callsign (list): Aircraft identifier (callsign) strings.
         typecode (list): ICAO aircraft type designators (e.g. "A320").
         lat (ndarray): Latitude [deg].
@@ -131,6 +134,8 @@ class Traffic(TrafficArrays):
     def __init__(
         self,
         settings: MiniSkySettings,
+        python_random: Random,
+        numpy_random: np.random.RandomState,
         areas: AreaFilter,
         navigation: Navdatabase,
         console: ConsoleIO,
@@ -141,6 +146,8 @@ class Traffic(TrafficArrays):
     ) -> None:
         super().__init__()
         self.settings = settings
+        self.python_random = python_random
+        self.numpy_random = numpy_random
         self.areas = areas
         self.navigation = navigation
         self.console = console
@@ -150,6 +157,7 @@ class Traffic(TrafficArrays):
         self.select_implementation = select_implementation
 
         self.ntraf = 0
+        self.casmach_threshold = DEFAULT_CASMACH_THRESHOLD
 
         self.cond = Condition(self, stack_command, console)  # Conditional commands list
         self.wind = Wind()
@@ -238,6 +246,23 @@ class Traffic(TrafficArrays):
 
         # Default bank angles per flight phase
         self.bphase = np.deg2rad(np.array([15, 35, 35, 35, 15, 45]))
+
+    def casmachthr(self, threshold: float | None = None) -> tuple[bool, str]:
+        """Get or set this runtime's CAS/Mach interpretation threshold.
+
+        Positive speed values below this threshold are interpreted as Mach
+        numbers by CRE, MOVE, route, and autopilot speed conversions.
+        """
+        if threshold is None:
+            return (
+                True,
+                "CASMACHTHR: The current CAS/Mach threshold is "
+                f"{self.casmach_threshold} m/s "
+                f"({self.casmach_threshold / kts} kts)",
+            )
+
+        self.casmach_threshold = threshold
+        return True, f"CASMACHTHR: Set CAS/Mach threshold to {threshold}"
 
     @property
     def command_registry(self) -> Mapping[str, object]:
@@ -358,17 +383,27 @@ class Traffic(TrafficArrays):
         """
 
         # Generate random callsigns
-        idtmp = chr(randint(65, 90)) + chr(randint(65, 90)) + "{:>03}"
+        idtmp = (
+            chr(self.python_random.randint(65, 90))
+            + chr(self.python_random.randint(65, 90))
+            + "{:>03}"
+        )
         callsign = [idtmp.format(i) for i in range(n)]
 
         actype_ = np.array([actype] * n)
 
         # Generate random positions
-        aclat = np.random.rand(n) * (lat_max - lat_min) + lat_min
-        aclon = np.random.rand(n) * (lon_max - lon_min) + lon_min
-        achdg = np.random.randint(1, 360, n)
-        acalt_ = np.full(n, acalt) if acalt is not None else np.random.randint(2000, 39000, n) * ft
-        acspd_ = np.full(n, acspd) if acspd is not None else np.random.randint(250, 450, n) * kts
+        aclat = self.numpy_random.rand(n) * (lat_max - lat_min) + lat_min
+        aclon = self.numpy_random.rand(n) * (lon_max - lon_min) + lon_min
+        achdg = self.numpy_random.randint(1, 360, n)
+        acalt_ = (
+            np.full(n, acalt)
+            if acalt is not None
+            else self.numpy_random.randint(2000, 39000, n) * ft
+        )
+        acspd_ = (
+            np.full(n, acspd) if acspd is not None else self.numpy_random.randint(250, 450, n) * kts
+        )
 
         self.__create_aircraft(np.array(callsign), actype_, aclat, aclon, achdg, acalt_, acspd_)
 
@@ -416,7 +451,7 @@ class Traffic(TrafficArrays):
         self.trk[-n:] = hdg
 
         # Velocities
-        self.tas[-n:], self.cas[-n:], self.M[-n:] = vcasormach(spd, alt)
+        self.tas[-n:], self.cas[-n:], self.M[-n:] = vcasormach(spd, alt, self.casmach_threshold)
         self.gs[-n:] = self.tas[-n:]
         hdgrad = np.radians(hdg)
         self.gsnorth[-n:] = self.tas[-n:] * np.cos(hdgrad)
@@ -540,7 +575,7 @@ class Traffic(TrafficArrays):
         if spd:
             # CAS or Mach provided: convert to groundspeed, assuming that
             # wind at intruder position is similar to wind at ownship position
-            tas = tasref if spd is None else casormach2tas(spd, acalt)
+            tas = tasref if spd is None else casormach2tas(spd, acalt, self.casmach_threshold)
             tasn, tase = tas * np.cos(trk), tas * np.sin(trk)
             wn, we = self.wind.getdata(latref, lonref, acalt)
             gsn, gse = tasn + wn, tase + we
@@ -877,7 +912,7 @@ class Traffic(TrafficArrays):
 
         if casmach is not None:
             h = alt if alt is not None else float(self.alt[idx])
-            self.tas[idx], self.selspd[idx], _ = casormach(casmach, h)
+            self.tas[idx], self.selspd[idx], _ = casormach(casmach, h, self.casmach_threshold)
 
         if vspd is not None:
             self.vs[idx] = vspd

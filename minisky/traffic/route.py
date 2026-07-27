@@ -673,7 +673,9 @@ class Route:
                             # Default to 10000 ft to minimize errors, when no alt constraints
                             # are present
                             alt = toalt if self.wptoalt[i] > 0.0 else 10000.0 * ft
-                            legtas = casormach2tas(self.wpspd[i], alt)
+                            legtas = casormach2tas(
+                                self.wpspd[i], alt, self.traffic.casmach_threshold
+                            )
                             # TODO: account for wind at this position vy adding wind vectors to waypoints?
 
                             # xtorta stays the same! This leg will not be available for RTA scheduling, so distance
@@ -769,9 +771,7 @@ class Route:
 # ---- following are functions managing the routes ----
 
 
-def get_available_name(
-    data: list, name_: str, callsigns: list[str], len_: int = 2
-) -> str:
+def get_available_name(data: list, name_: str, callsigns: list[str], len_: int = 2) -> str:
     """Make a waypoint name unique by appending a zero-padded number.
 
     Checks if the name already exists in the given list (or matches an
@@ -801,9 +801,7 @@ def get_available_name(
     return name_
 
 
-def change_wpt_mode(
-    traffic: Traffic, acidx: int, mode=None, value=None
-) -> bool | None:
+def change_wpt_mode(traffic: Traffic, acidx: int, mode=None, value=None) -> bool | None:
     """Change the mode with which ADDWPT adds new waypoints.
 
     Implements the ADDWPTMODE stack command. Available modes: FLYBY,
@@ -1516,11 +1514,7 @@ def direct(traffic: Traffic, acidx: int, wpname: Wpt) -> bool:
         turnrad = traffic.tas[acidx] * 360.0 / (2 * math.pi * acrte.wpturnhdgr[wpidx])
     else:  # nothing specified, use default bank ang;e
         turnrad = (
-            traffic.tas[acidx]
-            * traffic.tas[acidx]
-            / math.tan(math.radians(acrte.bank))
-            / g0
-            / nm
+            traffic.tas[acidx] * traffic.tas[acidx] / math.tan(math.radians(acrte.bank)) / g0 / nm
         )  # [nm]default bank angle e.g. 25 deg
 
     traffic.actwp.turndist[acidx] = (
@@ -1537,7 +1531,9 @@ def direct(traffic: Traffic, acidx: int, wpname: Wpt) -> bool:
     return True
 
 
-def set_rta(traffic: Traffic, acidx: int, wpname: Wpt, time: Time) -> bool:  # all arguments of setRTA
+def set_rta(
+    traffic: Traffic, acidx: int, wpname: Wpt, time: Time
+) -> bool:  # all arguments of setRTA
     """Set a required time of arrival (RTA) at a route waypoint.
 
     Implements the RTA stack command: `RTA acid, wpname, time`. The RTA
