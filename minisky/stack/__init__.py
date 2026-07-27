@@ -4,21 +4,23 @@ The stack is MiniSky's text-command interpreter. Every instruction to the
 simulator—typed by a user, read from a scenario (`.scn`) file, or issued by
 a plugin—enters as a line of text such as
 `CRE KL204 B744 52.0 4.0 90 FL300 250`. Command lines are queued with
-[stack][minisky.stack.stack] and executed once per simulation step by [process][minisky.stack.process].
+[stack][minisky.stack.stack] and executed once per simulation step by [`CommandStack.process`][minisky.stack.CommandStack.process].
 
 Each available command is represented by a [Command][minisky.stack.Command] object, which
 couples the command name to the Python function that implements it and to
 the argument parsers that convert argument text into typed values. The base
 command set is defined in `minisky.stack.commands` and registered by
-`init()`.
+[`CommandStack.init`][minisky.stack.CommandStack.init].
 
 Each `CommandStack` owns one runtime's command registry, pending command
-queue, scenario buffer, and sender state. The module-level functions and
-`Command.cmddict` remain compatibility aliases for the active runtime.
+queue, scenario buffer, and sender state. The remaining module-level
+functions and `Command.cmddict` are temporary compatibility aliases for
+the active runtime.
 
-This module also implements scenario handling: [ic][minisky.stack.ic] loads a scenario
-file, whose timestamped command lines are buffered and moved onto the stack
-by `checkscen()` when the simulation time passes their timestamps.
+This module also implements scenario handling: [`CommandStack.ic`][minisky.stack.CommandStack.ic] loads a scenario file,
+whose timestamped command lines are buffered and moved onto the stack by
+[`CommandStack.checkscen`][minisky.stack.CommandStack.checkscen] when the
+simulation time passes their timestamps.
 """
 
 from __future__ import annotations
@@ -34,13 +36,14 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-from minisky.core import trafficarrays
-from minisky.plugin.plugin_decorators import append_commands, command, register_declared_commands
+from minisky.plugin.plugin_decorators import command
 from minisky.stack import argparser, commands
 from minisky.stack.argparser import ArgumentError, Parameter, String, Time, Txt, getnextarg
 
 if TYPE_CHECKING:
+    from minisky.core.trafficarrays import ReplaceableManager
     from minisky.core.varexplorer import VariableExplorer
+    from minisky.plugin import PluginManager
     from minisky.simulation import ConsoleIO, Runner, Simulation
     from minisky.tools.areafilter import AreaFilter
     from minisky.tools.navdata import Navdatabase
@@ -71,30 +74,9 @@ class Command:
         valid: False when the callback is an unbound class/instance method.
     """
 
-    # Dictionary with all command objects
+    # TODO(abraham): remove this active-runtime registry alias when the
+    # remaining compatibility tests and public stack facade use CommandStack directly.
     cmddict: dict[str, Command] = {}
-
-    @classmethod
-    def addcommand(
-        cls, func: Callable, parent: Command | None = None, name: str = "", **kwargs: Any
-    ) -> None:
-        """Add `func` as a stack command.
-
-        Delegates registration to the active runtime's `CommandStack`,
-        which creates a [Command][minisky.stack.Command] object for the function and registers
-        its name and aliases. When a command with the same name already
-        exists, the existing command object is kept.
-
-        Args:
-            func: Function, static method, or class method implementing the
-                command.
-            parent: Optional parent command when this is a subcommand.
-            name: Command name. Defaults to the function name in upper case.
-            **kwargs: Command options: `arguments` (an argument type
-                specification such as `callsign,alt,[vspd]`), `brief`, `help`,
-                and `aliases`.
-        """
-        current().addcommand(func, parent=parent, name=name, command_type=cls, **kwargs)
 
     def __init__(
         self,
@@ -318,6 +300,8 @@ class CommandStack:
         console: ConsoleIO,
         areas: AreaFilter,
         variables: VariableExplorer,
+        plugins: PluginManager,
+        replaceables: ReplaceableManager,
         get_simulation: Callable[[], Simulation],
         get_runner: Callable[[], Runner],
         scenario_root: Path | None = None,
@@ -327,6 +311,8 @@ class CommandStack:
         self.console = console
         self.areas = areas
         self.variables = variables
+        self.plugins = plugins
+        self.replaceables = replaceables
         self.argument_parser = argparser.ArgumentParser(traffic, navigation, console)
         self._get_simulation = get_simulation
         self._get_runner = get_runner
@@ -422,10 +408,6 @@ class CommandStack:
         for self.current, self.sender_rte in pending:
             yield self.current
 
-    def select_implementation(self, basename: str = "", implname: str = "") -> tuple[bool, str]:
-        """Select a replaceable implementation on this runtime's traffic tree."""
-        return trafficarrays.select_implementation(basename, implname, self.traffic, self.cmddict)
-
     def init(self) -> None:
         """Initialise BlueSky base stack commands."""
 
@@ -444,9 +426,7 @@ class CommandStack:
                 aliases=synonyms.get(name, []),
             )
 
-        register_declared_commands()
-
-    def delete_element(self, *arg):
+    def delete_element(self, *arg: Any) -> Any:
         """DEL: Delete an element (aircraft, wind field, area shape, or group).
 
         Dispatches based on the first argument: the string "WIND" clears the
@@ -822,6 +802,8 @@ class CommandStack:
         self.scencmd = newcmd
 
 
+# TODO(abraham): remove the active stack pointer with the final module-level
+# stack facade migration.
 _active_stack: CommandStack | None = None
 
 
@@ -862,54 +844,6 @@ class Stack:
         return current().commands()
 
 
-def init() -> None:
-    """Initialise the base stack commands for the active runtime."""
-    current().init()
-
-
-def delete_element(*arg):
-    """DEL: Delete an element (aircraft, wind field, area shape, or group).
-
-    Dispatches based on the first argument: the string `WIND` clears the wind
-    field, any other string deletes the area with that name, a traffic group
-    object deletes that group, and anything else is treated as aircraft
-    indices to delete.
-
-    Args:
-        *arg: Element or elements to delete: `WIND`, an area name, a traffic
-            group, or one or more aircraft indices.
-
-    Returns:
-        The result of the dispatched delete function.
-    """
-    return current().delete_element(*arg)
-
-
-def reset() -> None:
-    """Reset the stack.
-
-    Clears the command queue and buffered scenario data, and resets the
-    argument-parser reference data for position, heading, and speed.
-    """
-    current().reset()
-
-
-def process() -> None:
-    """Process the active runtime's command stack once.
-
-    First moves due scenario commands onto the stack, then parses and executes
-    every queued command line. The first word is looked up in
-    `Command.cmddict`; an aircraft callsign may also be used as a prefix, in
-    which case the second word is the command and defaults to `POS`. Remaining
-    text is parsed into typed arguments and passed to the command callback.
-
-    The pending commands are detached before processing, so commands stacked
-    during processing, including from other threads, are retained for the next
-    simulation step.
-    """
-    current().process()
-
-
 def readscn(scn: str | Path | StringIO) -> Iterator[tuple[float, str]]:
     """Read a scenario file and yield its timestamped commands.
 
@@ -929,80 +863,6 @@ def readscn(scn: str | Path | StringIO) -> Iterator[tuple[float, str]]:
     return current().readscn(scn)
 
 
-def ic(scn: str) -> tuple[bool, str]:
-    """IC: Load a scenario file.
-
-    Resets the simulation, reads the scenario file, and buffers its timestamped
-    commands for execution when simulation time passes their timestamps.
-
-    Args:
-        scn: Scenario filename relative to the project root.
-
-    Returns:
-        A `(success, message)` tuple.
-    """
-    return current().ic(scn)
-
-
-def ic_StringIO(scn: StringIO, scn_name: str | None = None) -> tuple[bool, str]:
-    """IC: Load a scenario from a `StringIO` object.
-
-    Resets the simulation, reads scenario lines from the object, and buffers
-    the timestamped commands for execution.
-
-    Args:
-        scn: Object containing scenario lines.
-        scn_name: Optional scenario name.
-
-    Returns:
-        A `(success, message)` tuple.
-    """
-    return current().ic_StringIO(scn, scn_name)
-
-
-def scenario(name: String) -> tuple[bool, str]:
-    """SCENARIO: Set the scenario name for the current simulation.
-
-    Args:
-        name: Name to give the scenario.
-
-    Returns:
-        A `(True, confirmation message)` tuple.
-    """
-    return current().scenario(name)
-
-
-def schedule(time: Time, cmdline: String) -> bool:
-    """SCHEDULE: Schedule a command at a specific simulation time.
-
-    The command is inserted into the scenario buffer while preserving its
-    execution-time ordering.
-
-    Args:
-        time: Absolute simulation time [s] at which to execute the command.
-        cmdline: Command line to execute.
-
-    Returns:
-        `True`; the command is always scheduled.
-    """
-    return current().schedule(time, cmdline)
-
-
-def delay(time: Time, cmdline: String) -> bool:
-    """DELAY: Delay a command by a time interval.
-
-    Like [schedule][minisky.stack.schedule], but `time` is relative to the current simulation time.
-
-    Args:
-        time: Time interval [s] by which to delay the command.
-        cmdline: Command line to execute after the delay.
-
-    Returns:
-        `True`; the command is always scheduled.
-    """
-    return current().delay(time, cmdline)
-
-
 def showhelp(cmd: Txt = "", subcmd: Txt = "") -> tuple[bool, str]:
     """HELP: Display command help or write a command reference file.
 
@@ -1017,20 +877,10 @@ def showhelp(cmd: Txt = "", subcmd: Txt = "") -> tuple[bool, str]:
     return current().showhelp(cmd, subcmd)
 
 
-def checkscen() -> None:
-    """Move due scenario commands onto the active runtime's command queue.
-
-    All buffered scenario commands with a timestamp at or before the current
-    simulation time are removed from the scenario buffer and queued for
-    execution.
-    """
-    current().checkscen()
-
-
 def stack(*cmdlines: str, sender_id: bytes | None = None) -> None:
     """Stack one or more commands separated by semicolons.
 
-    Queued commands are executed on the next call to [process][minisky.stack.process].
+    Queued commands are executed on the next call to [`CommandStack.process`][minisky.stack.CommandStack.process].
 
     Args:
         *cmdlines: Command line strings. Each may contain multiple commands
@@ -1038,24 +888,6 @@ def stack(*cmdlines: str, sender_id: bytes | None = None) -> None:
         sender_id: Optional network route or identifier of the sender.
     """
     current().stack(*cmdlines, sender_id=sender_id)
-
-
-def sender():
-    """Return the sender of the command currently being executed.
-
-    Returns `None` when the command has no sender identifier, such as a command
-    originating from a scenario file.
-    """
-    return current().sender()
-
-
-def routetosender():
-    """Return the route to the sender of the current command.
-
-    Returns `None` when the command has no sender identifier, such as a command
-    originating from a scenario file.
-    """
-    return current().routetosender()
 
 
 def get_scenname() -> str:
@@ -1067,39 +899,10 @@ def get_scenname() -> str:
     return current().get_scenname()
 
 
-def get_scendata() -> tuple[list[float], list[str]]:
-    """Return the buffered scenario data.
-
-    Returns:
-        A `(scentime, scencmd)` tuple containing command times [s] and command
-        lines still buffered for execution.
-    """
-    return current().get_scendata()
-
-
-def set_scendata(newtime, newcmd) -> None:
-    """Replace the buffered scenario data used by batch execution."""
-    current().set_scendata(newtime, newcmd)
-
-
 for _name in (
-    "init",
-    "delete_element",
-    "reset",
-    "process",
     "readscn",
-    "ic",
-    "ic_StringIO",
-    "scenario",
-    "schedule",
-    "delay",
     "showhelp",
-    "checkscen",
     "stack",
-    "sender",
-    "routetosender",
     "get_scenname",
-    "get_scendata",
-    "set_scendata",
 ):
     globals()[_name].__doc__ = getattr(CommandStack, _name).__doc__

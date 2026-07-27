@@ -1,6 +1,6 @@
 """MiniSky REST + streaming API server.
 
-The FastAPI application wraps an explicit [`MiniSky`][minisky.runtime.MiniSky]
+The FastAPI application wraps an explicit [`MiniSky`][minisky.MiniSky]
 runtime and steps it continuously with its async runner while the server is
 active. Endpoints expose aircraft state, conflict information, simulation-time
 control, plugin management, a passthrough for stack commands, a per-tick push
@@ -18,6 +18,8 @@ minisky server --reload        # development, auto-reload
 
 Interactive OpenAPI docs are served at `/docs`.
 """
+
+from __future__ import annotations
 
 import asyncio
 import os
@@ -40,9 +42,11 @@ from fastapi import (
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
-from minisky import MiniSky, MiniSkySettings, filename_settings, plugin
+from minisky import MiniSky, MiniSkySettings, filename_settings
 from minisky.tools import aero
 
+# TODO(abraham): move router construction into `create_app` when the final
+# lifecycle pass removes all remaining process-wide application declarations.
 router = APIRouter()
 
 
@@ -74,9 +78,7 @@ def create_app(runtime: MiniSky | None = None) -> FastAPI:
         settings = MiniSkySettings.from_file(filename_settings)
         runtime = MiniSky(settings)
 
-    # TODO(abraham): migrate the plugin ownership
-    plugin.discover()
-    plugin.load_enabled()
+    runtime.load_plugins()
 
     app = FastAPI(lifespan=lifespan)
     app.state.runtime = runtime
@@ -267,15 +269,15 @@ def show_map() -> RedirectResponse:
 
 
 @router.get("/plugins")
-def list_plugins() -> Any:
+def list_plugins(runtime: Runtime) -> Any:
     """List available and loaded plugins."""
-    return plugin.manage_plugins("LIST")
+    return runtime.plugins.manage("LIST")
 
 
 @router.get("/plugins/load/{name}")
-def load_plugin(name: str) -> Any:
+def load_plugin(name: str, runtime: Runtime) -> Any:
     """Load a plugin by name."""
-    return plugin.manage_plugins("LOAD", name)
+    return runtime.plugins.manage("LOAD", name)
 
 
 def main() -> None:

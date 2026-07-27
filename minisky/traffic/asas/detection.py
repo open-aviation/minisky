@@ -146,7 +146,7 @@ class ConflictDetection(TrafficArrays):
             self.dtlookahead = np.array([])
             self.dtnolook = np.array([])
 
-    def new_implementation(self, implementation: type[TrafficArrays]) -> TrafficArrays:
+    def new_implementation(self, implementation: Callable[..., TrafficArrays]) -> TrafficArrays:
         """Construct a replacement with this runtime's traffic and command stack."""
         return implementation(self.settings, self.traffic, self.stack_command)
 

@@ -14,7 +14,7 @@ A single instance is created at simulator start-up and made available as
 
 from __future__ import annotations
 
-from collections.abc import Callable, Collection, Iterable
+from collections.abc import Callable, Collection, Iterable, Mapping
 from random import randint
 from typing import TYPE_CHECKING, overload
 
@@ -136,7 +136,7 @@ class Traffic(TrafficArrays):
         console: ConsoleIO,
         get_simulation: Callable[[], Simulation],
         stack_command: Callable[..., None],
-        get_command_registry: Callable[[], dict[str, object]],
+        get_command_registry: Callable[[], Mapping[str, object]],
         select_implementation: Callable[[str, str], tuple[bool, str]],
     ) -> None:
         super().__init__()
@@ -240,7 +240,7 @@ class Traffic(TrafficArrays):
         self.bphase = np.deg2rad(np.array([15, 35, 35, 35, 15, 45]))
 
     @property
-    def command_registry(self) -> dict[str, object]:
+    def command_registry(self) -> Mapping[str, object]:
         """Return the command registry owned by this runtime."""
         return self._get_command_registry()
 

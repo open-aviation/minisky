@@ -17,10 +17,9 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-from minisky.core.trafficarrays import reset_replaceables
-from minisky.plugin import PluginManager
-
 if TYPE_CHECKING:
+    from minisky.core.trafficarrays import ReplaceableManager
+    from minisky.plugin import PluginManager
     from minisky.simulation.console import ConsoleIO
     from minisky.stack import CommandStack
     from minisky.tools.areafilter import AreaFilter
@@ -65,6 +64,8 @@ class Simulation:
         console: ConsoleIO,
         command_stack: CommandStack,
         areas: AreaFilter,
+        plugins: PluginManager,
+        replaceables: ReplaceableManager,
         stop_runner: Callable[[], None],
         publish_tick: Callable[[], None],
     ) -> None:
@@ -73,6 +74,8 @@ class Simulation:
         self.console = console
         self.commands = command_stack
         self.areas = areas
+        self.plugins = plugins
+        self.replaceables = replaceables
         self.stop_runner = stop_runner
         self.publish_tick = publish_tick
         self.state = INIT
@@ -130,12 +133,12 @@ class Simulation:
             self.utc += datetime.timedelta(seconds=self.simdt)
 
             # Plugin pre-update (timers + preupdate hooks)
-            PluginManager.preupdate()
+            self.plugins.preupdate()
 
             self.traffic.update()
 
             # Plugin post-update hooks
-            PluginManager.update()
+            self.plugins.update()
 
         # Publish after command and state processing in every simulation state.
         # This is a no-op when the runtime has no stream subscribers.
@@ -172,7 +175,7 @@ class Simulation:
         """
         self.syst = time.time() + self.simdt
         self.state = HOLD
-        PluginManager.hold()
+        self.plugins.hold()
         self.console.echo("Simulation paused")
 
     def reset(self) -> None:
@@ -197,9 +200,9 @@ class Simulation:
         self.areas.reset()
         self.console.reset()
         # Reset replaceables (Autopilot, PerfBase, etc.) to defaults
-        reset_replaceables(self.traffic, self.commands.cmddict)
+        self.replaceables.reset()
         # Reset plugins (timers + reset hooks)
-        PluginManager.reset()
+        self.plugins.reset()
         self.console.echo("Simulation reset")
 
     def realtime(self, flag: bool | None = None) -> tuple[bool, str]:

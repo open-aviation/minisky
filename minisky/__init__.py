@@ -25,6 +25,9 @@ BS_ARGERR = 1
 BS_FUNERR = 2
 BS_CMDERR = 4
 
+# TODO(abraham): remove the active-runtime compatibility facade in the final
+# explicit-runtime migration. These aliases intentionally remain only for current
+# public and test callers.
 _current: MiniSky | None = None
 runner: Runner = None  # type: ignore[assignment]
 traf: Traffic = None  # type: ignore[assignment]
@@ -65,11 +68,4 @@ def init(
 
     instance = MiniSky(settings, scenario)
 
-    # plugin discovery remains part of the legacy startup path for now.
-    plugin.discover()
     return instance
-
-
-def load_plugins() -> None:
-    """Load plugins enabled by the compatibility settings module."""
-    plugin.load_enabled()

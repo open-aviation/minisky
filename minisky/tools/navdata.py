@@ -2,8 +2,9 @@
 
 Loads waypoint, airport, airway, FIR, and country data from the package
 data directory and provides lookup functions to find navaids and airports
-by identifier or position. The global Navdatabase instance is available
-as `minisky.navdb`; it backs the DEFWPT stack command and every position
+by identifier or position. Each `MiniSky` runtime owns a Navdatabase at
+`runtime.navigation`; `minisky.navdb` remains a temporary compatibility alias.
+The database backs the DEFWPT stack command and every position
 argument that references a navaid, airport, or runway.
 """
 

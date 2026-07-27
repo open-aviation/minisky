@@ -267,6 +267,8 @@ class AreaFilter:
         return [self.areas_by_id[area_id] for area_id in ids if area_id in self.areas_by_id]
 
 
+# TODO(abraham): remove this standalone active filter after compatibility
+# callers and unit tests construct or receive an AreaFilter explicitly.
 _active = AreaFilter()
 
 

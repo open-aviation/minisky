@@ -26,6 +26,8 @@ FloatOrArray = float | np.ndarray
 nm = 1852.0  # m       1 nautical mile
 
 # Read data for declination switch
+# TODO(abraham): move the mutable magnetic-declination cache into an
+# explicit navigation/tool service instead of process-wide module state.
 decl_read = False
 
 

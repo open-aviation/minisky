@@ -20,8 +20,8 @@ of the code refers to:
 ```python
 import minisky
 
-minisky.init()          # create the singletons
-minisky.load_plugins()  # optional: load plugins enabled in settings.toml
+runtime = minisky.init()  # compatibility constructor
+runtime.load_plugins()    # optional: load enabled plugins on this runtime
 ```
 
 ## The simulation loop
@@ -30,7 +30,7 @@ The simulation advances in discrete timesteps of `sim.simdt` seconds (default 1 
 call to [`sim.step()`][minisky.simulation.simulation.Simulation.step] does, in order:
 
 1. **Stack processing** — pending text commands are parsed and executed
-   ([`stack.process()`][minisky.stack.process]).
+   ([`CommandStack.process`][minisky.stack.CommandStack.process]).
 2. **Time advance** — `sim.simt` and the simulated UTC clock move forward by `simdt`
    (only in the `OP` state).
 3. **Plugin pre-update** — timed plugin functions registered with the `preupdate` hook.
@@ -67,8 +67,8 @@ Classes that hold per-aircraft data derive from it and register their arrays:
 
 ```python
 class Example(Entity):
-    def __init__(self):
-        super().__init__()
+    def __init__(self, traffic):
+        super().__init__(traffic)
         with self.settrafarrays():
             self.npassengers = np.array([])
 ```

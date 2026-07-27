@@ -42,7 +42,7 @@ class Turbulence(TrafficArrays):
         self.active = False
         self.SetStandards([0, 0.1, 0.1])
 
-    def new_implementation(self, implementation: type[TrafficArrays]) -> TrafficArrays:
+    def new_implementation(self, implementation: Callable[..., TrafficArrays]) -> TrafficArrays:
         """Construct a replacement with this runtime's traffic and simulation."""
         return implementation(self.traffic, self._get_simulation)
 

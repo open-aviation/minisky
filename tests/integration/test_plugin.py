@@ -1,73 +1,65 @@
-"""Integration tests for the plugin system (AST discovery + loading).
+"""Integration tests for runtime-owned plugin discovery and loading."""
 
-Plugin loading imports modules and registers stack commands globally, so
-these tests run against the session singletons like other integration tests.
-"""
+from __future__ import annotations
 
 import warnings
 
 import pytest
 
-import minisky
-from minisky.plugin import Plugin
-
 
 class TestDiscovery:
-    def test_discover_finds_example_plugins(self, bs):
-        # discovery already ran during minisky.init(); it is idempotent
-        minisky.plugin.discover()
-        assert "EXAMPLE" in Plugin.plugins
+    def test_discover_finds_example_plugins(self, runtime):
+        runtime.plugins.discover()
+        assert "EXAMPLE" in runtime.plugins.plugins
 
-    def test_discovery_does_not_import(self, bs):
-        plug = Plugin.plugins["EXAMPLE"]
-        if not plug.loaded:
-            assert plug.imp is None  # AST parsing only, no module import
+    def test_discovery_does_not_import(self, runtime):
+        plugin = runtime.plugins.plugins["EXAMPLE"]
+        if not plugin.loaded:
+            assert plugin.module is None
 
-    def test_manage_plugins_list(self, bs):
-        ok, text = minisky.plugin.manage_plugins("LIST")
+    def test_manage_plugins_list(self, runtime):
+        ok, text = runtime.plugins.manage("LIST")
         assert ok
         assert "EXAMPLE" in text
 
-    def test_unknown_plugin_load_fails(self, bs):
-        ok, msg = Plugin.load("NOSUCHPLUGIN")
+    def test_unknown_plugin_load_fails(self, runtime):
+        ok, message = runtime.plugins.load("NOSUCHPLUGIN")
         assert not ok
-        assert "not found" in msg.lower()
+        assert "not found" in message.lower()
 
-    def test_discovery_emits_no_deprecation_warning(self, bs):
-        # AST config parsing used the ast.Constant.s alias, deprecated
-        # since Python 3.12 and removed in 3.14.
+    def test_discovery_emits_no_deprecation_warning(self, runtime):
         with warnings.catch_warnings():
             warnings.simplefilter("error", DeprecationWarning)
-            minisky.plugin.discover()
-        assert "EXAMPLE" in Plugin.plugins
+            runtime.plugins.discover()
+        assert "EXAMPLE" in runtime.plugins.plugins
 
 
 @pytest.fixture
-def loaded_example(bs):
-    """Load the EXAMPLE plugin (loading is not reversible, so load only once)."""
-    if not Plugin.plugins["EXAMPLE"].loaded:
-        ok, msg = Plugin.load("EXAMPLE")
-        assert ok, msg
-    return Plugin.plugins["EXAMPLE"]
+def loaded_example(runtime):
+    """Load the EXAMPLE plugin once into the session runtime."""
+    plugin = runtime.plugins.plugins["EXAMPLE"]
+    if not plugin.loaded:
+        ok, message = runtime.plugins.load("EXAMPLE")
+        assert ok, message
+    return plugin
 
 
 class TestLoading:
-    def test_load_registers_plugin(self, bs, loaded_example):
+    def test_load_registers_plugin(self, runtime, loaded_example):
         assert loaded_example.loaded
-        assert "EXAMPLE" in Plugin.loaded_plugins
+        assert "EXAMPLE" in runtime.plugins.loaded_plugins
 
-    def test_double_load_rejected(self, bs, loaded_example):
-        ok, msg = Plugin.load("EXAMPLE")
+    def test_double_load_rejected(self, runtime, loaded_example):
+        ok, message = runtime.plugins.load("EXAMPLE")
         assert not ok
-        assert "already loaded" in msg.lower()
+        assert "already loaded" in message.lower()
 
-    def test_plugin_stack_command_registered(self, bs, sim, loaded_example, run_cmd):
-        # example.py registers the PASSENGERS command via @stack.command
+    def test_plugin_stack_command_registered(self, sim, loaded_example, run_cmd):
         run_cmd("CRE KL001,A320,52,4,90,FL100,250")
         output = run_cmd("PASSENGERS KL001 150")
         assert "150" in output
 
-    def test_plugin_entity_tracks_aircraft(self, bs, sim, loaded_example, run_cmd):
+    def test_plugin_entity_tracks_aircraft(self, sim, loaded_example, run_cmd):
         run_cmd("CRE KL001,A320,52,4,90,FL100,250")
         run_cmd("PASSENGERS KL001 42")
         output = run_cmd("PASSENGERS KL001")
