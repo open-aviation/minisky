@@ -317,7 +317,7 @@ class ConflictResolution(TrafficArrays):
                 # and send the aircraft to that waypoint.
                 iwpid = self.traffic.ap.route[idx].findact(idx)
                 if iwpid != -1:  # To avoid problems if there are no waypoints
-                    route.direct(idx, self.traffic.ap.route[idx].wpname[iwpid])
+                    route.direct(self.traffic, idx, self.traffic.ap.route[idx].wpname[iwpid])
 
         # Remove pairs from the list that are past CPA or have deleted aircraft
         self.resopairs -= delpairs

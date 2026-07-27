@@ -53,6 +53,7 @@ shown by the HELP command.
 
 from __future__ import annotations
 
+from functools import partial
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -74,19 +75,19 @@ def get_commands(command_stack: CommandStack) -> tuple:
 
     cmddict = {
         "ADDWPT": [
-            route.addwpt,
+            partial(route.addwpt, command_stack.traffic),
             "callsign,wpt,[alt,spd,wpt,wpt]",
             "ADDWPT callsign, wpt, [alt, spd, wpt, wpt]",
             "Add a waypoint to the route.",
         ],
         "ADDWPTMODE": [
-            route.change_wpt_mode,
+            partial(route.change_wpt_mode, command_stack.traffic),
             "callsign, [wpt,alt]",
             "ADDWPTMODE callsign, [wpt,alt]",
             "Changes the mode of the ADDWPT command to add waypoints of type 'mode'.",
         ],
         "AFTER": [
-            route.addwpt_after,
+            partial(route.addwpt_after, command_stack.traffic),
             "callsign,wpt,txt,wpt,[alt,spd]",
             "AFTER callsign, wpt, addwpt, waypoint, [alt, spd]",
             "Add a waypoint after another waypoint in the route.",
@@ -104,7 +105,7 @@ def get_commands(command_stack: CommandStack) -> tuple:
             "Select a Conflict Detection method.",
         ],
         "AT": [
-            route.at_wpt,
+            partial(route.at_wpt, command_stack.traffic),
             "callsign,wpt,[txt,...]",
             "AT callsign, wpt, [DEL] ALT/SPD/DO alt/spd/stack command",
             "Set or show altitude and/or speed constraints at a waypoint.",
@@ -134,7 +135,7 @@ def get_commands(command_stack: CommandStack) -> tuple:
             "Set or show bank limit for this vehicle",
         ],
         "BEFORE": [
-            route.addwpt_before,
+            partial(route.addwpt_before, command_stack.traffic),
             "callsign,wpt,txt,wpt,[alt,spd]",
             "BEFORE callsign, wpt, addwpt, waypoint, [alt, spd]",
             "Add a waypoint before another waypoint in the route.",
@@ -208,13 +209,13 @@ def get_commands(command_stack: CommandStack) -> tuple:
             "Delay a stack command until a specific simulation time.",
         ],
         "DELRTE": [
-            route.delrte,
+            partial(route.delrte, command_stack.traffic),
             "callsign",
             "DELRTE callsign",
             "Delete the complete route for an aircraft.",
         ],
         "DELWPT": [
-            route.delwpt,
+            partial(route.delwpt, command_stack.traffic),
             "callsign,wpt",
             "DELWPT callsign,wpt",
             "Delete a waypoint from a route.",
@@ -226,7 +227,7 @@ def get_commands(command_stack: CommandStack) -> tuple:
             "Set destination of aircraft, aircraft will fly to this airport.",
         ],
         "DIRECT": [
-            route.direct,
+            partial(route.direct, command_stack.traffic),
             "callsign, wpt",
             "DIRECT callsign, wpt",
             "Go direct to a specified waypoint in the route.",
@@ -301,7 +302,7 @@ def get_commands(command_stack: CommandStack) -> tuple:
             "Draw a line on the radar screen",
         ],
         "LISTRTE": [
-            route.listrte,
+            partial(route.listrte, command_stack.traffic),
             "callsign,[txt]",
             "LISTRTE callsign, [pagenr]",
             "Show list of route in window per page of 5 waypoints.",
@@ -457,7 +458,7 @@ def get_commands(command_stack: CommandStack) -> tuple:
             "Set resolution factor vertical.",
         ],
         "RTA": [
-            route.set_rta,
+            partial(route.set_rta, command_stack.traffic),
             "callsign, wpt, time",
             "RTA callsign, wpt, time",
             "Add RTA to waypoint record.",
