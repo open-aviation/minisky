@@ -12,6 +12,7 @@ from redis.client import PubSub
 
 from example_plugins.tangram import TangramBridge
 from minisky.simulation import Simulation
+from minisky.streaming import build_snapshot
 
 Observer = tuple[fakeredis.FakeRedis, PubSub]
 StepUntil = Callable[[Callable[[], bool]], int]
@@ -24,12 +25,21 @@ def redis_server() -> fakeredis.FakeServer:
 
 @pytest.fixture
 def bridge(
-    bs: ModuleType, sim: Simulation, redis_server: fakeredis.FakeServer
+    runtime, bs: ModuleType, sim: Simulation, redis_server: fakeredis.FakeServer
 ) -> Iterator[TangramBridge]:
     bridge = TangramBridge(
         "redis://fake",
         "minisky",
         max_hz=1000,
+        snapshot_builder=lambda: build_snapshot(
+            runtime.simulation, runtime.traffic, runtime.runner, runtime.commands
+        ),
+        console=runtime.console,
+        simulation=runtime.simulation,
+        runner=runtime.runner,
+        traffic=runtime.traffic,
+        get_scenname=runtime.commands.get_scenname,
+        stack_command=runtime.commands.stack,
         redis_factory=lambda url: fakeredis.FakeRedis(server=redis_server),
     )
     ok, msg = bridge.start()

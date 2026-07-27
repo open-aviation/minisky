@@ -22,7 +22,16 @@ Available base classes for replacement:
 - ConflictResolution: CR algorithm (traf.cr)
 """
 
+from __future__ import annotations
+
+from collections.abc import Callable
+from typing import TYPE_CHECKING
+
 from minisky.traffic.autopilot import Autopilot
+
+if TYPE_CHECKING:
+    from minisky.simulation import Simulation
+    from minisky.traffic import Traffic
 
 
 def init_plugin():
@@ -37,8 +46,8 @@ class CustomAutoPilot(Autopilot):
     Select it with: SELECTIMPL AUTOPILOT CUSTOMAUTOPILOT
     """
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, traffic: Traffic, get_simulation: Callable[[], Simulation]) -> None:
+        super().__init__(traffic, get_simulation)
         # Add custom instance variables here
         self.new_variable = 10
 

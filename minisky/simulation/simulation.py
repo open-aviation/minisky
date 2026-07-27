@@ -66,6 +66,7 @@ class Simulation:
         command_stack: CommandStack,
         areas: AreaFilter,
         stop_runner: Callable[[], None],
+        publish_tick: Callable[[], None],
     ) -> None:
         self.traffic = traffic
         self.navigation = navigation
@@ -73,6 +74,7 @@ class Simulation:
         self.commands = command_stack
         self.areas = areas
         self.stop_runner = stop_runner
+        self.publish_tick = publish_tick
         self.state = INIT
         self.prevstate = None
 
@@ -110,6 +112,7 @@ class Simulation:
         3. While in `OP`: advance `simt` and the simulated UTC clock by
            `simdt` seconds, run plugin `preupdate` hooks (including
            timers), update all aircraft, then run plugin `update` hooks.
+        4. Publish the runtime stream snapshot when subscribers are present.
         """
         # Simulation starts as soon as there is traffic, or pending commands
         if self.state == INIT and (
@@ -133,13 +136,10 @@ class Simulation:
 
             # Plugin post-update hooks
             PluginManager.update()
-        else:
-            # Plugin hooks (and with them the stream snapshot hook) only run
-            # in OP; publish here too so stream consumers still see state
-            # changes while in INIT/HOLD/END. No-op without subscribers.
-            from minisky.streaming import hub
 
-            hub.publish_tick()
+        # Publish after command and state processing in every simulation state.
+        # This is a no-op when the runtime has no stream subscribers.
+        self.publish_tick()
 
     def stop(self) -> None:
         """Stop the simulation (stack STOP/QUIT command).

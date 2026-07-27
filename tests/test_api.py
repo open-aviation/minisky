@@ -1,14 +1,15 @@
 """Smoke tests for the FastAPI endpoints.
 
-Importing minisky.server calls minisky.init() at module import time, which
-would clobber the singletons used by the rest of the suite. These tests are
-therefore marked 'api' and excluded from the default run; execute them in a
-separate process:
+The API application is created explicitly for this test module and owns its
+own MiniSky runtime. These tests are marked `api` and excluded from the default
+run; execute them in a separate process:
 
-    uv run minisky test api
+```console
+uv run minisky test api
+```
 
-The /stack/{cmd} endpoint requires the async runner loop and is not tested
-here (flaky under TestClient).
+The `/stack/{cmd}` endpoint requires the async runner loop and is not tested
+here because it is flaky under `TestClient`.
 """
 
 import pytest
@@ -17,12 +18,22 @@ pytestmark = pytest.mark.api
 
 
 @pytest.fixture(scope="module")
-def client():
+def server_app():
+    from minisky.server import create_app
+
+    return create_app()
+
+
+@pytest.fixture(scope="module")
+def runtime(server_app):
+    return server_app.state.runtime
+
+
+@pytest.fixture(scope="module")
+def client(server_app):
     fastapi_testclient = pytest.importorskip("fastapi.testclient")
 
-    from minisky.server import app
-
-    with fastapi_testclient.TestClient(app) as test_client:
+    with fastapi_testclient.TestClient(server_app) as test_client:
         yield test_client
 
 
@@ -45,10 +56,8 @@ def test_all_empty_traffic(client):
     assert isinstance(resp.json(), list)
 
 
-def test_all_reflects_created_aircraft(client):
-    import minisky
-
-    minisky.traf.cre("KL001", "A320", lat=52.0, lon=4.0, hdg=90, alt=3000, spd=150)
+def test_all_reflects_created_aircraft(client, runtime):
+    runtime.traffic.cre("KL001", "A320", lat=52.0, lon=4.0, hdg=90, alt=3000, spd=150)
     resp = client.get("/all")
     assert resp.status_code == 200
     callsigns = [ac["callsign"] for ac in resp.json()]

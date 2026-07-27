@@ -8,6 +8,7 @@ from minisky.core.varexplorer import VariableExplorer
 from minisky.simulation import ConsoleIO, Runner, Simulation
 from minisky.simulation.simulation import OP
 from minisky.stack import CommandStack
+from minisky.streaming import StreamHub, build_snapshot
 from minisky.tools.areafilter import AreaFilter
 from minisky.tools.navdata import Navdatabase
 from minisky.traffic import Traffic
@@ -45,6 +46,9 @@ class MiniSky:
             get_simulation=lambda: self.simulation,
             get_runner=lambda: self.runner,
         )
+        self.streaming = StreamHub(
+            lambda: build_snapshot(self.simulation, self.traffic, self.runner, self.commands)
+        )
         self.simulation = Simulation(
             traffic=self.traffic,
             navigation=self.navigation,
@@ -52,6 +56,7 @@ class MiniSky:
             command_stack=self.commands,
             areas=self.areas,
             stop_runner=self._stop_runner,
+            publish_tick=self.streaming.publish_tick,
         )
         self.runner = Runner(self.simulation, self.console)
         self.variables.init(self.simulation, self.traffic)

@@ -1,8 +1,9 @@
 """Shared fixtures for MiniSky integration tests.
 
-MiniSky uses module-level singletons (minisky.traf, minisky.sim, ...), so:
-- minisky.init() is called exactly once per test session (re-initializing
-  would leave modules holding references to stale objects);
+Most existing integration tests still exercise the temporary module-level
+compatibility aliases (`minisky.traf`, `minisky.sim`, ...), so:
+- one explicit runtime is constructed for the test session and activates those
+  aliases;
 - each test gets a clean state via minisky.sim.reset();
 - always access singletons through the module (bs.traf), never via
   `from minisky import traf` (that binds None at import time).
@@ -17,9 +18,14 @@ import minisky
 
 
 @pytest.fixture(scope="session")
-def bs():
-    """Session-wide initialized minisky module."""
-    minisky.init()
+def runtime():
+    """Session-wide explicit MiniSky runtime."""
+    return minisky.init()
+
+
+@pytest.fixture(scope="session")
+def bs(runtime):
+    """Compatibility module activated for the session runtime."""
     return minisky
 
 
