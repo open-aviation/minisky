@@ -370,9 +370,6 @@ class CommandStack:
                     f"reimplemented as a {command_type.__name__}"
                 )
 
-        if not inspect.ismethod(func):
-            func.__stack_cmd__ = cmdobj  # type: ignore[reportFunctionMemberAccess]
-
     def _reset_state(self) -> None:
         """Reset the runtime-owned command queue and scenario state."""
         # Stack data

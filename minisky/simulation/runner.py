@@ -112,30 +112,35 @@ class Runner:
         target simulation time is reached. The loop exits when
         `stop` sets `running` to False (and shutdown is allowed).
         """
+        if self.running:
+            raise RuntimeError("Simulation runner is already running")
+
         self.console.echo("Starting simulation")
         self.running = True
+        try:
+            while self.running:
+                # Check if jump is active
+                if self.jump > 0:
+                    update_interval = MIN_UPDATE_INTERVAL
 
-        while self.running:
-            # Check if jump is active
-            if self.jump > 0:
-                update_interval = MIN_UPDATE_INTERVAL
+                    # Check if jump is completed
+                    if self.jump_to <= self.simulation.simt:
+                        self.jump = 0
+                        self.jump_to = 0
+                else:
+                    update_interval = 1 / self.speed
 
-                # Check if jump is completed
-                if self.jump_to <= self.simulation.simt:
-                    self.jump = 0
-                    self.jump_to = 0
-            else:
-                update_interval = 1 / self.speed
+                next_time = asyncio.get_event_loop().time() + update_interval
 
-            next_time = asyncio.get_event_loop().time() + update_interval
+                self.simulation.step()
 
-            self.simulation.step()
+                current_time = asyncio.get_event_loop().time()
 
-            current_time = asyncio.get_event_loop().time()
+                sleep_time = max(MIN_UPDATE_INTERVAL, next_time - current_time)
 
-            sleep_time = max(MIN_UPDATE_INTERVAL, next_time - current_time)
-
-            await asyncio.sleep(sleep_time)
+                await asyncio.sleep(sleep_time)
+        finally:
+            self.running = False
 
         self.console.echo("Simulation completed")
 
