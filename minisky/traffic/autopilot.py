@@ -580,7 +580,11 @@ class Autopilot(TrafficArrays):
         # Note that because nextspd comes from the stack, and can be either a mach number or
         # a calibrated airspeed, it can only be converted from Mach / CAS [kts] to TAS [m/s]
         # once the altitude is known.
-        nexttas = vcasormach2tas(self.traffic.actwp.nextspd, self.traffic.alt)
+        nexttas = vcasormach2tas(
+            self.traffic.actwp.nextspd,
+            self.traffic.alt,
+            self.traffic.casmach_threshold,
+        )
         #
         dxspdconchg = distaccel(self.traffic.tas, nexttas, self.traffic.perf.axmax)
 
@@ -670,7 +674,11 @@ class Autopilot(TrafficArrays):
         self.inturn = np.logical_or(useturnspd, inoldturn)
 
         # Below crossover altitude: CAS=const, above crossover altitude: Mach = const
-        self.tas = vcasormach2tas(self.traffic.selspd, self.traffic.alt)
+        self.tas = vcasormach2tas(
+            self.traffic.selspd,
+            self.traffic.alt,
+            self.traffic.casmach_threshold,
+        )
 
     def ComputeVNAV(self, idx: int, toalt: Any, xtoalt: Any, torta: Any, xtorta: Any) -> None:
         """

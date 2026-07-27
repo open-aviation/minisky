@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import suppress
+from random import Random
+
+import numpy as np
 
 from minisky.core.settings import MiniSkySettings, data
 from minisky.core.trafficarrays import ReplaceableManager
@@ -24,14 +27,16 @@ class MiniSky:
         self.settings = settings
         self._run_task: asyncio.Task[None] | None = None
         self._closed = False
-        self.console = ConsoleIO(
-            lambda: self.simulation.state == SimulationState.OP
-        )
+        self.python_random = Random()
+        self.numpy_random = np.random.RandomState()
+        self.console = ConsoleIO(lambda: self.simulation.state == SimulationState.OP)
         self.navigation = Navdatabase(data("navigation"), self.console)
         self.areas = AreaFilter()
         self.variables = VariableExplorer()
         self.traffic = Traffic(
             settings=settings,
+            python_random=self.python_random,
+            numpy_random=self.numpy_random,
             areas=self.areas,
             navigation=self.navigation,
             console=self.console,
@@ -66,6 +71,8 @@ class MiniSky:
         self.simulation = Simulation(
             traffic=self.traffic,
             navigation=self.navigation,
+            python_random=self.python_random,
+            numpy_random=self.numpy_random,
             console=self.console,
             command_stack=self.commands,
             areas=self.areas,

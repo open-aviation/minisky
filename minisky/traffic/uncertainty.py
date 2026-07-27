@@ -96,7 +96,7 @@ class SurveillanceUncertainty(TrafficArrays):
         """
         super().create(n)
 
-        self.lastupdate[-n:] = -self.trunctime * np.random.rand(n)
+        self.lastupdate[-n:] = -self.trunctime * self.traffic.numpy_random.rand(n)
         self.lat[-n:] = self.traffic.lat[-n:]
         self.lon[-n:] = self.traffic.lon[-n:]
         self.alt[-n:] = self.traffic.alt[-n:]
@@ -115,9 +115,15 @@ class SurveillanceUncertainty(TrafficArrays):
         up = np.where(self.lastupdate + self.trunctime < self._get_simulation().simt)
         nup = len(up[0])
         if self.transnoise:
-            self.lat[up] = self.traffic.lat[up] + np.random.normal(0, self.transerror[0], nup)
-            self.lon[up] = self.traffic.lon[up] + np.random.normal(0, self.transerror[0], nup)
-            self.alt[up] = self.traffic.alt[up] + np.random.normal(0, self.transerror[1], nup)
+            self.lat[up] = self.traffic.lat[up] + self.traffic.numpy_random.normal(
+                0, self.transerror[0], nup
+            )
+            self.lon[up] = self.traffic.lon[up] + self.traffic.numpy_random.normal(
+                0, self.transerror[0], nup
+            )
+            self.alt[up] = self.traffic.alt[up] + self.traffic.numpy_random.normal(
+                0, self.transerror[1], nup
+            )
         else:
             self.lat[up] = self.traffic.lat[up]
             self.lon[up] = self.traffic.lon[up]

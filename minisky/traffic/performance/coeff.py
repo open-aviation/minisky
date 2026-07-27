@@ -9,6 +9,7 @@ values are stored in SI units. The [`Coefficient`][] container is instantiated o
 """
 
 import json
+import warnings
 
 import numpy as np
 from openap import WRAP, drag, prop
@@ -50,24 +51,21 @@ class Coefficient:
     """
 
     def __init__(self) -> None:
-        self.actypes_fixwing = prop.available_aircraft(
-            use_synonym=True
-        )  # fixed wing types from openap
-        self.acs_fixwing = self._load_all_fixwing_flavor()
-        self.limits_fixwing = self._load_all_fixwing_envelop()
+        with warnings.catch_warnings(action="ignore"):
+            self.actypes_fixwing = prop.available_aircraft(
+                use_synonym=True
+            )  # fixed wing types from openap
+            self.acs_fixwing = self._load_all_fixwing_flavor()
+            self.limits_fixwing = self._load_all_fixwing_envelop()
 
-        self.acs_rotor = self._load_all_rotor_flavor()
-        self.limits_rotor = self._load_all_rotor_envelop()
-        self.actypes_rotor = list(self.acs_rotor.keys())
+            self.acs_rotor = self._load_all_rotor_flavor()
+            self.limits_rotor = self._load_all_rotor_envelop()
+            self.actypes_rotor = list(self.acs_rotor.keys())
 
-        self.dragpolar_fixwing = self._load_fixedwing_dragpolar()
+            self.dragpolar_fixwing = self._load_fixedwing_dragpolar()
 
     def _load_all_fixwing_flavor(self) -> dict:
         """Load fixed-wing aircraft and default engine data from OpenAP."""
-        import warnings
-
-        warnings.simplefilter("ignore")
-
         # load fixwing aircraft and engine from openap
         acs = {}
         # match acs_ with openap native data

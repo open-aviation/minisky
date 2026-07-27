@@ -15,8 +15,8 @@ Functions prefixed with a "v" are vectorized and accept numpy arrays;
 these use a simplified two-layer ISA (troposphere and lower stratosphere,
 valid up to approximately 22 km). The scalar variants without prefix use
 the full multi-layer ISA table. The casormach* functions interpret a
-single speed input as either CAS or Mach number, depending on the
-CAS/Mach threshold that can be set with the CASMACHTHR command.
+single speed input as either CAS or Mach number, using an explicit
+CAS/Mach threshold supplied by the owning runtime.
 """
 
 import numpy as np
@@ -45,28 +45,7 @@ gamma2 = 3.5  # gamma/(gamma-1) for air
 beta = -0.0065  # [K/m] ISA temp gradient below tropopause
 Rearth = 6371000.0  # m  Average earth radius
 a0 = np.sqrt(gamma * R * T0)  # sea level speed of sound ISA
-casmach_thr = 2  # Threshold below which speeds should
-# be considered as Mach numbers in casormach* functions
-
-
-def casmachthr(threshold: float | None = None) -> tuple[bool, str]:
-    """CASMACHTHR threshold
-
-    Set a threshold below which speeds should be considered as Mach numbers
-    in CRE(ATE), ADDWPT, and SPD commands. Set to zero if speeds should
-    never be considered as Mach number (e.g., when simulating drones).
-
-    Argument:
-    - threshold: CAS speed threshold [m/s]
-    """
-    if threshold is None:
-        return (
-            True,
-            f"CASMACHTHR: The current CAS/Mach threshold is {casmach_thr} m/s ({casmach_thr / kts} kts",
-        )
-
-    globals()["casmach_thr"] = threshold
-    return True, f"CASMACHTHR: Set CAS/Mach threshold to {threshold}"
+DEFAULT_CASMACH_THRESHOLD = 2.0
 
 
 #
@@ -200,6 +179,7 @@ def vmach2tas(mach: np.ndarray, h: np.ndarray) -> np.ndarray:
     Arguments:
     - mach: Mach number [-]
     - h: Altitude [m]
+    - threshold: Upper bound below which positive speed values are Mach numbers.
 
     Returns:
     - tas: True airspeed [m/s]
@@ -307,38 +287,48 @@ def vcas2mach(cas: np.ndarray, h: np.ndarray) -> np.ndarray:
     return M
 
 
-def vcasormach(spd: np.ndarray, h: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+def vcasormach(
+    spd: np.ndarray,
+    h: np.ndarray,
+    threshold: float,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Interpret input speed as either CAS or a Mach number, and return TAS, CAS, and Mach.
 
     Arguments:
     - spd: Airspeed. Interpreted as Mach number [-] when its value is below the
            CAS/Mach threshold. Otherwise interpreted as CAS [m/s].
     - h: Altitude [m]
+    - threshold: Upper bound below which positive speed values are Mach numbers.
 
     Returns:
     - tas: True airspeed [m/s]
     - cas: Calibrated airspeed [m/s]
     - mach: Mach number [-]
     """
-    ismach = np.logical_and(spd > 0.1, spd < casmach_thr)
+    ismach = np.logical_and(spd > 0.1, spd < threshold)
     tas = np.where(ismach, vmach2tas(spd, h), vcas2tas(spd, h))
     cas = np.where(ismach, vtas2cas(tas, h), spd)
     mach = np.where(ismach, spd, vtas2mach(tas, h))
     return tas, cas, mach
 
 
-def vcasormach2tas(spd: np.ndarray, h: np.ndarray) -> np.ndarray:
+def vcasormach2tas(
+    spd: np.ndarray,
+    h: np.ndarray,
+    threshold: float,
+) -> np.ndarray:
     """Interpret input speed as either CAS or a Mach number, and return TAS.
 
     Arguments:
     - spd: Airspeed. Interpreted as Mach number [-] when its value is below the
            CAS/Mach threshold. Otherwise interpreted as CAS [m/s].
     - h: Altitude [m]
+    - threshold: Upper bound below which positive speed values are Mach numbers.
 
     Returns:
     - tas: True airspeed [m/s]
     """
-    ismach = np.logical_and(spd > 0.1, spd < casmach_thr)
+    ismach = np.logical_and(spd > 0.1, spd < threshold)
     return np.where(ismach, vmach2tas(spd, h), vcas2tas(spd, h))
 
 
@@ -681,21 +671,26 @@ def cas2mach(cas: float, h: float) -> float:
     return M
 
 
-def casormach(spd: float, h: float) -> tuple[float, float, float]:
+def casormach(
+    spd: float,
+    h: float,
+    threshold: float,
+) -> tuple[float, float, float]:
     """Interpret input speed as either CAS or a Mach number (scalar version).
 
-    The speed is treated as a Mach number when 0.1 < spd < casmach_thr
-    (settable with the CASMACHTHR command), and as CAS otherwise.
+    The speed is treated as a Mach number when 0.1 < spd < threshold
+    supplied by the caller, and as CAS otherwise.
 
     Args:
         spd: Airspeed: Mach number [-] or calibrated airspeed [m/s].
         h: Altitude [m].
+        threshold: Upper bound below which positive speed values are Mach numbers.
 
     Returns:
         tuple: (tas, cas, m): true airspeed [m/s], calibrated airspeed
         [m/s], and Mach number [-].
     """
-    if 0.1 < spd < casmach_thr:
+    if 0.1 < spd < threshold:
         # Interpret spd as Mach number
         tas = mach2tas(spd, h)
         cas = mach2cas(spd, h)
@@ -708,19 +703,24 @@ def casormach(spd: float, h: float) -> tuple[float, float, float]:
     return tas, cas, m
 
 
-def casormach2tas(spd: float, h: float) -> float:
+def casormach2tas(
+    spd: float,
+    h: float,
+    threshold: float,
+) -> float:
     """Interpret input speed as either CAS or Mach, and return TAS (scalar version).
 
     Args:
-        spd: Airspeed: Mach number [-] when 0.1 < spd < casmach_thr,
+        spd: Airspeed: Mach number [-] when 0.1 < spd < threshold,
             otherwise calibrated airspeed [m/s].
         h: Altitude [m].
+        threshold: Upper bound below which positive speed values are Mach numbers.
 
     Returns:
         True airspeed [m/s].
     """
     # Interpret spd as Mach number inside the threshold band, otherwise as CAS
-    tas = mach2tas(spd, h) if 0.1 < spd < casmach_thr else cas2tas(spd, h)
+    tas = mach2tas(spd, h) if 0.1 < spd < threshold else cas2tas(spd, h)
     return tas
 
 

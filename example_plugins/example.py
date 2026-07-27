@@ -9,7 +9,7 @@ This plugin demonstrates the plugin system capabilities:
 
 from __future__ import annotations
 
-from random import randint
+from random import Random
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -39,7 +39,7 @@ def init_plugin(
         manager.
     """
     # Instantiate the example entity on this runtime's traffic-array tree.
-    instance = Example(runtime.traffic)
+    instance = Example(runtime.traffic, runtime.python_random)
 
     # Configuration parameters and lifecycle callbacks.
     config = {
@@ -69,9 +69,10 @@ class Example(plugin.Entity):
     passed to the constructor.
     """
 
-    def __init__(self, traffic: Traffic) -> None:
+    def __init__(self, traffic: Traffic, random: Random) -> None:
         """Attach the entity to `traffic` and register its passenger array."""
         super().__init__(traffic)
+        self.random = random
 
         # Register per-aircraft data arrays. These automatically resize when
         # aircraft are created or deleted in the owning runtime.
@@ -88,16 +89,13 @@ class Example(plugin.Entity):
             n: Number of newly created aircraft.
         """
         super().create(n)
-        self.npassengers[-n:] = [randint(50, 250) for _ in range(n)]
+        self.npassengers[-n:] = [self.random.randint(50, 250) for _ in range(n)]
 
     def update(self) -> None:
         """Periodic update function called every five simulation seconds."""
         if self.traffic.ntraf > 0:
             total = int(sum(self.npassengers))
-            print(
-                f"Example plugin: {self.traffic.ntraf} aircraft, "
-                f"{total} total passengers"
-            )
+            print(f"Example plugin: {self.traffic.ntraf} aircraft, {total} total passengers")
 
     def passengers(self, callsign: str, count: int = -1) -> tuple[bool, str]:
         """Set or get the number of passengers on an aircraft.

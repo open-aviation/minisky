@@ -12,7 +12,7 @@ import datetime
 import time
 from collections.abc import Callable
 from enum import IntEnum
-from random import seed
+from random import Random
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -26,6 +26,7 @@ if TYPE_CHECKING:
     from minisky.tools.navdata import Navdatabase
     from minisky.traffic import Traffic
 
+
 class SimulationState(IntEnum):
     """Simulation lifecycle states."""
 
@@ -33,6 +34,7 @@ class SimulationState(IntEnum):
     HOLD = 1
     OP = 2
     END = 3
+
 
 # Minimum sleep interval
 MINSLEEP = 1e-3
@@ -65,6 +67,8 @@ class Simulation:
         self,
         traffic: Traffic,
         navigation: Navdatabase,
+        python_random: Random,
+        numpy_random: np.random.RandomState,
         console: ConsoleIO,
         command_stack: CommandStack,
         areas: AreaFilter,
@@ -75,6 +79,8 @@ class Simulation:
     ) -> None:
         self.traffic = traffic
         self.navigation = navigation
+        self.python_random = python_random
+        self.numpy_random = numpy_random
         self.console = console
         self.commands = command_stack
         self.areas = areas
@@ -333,12 +339,12 @@ class Simulation:
     def setseed(self, value: int) -> None:
         """Set the random seed for this simulation (stack SEED command).
 
-        Seeds both Python's `random` module and NumPy's random generator
-        so that stochastic scenario elements are reproducible.
+        Seeds this runtime's Python and NumPy generators so stochastic
+        scenario elements are reproducible without affecting other runtimes.
 
         Args:
             value: Integer seed value.
         """
-        seed(value)
-        np.random.seed(value)
+        self.python_random.seed(value)
+        self.numpy_random.seed(value)
         self.console.echo("random seed set")

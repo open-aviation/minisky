@@ -147,7 +147,7 @@ def get_commands(command_stack: CommandStack) -> tuple:
             "Define a box-shaped area",
         ],
         "CASMACHTHR": [
-            tools.aero.casmachthr,
+            command_stack.traffic.casmachthr,
             "float",
             "CASMACHTHR threshold",
             """Set a threshold below which speeds should be considered as Mach numbers
