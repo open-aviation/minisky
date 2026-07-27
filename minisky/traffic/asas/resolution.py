@@ -13,15 +13,21 @@ Actual resolution algorithms (e.g. the Modified Voltage Potential method in
 [`ConflictResolution.resolve`][minisky.traffic.asas.resolution.ConflictResolution.resolve].
 """
 
-from typing import Any
+from __future__ import annotations
+
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-import minisky
 from minisky.core.settings import MiniSkySettings
-from minisky.core.trafficarrays import TrafficArrays, select_implementation
+from minisky.core.trafficarrays import TrafficArrays
 from minisky.stack.argparser import Txt
 from minisky.tools.aero import ft, nm
+from minisky.traffic import route
+
+if TYPE_CHECKING:
+    from minisky.traffic import Traffic
 
 
 class ConflictResolution(TrafficArrays):
@@ -61,9 +67,16 @@ class ConflictResolution(TrafficArrays):
         vs (ndarray): Resolution vertical speed advisory [m/s].
     """
 
-    def __init__(self, settings: MiniSkySettings) -> None:
+    def __init__(
+        self,
+        settings: MiniSkySettings,
+        traffic: Traffic,
+        select_implementation: Callable[[str, str], tuple[bool, str]],
+    ) -> None:
         super().__init__()
         self.settings = settings
+        self.traffic = traffic
+        self.select_implementation = select_implementation
         self.activate = False
 
         # [-] switch to activate priority rules for conflict resolution
@@ -94,8 +107,8 @@ class ConflictResolution(TrafficArrays):
             self.vs = np.array([])  # vspeed provided by the ASAS [m/s]
 
     def new_implementation(self, implementation: type[TrafficArrays]) -> TrafficArrays:
-        """Construct a replacement with this runtime's settings."""
-        return implementation(self.settings)
+        """Construct a replacement with this runtime's traffic and selector."""
+        return implementation(self.settings, self.traffic, self.select_implementation)
 
     def switch(self, flag: bool | None = None) -> None:
         """Turn conflict resolution on or off.
@@ -236,7 +249,7 @@ class ConflictResolution(TrafficArrays):
             past_cpa = False
             hor_los = False
             is_bouncing = False
-            idx1, idx2 = minisky.traf.idx(conflict)
+            idx1, idx2 = self.traffic.idx(conflict)
             # If the ownship aircraft is deleted remove its conflict from the list
             if idx1 < 0:
                 delpairs.add(conflict)
@@ -302,14 +315,14 @@ class ConflictResolution(TrafficArrays):
             if not active:
                 # Waypoint recovery after conflict: Find the next active waypoint
                 # and send the aircraft to that waypoint.
-                iwpid = minisky.traf.ap.route[idx].findact(idx)
+                iwpid = self.traffic.ap.route[idx].findact(idx)
                 if iwpid != -1:  # To avoid problems if there are no waypoints
-                    minisky.traffic.route.direct(idx, minisky.traf.ap.route[idx].wpname[iwpid])
+                    route.direct(idx, self.traffic.ap.route[idx].wpname[iwpid])
 
         # Remove pairs from the list that are past CPA or have deleted aircraft
         self.resopairs -= delpairs
 
-    def setprio(self, flag: bool | None = None, priocode="") -> "bool | tuple":
+    def setprio(self, flag: bool | None = None, priocode="") -> bool | tuple:
         """Define priority rules (right of way) for conflict resolution.
 
         Implements the PRIORULES stack command. The base class only stores
@@ -336,7 +349,7 @@ class ConflictResolution(TrafficArrays):
         self.priocode = priocode
         return True
 
-    def setnoreso(self, *idx: int) -> "bool | tuple":
+    def setnoreso(self, *idx: int) -> bool | tuple:
         """ADD or Remove aircraft that nobody will avoid.
         Multiple aircraft can be sent to this function at once.
 
@@ -356,13 +369,13 @@ class ConflictResolution(TrafficArrays):
                 True,
                 "NORESO [ACID, ... ] OR NORESO [GROUPID]"
                 + "\nCurrent list of aircraft nobody will avoid:"
-                + ", ".join(np.array(minisky.traf.callsign)[self.noresoac]),
+                + ", ".join(np.array(self.traffic.callsign)[self.noresoac]),
             )
         indices = list(idx)
         self.noresoac[indices] = np.logical_not(self.noresoac[indices])
         return True
 
-    def setresooff(self, *idx: int) -> "bool | tuple":
+    def setresooff(self, *idx: int) -> bool | tuple:
         """ADD or Remove aircraft that will not avoid anybody else.
         Multiple aircraft can be sent to this function at once.
 
@@ -382,7 +395,7 @@ class ConflictResolution(TrafficArrays):
                 True,
                 "RESOOFF [ACID, ... ] OR RESOOFF [GROUPID]"
                 + "\nCurrent list of aircraft will not avoid anybody:"
-                + ", ".join(np.array(minisky.traf.callsign)[self.resooffac]),
+                + ", ".join(np.array(self.traffic.callsign)[self.resooffac]),
             )
         else:
             indices = list(idx)
@@ -456,7 +469,7 @@ class ConflictResolution(TrafficArrays):
         Returns:
             tuple: (success (bool), message (str)) for the command stack.
         """
-        if not minisky.traf.cd.global_rpz:
+        if not self.traffic.cd.global_rpz:
             self.resorrelative = True
             return (
                 False,
@@ -465,10 +478,10 @@ class ConflictResolution(TrafficArrays):
         if zoner is None:
             return (
                 True,
-                f"RSZONER [radiusnm]\nCurrent horizontal resolution factor is: {self.resofach}, resulting in radius: {self.resofach * minisky.traf.cd.rpz_def / nm} nm",
+                f"RSZONER [radiusnm]\nCurrent horizontal resolution factor is: {self.resofach}, resulting in radius: {self.resofach * self.traffic.cd.rpz_def / nm} nm",
             )
 
-        self.resofach = zoner / minisky.traf.cd.rpz_def * nm
+        self.resofach = zoner / self.traffic.cd.rpz_def * nm
         # Size of resolution zone r, vertically, no longer relative to CD zone
         self.resorrelative = False
         return (
@@ -492,7 +505,7 @@ class ConflictResolution(TrafficArrays):
         Returns:
             tuple: (success (bool), message (str)) for the command stack.
         """
-        if not minisky.traf.cd.global_hpz:
+        if not self.traffic.cd.global_hpz:
             self.resodhrelative = True
             return (
                 False,
@@ -501,10 +514,10 @@ class ConflictResolution(TrafficArrays):
         if zonedh is None:
             return (
                 True,
-                f"RSZONEDH [zonedhft]\nCurrent vertical resolution factor is: {self.resofacv}, resulting in height: {self.resofacv * minisky.traf.cd.hpz_def / ft} ft",
+                f"RSZONEDH [zonedhft]\nCurrent vertical resolution factor is: {self.resofacv}, resulting in height: {self.resofacv * self.traffic.cd.hpz_def / ft} ft",
             )
 
-        self.resofacv = zonedh / minisky.traf.cd.hpz_def * ft
+        self.resofacv = zonedh / self.traffic.cd.hpz_def * ft
         # Size of resolution zone dh, vertically, no longer relative to CD zone
         self.resodhrelative = False
         return (
@@ -512,8 +525,7 @@ class ConflictResolution(TrafficArrays):
             f"Vertical resolution factor updated to {self.resofacv}, resulting in height: {zonedh} ft",
         )
 
-    @staticmethod
-    def setmethod(name: Txt = "") -> tuple:
+    def setmethod(self, name: Txt = "") -> tuple:
         """Select a Conflict Resolution method.
 
         Implements the RESO stack command. Selecting "MVP" replaces the
@@ -530,82 +542,29 @@ class ConflictResolution(TrafficArrays):
         names = ["OFF", "MVP"]
 
         if not name:
-            curname = type(minisky.traf.cr).__name__ if minisky.traf.cr.activate else "OFF"
+            curname = type(self.traffic.cr).__name__ if self.traffic.cr.activate else "OFF"
             return (
                 True,
                 f"Current CR method: {curname}" + f"\nAvailable CR methods: {', '.join(names)}",
             )
 
         if name == "OFF":
-            minisky.traf.cr.switch(False)
+            self.traffic.cr.switch(False)
             return True, "Conflict Resolution turned off."
 
         if name == "MVP":
-            success, message = select_implementation("CONFLICTRESOLUTION", name)
+            success, message = self.select_implementation("CONFLICTRESOLUTION", name)
             if not success:
                 return success, message
-            minisky.traf.cr.switch(True)
+            self.traffic.cr.switch(True)
             return True, "Selected MVP as Conflict Resolution method."
 
         return False, f"Unknown method: {name}. Available: {', '.join(names)}"
 
+    def setresometh(self, value: Txt = "") -> tuple:
+        """Report that horizontal method selection requires the MVP implementation."""
+        return False, f"RMETHH is not available for CR method {type(self).__name__}"
 
-# Module-level dispatchers for the stack commands below. RESO can replace
-# minisky.traf.cr with a new instance (e.g. MVP), which would leave commands
-# registered as bound methods pointing at the stale, replaced object. These
-# wrappers resolve the current instance at call time instead.
-
-
-def setprio(flag: bool | None = None, priocode="") -> "bool | tuple":
-    """PRIORULES stack command; see ConflictResolution.setprio()."""
-    return minisky.traf.cr.setprio(flag, priocode)
-
-
-def setnoreso(*idx: int) -> "bool | tuple":
-    """NORESO stack command; see ConflictResolution.setnoreso()."""
-    return minisky.traf.cr.setnoreso(*idx)
-
-
-def setresooff(*idx: int) -> "bool | tuple":
-    """RESOOFF stack command; see ConflictResolution.setresooff()."""
-    return minisky.traf.cr.setresooff(*idx)
-
-
-def setresofach(factor: float | None = None) -> tuple:
-    """RFACH stack command; see ConflictResolution.setresofach()."""
-    return minisky.traf.cr.setresofach(factor)
-
-
-def setresofacv(factor: float | None = None) -> tuple:
-    """RFACV stack command; see ConflictResolution.setresofacv()."""
-    return minisky.traf.cr.setresofacv(factor)
-
-
-def setresozoner(zoner: float | None = None) -> tuple:
-    """RSZONER stack command; see ConflictResolution.setresozoner()."""
-    return minisky.traf.cr.setresozoner(zoner)
-
-
-def setresozonedh(zonedh: float | None = None) -> tuple:
-    """RSZONEDH stack command; see ConflictResolution.setresozonedh()."""
-    return minisky.traf.cr.setresozonedh(zonedh)
-
-
-def setresometh(value: Txt = "") -> tuple:
-    """RMETHH stack command; see MVP.setresometh()."""
-    from minisky.traffic.asas.mvp import MVP
-
-    cr = minisky.traf.cr
-    if not isinstance(cr, MVP):
-        return False, f"RMETHH is not available for CR method {type(cr).__name__}"
-    return cr.setresometh(value)
-
-
-def setresometv(value: Txt = "") -> tuple:
-    """RMETHV stack command; see MVP.setresometv()."""
-    from minisky.traffic.asas.mvp import MVP
-
-    cr = minisky.traf.cr
-    if not isinstance(cr, MVP):
-        return False, f"RMETHV is not available for CR method {type(cr).__name__}"
-    return cr.setresometv(value)
+    def setresometv(self, value: Txt = "") -> tuple:
+        """Report that vertical method selection requires the MVP implementation."""
+        return False, f"RMETHV is not available for CR method {type(self).__name__}"

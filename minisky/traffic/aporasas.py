@@ -3,14 +3,20 @@
 Selects, per aircraft and per control channel, whether the aircraft
 follows the autopilot/FMS command or the conflict-resolution (ASAS)
 command. The resulting desired states are the setpoints that
-:class:`~minisky.traffic.traffic.Traffic` flies towards each time step
+[`Traffic`][minisky.traffic.traffic.Traffic] flies towards each time step
 (after being limited by the performance model).
 """
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 import numpy as np
 
-import minisky
 from minisky.core import TrafficArrays
+
+if TYPE_CHECKING:
+    from minisky.traffic import Traffic
 
 
 class APorASAS(TrafficArrays):
@@ -20,7 +26,7 @@ class APorASAS(TrafficArrays):
     ASAS command is used when the corresponding conflict-resolution channel
     is active, otherwise the autopilot command is used. The desired heading
     is derived from the desired track with a wind-drift correction.
-    Available at runtime as ``minisky.traf.aporasas``.
+    Available at runtime as `minisky.traf.aporasas`.
 
     Attributes:
         alt (ndarray): Desired altitude [m].
@@ -30,8 +36,9 @@ class APorASAS(TrafficArrays):
         tas (ndarray): Desired true airspeed [m/s].
     """
 
-    def __init__(self) -> None:
-        super().__init__()
+    def __init__(self, traffic: Traffic) -> None:
+        super().__init__(traffic)
+        self.traffic = traffic
         with self.settrafarrays():
             # Desired aircraft states
             self.alt = np.array([])  # desired altitude [m]
@@ -39,6 +46,10 @@ class APorASAS(TrafficArrays):
             self.trk = np.array([])  # desired track angle [deg]
             self.vs = np.array([])  # desired vertical speed [m/s]
             self.tas = np.array([])  # desired speed [m/s]
+
+    def new_implementation(self, implementation: type[TrafficArrays]) -> TrafficArrays:
+        """Construct a replacement with this runtime's traffic object."""
+        return implementation(self.traffic)
 
     def create(self, n: int = 1) -> None:
         """Initialize desired states for n newly created aircraft.
@@ -50,10 +61,10 @@ class APorASAS(TrafficArrays):
             n: Number of aircraft that were appended to the traffic arrays.
         """
         super().create(n)
-        self.alt[-n:] = minisky.traf.alt[-n:]
-        self.tas[-n:] = minisky.traf.tas[-n:]
-        self.hdg[-n:] = minisky.traf.hdg[-n:]
-        self.trk[-n:] = minisky.traf.trk[-n:]
+        self.alt[-n:] = self.traffic.alt[-n:]
+        self.tas[-n:] = self.traffic.tas[-n:]
+        self.hdg[-n:] = self.traffic.hdg[-n:]
+        self.trk[-n:] = self.traffic.trk[-n:]
 
     def update(self) -> None:
         """Select the desired aircraft states from autopilot or ASAS.
@@ -69,34 +80,34 @@ class APorASAS(TrafficArrays):
         """
         # --------- Input to Autopilot settings to follow: destination or ASAS ----------
         # Convert the ASAS commanded speed from ground speed to TAS
-        if minisky.traf.wind.winddim > 0:
-            vwn, vwe = minisky.traf.wind.getdata(
-                minisky.traf.lat, minisky.traf.lon, minisky.traf.alt
+        if self.traffic.wind.winddim > 0:
+            vwn, vwe = self.traffic.wind.getdata(
+                self.traffic.lat, self.traffic.lon, self.traffic.alt
             )
-            asastasnorth = minisky.traf.cr.tas * np.cos(np.radians(minisky.traf.cr.trk)) - vwn
-            asastaseast = minisky.traf.cr.tas * np.sin(np.radians(minisky.traf.cr.trk)) - vwe
+            asastasnorth = self.traffic.cr.tas * np.cos(np.radians(self.traffic.cr.trk)) - vwn
+            asastaseast = self.traffic.cr.tas * np.sin(np.radians(self.traffic.cr.trk)) - vwe
             asastas = np.sqrt(asastasnorth**2 + asastaseast**2)
         # no wind, then ground speed = TAS
         else:
-            asastas = minisky.traf.cr.tas  # TAS [m/s]
+            asastas = self.traffic.cr.tas  # TAS [m/s]
 
         # Select asas if there is a conflict AND resolution is on
         # Determine desired states per channel whether to use value from ASAS or AP.
-        # minisky.traf.cr.active may be used as well, will set all of these channels
-        self.trk = np.where(minisky.traf.cr.hdgactive, minisky.traf.cr.trk, minisky.traf.ap.trk)
-        self.tas = np.where(minisky.traf.cr.tasactive, asastas, minisky.traf.ap.tas)
-        self.alt = np.where(minisky.traf.cr.altactive, minisky.traf.cr.alt, minisky.traf.ap.alt)
-        self.vs = np.where(minisky.traf.cr.vsactive, minisky.traf.cr.vs, minisky.traf.ap.vs)
+        # `minisky.traf.cr.active` may be used as well, will set all of these channels
+        self.trk = np.where(self.traffic.cr.hdgactive, self.traffic.cr.trk, self.traffic.ap.trk)
+        self.tas = np.where(self.traffic.cr.tasactive, asastas, self.traffic.ap.tas)
+        self.alt = np.where(self.traffic.cr.altactive, self.traffic.cr.alt, self.traffic.ap.alt)
+        self.vs = np.where(self.traffic.cr.vsactive, self.traffic.cr.vs, self.traffic.ap.vs)
 
         # ASAS can give positive and negative VS, but the sign of VS is determined using delalt in Traf.ComputeAirSpeed
         # Therefore, ensure that pilot.vs is always positive to prevent opposite signs of delalt and VS in Traf.ComputeAirSpeed
         self.vs = np.abs(self.vs)
 
         # Compute the desired heading needed to compensate for the wind
-        if minisky.traf.wind.winddim > 0:
+        if self.traffic.wind.winddim > 0:
             # Calculate wind correction
-            vwn, vwe = minisky.traf.wind.getdata(
-                minisky.traf.lat, minisky.traf.lon, minisky.traf.alt
+            vwn, vwe = self.traffic.wind.getdata(
+                self.traffic.lat, self.traffic.lon, self.traffic.alt
             )
             Vw = np.sqrt(vwn * vwn + vwe * vwe)
             winddir = np.arctan2(vwe, vwn)
@@ -104,7 +115,7 @@ class APorASAS(TrafficArrays):
             steer = np.arcsin(
                 np.minimum(
                     1.0,
-                    np.maximum(-1.0, Vw * np.sin(drift) / np.maximum(0.001, minisky.traf.tas)),
+                    np.maximum(-1.0, Vw * np.sin(drift) / np.maximum(0.001, self.traffic.tas)),
                 )
             )
             # desired heading

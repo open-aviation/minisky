@@ -14,13 +14,19 @@ and/or speed) or vertical-only manoeuvres, and optional priority (right of
 way) rules can assign the manoeuvre to only one aircraft of a pair.
 """
 
-from typing import Any
+from __future__ import annotations
+
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
 from minisky.core.settings import MiniSkySettings
 from minisky.stack.argparser import Txt
 from minisky.traffic.asas import ConflictResolution
+
+if TYPE_CHECKING:
+    from minisky.traffic import Traffic
 
 
 class MVP(ConflictResolution):
@@ -45,8 +51,13 @@ class MVP(ConflictResolution):
         swresovert (bool): Limit resolutions to the vertical direction.
     """
 
-    def __init__(self, settings: MiniSkySettings) -> None:
-        super().__init__(settings)
+    def __init__(
+        self,
+        settings: MiniSkySettings,
+        traffic: Traffic,
+        select_implementation: Callable[[str, str], tuple[bool, str]],
+    ) -> None:
+        super().__init__(settings, traffic, select_implementation)
         # [-] switch to limit resolution to the horizontal direction
         self.swresohoriz = True
         # [-] switch to use only speed resolutions (works with swresohoriz = True)
@@ -56,7 +67,7 @@ class MVP(ConflictResolution):
         # [-] switch to limit resolution to the vertical direction
         self.swresovert = False
 
-    def setprio(self, flag=None, priocode="") -> "bool | tuple":
+    def setprio(self, flag=None, priocode="") -> bool | tuple:
         """Set the prio switch and the type of prio.
 
         Implements the PRIORULES stack command for MVP. Validates the

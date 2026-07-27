@@ -12,13 +12,14 @@ A single instance is created at simulator start-up and made available as
 (CRE, MCRE, CRECONFS, MOVE, POS, BANK, THR, NOISE, CRECMD, ...).
 """
 
-from collections.abc import Collection, Iterable
+from __future__ import annotations
+
+from collections.abc import Callable, Collection, Iterable
 from random import randint
-from typing import overload
+from typing import TYPE_CHECKING, overload
 
 import numpy as np
 
-import minisky
 from minisky.core.settings import MiniSkySettings
 from minisky.core.trafficarrays import TrafficArrays
 from minisky.tools import geo
@@ -51,6 +52,10 @@ from .trails import Trails
 from .turbulence import Turbulence
 from .uncertainty import SurveillanceUncertainty
 from .wind import Wind
+
+if TYPE_CHECKING:
+    from minisky.simulation import ConsoleIO, Simulation
+    from minisky.tools.navdata import Navdatabase
 
 
 class Traffic(TrafficArrays):
@@ -123,19 +128,31 @@ class Traffic(TrafficArrays):
     Created by: Jacco M. Hoekstra
     """
 
-    def __init__(self, settings: MiniSkySettings, areas: AreaFilter) -> None:
+    def __init__(
+        self,
+        settings: MiniSkySettings,
+        areas: AreaFilter,
+        navigation: Navdatabase,
+        console: ConsoleIO,
+        get_simulation: Callable[[], Simulation],
+        stack_command: Callable[..., None],
+        select_implementation: Callable[[str, str], tuple[bool, str]],
+    ) -> None:
         super().__init__()
         self.settings = settings
         self.areas = areas
-
-        # Traffic is the toplevel trafficarrays object
-        self.setroot(self)
+        self.navigation = navigation
+        self.console = console
+        self._get_simulation = get_simulation
+        self.stack_command = stack_command
+        self.select_implementation = select_implementation
 
         self.ntraf = 0
 
-        self.cond = Condition()  # Conditional commands list
+        self.cond = Condition(self, stack_command, console)  # Conditional commands list
         self.wind = Wind()
-        self.turbulence = Turbulence()
+        self.wind.reparent(self)
+        self.turbulence = Turbulence(self, get_simulation)
         self.translvl = 5000.0 * ft  # [m] Default transition level
 
         # Default commands issued for an aircraft after creation
@@ -188,13 +205,13 @@ class Traffic(TrafficArrays):
             self.swvnavspd = np.array([], dtype=bool)
 
             # Flight Models
-            self.cd = ConflictDetection(settings)
-            self.cr = ConflictResolution(settings)
+            self.cd = ConflictDetection(settings, self, stack_command)
+            self.cr = ConflictResolution(settings, self, select_implementation)
             self.ap = Autopilot()
-            self.aporasas = APorASAS()
-            self.noise = SurveillanceUncertainty()
-            self.trails = Trails()
-            self.actwp = ActiveWaypoint()
+            self.aporasas = APorASAS(self)
+            self.noise = SurveillanceUncertainty(self, get_simulation)
+            self.trails = Trails(self, get_simulation)
+            self.actwp = ActiveWaypoint(self)
             self.perf = OpenAP()
 
             # Group Logic
@@ -220,6 +237,11 @@ class Traffic(TrafficArrays):
         # Default bank angles per flight phase
         self.bphase = np.deg2rad(np.array([15, 35, 35, 35, 15, 45]))
 
+    @property
+    def simulation(self) -> Simulation:
+        """Return the simulation that owns this traffic object."""
+        return self._get_simulation()
+
     def reset(self) -> None:
         """Clear all traffic data upon simulation reset.
 
@@ -238,6 +260,7 @@ class Traffic(TrafficArrays):
 
         # Reset models
         self.wind.clear()
+        self.cond.reset()
 
         # Build new modules for turbulence
         self.turbulence.reset()
@@ -450,7 +473,7 @@ class Traffic(TrafficArrays):
         # If any are there, then stack them for all aircraft
         for j in range(self.ntraf - n, self.ntraf):
             for cmdtxt in self.crecmdlist:
-                minisky.stack.stack(self.callsign[j] + " " + cmdtxt)
+                self.stack_command(self.callsign[j] + " " + cmdtxt)
 
     def creconfs(
         self,
@@ -637,10 +660,10 @@ class Traffic(TrafficArrays):
         """
         # Compute horizontal acceleration
         delta_spd = self.aporasas.tas - self.tas
-        need_ax = np.abs(delta_spd) > np.abs(minisky.sim.simdt * self.perf.axmax)
+        need_ax = np.abs(delta_spd) > np.abs(self.simulation.simdt * self.perf.axmax)
         self.ax = need_ax * np.sign(delta_spd) * self.perf.axmax
         # Update velocities
-        self.tas = np.where(need_ax, self.tas + self.ax * minisky.sim.simdt, self.aporasas.tas)
+        self.tas = np.where(need_ax, self.tas + self.ax * self.simulation.simdt, self.aporasas.tas)
         self.cas = vtas2cas(self.tas, self.alt)
         self.M = vtas2mach(self.tas, self.alt)
 
@@ -659,13 +682,13 @@ class Traffic(TrafficArrays):
             / np.maximum(self.tas, self.eps)
         )
         delhdg = (self.aporasas.hdg - self.hdg + 180) % 360 - 180  # [deg]
-        self.swhdgsel = np.abs(delhdg) > np.abs(minisky.sim.simdt * turnrate)
+        self.swhdgsel = np.abs(delhdg) > np.abs(self.simulation.simdt * turnrate)
 
         # Update heading
         self.hdg = (
             np.where(
                 self.swhdgsel,
-                self.hdg + minisky.sim.simdt * turnrate * np.sign(delhdg),
+                self.hdg + self.simulation.simdt * turnrate * np.sign(delhdg),
                 self.aporasas.hdg,
             )
             % 360.0
@@ -675,19 +698,19 @@ class Traffic(TrafficArrays):
         delta_alt = self.aporasas.alt - self.alt
         # Old dead band version:
         #        self.swaltsel = np.abs(delta_alt) > np.maximum(
-        #            10 * ft, np.abs(2 * minisky.sim.simdt * self.vs))
+        #            10 * ft, np.abs(2 * self.simulation.simdt * self.vs))
 
         # Update version: time based engage of altitude capture (to adapt for UAV vs airliner scale)
         self.swaltsel = np.abs(delta_alt) > 1.05 * np.maximum(
-            np.abs(minisky.sim.simdt * self.aporasas.vs),
-            np.abs(minisky.sim.simdt * self.vs),
+            np.abs(self.simulation.simdt * self.aporasas.vs),
+            np.abs(self.simulation.simdt * self.vs),
         )
         target_vs = self.swaltsel * np.sign(delta_alt) * np.abs(self.aporasas.vs)
         delta_vs = target_vs - self.vs
         # print(delta_vs / fpm)
         need_az = np.abs(delta_vs) > 300 * fpm  # small threshold
         self.az = need_az * np.sign(delta_vs) * (300 * fpm)  # fixed vertical acc approx 1.6 m/s^2
-        self.vs = np.where(need_az, self.vs + self.az * minisky.sim.simdt, target_vs)
+        self.vs = np.where(need_az, self.vs + self.az * self.simulation.simdt, target_vs)
         self.vs = np.where(np.isfinite(self.vs), self.vs, 0)  # fix vs nan issue
 
     def update_groundspeed(self) -> None:
@@ -725,7 +748,9 @@ class Traffic(TrafficArrays):
             )
 
         self.work += (
-            self.perf.thrust * minisky.sim.simdt * np.sqrt(self.gs * self.gs + self.vs * self.vs)
+            self.perf.thrust
+            * self.simulation.simdt
+            * np.sqrt(self.gs * self.gs + self.vs * self.vs)
         )
 
     def update_pos(self) -> None:
@@ -739,13 +764,13 @@ class Traffic(TrafficArrays):
         # Update position
         self.alt = np.where(
             self.swaltsel,
-            np.round(self.alt + self.vs * minisky.sim.simdt, 6),
+            np.round(self.alt + self.vs * self.simulation.simdt, 6),
             self.aporasas.alt,
         )
-        self.lat = self.lat + np.degrees(minisky.sim.simdt * self.gsnorth / Rearth)
+        self.lat = self.lat + np.degrees(self.simulation.simdt * self.gsnorth / Rearth)
         self.coslat = np.cos(np.deg2rad(self.lat))
-        self.lon = self.lon + np.degrees(minisky.sim.simdt * self.gseast / self.coslat / Rearth)
-        self.distflown += self.gs * minisky.sim.simdt
+        self.lon = self.lon + np.degrees(self.simulation.simdt * self.gseast / self.coslat / Rearth)
+        self.distflown += self.gs * self.simulation.simdt
 
     @overload
     def idx(self, callsign: str) -> int: ...
@@ -952,20 +977,20 @@ class Traffic(TrafficArrays):
         lines = "Information on " + name + ":\n"
 
         # First try airports (most used and shorter, hence faster list)
-        idx_airport = minisky.navdb.getaptidx(name)
+        idx_airport = self.navigation.getaptidx(name)
         if idx_airport >= 0:
             airport_sizes = ["large", "medium", "small"]
-            airport_size = airport_sizes[max(-1, minisky.navdb.aptype[idx_airport] - 1)]
+            airport_size = airport_sizes[max(-1, self.navigation.aptype[idx_airport] - 1)]
 
-            aptname = minisky.navdb.aptname[idx_airport]
-            aptlat = minisky.navdb.aptlat[idx_airport]
-            aptlon = minisky.navdb.aptlon[idx_airport]
-            aptelev = minisky.navdb.aptelev[idx_airport]
+            aptname = self.navigation.aptname[idx_airport]
+            aptlat = self.navigation.aptlat[idx_airport]
+            aptlon = self.navigation.aptlon[idx_airport]
+            aptelev = self.navigation.aptelev[idx_airport]
 
             # country informatation
-            idx_cc = minisky.navdb.cocode2.index(minisky.navdb.aptco[idx_airport].upper())
-            country_name = minisky.navdb.coname[idx_cc].upper()
-            country_code = minisky.navdb.aptco[idx_airport]
+            idx_cc = self.navigation.cocode2.index(self.navigation.aptco[idx_airport].upper())
+            country_name = self.navigation.coname[idx_cc].upper()
+            country_code = self.navigation.aptco[idx_airport]
 
             lines += (
                 f"{aptname} is a {airport_size} airport in {country_name} ({country_code}):\n"
@@ -973,8 +998,8 @@ class Traffic(TrafficArrays):
                 f"Elevation: {int(round(aptelev / ft))} ft \n"
             )
 
-            if minisky.navdb.aptid[idx_airport] in minisky.navdb.rwythresholds:
-                runways = minisky.navdb.rwythresholds[minisky.navdb.aptid[idx_airport]].keys()
+            if self.navigation.aptid[idx_airport] in self.navigation.rwythresholds:
+                runways = self.navigation.rwythresholds[self.navigation.aptid[idx_airport]].keys()
                 if runways:
                     lines += f"Runways: {', '.join(runways)}\n"
 
@@ -987,7 +1012,7 @@ class Traffic(TrafficArrays):
 
         # Not found as airport, try waypoints & navaids
         else:
-            idx_waypoints = minisky.navdb.getwpindices(name)
+            idx_waypoints = self.navigation.getwpindices(name)
             if idx_waypoints[0] >= 0:
                 typetxt = ""
                 desctxt = ""
@@ -995,31 +1020,31 @@ class Traffic(TrafficArrays):
                 for i in idx_waypoints:
                     # One line type text
                     if typetxt == "":
-                        typetxt = typetxt + minisky.navdb.wptype[i]
+                        typetxt = typetxt + self.navigation.wptype[i]
                     else:
-                        typetxt = typetxt + " and " + minisky.navdb.wptype[i]
+                        typetxt = typetxt + " and " + self.navigation.wptype[i]
 
                     # Description: multi-line
-                    samedesc = minisky.navdb.wpdesc[i] == lastdesc
+                    samedesc = self.navigation.wpdesc[i] == lastdesc
                     if desctxt == "":
-                        desctxt = desctxt + minisky.navdb.wpdesc[i]
-                        lastdesc = minisky.navdb.wpdesc[i]
+                        desctxt = desctxt + self.navigation.wpdesc[i]
+                        lastdesc = self.navigation.wpdesc[i]
                     elif not samedesc:
-                        desctxt = desctxt + "\n" + minisky.navdb.wpdesc[i]
-                        lastdesc = minisky.navdb.wpdesc[i]
+                        desctxt = desctxt + "\n" + self.navigation.wpdesc[i]
+                        lastdesc = self.navigation.wpdesc[i]
 
                     # Navaid: frequency
-                    if minisky.navdb.wptype[i] in ["VOR", "DME", "TACAN"] and not samedesc:
-                        desctxt = desctxt + " " + str(minisky.navdb.wpfreq[i]) + " MHz"
-                    elif minisky.navdb.wptype[i] == "NDB" and not samedesc:
-                        desctxt = desctxt + " " + str(minisky.navdb.wpfreq[i]) + " kHz"
+                    if self.navigation.wptype[i] in ["VOR", "DME", "TACAN"] and not samedesc:
+                        desctxt = desctxt + " " + str(self.navigation.wpfreq[i]) + " MHz"
+                    elif self.navigation.wptype[i] == "NDB" and not samedesc:
+                        desctxt = desctxt + " " + str(self.navigation.wpfreq[i]) + " kHz"
 
                 iwp = idx_waypoints[0]
 
                 # Basic info
                 lines += (
                     f"{name} is a {typetxt} with \n"
-                    f"Position: {latlon2txt(minisky.navdb.wplat[iwp], minisky.navdb.wplon[iwp])}\n"
+                    f"Position: {latlon2txt(self.navigation.wplat[iwp], self.navigation.wplon[iwp])}\n"
                 )
 
                 # Navaids have description
@@ -1027,17 +1052,17 @@ class Traffic(TrafficArrays):
                     lines += f"{desctxt}\n"
 
                 # VOR give variation
-                if minisky.navdb.wptype[iwp] == "VOR":
-                    lines += f"Variation: {minisky.navdb.wpvar[iwp]} deg\n"
+                if self.navigation.wptype[iwp] == "VOR":
+                    lines += f"Variation: {self.navigation.wpvar[iwp]} deg\n"
 
                 # How many others?
-                n_other = minisky.navdb.wpid.count(name) - len(idx_waypoints)
+                n_other = self.navigation.wpid.count(name) - len(idx_waypoints)
                 if n_other > 0:
                     lines += f"Attention: {n_other} other waypoint(s) also has name {name}\n"
 
                 # In which airways?
-                connect = minisky.navdb.listconnections(
-                    name, minisky.navdb.wplat[iwp], minisky.navdb.wplon[iwp]
+                connect = self.navigation.listconnections(
+                    name, self.navigation.wplat[iwp], self.navigation.wplon[iwp]
                 )
                 if len(connect) > 0:
                     awset = set()
@@ -1051,7 +1076,7 @@ class Traffic(TrafficArrays):
             # Try airway id
             else:  # airway
                 awid = name
-                airway = minisky.navdb.listairway(awid)
+                airway = self.navigation.listairway(awid)
                 if len(airway) > 0:
                     lines = ""
                     for segment in airway:

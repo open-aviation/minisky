@@ -100,6 +100,8 @@ def _replace_instance_on_traf(
         if isinstance(attr_value, base):
             # Create new instance of selected implementation
             new_instance = attr_value.new_implementation(impl)
+            if attr_value._parent is not None:
+                new_instance.reparent(attr_value._parent)
             # Copy over any per-aircraft array data from old instance (if they exist)
             for arr_var in getattr(attr_value, "_ArrVars", []):
                 if hasattr(new_instance, arr_var):
@@ -170,30 +172,16 @@ class TrafficArrays:
             ...
 
     Attributes:
-        root: Class attribute; root of the TrafficArrays tree (the traffic
-            object), set with setroot().
-        ntraf: Class attribute; the current number of aircraft.
         _parent: Parent node of this object in the tree.
         _children: Child TrafficArrays objects of this object.
         _ArrVars: Names of the registered numpy-array parameters.
         _LstVars: Names of the registered list parameters.
     """
 
-    # The TrafficArrays class keeps track of all of the constructed
-    # TrafficArray objects
-    root = None
-    ntraf = 0
-
     # Replaceable pattern class variables (set per-subclass)
     _baseimpl: ClassVar[type | None] = None
     _generator: ClassVar[type]
     _default: ClassVar[str] = ""
-
-    @staticmethod
-    def setroot(obj: "TrafficArrays") -> None:
-        """This function is used to set the root of the tree of TrafficArray
-        objects (which is the traffic object.)"""
-        TrafficArrays.root = obj
 
     def __init_subclass__(cls, **kwargs) -> None:
         """Called when a subclass is defined.
@@ -281,34 +269,40 @@ class TrafficArrays:
             ret.update(sub.derived())
         return ret
 
-    def __init__(self) -> None:
-        """Create a TrafficArrays node and attach it to the current root.
+    def __init__(self, parent: "TrafficArrays | None" = None) -> None:
+        """Create a TrafficArrays node, optionally attached to `parent`.
 
-        The new object registers itself as a child of TrafficArrays.root
-        (the traffic object), so that aircraft creation and deletion
-        propagate to its registered arrays.
+        Aircraft creation and deletion propagate through the explicit tree
+        of parent and child nodes rooted at the owning traffic object.
         """
         super().__init__()
-        self._parent = TrafficArrays.root
-        if self._parent:
-            self._parent._children.append(self)
-        self._children = []
-        self._ArrVars = []
-        self._LstVars = []
+        self._parent: TrafficArrays | None = None
+        self._children: list[TrafficArrays] = []
+        self._ArrVars: list[str] = []
+        self._LstVars: list[str] = []
+        if parent is not None:
+            self.reparent(parent)
 
-    def new_implementation(
-        self, implementation: type["TrafficArrays"]
-    ) -> "TrafficArrays":
+    def new_implementation(self, implementation: type["TrafficArrays"]) -> "TrafficArrays":
         """Construct a selected replacement implementation."""
         return implementation()
 
     def reparent(self, newparent: "TrafficArrays") -> None:
-        """Give TrafficArrays object a new parent."""
-        # Remove myself from the parent list of children, and add to new parent
-        assert self._parent is not None, "reparent() called on a root node"
-        self._parent._children.pop(self._parent._children.index(self))
+        """Give this TrafficArrays object a new parent."""
+        if self._parent is newparent:
+            return
+        if self._parent is not None:
+            self._parent._children.remove(self)
         newparent._children.append(self)
         self._parent = newparent
+
+    @property
+    def tree_root(self) -> "TrafficArrays":
+        """Return the root node of this object's traffic-array tree."""
+        root = self
+        while root._parent is not None:
+            root = root._parent
+        return root
 
     def settrafarrays(self) -> RegisterElementParameters:
         """Convenience function for with-style traffic array registration."""
@@ -332,9 +326,11 @@ class TrafficArrays:
 
         # In plugins and replaceable classes it could be that their instance
         # is created when the simulation is already running, and traffic is
-        # present. Size traffic arrays accordingly here
-        if TrafficArrays.root is not None and TrafficArrays.root.ntraf:
-            self.create(TrafficArrays.root.ntraf)
+        # present. Size traffic arrays accordingly here.
+        root = self.tree_root
+        ntraf = getattr(root, "ntraf", 0)
+        if root is not self and ntraf:
+            self.create(ntraf)
 
     def create(self, n: int = 1) -> None:
         """Append n elements (aircraft) to all lists and arrays.

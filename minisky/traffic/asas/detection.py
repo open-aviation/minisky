@@ -17,16 +17,21 @@ SI units are used (m, m/s, s); user-facing (stack command) arguments are in
 aviation units (NM, ft).
 """
 
-from typing import Any
+from __future__ import annotations
+
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from scipy.spatial import KDTree
 
-import minisky
 from minisky.core.settings import MiniSkySettings
 from minisky.core.trafficarrays import TrafficArrays
 from minisky.stack.argparser import Time, Txt
 from minisky.tools.aero import ft, nm
+
+if TYPE_CHECKING:
+    from minisky.traffic import Traffic
 
 # Mean earth radius [m], same value as the geo module's flat-earth helpers
 RE = 6371000.0
@@ -91,9 +96,13 @@ class ConflictDetection(TrafficArrays):
         dtnolook (ndarray): Per-aircraft detection hold-off interval [s].
     """
 
-    def __init__(self, settings: MiniSkySettings) -> None:
+    def __init__(
+        self, settings: MiniSkySettings, traffic: Traffic, stack_command: Callable[..., None]
+    ) -> None:
         super().__init__()
         self.settings = settings
+        self.traffic = traffic
+        self.stack_command = stack_command
         ## Default values
         # [m] Horizontal separation minimum for detection
         self.rpz_def = self.settings.asas_pzr * nm
@@ -138,8 +147,8 @@ class ConflictDetection(TrafficArrays):
             self.dtnolook = np.array([])
 
     def new_implementation(self, implementation: type[TrafficArrays]) -> TrafficArrays:
-        """Construct a replacement with this runtime's settings."""
-        return implementation(self.settings)
+        """Construct a replacement with this runtime's traffic and command stack."""
+        return implementation(self.settings, self.traffic, self.stack_command)
 
     def clearconfdb(self) -> None:
         """Clear the conflict database.
@@ -158,8 +167,8 @@ class ConflictDetection(TrafficArrays):
         self.tcpa = np.array([])
         self.tLOS = np.array([])
         self.dalt = np.array([])
-        self.inconf = np.zeros(minisky.traf.ntraf)
-        self.tcpamax = np.zeros(minisky.traf.ntraf)
+        self.inconf = np.zeros(self.traffic.ntraf)
+        self.tcpamax = np.zeros(self.traffic.ntraf)
 
     def create(self, n: int = 1) -> None:
         """Initialise per-aircraft detection parameters for new aircraft.
@@ -196,7 +205,7 @@ class ConflictDetection(TrafficArrays):
         self.global_rpz = self.global_hpz = True
         self.global_dtlook = self.global_dtnolook = True
 
-    def switch(self, name: Txt = "ON") -> "tuple | None":
+    def switch(self, name: Txt = "ON") -> tuple | None:
         """Turn Conflict Detection (CD) ON / OFF.
 
         Switching off also clears the current conflict database.
@@ -254,8 +263,8 @@ class ConflictDetection(TrafficArrays):
         if self.global_rpz:
             self.rpz[:] = self.rpz_def
         # Adjust factors for reso zone if those were set with an absolute value
-        if not minisky.traf.cr.resorrelative:
-            minisky.stack.stack(f"RSZONER {minisky.traf.cr.resofach * oldradius / nm}")
+        if not self.traffic.cr.resorrelative:
+            self.stack_command(f"RSZONER {self.traffic.cr.resofach * oldradius / nm}")
         return True, f"Setting default PZ radius to {radius} NM"
 
     def sethpz(self, height: float = -1.0, *acidx: int) -> tuple:
@@ -291,8 +300,8 @@ class ConflictDetection(TrafficArrays):
         if self.global_hpz:
             self.hpz[:] = self.hpz_def
         # Adjust factors for reso zone if those were set with an absolute value
-        if not minisky.traf.cr.resodhrelative:
-            minisky.stack.stack(f"RSZONEDH {minisky.traf.cr.resofacv * oldhpz / ft}")
+        if not self.traffic.cr.resodhrelative:
+            self.stack_command(f"RSZONEDH {self.traffic.cr.resofacv * oldhpz / ft}")
         return True, f"Setting default PZ height to {height} ft"
 
     def setdtlook(self, time: Time = -1.0, *acidx: int) -> tuple:

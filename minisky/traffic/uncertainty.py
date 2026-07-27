@@ -7,11 +7,19 @@ surveillance noise is part of the trajectory noise switched on/off with
 the NOISE stack command (see Traffic.setnoise()).
 """
 
+from __future__ import annotations
+
+from collections.abc import Callable
+from typing import TYPE_CHECKING
+
 import numpy as np
 
-import minisky
 from minisky.core.trafficarrays import TrafficArrays
 from minisky.tools.aero import ft
+
+if TYPE_CHECKING:
+    from minisky.simulation import Simulation
+    from minisky.traffic import Traffic
 
 
 class SurveillanceUncertainty(TrafficArrays):
@@ -19,7 +27,7 @@ class SurveillanceUncertainty(TrafficArrays):
 
     Keeps a noisy, periodically refreshed copy of the true aircraft state,
     representing what surveillance-based systems would observe. Available
-    at runtime as ``minisky.traf.noise``.
+    at runtime as `minisky.traf.noise`.
 
     Attributes:
         lastupdate (ndarray): Simulation time of the last broadcast per
@@ -39,8 +47,10 @@ class SurveillanceUncertainty(TrafficArrays):
         trunctime (float): Minimum time between broadcast updates [s].
     """
 
-    def __init__(self) -> None:
-        super().__init__()
+    def __init__(self, traffic: Traffic, get_simulation: Callable[[], Simulation]) -> None:
+        super().__init__(traffic)
+        self.traffic = traffic
+        self._get_simulation = get_simulation
         # From here, define object arrays
         with self.settrafarrays():
             # Most recent broadcast data
@@ -54,6 +64,10 @@ class SurveillanceUncertainty(TrafficArrays):
             self.vs = np.array([])
 
         self.setnoise(False)
+
+    def new_implementation(self, implementation: type[TrafficArrays]) -> TrafficArrays:
+        """Construct a replacement with this runtime's traffic and simulation."""
+        return implementation(self.traffic, self._get_simulation)
 
     def setnoise(self, n: bool) -> None:
         """Switch surveillance noise on or off (part of the NOISE command).
@@ -83,12 +97,12 @@ class SurveillanceUncertainty(TrafficArrays):
         super().create(n)
 
         self.lastupdate[-n:] = -self.trunctime * np.random.rand(n)
-        self.lat[-n:] = minisky.traf.lat[-n:]
-        self.lon[-n:] = minisky.traf.lon[-n:]
-        self.alt[-n:] = minisky.traf.alt[-n:]
-        self.trk[-n:] = minisky.traf.trk[-n:]
-        self.tas[-n:] = minisky.traf.tas[-n:]
-        self.gs[-n:] = minisky.traf.gs[-n:]
+        self.lat[-n:] = self.traffic.lat[-n:]
+        self.lon[-n:] = self.traffic.lon[-n:]
+        self.alt[-n:] = self.traffic.alt[-n:]
+        self.trk[-n:] = self.traffic.trk[-n:]
+        self.tas[-n:] = self.traffic.tas[-n:]
+        self.gs[-n:] = self.traffic.gs[-n:]
 
     def update(self) -> None:
         """Refresh the broadcast state of aircraft that are due an update.
@@ -98,18 +112,18 @@ class SurveillanceUncertainty(TrafficArrays):
         altitude are copied from the true state, with Gaussian transmission
         noise added when enabled; track and speeds are copied unmodified.
         """
-        up = np.where(self.lastupdate + self.trunctime < minisky.sim.simt)
+        up = np.where(self.lastupdate + self.trunctime < self._get_simulation().simt)
         nup = len(up[0])
         if self.transnoise:
-            self.lat[up] = minisky.traf.lat[up] + np.random.normal(0, self.transerror[0], nup)
-            self.lon[up] = minisky.traf.lon[up] + np.random.normal(0, self.transerror[0], nup)
-            self.alt[up] = minisky.traf.alt[up] + np.random.normal(0, self.transerror[1], nup)
+            self.lat[up] = self.traffic.lat[up] + np.random.normal(0, self.transerror[0], nup)
+            self.lon[up] = self.traffic.lon[up] + np.random.normal(0, self.transerror[0], nup)
+            self.alt[up] = self.traffic.alt[up] + np.random.normal(0, self.transerror[1], nup)
         else:
-            self.lat[up] = minisky.traf.lat[up]
-            self.lon[up] = minisky.traf.lon[up]
-            self.alt[up] = minisky.traf.alt[up]
-        self.trk[up] = minisky.traf.trk[up]
-        self.tas[up] = minisky.traf.tas[up]
-        self.gs[up] = minisky.traf.gs[up]
-        self.vs[up] = minisky.traf.vs[up]
+            self.lat[up] = self.traffic.lat[up]
+            self.lon[up] = self.traffic.lon[up]
+            self.alt[up] = self.traffic.alt[up]
+        self.trk[up] = self.traffic.trk[up]
+        self.tas[up] = self.traffic.tas[up]
+        self.gs[up] = self.traffic.gs[up]
+        self.vs[up] = self.traffic.vs[up]
         self.lastupdate[up] = self.lastupdate[up] + self.trunctime

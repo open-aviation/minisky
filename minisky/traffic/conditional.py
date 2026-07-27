@@ -4,19 +4,24 @@ KL204 ATALT FL100 KL204 SPD 350
 
 Implements the ATALT, ATSPD and ATDIST stack commands: a command line is
 stored together with a trigger condition on an aircraft's altitude, speed
-or distance to a position. The :class:`Condition` instance owned by
-``minisky.traf`` is checked every simulation step; when the monitored
+or distance to a position. The `Condition` instance owned by
+`minisky.traf` is checked every simulation step; when the monitored
 value crosses its target, the stored command is issued on the stack and
 the condition is removed.
 """
 
-from typing import Any
+from __future__ import annotations
+
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-import minisky
-from minisky import stack
 from minisky.tools.geo import qdrdist
+
+if TYPE_CHECKING:
+    from minisky.simulation import ConsoleIO
+    from minisky.traffic import Traffic
 
 # Enumerated condtion types
 alttype, spdtype, postype = 0, 1, 2
@@ -44,7 +49,12 @@ class Condition:
         cmd (list): Command line to stack when the condition triggers.
     """
 
-    def __init__(self) -> None:
+    def __init__(
+        self, traffic: Traffic, stack_command: Callable[..., None], console: ConsoleIO
+    ) -> None:
+        self.traffic = traffic
+        self.stack_command = stack_command
+        self.console = console
         self.ncond = 0  # Number of conditions
 
         self.id = []  # Id of aircraft of condition
@@ -53,6 +63,16 @@ class Condition:
         self.lastdif = np.array([], dtype=float)  # Difference during last update
         self.posdata = []  # Data for postype: tuples lat[deg],lon[deg] of ref position
         self.cmd = []  # Commands to be issued
+
+    def reset(self) -> None:
+        """Clear all pending conditional commands."""
+        self.ncond = 0
+        self.id.clear()
+        self.condtype = np.array([], dtype=int)
+        self.target = np.array([], dtype=float)
+        self.lastdif = np.array([], dtype=float)
+        self.posdata.clear()
+        self.cmd.clear()
 
     def update(self) -> None:
         """Check all pending conditions and execute triggered commands.
@@ -67,7 +87,7 @@ class Condition:
             return
 
         # Update indices based on list of id's
-        acidxlst = np.array(minisky.traf.idx(self.id))
+        acidxlst = np.array(self.traffic.idx(self.id))
         if len(acidxlst) > 0:
             idelcond = sorted(np.where(acidxlst < 0)[0])
             for i in idelcond[::-1]:
@@ -81,7 +101,7 @@ class Condition:
             self.ncond = len(self.id)
             if self.ncond == 0:
                 return
-            acidxlst = np.array(minisky.traf.idx(self.id))
+            acidxlst = np.array(self.traffic.idx(self.id))
 
         # Check condition types
         actdist = (
@@ -90,8 +110,8 @@ class Condition:
         for j in range(self.ncond):
             if self.condtype[j] == postype:
                 qdr, dist = qdrdist(
-                    minisky.traf.lat[acidxlst[j]],
-                    minisky.traf.lon[acidxlst[j]],
+                    self.traffic.lat[acidxlst[j]],
+                    self.traffic.lon[acidxlst[j]],
                     self.posdata[j][0],
                     self.posdata[j][1],
                 )
@@ -99,8 +119,8 @@ class Condition:
 
         # Get relevant actual value using index list as index to numpy arrays
         self.actual = (
-            (self.condtype == alttype) * minisky.traf.alt[acidxlst]
-            + (self.condtype == spdtype) * minisky.traf.cas[acidxlst]
+            (self.condtype == alttype) * self.traffic.alt[acidxlst]
+            + (self.condtype == spdtype) * self.traffic.cas[acidxlst]
             + (self.condtype == postype) * actdist
         )
 
@@ -116,9 +136,9 @@ class Condition:
         # Execute commands found to have true condition
         for i in idxtrue:
             if i >= 0:
-                stack.stack(self.cmd[i])
+                self.stack_command(self.cmd[i])
                 # debug
-                # stack.stack(" ECHO Conditional command issued: "+self.cmd[i])
+                # self.stack_command(" ECHO Conditional command issued: "+self.cmd[i])
 
         # Delete executed commands to clean up arrays and lists
         # from highest index to lowest for consistency
@@ -135,7 +155,7 @@ class Condition:
         self.ncond = len(self.id)
 
         if self.ncond != len(self.cmd):
-            minisky.scr.echo(
+            self.console.echo(
                 f"delcondition: invalid condition array size (ncond={self.ncond}, cmd={self.cmd})"
             )
         return
@@ -144,7 +164,7 @@ class Condition:
         """Schedule a command for when an aircraft crosses an altitude.
 
         Implements the ATALT stack command:
-        ``acid ATALT alt cmd`` (e.g. ``KL204 ATALT FL100 KL204 SPD 350``).
+        `acid ATALT alt cmd` (e.g. `KL204 ATALT FL100 KL204 SPD 350`).
 
         Args:
             acidx: Aircraft index.
@@ -154,7 +174,7 @@ class Condition:
         Returns:
             bool: True (the condition is always added).
         """
-        actalt = minisky.traf.alt[acidx]
+        actalt = self.traffic.alt[acidx]
         self.addcondition(acidx, alttype, targalt, actalt, cmdtxt)
         return True
 
@@ -162,7 +182,7 @@ class Condition:
         """Schedule a command for when an aircraft crosses a speed.
 
         Implements the ATSPD stack command:
-        ``acid ATSPD spd cmd`` (e.g. ``KL204 ATSPD 250 KL204 LNAV ON``).
+        `acid ATSPD spd cmd` (e.g. `KL204 ATSPD 250 KL204 LNAV ON`).
 
         Args:
             acidx: Aircraft index.
@@ -172,15 +192,15 @@ class Condition:
         Returns:
             bool: True (the condition is always added).
         """
-        actspd = minisky.traf.cas[acidx]
+        actspd = self.traffic.cas[acidx]
         self.addcondition(acidx, spdtype, targspd, actspd, cmdtxt)
         return True
 
     def atdistcmd(self, acidx: int, lat: float, lon: float, targdist: float, cmdtxt: str) -> bool:
         """Schedule a command for a distance from a reference position.
 
-        Implements the ATDIST stack command: ``acid ATDIST lat lon dist
-        cmd``. The command triggers when the aircraft's distance to the
+        Implements the ATDIST stack command: `acid ATDIST lat lon dist
+        cmd`. The command triggers when the aircraft's distance to the
         given position crosses the target distance.
 
         Args:
@@ -193,7 +213,7 @@ class Condition:
         Returns:
             bool: True (the condition is always added).
         """
-        qdr, actdist = qdrdist(minisky.traf.lat[acidx], minisky.traf.lon[acidx], lat, lon)
+        qdr, actdist = qdrdist(self.traffic.lat[acidx], self.traffic.lon[acidx], lat, lon)
         self.addcondition(acidx, postype, targdist, actdist, cmdtxt, (lat, lon))
         return True
 
@@ -224,7 +244,7 @@ class Condition:
         # print ("addcondition:", acidx, icondtype, target, actual, cmdtxt, latlon)
 
         # Add condition to arrays
-        self.id.append(minisky.traf.callsign[acidx])
+        self.id.append(self.traffic.callsign[acidx])
 
         self.condtype = np.append(self.condtype, icondtype)
         self.target = np.append(self.target, target)

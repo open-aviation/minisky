@@ -6,13 +6,19 @@ is part of the trajectory noise that is switched on/off with the NOISE
 stack command (see Traffic.setnoise()).
 """
 
-from typing import Any
+from __future__ import annotations
+
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-import minisky
 from minisky.core.trafficarrays import TrafficArrays
 from minisky.tools.aero import Rearth
+
+if TYPE_CHECKING:
+    from minisky.simulation import Simulation
+    from minisky.traffic import Traffic
 
 
 class Turbulence(TrafficArrays):
@@ -29,10 +35,16 @@ class Turbulence(TrafficArrays):
             clipped to a small positive minimum.
     """
 
-    def __init__(self) -> None:
-        super().__init__()
+    def __init__(self, traffic: Traffic, get_simulation: Callable[[], Simulation]) -> None:
+        super().__init__(traffic)
+        self.traffic = traffic
+        self._get_simulation = get_simulation
         self.active = False
         self.SetStandards([0, 0.1, 0.1])
+
+    def new_implementation(self, implementation: type[TrafficArrays]) -> TrafficArrays:
+        """Construct a replacement with this runtime's traffic and simulation."""
+        return implementation(self.traffic, self._get_simulation)
 
     def reset(self) -> None:
         """Switch turbulence off and restore the default standard deviations."""
@@ -71,22 +83,22 @@ class Turbulence(TrafficArrays):
         if not self.active:
             return
 
-        timescale = np.sqrt(minisky.sim.simdt)
+        timescale = np.sqrt(self._get_simulation().simdt)
         # Horizontal flight direction
-        turbhf = np.random.normal(0, self.sd[0] * timescale, minisky.traf.ntraf)  # [m]
+        turbhf = np.random.normal(0, self.sd[0] * timescale, self.traffic.ntraf)  # [m]
 
         # Horizontal wing direction
-        turbhw = np.random.normal(0, self.sd[1] * timescale, minisky.traf.ntraf)  # [m]
+        turbhw = np.random.normal(0, self.sd[1] * timescale, self.traffic.ntraf)  # [m]
 
         # Vertical direction
-        turbalt = np.random.normal(0, self.sd[2] * timescale, minisky.traf.ntraf)  # [m]
+        turbalt = np.random.normal(0, self.sd[2] * timescale, self.traffic.ntraf)  # [m]
 
-        trkrad = np.radians(minisky.traf.trk)
+        trkrad = np.radians(self.traffic.trk)
         # Lateral, longitudinal direction
         turblat = np.cos(trkrad) * turbhf - np.sin(trkrad) * turbhw  # [m]
         turblon = np.sin(trkrad) * turbhf + np.cos(trkrad) * turbhw  # [m]
 
         # Update the aircraft locations
-        minisky.traf.alt = minisky.traf.alt + turbalt
-        minisky.traf.lat = minisky.traf.lat + np.degrees(turblat / Rearth)
-        minisky.traf.lon = minisky.traf.lon + np.degrees(turblon / Rearth / minisky.traf.coslat)
+        self.traffic.alt = self.traffic.alt + turbalt
+        self.traffic.lat = self.traffic.lat + np.degrees(turblat / Rearth)
+        self.traffic.lon = self.traffic.lon + np.degrees(turblon / Rearth / self.traffic.coslat)

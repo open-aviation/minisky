@@ -6,23 +6,29 @@ colored with the TRAIL stack command. Segments are added at a fixed time
 resolution and fade to the "old" color after a configurable time.
 """
 
-from typing import Any
+from __future__ import annotations
+
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-import minisky
 from minisky.core import TrafficArrays
+
+if TYPE_CHECKING:
+    from minisky.simulation import Simulation
+    from minisky.traffic import Traffic
 
 
 class Trails(TrafficArrays):
     """Data for the aircraft trails shown on the radar display.
 
-    Every ``dt`` seconds of simulation time a line segment (from the last
+    Every `dt` seconds of simulation time a line segment (from the last
     recorded position to the current position) is appended per aircraft.
     Segments are kept in a foreground buffer for drawing and can be moved
     to a background buffer with buffer(). Segment colors fade towards the
-    "old" color over ``tcol0`` seconds. Available at runtime as
-    ``minisky.traf.trails``.
+    "old" color over `tcol0` seconds. Available at runtime as
+    `minisky.traf.trails`.
 
     Attributes:
         active (bool): Whether trails are recorded and shown.
@@ -46,8 +52,15 @@ class Trails(TrafficArrays):
     Created by: Jacco M. Hoekstra
     """
 
-    def __init__(self, dttrail: float = 10.0) -> None:
-        super().__init__()
+    def __init__(
+        self,
+        traffic: Traffic,
+        get_simulation: Callable[[], Simulation],
+        dttrail: float = 10.0,
+    ) -> None:
+        super().__init__(traffic)
+        self.traffic = traffic
+        self._get_simulation = get_simulation
         self.active = False  # Wether or not to show trails
         self.dt = dttrail  # Resolution of trail pieces in time
         self.tcol0 = 60.0  # After how many seconds old colour
@@ -91,6 +104,10 @@ class Trails(TrafficArrays):
 
         return
 
+    def new_implementation(self, implementation: type[TrafficArrays]) -> TrafficArrays:
+        """Construct a replacement with this runtime's traffic and simulation."""
+        return implementation(self.traffic, self._get_simulation)
+
     def create(self, n: int = 1) -> None:
         """Initialize trail data for newly created aircraft.
 
@@ -103,24 +120,24 @@ class Trails(TrafficArrays):
         super().create(n)
 
         self.accolor[-1] = self.defcolor
-        self.lastlat[-1] = minisky.traf.lat[-1]
-        self.lastlon[-1] = minisky.traf.lon[-1]
+        self.lastlat[-1] = self.traffic.lat[-1]
+        self.lastlon[-1] = self.traffic.lon[-1]
 
     def update(self) -> None:
         """Add new trail segments for aircraft that moved long enough.
 
         Called every simulation step. When trails are inactive, only the
         last-known positions are refreshed. Otherwise, for each aircraft
-        whose last recorded segment is older than ``dt`` seconds, a new
+        whose last recorded segment is older than `dt` seconds, a new
         line segment from the last recorded position to the current
         position is appended to the drawing buffers, and the color fading
         factors of all segments are updated.
         """
-        self.acid = minisky.traf.callsign
+        self.acid = self.traffic.callsign
         if not self.active:
-            self.lastlat = minisky.traf.lat
-            self.lastlon = minisky.traf.lon
-            self.lasttim[:] = minisky.sim.simt
+            self.lastlat = self.traffic.lat
+            self.lastlon = self.traffic.lon
+            self.lasttim[:] = self._get_simulation().simt
             return
         """Add linepieces for trails based on traffic data"""
 
@@ -132,7 +149,7 @@ class Trails(TrafficArrays):
         lsttime = []
 
         # Check for update
-        delta = minisky.sim.simt - self.lasttim
+        delta = self._get_simulation().simt - self.lasttim
         idxs = np.where(delta > self.dt)[0]
 
         # Add all a/c which need the update
@@ -143,9 +160,9 @@ class Trails(TrafficArrays):
             # Add to lists
             lstlat0.append(self.lastlat[i])
             lstlon0.append(self.lastlon[i])
-            lstlat1.append(minisky.traf.lat[i])
-            lstlon1.append(minisky.traf.lon[i])
-            lsttime.append(minisky.sim.simt)
+            lstlat1.append(self.traffic.lat[i])
+            lstlon1.append(self.traffic.lon[i])
+            lsttime.append(self._get_simulation().simt)
 
             if isinstance(self.col, np.ndarray):
                 # print type(trailcol[i])
@@ -157,9 +174,9 @@ class Trails(TrafficArrays):
             self.col.append(self.accolor[i])
 
             # Update aircraft record
-            self.lastlat[i] = minisky.traf.lat[i]
-            self.lastlon[i] = minisky.traf.lon[i]
-            self.lasttim[i] = minisky.sim.simt
+            self.lastlat[i] = self.traffic.lat[i]
+            self.lastlon[i] = self.traffic.lon[i]
+            self.lasttim[i] = self._get_simulation().simt
 
         # When a/c is no longer part of trail semgment,
         # it is no longer a/c data => add to the GUI send buffer
@@ -168,7 +185,10 @@ class Trails(TrafficArrays):
         self.newlat1.extend(lstlat1)
         self.newlon1.extend(lstlon1)
         # Update colours
-        self.fcol = 1.0 - np.minimum(self.tcol0, np.abs(minisky.sim.simt - self.time)) / self.tcol0
+        self.fcol = (
+            1.0
+            - np.minimum(self.tcol0, np.abs(self._get_simulation().simt - self.time)) / self.tcol0
+        )
 
         return
 
@@ -234,11 +254,11 @@ class Trails(TrafficArrays):
         self.clearnew()
         return
 
-    def setTrails(self, *args) -> "bool | tuple[bool, str]":
+    def setTrails(self, *args) -> bool | tuple[bool, str]:
         """Switch trails on/off, or change the trail color of an aircraft.
 
         Implements the TRAIL stack command:
-        ``TRAIL ON/OFF, [dt]`` or ``TRAIL acid color``. Without arguments,
+        `TRAIL ON/OFF, [dt]` or `TRAIL acid color`. Without arguments,
         the current on/off state is reported. Switching trails off clears
         all recorded segments.
 
