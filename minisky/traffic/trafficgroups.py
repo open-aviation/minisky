@@ -53,7 +53,7 @@ class TrafficGroups(TrafficArrays):
 
     def __init__(self, traffic: Traffic, areas: AreaFilter) -> None:
         # Initialize the groups structure
-        super().__init__()
+        super().__init__(traffic)
         self.traffic = traffic
         self.areas = areas
         self.groups = {}

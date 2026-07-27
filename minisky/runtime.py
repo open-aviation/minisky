@@ -24,7 +24,17 @@ class MiniSky:
         self.navigation = Navdatabase(data("navigation"), self.console)
         self.areas = AreaFilter()
         self.variables = VariableExplorer()
-        self.traffic = Traffic(settings, self.areas)
+        self.traffic = Traffic(
+            settings=settings,
+            areas=self.areas,
+            navigation=self.navigation,
+            console=self.console,
+            get_simulation=lambda: self.simulation,
+            stack_command=lambda *args, **kwargs: self.commands.stack(*args, **kwargs),
+            select_implementation=lambda base, impl: self.commands.select_implementation(
+                base, impl
+            ),
+        )
         self.commands = CommandStack(
             traffic=self.traffic,
             navigation=self.navigation,

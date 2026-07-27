@@ -21,6 +21,7 @@ just inherit from TrafficArrays directly.
 import inspect
 from typing import Any, ClassVar, Optional
 
+import minisky
 from minisky.core.trafficarrays import TrafficArrays
 
 
@@ -146,7 +147,7 @@ class Entity(TrafficArrays, metaclass=EntityMeta):
         return cls._proxy or cls._instance
 
     def __init__(self) -> None:
-        super().__init__()
+        super().__init__(minisky.traf)
         cls = type(self)
         if cls._instance is None:
             cls._instance = self

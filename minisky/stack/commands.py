@@ -71,7 +71,6 @@ def get_commands(command_stack: CommandStack) -> tuple:
     """
     from minisky import plugin, tools
     from minisky.traffic import route
-    from minisky.traffic.asas import resolution as asasresolution
 
     cmddict = {
         "ADDWPT": [
@@ -344,7 +343,7 @@ def get_commands(command_stack: CommandStack) -> tuple:
             "Turbulence/noise switch",
         ],
         "NORESO": [
-            asasresolution.setnoreso,
+            command_stack.traffic.cr.setnoreso,
             "[callsign,...]",
             "NORESO callsign...",
             "ADD or Remove aircraft that nobody will avoid.",
@@ -398,7 +397,7 @@ def get_commands(command_stack: CommandStack) -> tuple:
             "Get info on aircraft, airport or waypoint",
         ],
         "PRIORULES": [
-            asasresolution.setprio,
+            command_stack.traffic.cr.setprio,
             "[bool, txt]",
             "PRIORULES [flag, priocode]",
             "Define priority rules (right of way) for conflict resolution.",
@@ -428,31 +427,31 @@ def get_commands(command_stack: CommandStack) -> tuple:
             "Select a Conflict Resolution method.",
         ],
         "RESOOFF": [
-            asasresolution.setresooff,
+            command_stack.traffic.cr.setresooff,
             "[callsign,...]",
             "RESOOFF callsign...",
             "ADD or Remove aircraft that will not avoid anybody else.",
         ],
         "RMETHH": [
-            asasresolution.setresometh,
+            command_stack.traffic.cr.setresometh,
             "[txt]",
             "RMETHH [ON / BOTH / OFF / NONE / SPD / HDG]",
             "Select the horizontal resolution method for MVP conflict resolution.",
         ],
         "RMETHV": [
-            asasresolution.setresometv,
+            command_stack.traffic.cr.setresometv,
             "[txt]",
             "RMETHV [ON / V/S / OFF / NONE]",
             "Select the vertical resolution method for MVP conflict resolution.",
         ],
         "RFACH": [
-            asasresolution.setresofach,
+            command_stack.traffic.cr.setresofach,
             "[float]",
             "RFACH [factor]",
             "Set resolution factor horizontal.",
         ],
         "RFACV": [
-            asasresolution.setresofacv,
+            command_stack.traffic.cr.setresofacv,
             "[float]",
             "RFACV [factor]",
             "Set resolution factor vertical.",
@@ -464,13 +463,13 @@ def get_commands(command_stack: CommandStack) -> tuple:
             "Add RTA to waypoint record.",
         ],
         "RSZONEDH": [
-            asasresolution.setresozonedh,
+            command_stack.traffic.cr.setresozonedh,
             "[float]",
             "RSZONEDH [zonedh]",
             "Set resolution factor vertical, but then with absolute value.",
         ],
         "RSZONER": [
-            asasresolution.setresozoner,
+            command_stack.traffic.cr.setresozoner,
             "[float]",
             "RSZONER [zoner]",
             "Set resolution factor horizontal, but then with absolute value.",

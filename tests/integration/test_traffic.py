@@ -153,7 +153,6 @@ class TestConditional:
         ncond = bs.traf.cond.ncond
         bs.traf.cond.update()
         assert bs.traf.cond.ncond == ncond
-        bs.traf.cond.__init__()  # drop pending conditions (not cleared by reset)
 
     def test_renameac_updates_pending_conditions(self, bs, sim):
         bs.traf.cre("KL001", alt=10000 * FT, spd=150)
@@ -164,7 +163,6 @@ class TestConditional:
         # Unknown callsign takes the early-return path without errors
         bs.traf.cond.renameac("MISSING", "XX123")
         assert "XX123" not in bs.traf.cond.id
-        bs.traf.cond.__init__()  # drop pending conditions (not cleared by reset)
 
 
 class TestWind:
@@ -243,7 +241,7 @@ class TestTrails:
     def test_fresh_trails_object_has_background_buffers(self, bs, sim):
         from minisky.traffic.trails import Trails
 
-        trails = Trails()
+        trails = Trails(bs.traf, lambda: bs.sim)
         try:
             assert trails.bgacid == []  # used to exist only after clearbg()
             assert not hasattr(trails, "pygame")

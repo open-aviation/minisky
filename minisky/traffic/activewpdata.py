@@ -1,21 +1,25 @@
 """Active waypoint data for FMS guidance.
 
 Holds, as per-aircraft numpy arrays, all data of the waypoint each aircraft
-is currently flying towards. The :class:`ActiveWaypoint` arrays form the
-interface between the per-aircraft :class:`~minisky.traffic.route.Route`
+is currently flying towards. The [`ActiveWaypoint`][minisky.traffic.activewpdata.ActiveWaypoint] arrays form the
+interface between the per-aircraft [`Route`][minisky.traffic.route.Route]
 objects (event-driven, scalar waypoint switching) and the vectorized
-LNAV/VNAV guidance in :class:`~minisky.traffic.autopilot.Autopilot`.
-Available at runtime as ``minisky.traf.actwp``.
+LNAV/VNAV guidance in [`Autopilot`][minisky.traffic.autopilot.Autopilot].
+Available at runtime as `minisky.traf.actwp`.
 """
 
-from typing import Any
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-import minisky
 from minisky.core.trafficarrays import TrafficArrays
 from minisky.tools.aero import g0
 from minisky.tools.convert import degto180
+
+if TYPE_CHECKING:
+    from minisky.traffic import Traffic
 
 
 class ActiveWaypoint(TrafficArrays):
@@ -67,8 +71,9 @@ class ActiveWaypoint(TrafficArrays):
             waypoint was activated [m].
     """
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, traffic: Traffic) -> None:
+        super().__init__(traffic)
+        self.traffic = traffic
         with self.settrafarrays():
             self.lat = np.array([])  # [deg] Active WP latitude
             self.lon = np.array([])  # [deg] Active WP longitude
@@ -158,6 +163,10 @@ class ActiveWaypoint(TrafficArrays):
         self.curlegdir[-n:] = -999.0  # [deg] direction to active waypoint upon activation
         self.curleglen[-n:] = -999.0  # [nm] distance to active waypoint upon activation
 
+    def new_implementation(self, implementation: type[TrafficArrays]) -> TrafficArrays:
+        """Construct a replacement with this runtime's traffic object."""
+        return implementation(self.traffic)
+
     def reached(
         self,
         qdr: Any,
@@ -200,9 +209,9 @@ class ActiveWaypoint(TrafficArrays):
 
         # First calculate turn distance
         next_qdr = np.where(self.next_qdr < -900.0, qdr, self.next_qdr)
-        turntas = np.where(self.turnspd < 0.0, minisky.traf.tas, self.turnspd)
+        turntas = np.where(self.turnspd < 0.0, self.traffic.tas, self.turnspd)
         flybyturndist, turnrad = self.calcturn(
-            turntas, minisky.traf.ap.bankdef, qdr, next_qdr, turnrad, turnhdgr, flyturn
+            turntas, self.traffic.ap.bankdef, qdr, next_qdr, turnrad, turnhdgr, flyturn
         )
 
         # Turb dist iz ero for flyover, calculated distance for others
@@ -212,14 +221,14 @@ class ActiveWaypoint(TrafficArrays):
         # flying away and within 4 sec distance based on ground speed (4 sec = sensitivity tuning parameter)
 
         close2wp = (
-            dist / (np.maximum(0.0001, np.abs(minisky.traf.gs))) < 4.0
+            dist / (np.maximum(0.0001, np.abs(self.traffic.gs))) < 4.0
         )  # Waypoint is within 4 seconds flight time
-        tooclose2turn = close2wp * (np.abs(degto180(minisky.traf.trk % 360.0 - qdr % 360.0)) > 90.0)
+        tooclose2turn = close2wp * (np.abs(degto180(self.traffic.trk % 360.0 - qdr % 360.0)) > 90.0)
 
         # When too close to waypoint or we have passed the active waypoint, based on leg direction,switch active waypoint
-        # was:  away  = np.logical_or(close2wp,swlastwp)*(np.abs(degto180(minisky.traf.trk%360. - qdr%360.)) > 90.) # difference large than 90
+        # was:  away  = np.logical_or(close2wp,swlastwp)*(np.abs(degto180(self.traffic.trk%360. - qdr%360.)) > 90.) # difference large than 90
         awayorpassed = np.logical_or(
-            tooclose2turn, np.abs(degto180(qdr - minisky.traf.actwp.curlegdir)) > 90.0
+            tooclose2turn, np.abs(degto180(qdr - self.traffic.actwp.curlegdir)) > 90.0
         )
 
         # Should no longer be needed with leg direction
@@ -231,9 +240,9 @@ class ActiveWaypoint(TrafficArrays):
 
         # Check whether shift based dist is required, set closer than WP turn distance
         # Detect indices
-        # swreached = np.where(minisky.traf.swlnav * np.logical_or(awayorpassed,np.logical_or(dist < self.turndist,circling)))[0]
+        # swreached = np.where(self.traffic.swlnav * np.logical_or(awayorpassed,np.logical_or(dist < self.turndist,circling)))[0]
         swreached = np.where(
-            minisky.traf.swlnav * np.logical_or(awayorpassed, dist < self.turndist)
+            self.traffic.swlnav * np.logical_or(awayorpassed, dist < self.turndist)
         )[0]
 
         # Return indices for which condition is True/1.0 for a/c where we have reached waypoint
