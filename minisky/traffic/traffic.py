@@ -136,6 +136,7 @@ class Traffic(TrafficArrays):
         console: ConsoleIO,
         get_simulation: Callable[[], Simulation],
         stack_command: Callable[..., None],
+        get_command_registry: Callable[[], dict[str, object]],
         select_implementation: Callable[[str, str], tuple[bool, str]],
     ) -> None:
         super().__init__()
@@ -145,6 +146,7 @@ class Traffic(TrafficArrays):
         self.console = console
         self._get_simulation = get_simulation
         self.stack_command = stack_command
+        self._get_command_registry = get_command_registry
         self.select_implementation = select_implementation
 
         self.ntraf = 0
@@ -207,12 +209,12 @@ class Traffic(TrafficArrays):
             # Flight Models
             self.cd = ConflictDetection(settings, self, stack_command)
             self.cr = ConflictResolution(settings, self, select_implementation)
-            self.ap = Autopilot()
+            self.ap = Autopilot(self, get_simulation)
             self.aporasas = APorASAS(self)
             self.noise = SurveillanceUncertainty(self, get_simulation)
             self.trails = Trails(self, get_simulation)
             self.actwp = ActiveWaypoint(self)
-            self.perf = OpenAP()
+            self.perf = OpenAP(self)
 
             # Group Logic
             self.groups = TrafficGroups(self, areas)
@@ -236,6 +238,11 @@ class Traffic(TrafficArrays):
 
         # Default bank angles per flight phase
         self.bphase = np.deg2rad(np.array([15, 35, 35, 35, 15, 45]))
+
+    @property
+    def command_registry(self) -> dict[str, object]:
+        """Return the command registry owned by this runtime."""
+        return self._get_command_registry()
 
     @property
     def simulation(self) -> Simulation:

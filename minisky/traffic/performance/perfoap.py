@@ -1,24 +1,28 @@
 """OpenAP-based aircraft performance model.
 
-This module provides :class:`OpenAP`, the aircraft performance implementation
-used by the MiniSky traffic object (``minisky.traf.perf``). It combines the
-coefficient database (``coeff``), flight-phase logic (``phase``), and the
-empirical thrust/fuel-flow models (``thrust``) into per-aircraft vectorised
+This module provides [`OpenAP`][minisky.traffic.performance.perfoap.OpenAP], the aircraft performance implementation
+used by the MiniSky traffic object (`minisky.traf.perf`). It combines the
+coefficient database (`coeff`), flight-phase logic (`phase`), and the
+empirical thrust/fuel-flow models (`thrust`) into per-aircraft vectorised
 computations of drag, thrust, fuel flow, and kinematic envelope limits. All
 internal quantities are in SI units.
 """
 
-from typing import Any
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-import minisky
 from minisky.core.trafficarrays import TrafficArrays
 from minisky.tools import aero
 from minisky.tools.aero import fpm, ft, kts
 
 from . import coeff, thrust
 from . import phase as ph
+
+if TYPE_CHECKING:
+    from minisky.traffic import Traffic
 
 
 class OpenAP(TrafficArrays):
@@ -43,7 +47,7 @@ class OpenAP(TrafficArrays):
         lifttype (ndarray): Lift type, fixed-wing (1) or rotor (2) [-].
         Sref (ndarray): Wing reference surface area [m^2].
         mass (ndarray): Effective mass, mean of OEW and MTOW [kg].
-        phase (ndarray): Current flight phase identifier (see ``phase``) [-].
+        phase (ndarray): Current flight phase identifier (see `phase`) [-].
         cd0 (ndarray): Zero-lift drag coefficient for current phase [-].
         k (ndarray): Induced drag factor for current phase [-].
         bank (ndarray): Maximum bank angle for current phase [deg].
@@ -64,8 +68,9 @@ class OpenAP(TrafficArrays):
         ff_coeff_a/b/c (ndarray): Quadratic ICAO fuel-flow fit coefficients.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, traffic: Traffic) -> None:
         super().__init__()
+        self.traffic = traffic
 
         self.ac_warning = False  # aircraft mdl to default warning
         self.eng_warning = False  # aircraft engine to default warning
@@ -124,12 +129,16 @@ class OpenAP(TrafficArrays):
             self.hcross = np.array([])
             self.mmo = np.array([])
 
+    def new_implementation(self, implementation: type[TrafficArrays]) -> TrafficArrays:
+        """Construct a replacement with this runtime's traffic object."""
+        return implementation(self.traffic)
+
     def create(self, n: int = 1) -> None:
         """Initialise performance parameters for newly created aircraft.
 
         Called by the traffic object when aircraft are created. Looks up the
         type of the last created aircraft in the OpenAP coefficient database
-        and fills the last ``n`` array elements with its mass, engine, drag
+        and fills the last `n` array elements with its mass, engine, drag
         polar, and flight-envelope coefficients. Rotorcraft types get the
         (simpler) rotor envelope; unknown fixed-wing types default to B744.
 
@@ -140,7 +149,7 @@ class OpenAP(TrafficArrays):
         # cautious! considering multiple created aircraft with same type
         super().create(n)
 
-        actype = minisky.traf.typecode[-1].upper()
+        actype = self.traffic.typecode[-1].upper()
 
         # initialize aircraft / engine performance parameters
         # check fixwing or rotor, default to fixwing
@@ -254,9 +263,9 @@ class OpenAP(TrafficArrays):
         len(self.phase)
         self.phase = ph.get(
             self.lifttype,
-            minisky.traf.tas,
-            minisky.traf.vs,
-            minisky.traf.alt,
+            self.traffic.tas,
+            self.traffic.vs,
+            self.traffic.alt,
             unit="SI",
         )
 
@@ -285,8 +294,8 @@ class OpenAP(TrafficArrays):
         self.k[self.phase == ph.DE] = self.k_clean[self.phase == ph.DE]
         self.k[self.phase == ph.NA] = self.k_clean[self.phase == ph.NA]
 
-        rho = aero.vdensity(minisky.traf.alt[idx_fixwing])
-        vtas = minisky.traf.tas[idx_fixwing]
+        rho = aero.vdensity(self.traffic.alt[idx_fixwing])
+        vtas = self.traffic.tas[idx_fixwing]
         rhovs = 0.5 * rho * vtas**2 * self.Sref[idx_fixwing]
         cl = self.mass[idx_fixwing] * aero.g0 / rhovs
         self.drag[idx_fixwing] = rhovs * (self.cd0[idx_fixwing] + self.k[idx_fixwing] * cl**2)
@@ -295,9 +304,9 @@ class OpenAP(TrafficArrays):
         max_thrustratio_fixwing = thrust.compute_max_thr_ratio(
             self.phase[idx_fixwing],
             self.engbpr[idx_fixwing],
-            minisky.traf.tas[idx_fixwing],
-            minisky.traf.alt[idx_fixwing],
-            minisky.traf.vs[idx_fixwing],
+            self.traffic.tas[idx_fixwing],
+            self.traffic.alt[idx_fixwing],
+            self.traffic.vs[idx_fixwing],
             self.engnum[idx_fixwing] * self.engthrmax[idx_fixwing],
         )
         self.max_thrust[idx_fixwing] = (
@@ -306,7 +315,7 @@ class OpenAP(TrafficArrays):
 
         # ----- compute net thrust -----
         self.thrust[idx_fixwing] = (
-            self.drag[idx_fixwing] + self.mass[idx_fixwing] * minisky.traf.ax[idx_fixwing]
+            self.drag[idx_fixwing] + self.mass[idx_fixwing] * self.traffic.ax[idx_fixwing]
         )
 
         # ----- compute fuel flow -----
@@ -381,7 +390,7 @@ class OpenAP(TrafficArrays):
             (intent_vs < 0) & (intent_vs < self.vsmin), vs_min_with_acc, allow_vs
         )  # for descent with vs smaller than vsmin (negative)
         allow_vs = np.where(
-            (self.phase == ph.GD) & (minisky.traf.tas < self.vminto), 0, allow_vs
+            (self.phase == ph.GD) & (self.traffic.tas < self.vminto), 0, allow_vs
         )  # takeoff aircraft
 
         # corect rotercraft speed limits
@@ -411,11 +420,11 @@ class OpenAP(TrafficArrays):
             floats or 1D-arrays: Min TAS [m/s], Max TAS [m/s],
                 Min VS [m/s], Max VS [m/s]
         """
-        vtasmin = aero.vcas2tas(self.vmin, minisky.traf.alt)
+        vtasmin = aero.vcas2tas(self.vmin, self.traffic.alt)
 
         vtasmax = np.minimum(
-            aero.vcas2tas(self.vmax, minisky.traf.alt),
-            aero.vmach2tas(self.mmo, minisky.traf.alt),
+            aero.vcas2tas(self.vmax, self.traffic.alt),
+            aero.vmach2tas(self.mmo, self.traffic.alt),
         )
 
         if id is not None:

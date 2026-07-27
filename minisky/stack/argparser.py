@@ -377,7 +377,13 @@ class PosArg(Parser):
         if refdata.lat is None:
             refdata.lat, refdata.lon = self.argument_parser.console.getviewctr()
 
-        posobj = Position(argu, refdata.lat, refdata.lon)
+        posobj = Position(
+            argu,
+            refdata.lat,
+            refdata.lon,
+            self.argument_parser.navigation,
+            traffic,
+        )
         if posobj.error:
             raise ArgumentError(f"{argu} is not a valid waypoint, airport, runway, or aircraft id.")
 

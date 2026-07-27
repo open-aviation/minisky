@@ -31,6 +31,7 @@ class MiniSky:
             console=self.console,
             get_simulation=lambda: self.simulation,
             stack_command=lambda *args, **kwargs: self.commands.stack(*args, **kwargs),
+            get_command_registry=lambda: self.commands.cmddict,
             select_implementation=lambda base, impl: self.commands.select_implementation(
                 base, impl
             ),

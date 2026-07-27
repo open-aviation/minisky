@@ -27,6 +27,7 @@ import inspect
 import os
 import traceback
 from collections.abc import Callable, Iterator
+from functools import partial
 from io import StringIO
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -187,6 +188,7 @@ class Command:
     @callback.setter
     def callback(self, function):
         self._callback = function
+        self._callback_source = function.func if isinstance(function, partial) else function
         try:
             # eval_str resolves stringified hints (from __future__ import annotations)
             # to the actual objects, so Annotated aliases are recognised either way
@@ -199,14 +201,14 @@ class Command:
 
         if self.valid:
             # Store implementation origin if this is a bound (class or object) method
-            if not self.impl and inspect.ismethod(function):
-                if inspect.isclass(function.__self__):
-                    self.impl = function.__self__.__name__
+            if not self.impl and inspect.ismethod(self._callback_source):
+                if inspect.isclass(self._callback_source.__self__):
+                    self.impl = self._callback_source.__self__.__name__
                 else:
-                    self.impl = function.__self__.__class__.__name__
+                    self.impl = self._callback_source.__self__.__class__.__name__
 
             self.brief = self.brief or (self.name + " " + ",".join(spec.parameters))
-            self.help = self.help or inspect.cleandoc(inspect.getdoc(function) or "")
+            self.help = self.help or inspect.cleandoc(inspect.getdoc(self._callback_source) or "")
             paramspecs = list(filter(Parameter.canwrap, spec.parameters.values()))
             if self.arguments:
                 self.params = []
@@ -231,7 +233,7 @@ class Command:
                 ):
                     raise IndexError(
                         f"More arguments given than function "
-                        f"{self.callback.__name__} has arguments."
+                        f"{self._callback_source.__name__} has arguments."
                     )
             else:
                 self.params = [
@@ -245,17 +247,17 @@ class Command:
         msg = f"{self.help}\nUsage:\n{self.brief}"
         if self.aliases:
             msg += "\nCommand aliases: " + ",".join(self.aliases)
-        if self._callback.__name__ == "<lambda>":
+        if self._callback_source.__name__ == "<lambda>":
             msg += "\nAnonymous (lambda) function, implemented in "
         else:
-            msg += f"\nFunction {self._callback.__name__}(), implemented in "
-        if hasattr(self._callback, "__code__"):
-            fname = self._callback.__code__.co_filename
+            msg += f"\nFunction {self._callback_source.__name__}(), implemented in "
+        if hasattr(self._callback_source, "__code__"):
+            fname = self._callback_source.__code__.co_filename
             fname_stripped = fname.replace(os.getcwd(), "").lstrip("/")
-            firstline = self._callback.__code__.co_firstlineno
+            firstline = self._callback_source.__code__.co_firstlineno
             msg += f"{fname_stripped} on line {firstline}"
         else:
-            msg += f"module {self._callback.__module__}"
+            msg += f"module {self._callback_source.__module__}"
 
         return msg
 
@@ -740,7 +742,7 @@ class CommandStack:
 
             # Get info for all commands
             for obj in cmdobjs:
-                funcname = obj.callback.__name__.replace("<", "").replace(">", "")
+                funcname = obj._callback_source.__name__.replace("<", "").replace(">", "")
                 args = ",".join(str(p) for p in obj.params)
                 syn = ",".join(obj.aliases)
                 line = f"{obj.name}\t{obj.help}\t{obj.brief}\t{args}\t{funcname}\t{syn}"

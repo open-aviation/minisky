@@ -1,6 +1,6 @@
 """Autopilot Implementation.
 
-Contains the :class:`Autopilot` class, which combines classic autopilot
+Contains the [`Autopilot`][minisky.traffic.autopilot.Autopilot] class, which combines classic autopilot
 modes (selected heading, altitude, vertical speed and speed) with FMS
 guidance along the aircraft route: LNAV (lateral navigation towards the
 active waypoint, including fly-by/fly-over/fly-turn logic) and VNAV
@@ -9,18 +9,19 @@ required-time-of-arrival (RTA) speed scheduling).
 
 The autopilot output (commanded track, speed, altitude and vertical speed)
 is combined with conflict-resolution commands in
-:class:`~minisky.traffic.aporasas.APorASAS` before being flown by
-:class:`~minisky.traffic.traffic.Traffic`. Many methods implement stack
+[`APorASAS`][minisky.traffic.aporasas.APorASAS] before being flown by
+[`Traffic`][minisky.traffic.traffic.Traffic]. Many methods implement stack
 commands (ALT, VS, HDG, SPD, DEST, ORIG, LNAV, VNAV, SWTOC, SWTOD).
 """
 
-from collections.abc import Collection
+from __future__ import annotations
+
+from collections.abc import Callable, Collection
 from math import sqrt
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-import minisky
 from minisky.core.trafficarrays import TrafficArrays
 from minisky.stack.argparser import Acid, Alt, Hdg, OnOff, Spd, Vspd, Wpt
 from minisky.tools import geo
@@ -37,7 +38,11 @@ from minisky.tools.aero import (
 from minisky.tools.convert import degto180
 from minisky.tools.position import Position, txt2pos
 
-from .route import Route
+from .route import Route, direct
+
+if TYPE_CHECKING:
+    from minisky.simulation import Simulation
+    from minisky.traffic import Traffic
 
 
 class Autopilot(TrafficArrays):
@@ -45,10 +50,10 @@ class Autopilot(TrafficArrays):
 
     Computes, per aircraft, the commanded track, altitude, vertical speed
     and speed from the selected (pilot) values and, when LNAV/VNAV are
-    engaged, from the route stored in the per-aircraft :class:`Route`
+    engaged, from the route stored in the per-aircraft [`Route`][minisky.traffic.route.Route]
     objects. Waypoint switching is event driven (see wppassingcheck()),
     while the continuous guidance in update() is fully vectorized over all
-    aircraft. Accessible at runtime as ``minisky.traf.ap``.
+    aircraft. Accessible at runtime as `minisky.traf.ap`.
 
     Attributes:
         trk (ndarray): Commanded track angle [deg].
@@ -72,15 +77,18 @@ class Autopilot(TrafficArrays):
         bankdef (ndarray): Default bank angle limit [rad].
         vsdef (ndarray): Default vertical speed [m/s].
         turnphi (ndarray): Bank angle used in the current turn [rad].
-        route (list): Per-aircraft :class:`Route` (flight plan) objects.
+        route (list): Per-aircraft [`Route`][minisky.traffic.route.Route] (flight plan) objects.
         steepness (float): Default climb/descent gradient [-]
             (3000 ft per 10 nm).
         idxreached (list): Indices of aircraft that reached their active
             waypoint during the last update.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, traffic: Traffic, get_simulation: Callable[[], Simulation]) -> None:
         super().__init__()
+        self.traffic = traffic
+        self.navigation = traffic.navigation
+        self._get_simulation = get_simulation
 
         # Standard descent steepness
         self.steepness = 3000.0 * ft / (10.0 * nm)
@@ -144,6 +152,15 @@ class Autopilot(TrafficArrays):
 
         self.idxreached = []  # Indices of aircraft that have reached their active waypoint
 
+    @property
+    def simulation(self) -> Simulation:
+        """Return the simulation that owns this autopilot."""
+        return self._get_simulation()
+
+    def new_implementation(self, implementation: type[TrafficArrays]) -> TrafficArrays:
+        """Construct a replacement with this runtime's dependencies."""
+        return implementation(self.traffic, self._get_simulation)
+
     def create(self, n: int = 1) -> None:
         """Initialize autopilot state for n newly created aircraft.
 
@@ -158,9 +175,9 @@ class Autopilot(TrafficArrays):
         super().create(n)
 
         # FMS directions
-        self.trk[-n:] = minisky.traf.trk[-n:]
-        self.tas[-n:] = minisky.traf.tas[-n:]
-        self.alt[-n:] = minisky.traf.alt[-n:]
+        self.trk[-n:] = self.traffic.trk[-n:]
+        self.tas[-n:] = self.traffic.tas[-n:]
+        self.alt[-n:] = self.traffic.alt[-n:]
         self.vs[-n:] = -999
 
         # Default ToC/ToD logic on
@@ -186,8 +203,8 @@ class Autopilot(TrafficArrays):
         self.bankdef[-n:] = np.radians(25.0)
 
         # Route objects
-        for ridx, acid in enumerate(minisky.traf.callsign[-n:]):
-            self.route[ridx - n] = Route(acid)
+        for ridx, acid in enumerate(self.traffic.callsign[-n:]):
+            self.route[ridx - n] = Route(self.traffic, acid)
 
     def wppassingcheck(self, qdr: Any, dist: Any) -> None:
         """
@@ -215,17 +232,17 @@ class Autopilot(TrafficArrays):
 
         # Get list of indices of aircraft which have reached their active waypoint
         # This vectorized function checks the passing of the waypoint using the current turn radius
-        self.idxreached = minisky.traf.actwp.reached(
+        self.idxreached = self.traffic.actwp.reached(
             qdr,
             dist,
-            minisky.traf.actwp.flyby,
-            minisky.traf.actwp.flyturn,
-            minisky.traf.actwp.turnrad,
-            minisky.traf.actwp.turnhdgr,
-            minisky.traf.actwp.swlastwp,
+            self.traffic.actwp.flyby,
+            self.traffic.actwp.flyturn,
+            self.traffic.actwp.turnrad,
+            self.traffic.actwp.turnhdgr,
+            self.traffic.actwp.swlastwp,
         )
 
-        actwp = minisky.traf.actwp
+        actwp = self.traffic.actwp
 
         # Save current waypoint speed for use on next leg when we pass this waypoint
         # VNAV speeds are always FROM-speeds, so we accelerate/decelerate at the waypoint
@@ -260,9 +277,9 @@ class Autopilot(TrafficArrays):
         # In case of end of route/no more waypoints: switch off LNAV/VNAV
         if idxlast:
             last = np.array(idxlast)
-            minisky.traf.swlnav[last] = False
-            minisky.traf.swvnav[last] = False
-            minisky.traf.swvnavspd[last] = False
+            self.traffic.swlnav[last] = False
+            self.traffic.swvnav[last] = False
+            self.traffic.swvnavspd[last] = False
 
         # Vectorized leg data update for guidance, over the aircraft that
         # switched to a new waypoint
@@ -320,7 +337,7 @@ class Autopilot(TrafficArrays):
             actwp.nextturnhdgr[nxt] = nextturnhdgr
             actwp.nextturnidx[nxt] = nextturnidx
 
-            tas = minisky.traf.tas[nxt]
+            tas = self.traffic.tas[nxt]
 
             # Special turns: specified by turn radius or bank angle
             # If no turn speed specified, use current speed
@@ -343,14 +360,14 @@ class Autopilot(TrafficArrays):
 
             # Check LNAV switch returned by getnextwp
             # Switch off LNAV if it failed to get next waypoint data
-            lnavoff = ~lnavon & minisky.traf.swlnav[nxt]
+            lnavoff = ~lnavon & self.traffic.swlnav[nxt]
             # Last waypoint: copy last waypoint values for altitude and speed in autopilot
-            uselastspd = lnavoff & minisky.traf.swvnavspd[nxt] & (nextspd >= 0.0)
-            minisky.traf.selspd[nxt] = np.where(uselastspd, nextspd, minisky.traf.selspd[nxt])
-            minisky.traf.swlnav[nxt] = minisky.traf.swlnav[nxt] & lnavon
+            uselastspd = lnavoff & self.traffic.swvnavspd[nxt] & (nextspd >= 0.0)
+            self.traffic.selspd[nxt] = np.where(uselastspd, nextspd, self.traffic.selspd[nxt])
+            self.traffic.swlnav[nxt] = self.traffic.swlnav[nxt] & lnavon
 
             # In case of no LNAV, do not allow VNAV mode to be active
-            minisky.traf.swvnav[nxt] = minisky.traf.swvnav[nxt] & minisky.traf.swlnav[nxt]
+            self.traffic.swvnav[nxt] = self.traffic.swvnav[nxt] & self.traffic.swlnav[nxt]
 
             actwp.lat[nxt] = lat  # [deg]
             actwp.lon[nxt] = lon  # [deg]
@@ -358,7 +375,7 @@ class Autopilot(TrafficArrays):
             actwp.flyby[nxt] = flyby
 
             # Update qdr and turn distance for this new waypoint for ComputeVNAV
-            qdrnxt, distnmi = geo.qdrdist(minisky.traf.lat[nxt], minisky.traf.lon[nxt], lat, lon)
+            qdrnxt, distnmi = geo.qdrdist(self.traffic.lat[nxt], self.traffic.lon[nxt], lat, lon)
             qdr[nxt] = qdrnxt
             self.dist2wp[nxt] = distnmi * nm
 
@@ -374,8 +391,8 @@ class Autopilot(TrafficArrays):
             # VNAV speed mode: use speed of this waypoint as commanded speed
             # while passing waypoint and save next speed for passing next waypoint
             # Speed is now from speed! Next speed is ready in waypoint data
-            usewpspd = minisky.traf.swvnavspd[nxt] & (actwp.spd[nxt] >= 0.0)
-            minisky.traf.selspd[nxt] = np.where(usewpspd, actwp.spd[nxt], minisky.traf.selspd[nxt])
+            usewpspd = self.traffic.swvnavspd[nxt] & (actwp.spd[nxt] >= 0.0)
+            self.traffic.selspd[nxt] = np.where(usewpspd, actwp.spd[nxt], self.traffic.selspd[nxt])
 
             # Update turn distance so ComputeVNAV works, is there a next leg direction or not?
             local_next_qdr = np.where(next_qdr < -900.0, qdrnxt, next_qdr)
@@ -402,7 +419,7 @@ class Autopilot(TrafficArrays):
 
             # Reduce turn distance for reduced turn speed
             redturn = flyturn & (turnrad < 0.0) & (actwp.turnspd[nxt] >= 0.0)
-            turntas = vcas2tas(np.where(redturn, actwp.turnspd[nxt], 0.0), minisky.traf.alt[nxt])
+            turntas = vcas2tas(np.where(redturn, actwp.turnspd[nxt], 0.0), self.traffic.alt[nxt])
             actwp.turndist[nxt] = actwp.turndist[nxt] * np.where(
                 redturn, turntas * turntas / (tas * tas), 1.0
             )
@@ -419,7 +436,7 @@ class Autopilot(TrafficArrays):
         # Continuous guidance when speed constraint on active leg is in update-method
 
         # If still an RTA in the route and currently no speed constraint
-        for iac in np.where((minisky.traf.actwp.torta > -99.0) * (minisky.traf.actwp.spdcon < 0.0))[
+        for iac in np.where((self.traffic.actwp.torta > -99.0) * (self.traffic.actwp.spdcon < 0.0))[
             0
         ]:
             iac = int(iac)
@@ -428,21 +445,21 @@ class Autopilot(TrafficArrays):
                 # For all aircraft flying to an RTA waypoint, recalculate speed more often
                 dist2go4rta = (
                     geo.kwikdist(
-                        minisky.traf.lat[iac],
-                        minisky.traf.lon[iac],
-                        minisky.traf.actwp.lat[iac],
-                        minisky.traf.actwp.lon[iac],
+                        self.traffic.lat[iac],
+                        self.traffic.lon[iac],
+                        self.traffic.actwp.lat[iac],
+                        self.traffic.actwp.lon[iac],
                     )
                     * nm
                     + self.route[iac].wpxtorta[iwp]
                 )  # last term zero for active waypoint RTA
 
                 # Set minisky.traf.actwp.spd to RTA speed, if necessary
-                self.setspeedforRTA(iac, minisky.traf.actwp.torta[iac], dist2go4rta)
+                self.setspeedforRTA(iac, self.traffic.actwp.torta[iac], dist2go4rta)
 
                 # If VNAV speed is on (by default coupled to VNAV), use it for speed guidance
-                if minisky.traf.swvnavspd[iac] and minisky.traf.actwp.spd[iac] >= 0.0:
-                    minisky.traf.selspd[iac] = minisky.traf.actwp.spd[iac]
+                if self.traffic.swvnavspd[iac] and self.traffic.actwp.spd[iac] >= 0.0:
+                    self.traffic.selspd[iac] = self.traffic.actwp.spd[iac]
 
     def update(self) -> None:
         """Run the continuous FMS/autopilot guidance for all aircraft.
@@ -465,10 +482,10 @@ class Autopilot(TrafficArrays):
         # FMS LNAV mode:
         # qdr[deg],distinnm[nm]
         qdr, distinnm = geo.qdrdist(
-            minisky.traf.lat,
-            minisky.traf.lon,
-            minisky.traf.actwp.lat,
-            minisky.traf.actwp.lon,
+            self.traffic.lat,
+            self.traffic.lon,
+            self.traffic.actwp.lat,
+            self.traffic.actwp.lon,
         )  # [deg][nm])
 
         self.qdr2wp = np.asarray(qdr)
@@ -494,13 +511,13 @@ class Autopilot(TrafficArrays):
         # But when Top of Climb switch is on or off, climb as soon as possible, only difference is steepness used in ComputeVNAV
         # to calculate minisky.traf.actwp.vs
 
-        startdescorclimb = (minisky.traf.actwp.nextaltco >= -0.1) * np.logical_or(
-            (minisky.traf.alt > minisky.traf.actwp.nextaltco)
+        startdescorclimb = (self.traffic.actwp.nextaltco >= -0.1) * np.logical_or(
+            (self.traffic.alt > self.traffic.actwp.nextaltco)
             * np.logical_or(
-                (self.dist2wp < self.dist2vs + minisky.traf.actwp.turndist),
+                (self.dist2wp < self.dist2vs + self.traffic.actwp.turndist),
                 (np.logical_not(self.swtod)),
             ),
-            minisky.traf.alt < minisky.traf.actwp.nextaltco,
+            self.traffic.alt < self.traffic.actwp.nextaltco,
         )
 
         # print("self.dist2vs =",self.dist2vs)
@@ -510,10 +527,10 @@ class Autopilot(TrafficArrays):
         #    to continue descending when you get into a conflict
         #    while descending to the destination (the last waypoint)
         #    Use 0.1 nm (185.2 m) circle in case turn distance might be zero
-        self.swvnavvs = minisky.traf.swvnav * np.where(
-            minisky.traf.swlnav,
+        self.swvnavvs = self.traffic.swvnav * np.where(
+            self.traffic.swlnav,
             startdescorclimb,
-            self.dist2wp <= np.maximum(0.1 * nm, minisky.traf.actwp.turndist),
+            self.dist2wp <= np.maximum(0.1 * nm, self.traffic.actwp.turndist),
         )
 
         # Recalculate V/S based on current altitude and distance to next altitude constraint
@@ -521,22 +538,22 @@ class Autopilot(TrafficArrays):
         # Now done in ComputeVNAV
         # See ComputeVNAV for minisky.traf.actwp.vs calculation
 
-        self.vnavvs = np.where(self.swvnavvs, minisky.traf.actwp.vs, self.vnavvs)
+        self.vnavvs = np.where(self.swvnavvs, self.traffic.actwp.vs, self.vnavvs)
         # was: self.vnavvs  = np.where(self.swvnavvs, self.steepness * minisky.traf.gs, self.vnavvs)
 
         # self.vs = np.where(self.swvnavvs, self.vnavvs, self.vsdef * minisky.traf.limvs_flag)
         # for VNAV use fixed V/S and change start of descent
-        selvs = np.where(abs(minisky.traf.selvs) > 0.1, minisky.traf.selvs, self.vsdef)  # m/s
+        selvs = np.where(abs(self.traffic.selvs) > 0.1, self.traffic.selvs, self.vsdef)  # m/s
         self.vs = np.where(self.swvnavvs, self.vnavvs, selvs)
-        self.alt = np.where(self.swvnavvs, minisky.traf.actwp.nextaltco, minisky.traf.selalt)
+        self.alt = np.where(self.swvnavvs, self.traffic.actwp.nextaltco, self.traffic.selalt)
 
         # When descending or climbing in VNAV also update altitude command of select/hold mode
-        minisky.traf.selalt = np.where(
-            self.swvnavvs, minisky.traf.actwp.nextaltco, minisky.traf.selalt
+        self.traffic.selalt = np.where(
+            self.swvnavvs, self.traffic.actwp.nextaltco, self.traffic.selalt
         )
 
         # LNAV commanded track angle
-        self.trk = np.where(minisky.traf.swlnav, self.qdr2wp, self.trk)
+        self.trk = np.where(self.traffic.swlnav, self.qdr2wp, self.trk)
 
         # FMS speed guidance: anticipate accel/decel distance for next leg or turn
 
@@ -547,31 +564,31 @@ class Autopilot(TrafficArrays):
 
         # Is turn speed specified and are we not already slow enough? We only decelerate for turns, not accel.
         turntas = np.where(
-            minisky.traf.actwp.nextturnspd > 0.0,
-            vcas2tas(minisky.traf.actwp.nextturnspd, minisky.traf.alt),
-            -1.0 + 0.0 * minisky.traf.tas,
+            self.traffic.actwp.nextturnspd > 0.0,
+            vcas2tas(self.traffic.actwp.nextturnspd, self.traffic.alt),
+            -1.0 + 0.0 * self.traffic.tas,
         )
 
         # Switch is now whether the aircraft has any turn waypoints
-        swturnspd = minisky.traf.actwp.nextturnidx > 0
-        np.maximum(0.0, (minisky.traf.tas - turntas) * (turntas > 0.0))
+        swturnspd = self.traffic.actwp.nextturnidx > 0
+        np.maximum(0.0, (self.traffic.tas - turntas) * (turntas > 0.0))
 
         # t = (v1-v0)/a ; x = v0*t+1/2*a*t*t => dx = (v1*v1-v0*v0)/ (2a)
-        dxturnspdchg = distaccel(turntas, minisky.traf.tas, minisky.traf.perf.axmax)
+        dxturnspdchg = distaccel(turntas, self.traffic.tas, self.traffic.perf.axmax)
 
         # Decelerate or accelerate for next required speed because of speed constraint or RTA speed
         # Note that because nextspd comes from the stack, and can be either a mach number or
         # a calibrated airspeed, it can only be converted from Mach / CAS [kts] to TAS [m/s]
         # once the altitude is known.
-        nexttas = vcasormach2tas(minisky.traf.actwp.nextspd, minisky.traf.alt)
+        nexttas = vcasormach2tas(self.traffic.actwp.nextspd, self.traffic.alt)
         #
-        dxspdconchg = distaccel(minisky.traf.tas, nexttas, minisky.traf.perf.axmax)
+        dxspdconchg = distaccel(self.traffic.tas, nexttas, self.traffic.perf.axmax)
 
         qdrturn, dist2turn = geo.qdrdist(
-            minisky.traf.lat,
-            minisky.traf.lon,
-            minisky.traf.actwp.nextturnlat,
-            minisky.traf.actwp.nextturnlon,
+            self.traffic.lat,
+            self.traffic.lon,
+            self.traffic.actwp.nextturnlat,
+            self.traffic.actwp.nextturnlon,
         )
 
         self.qdrturn = qdrturn
@@ -579,81 +596,81 @@ class Autopilot(TrafficArrays):
 
         # Where we don't have a turn waypoint, as in turn idx is negative, then put distance
         # as Earth circumference.
-        self.dist2turn = np.where(minisky.traf.actwp.nextturnidx > 0, dist2turn, 40075000)
+        self.dist2turn = np.where(self.traffic.actwp.nextturnidx > 0, dist2turn, 40075000)
 
         # Check also whether VNAVSPD is on, if not, SPD SEL has override for next leg
         # and same for turn logic
         usenextspdcon = (
             (self.dist2wp < dxspdconchg)
-            * (minisky.traf.actwp.nextspd > -990.0)
-            * minisky.traf.swvnavspd
-            * minisky.traf.swvnav
-            * minisky.traf.swlnav
+            * (self.traffic.actwp.nextspd > -990.0)
+            * self.traffic.swvnavspd
+            * self.traffic.swvnav
+            * self.traffic.swlnav
         )
 
         useturnspd = (
             np.logical_or(
-                minisky.traf.actwp.turntonextwp,
-                (self.dist2turn < (dxturnspdchg + minisky.traf.actwp.turndist)),
+                self.traffic.actwp.turntonextwp,
+                (self.dist2turn < (dxturnspdchg + self.traffic.actwp.turndist)),
             )
             * swturnspd
-            * minisky.traf.swvnavspd
-            * minisky.traf.swvnav
-            * minisky.traf.swlnav
+            * self.traffic.swvnavspd
+            * self.traffic.swvnav
+            * self.traffic.swlnav
         )
 
         # Hold turn mode can only be switched on here, cannot be switched off here (happeps upon passing wp)
-        minisky.traf.actwp.turntonextwp = minisky.traf.swlnav * np.logical_or(
-            minisky.traf.actwp.turntonextwp, useturnspd
+        self.traffic.actwp.turntonextwp = self.traffic.swlnav * np.logical_or(
+            self.traffic.actwp.turntonextwp, useturnspd
         )
 
         # Which CAS/Mach do we have to keep? VNAV, last turn or next turn?
-        oncurrentleg = abs(degto180(minisky.traf.trk - qdr)) < 2.0  # [deg]
-        inoldturn = (minisky.traf.actwp.oldturnspd > 0.0) * np.logical_not(oncurrentleg)
+        oncurrentleg = abs(degto180(self.traffic.trk - qdr)) < 2.0  # [deg]
+        inoldturn = (self.traffic.actwp.oldturnspd > 0.0) * np.logical_not(oncurrentleg)
 
         # Avoid using old turning speeds when turning of this leg to the next leg
         # by disabling (old) turningspd when on leg
-        minisky.traf.actwp.oldturnspd = np.where(
-            oncurrentleg * (minisky.traf.actwp.oldturnspd > 0.0),
+        self.traffic.actwp.oldturnspd = np.where(
+            oncurrentleg * (self.traffic.actwp.oldturnspd > 0.0),
             -998.0,
-            minisky.traf.actwp.oldturnspd,
+            self.traffic.actwp.oldturnspd,
         )
 
         # turnfromlastwp can only be switched off here, not on (latter happens upon passing wp)
-        minisky.traf.actwp.turnfromlastwp = np.logical_and(
-            minisky.traf.actwp.turnfromlastwp, inoldturn
+        self.traffic.actwp.turnfromlastwp = np.logical_and(
+            self.traffic.actwp.turnfromlastwp, inoldturn
         )
 
         # Select speed: turn sped, next speed constraint, or current speed constraint
-        minisky.traf.selspd = np.where(
+        self.traffic.selspd = np.where(
             useturnspd,
-            minisky.traf.actwp.nextturnspd,
+            self.traffic.actwp.nextturnspd,
             np.where(
                 usenextspdcon,
-                minisky.traf.actwp.nextspd,
+                self.traffic.actwp.nextspd,
                 np.where(
-                    (minisky.traf.actwp.spdcon >= 0) * minisky.traf.swvnavspd,
-                    minisky.traf.actwp.spd,
-                    minisky.traf.selspd,
+                    (self.traffic.actwp.spdcon >= 0) * self.traffic.swvnavspd,
+                    self.traffic.actwp.spd,
+                    self.traffic.selspd,
                 ),
             ),
         )
 
         # Temporary override when still in old turn
-        minisky.traf.selspd = np.where(
+        self.traffic.selspd = np.where(
             inoldturn
-            * (minisky.traf.actwp.oldturnspd > 0.0)
-            * minisky.traf.swvnavspd
-            * minisky.traf.swvnav
-            * minisky.traf.swlnav,
-            minisky.traf.actwp.oldturnspd,
-            minisky.traf.selspd,
+            * (self.traffic.actwp.oldturnspd > 0.0)
+            * self.traffic.swvnavspd
+            * self.traffic.swvnav
+            * self.traffic.swlnav,
+            self.traffic.actwp.oldturnspd,
+            self.traffic.selspd,
         )
 
         self.inturn = np.logical_or(useturnspd, inoldturn)
 
         # Below crossover altitude: CAS=const, above crossover altitude: Mach = const
-        self.tas = vcasormach2tas(minisky.traf.selspd, minisky.traf.alt)
+        self.tas = vcasormach2tas(self.traffic.selspd, self.traffic.alt)
 
     def ComputeVNAV(self, idx: int, toalt: Any, xtoalt: Any, torta: Any, xtorta: Any) -> None:
         """
@@ -702,7 +719,7 @@ class Autopilot(TrafficArrays):
         self.setspeedforRTA(idx, torta, xtorta + self.dist2wp[idx])  # all scalar
 
         # Check if there is a target altitude and VNAV is on, else return doing nothing
-        if toalt < 0 or not minisky.traf.swvnav[idx]:
+        if toalt < 0 or not self.traffic.swvnav[idx]:
             self.dist2vs[
                 idx
             ] = -999999.0  # dist to next wp will never be less than this, so VNAV will do nothing
@@ -745,20 +762,20 @@ class Autopilot(TrafficArrays):
         #   which can be many waypoints beyond current actual waypoint
         epsalt = 2.0 * ft  # deadzone
         #
-        if minisky.traf.alt[idx] > toalt + epsalt:
+        if self.traffic.alt[idx] > toalt + epsalt:
             # Stop potential current climb (e.g. due to not making it to previous altco)
             # then stop immediately, as in: do not make it worse.
-            if minisky.traf.vs[idx] > 0.0001:
+            if self.traffic.vs[idx] > 0.0001:
                 self.vnavvs[idx] = 0.0
-                self.alt[idx] = minisky.traf.alt[idx]
-                if minisky.traf.swvnav[idx]:
-                    minisky.traf.selalt[idx] = minisky.traf.alt[idx]
+                self.alt[idx] = self.traffic.alt[idx]
+                if self.traffic.swvnav[idx]:
+                    self.traffic.selalt[idx] = self.traffic.alt[idx]
 
             # Descent modes: VNAV (= swtod/Top of Descent logic) or aiming at next alt constraint
 
             # Calculate max allowed altitude at next wp (above toalt)
-            minisky.traf.actwp.nextaltco[idx] = toalt  # [m] next alt constraint
-            minisky.traf.actwp.xtoalt[idx] = (
+            self.traffic.actwp.nextaltco[idx] = toalt  # [m] next alt constraint
+            self.traffic.actwp.xtoalt[idx] = (
                 xtoalt  # [m] distance to next alt constraint measured from next waypoint
             )
 
@@ -766,15 +783,15 @@ class Autopilot(TrafficArrays):
             if self.swtod[idx]:
                 # Get distance to waypoint
                 self.dist2wp[idx] = nm * geo.kwikdist(
-                    minisky.traf.lat[idx],
-                    minisky.traf.lon[idx],
-                    minisky.traf.actwp.lat[idx],
-                    minisky.traf.actwp.lon[idx],
+                    self.traffic.lat[idx],
+                    self.traffic.lon[idx],
+                    self.traffic.actwp.lat[idx],
+                    self.traffic.actwp.lon[idx],
                 )  # was not always up to date, so update first
 
                 # Distance to next waypoint where we need to start descent (top of descent) [m]
                 descdist = (
-                    abs(minisky.traf.alt[idx] - toalt) / self.steepness
+                    abs(self.traffic.alt[idx] - toalt) / self.steepness
                 )  # [m] required length for descent, uses default steepness!
                 self.dist2vs[idx] = descdist - xtoalt  # [m] part of that length on this leg
 
@@ -784,35 +801,35 @@ class Autopilot(TrafficArrays):
 
                 # Exceptions: Descend now?
                 if (
-                    self.dist2wp[idx] - 1.02 * minisky.traf.actwp.turndist[idx] < self.dist2vs[idx]
+                    self.dist2wp[idx] - 1.02 * self.traffic.actwp.turndist[idx] < self.dist2vs[idx]
                 ):  # Urgent descent, we're late![m]
                     # Descend now using whole remaining distance on leg to reach altitude
-                    self.alt[idx] = minisky.traf.actwp.nextaltco[
+                    self.alt[idx] = self.traffic.actwp.nextaltco[
                         idx
                     ]  # dial in altitude of next waypoint as calculated
-                    t2go = self.dist2wp[idx] / max(0.01, minisky.traf.gs[idx])
-                    minisky.traf.actwp.vs[idx] = (minisky.traf.alt[idx] - toalt) / max(0.01, t2go)
+                    t2go = self.dist2wp[idx] / max(0.01, self.traffic.gs[idx])
+                    self.traffic.actwp.vs[idx] = (self.traffic.alt[idx] - toalt) / max(0.01, t2go)
 
                 elif xtoalt < descdist:  # Not on this leg, no descending is needed at next waypoint
                     # Top of decent needs to be on this leg, as next wp is in descent
-                    minisky.traf.actwp.vs[idx] = -abs(self.steepness) * (
-                        minisky.traf.gs[idx]
-                        + (minisky.traf.gs[idx] < 0.2 * minisky.traf.tas[idx])
-                        * minisky.traf.tas[idx]
+                    self.traffic.actwp.vs[idx] = -abs(self.steepness) * (
+                        self.traffic.gs[idx]
+                        + (self.traffic.gs[idx] < 0.2 * self.traffic.tas[idx])
+                        * self.traffic.tas[idx]
                     )
 
                 else:
                     # else still level
-                    minisky.traf.actwp.vs[idx] = 0.0
+                    self.traffic.actwp.vs[idx] = 0.0
 
             else:
                 # We are higher but swtod = False, so there is no ToD descent logic, simply aim at next altco
-                steepness_ = (minisky.traf.alt[idx] - minisky.traf.actwp.nextaltco[idx]) / (
+                steepness_ = (self.traffic.alt[idx] - self.traffic.actwp.nextaltco[idx]) / (
                     max(0.01, self.dist2wp[idx] + xtoalt)
                 )
-                minisky.traf.actwp.vs[idx] = -abs(steepness_) * (
-                    minisky.traf.gs[idx]
-                    + (minisky.traf.gs[idx] < 0.2 * minisky.traf.tas[idx]) * minisky.traf.tas[idx]
+                self.traffic.actwp.vs[idx] = -abs(steepness_) * (
+                    self.traffic.gs[idx]
+                    + (self.traffic.gs[idx] < 0.2 * self.traffic.tas[idx]) * self.traffic.tas[idx]
                 )
                 self.dist2vs[idx] = (
                     99999.0  # [m] Forces immediate descent as current distance to next wp will be less
@@ -821,38 +838,38 @@ class Autopilot(TrafficArrays):
                 # print("in else swtod for ", minisky.traf.id[idx])
 
         # VNAV climb mode: climb as soon as possible (T/C logic)
-        elif minisky.traf.alt[idx] < toalt - 9.9 * ft:
+        elif self.traffic.alt[idx] < toalt - 9.9 * ft:
             # Stop potential current descent (e.g. due to not making it to previous altco)
             # then stop immediately, as in: do not make it worse.
-            if minisky.traf.vs[idx] < -0.0001:
+            if self.traffic.vs[idx] < -0.0001:
                 self.vnavvs[idx] = 0.0
-                self.alt[idx] = minisky.traf.alt[idx]
-                if minisky.traf.swvnav[idx]:
-                    minisky.traf.selalt[idx] = minisky.traf.alt[idx]
+                self.alt[idx] = self.traffic.alt[idx]
+                if self.traffic.swvnav[idx]:
+                    self.traffic.selalt[idx] = self.traffic.alt[idx]
 
             # Altitude we want to climb to: next alt constraint in our route (could be further down the route)
-            minisky.traf.actwp.nextaltco[idx] = toalt  # [m]
-            minisky.traf.actwp.xtoalt[idx] = (
+            self.traffic.actwp.nextaltco[idx] = toalt  # [m]
+            self.traffic.actwp.xtoalt[idx] = (
                 xtoalt  # [m] distance to next alt constraint measured from next waypoint
             )
-            self.alt[idx] = minisky.traf.actwp.nextaltco[
+            self.alt[idx] = self.traffic.actwp.nextaltco[
                 idx
             ]  # dial in altitude of next waypoint as calculated
             self.dist2vs[idx] = (
                 99999.0  # [m] Forces immediate climb as current distance to next wp will be less
             )
 
-            t2go = max(0.1, self.dist2wp[idx] + xtoalt) / max(0.01, minisky.traf.gs[idx])
+            t2go = max(0.1, self.dist2wp[idx] + xtoalt) / max(0.01, self.traffic.gs[idx])
             if self.swtoc[idx]:
                 steepness_ = self.steepness  # default steepness
             else:
-                steepness_ = (minisky.traf.alt[idx] - minisky.traf.actwp.nextaltco[idx]) / (
+                steepness_ = (self.traffic.alt[idx] - self.traffic.actwp.nextaltco[idx]) / (
                     max(0.01, self.dist2wp[idx] + xtoalt)
                 )
 
-            minisky.traf.actwp.vs[idx] = np.maximum(
-                steepness_ * minisky.traf.gs[idx],
-                (minisky.traf.actwp.nextaltco[idx] - minisky.traf.alt[idx]) / t2go,
+            self.traffic.actwp.vs[idx] = np.maximum(
+                steepness_ * self.traffic.gs[idx],
+                (self.traffic.actwp.nextaltco[idx] - self.traffic.alt[idx]) / t2go,
             )  # [m/s]
         # Level leg: never start V/S
         else:
@@ -886,22 +903,22 @@ class Autopilot(TrafficArrays):
         if torta < -90.0:  # -999 signals there is no RTA defined in remainder of route
             return False
 
-        deltime = torta - minisky.sim.simt  # Remaining time to next RTA [s] in simtime
+        deltime = torta - self.simulation.simt  # Remaining time to next RTA [s] in simtime
         if deltime > 0:  # Still possible?
-            gsrta = calcvrta(minisky.traf.gs[idx], xtorta, deltime, minisky.traf.perf.axmax[idx])
+            gsrta = calcvrta(self.traffic.gs[idx], xtorta, deltime, self.traffic.perf.axmax[idx])
 
             # Subtract tail wind speed vector
             tailwind = (
-                minisky.traf.windnorth[idx] * minisky.traf.gsnorth[idx]
-                + minisky.traf.windeast[idx] * minisky.traf.gseast[idx]
-            ) / minisky.traf.gs[idx]
+                self.traffic.windnorth[idx] * self.traffic.gsnorth[idx]
+                + self.traffic.windeast[idx] * self.traffic.gseast[idx]
+            ) / self.traffic.gs[idx]
 
             # Convert to CAS
-            rtacas = tas2cas(gsrta - tailwind, minisky.traf.alt[idx])
+            rtacas = tas2cas(gsrta - tailwind, self.traffic.alt[idx])
 
             # Performance limits on speed will be applied in traf.update
-            if minisky.traf.actwp.spdcon[idx] < 0.0 and minisky.traf.swvnavspd[idx]:
-                minisky.traf.actwp.spd[idx] = rtacas
+            if self.traffic.actwp.spdcon[idx] < 0.0 and self.traffic.swvnavspd[idx]:
+                self.traffic.actwp.spd[idx] = rtacas
                 # print("setspeedforRTA: xtorta =",xtorta)
 
             return rtacas
@@ -909,11 +926,11 @@ class Autopilot(TrafficArrays):
             return False
 
     def selaltcmd(
-        self, idx: "int | np.ndarray", alt: Alt, vspd: Vspd | None = None
+        self, idx: int | np.ndarray, alt: Alt, vspd: Vspd | None = None
     ) -> tuple[bool, str]:
         """Select the autopilot altitude, optionally with a vertical speed.
 
-        Implements the ALT stack command: ``ALT acid, alt, [vspd]``.
+        Implements the ALT stack command: `ALT acid, alt, [vspd]`.
         Selecting an altitude disengages VNAV for this aircraft. When no
         vertical speed is given and the currently selected vertical speed
         opposes the required climb/descent direction, it is reset so the
@@ -927,29 +944,29 @@ class Autopilot(TrafficArrays):
         Returns:
             tuple: (True, confirmation message).
         """
-        minisky.traf.selalt[idx] = alt
-        minisky.traf.swvnav[idx] = False
+        self.traffic.selalt[idx] = alt
+        self.traffic.swvnav[idx] = False
 
         # Check for optional VS argument
         if vspd:
-            minisky.traf.selvs[idx] = vspd
+            self.traffic.selvs[idx] = vspd
         else:
             idxarr = idx if isinstance(idx, np.ndarray) else np.array([idx])
-            delalt = alt - minisky.traf.alt[idxarr]
+            delalt = alt - self.traffic.alt[idxarr]
             # Check for VS with opposite sign => use default vs
             # by setting autopilot vs to zero
             oppositevs = np.logical_and(
-                minisky.traf.selvs[idxarr] * delalt < 0.0,
-                abs(minisky.traf.selvs[idxarr]) > 0.01,
+                self.traffic.selvs[idxarr] * delalt < 0.0,
+                abs(self.traffic.selvs[idxarr]) > 0.01,
             )
 
-            minisky.traf.selvs[idxarr[oppositevs]] = 0.0
+            self.traffic.selvs[idxarr[oppositevs]] = 0.0
         return True, f"altitude set to {alt / ft} ft"
 
     def selvspdcmd(self, idx: int, vspd: Vspd) -> tuple[bool, str]:
         """Select the autopilot vertical speed.
 
-        Implements the VS stack command: ``VS acid, vspd (ft/min)``.
+        Implements the VS stack command: `VS acid, vspd (ft/min)`.
         Setting a vertical speed disengages VNAV for this aircraft.
 
         Args:
@@ -959,14 +976,14 @@ class Autopilot(TrafficArrays):
         Returns:
             tuple: (True, confirmation message).
         """
-        minisky.traf.selvs[idx] = vspd
-        minisky.traf.swvnav[idx] = False
+        self.traffic.selvs[idx] = vspd
+        self.traffic.swvnav[idx] = False
         return True, f"vertical speed set to {vspd / fpm} ft/min"
 
     def selhdgcmd(self, idx: int, hdg: Hdg) -> tuple[bool, str]:  # HDG command
         """Select the autopilot heading.
 
-        Implements the HDG stack command: ``HDG acid, hdg (deg)``. When a
+        Implements the HDG stack command: `HDG acid, hdg (deg)`. When a
         wind field is defined and the aircraft is airborne (above 50 ft),
         the commanded track is computed from the given heading and the local
         wind; otherwise track equals heading. Selecting a heading disengages
@@ -980,13 +997,13 @@ class Autopilot(TrafficArrays):
             tuple: (True, confirmation message).
         """
 
-        if minisky.traf.wind.winddim > 0:
-            if minisky.traf.alt[idx] > 50.0 * ft:
+        if self.traffic.wind.winddim > 0:
+            if self.traffic.alt[idx] > 50.0 * ft:
                 # Above 50ft: compute track based on wind
-                tasnorth = minisky.traf.tas[idx] * np.cos(np.radians(hdg))
-                taseast = minisky.traf.tas[idx] * np.sin(np.radians(hdg))
-                wind_v, wind_u = minisky.traf.wind.getdata(
-                    minisky.traf.lat[idx], minisky.traf.lon[idx], minisky.traf.alt[idx]
+                tasnorth = self.traffic.tas[idx] * np.cos(np.radians(hdg))
+                taseast = self.traffic.tas[idx] * np.sin(np.radians(hdg))
+                wind_v, wind_u = self.traffic.wind.getdata(
+                    self.traffic.lat[idx], self.traffic.lon[idx], self.traffic.alt[idx]
                 )
                 gsnorth = tasnorth + wind_v
                 gseast = taseast + wind_u
@@ -997,13 +1014,13 @@ class Autopilot(TrafficArrays):
         else:
             self.trk[idx] = hdg
 
-        minisky.traf.swlnav[idx] = False
+        self.traffic.swlnav[idx] = False
         return True, f"heading set to {hdg} deg"
 
     def selspdcmd(self, idx: int, casmach: Spd) -> tuple[bool, str]:  # SPD command
         """Select the autopilot speed.
 
-        Implements the SPD stack command: ``SPD acid, casmach``. Switches
+        Implements the SPD stack command: `SPD acid, casmach`. Switches
         off VNAV speed guidance, as a manually selected speed overrides the
         FMS speed. Whether CAS or Mach is held during altitude changes
         depends on the position relative to the crossover altitude.
@@ -1019,10 +1036,10 @@ class Autopilot(TrafficArrays):
         # Depending on or position relative to crossover altitude,
         # we will maintain CAS or Mach when altitude changes
         # We will convert values when needed
-        minisky.traf.selspd[idx] = casmach
+        self.traffic.selspd[idx] = casmach
 
         # Used to be: Switch off VNAV: SPD command overrides
-        minisky.traf.swvnavspd[idx] = False
+        self.traffic.swvnavspd[idx] = False
 
         if casmach > 1.0:
             msg = f"speed set to {casmach / kts} kts"
@@ -1036,7 +1053,7 @@ class Autopilot(TrafficArrays):
     ) -> tuple[bool, str]:
         """Set (or show) the destination of an aircraft.
 
-        Implements the DEST stack command: ``DEST acid, latlon/airport``.
+        Implements the DEST stack command: `DEST acid, latlon/airport`.
         The destination is looked up in the airport database (or parsed as a
         position) and appended to the route as its final waypoint. If it is
         the only route waypoint it is immediately activated, engaging LNAV
@@ -1053,20 +1070,26 @@ class Autopilot(TrafficArrays):
             tuple: (success flag, message).
         """
         if wpname is None:
-            return True, "DEST " + minisky.traf.callsign[acidx] + ": " + self.dest[acidx]
+            return True, "DEST " + self.traffic.callsign[acidx] + ": " + self.dest[acidx]
 
         route = self.route[acidx]
 
-        apidx = minisky.navdb.getaptidx(wpname)
+        apidx = self.navigation.getaptidx(wpname)
         if apidx < 0:
             if len(route.wpname) > 0:
                 reflat = route.wplat[-1]
                 reflon = route.wplon[-1]
             else:
-                reflat = minisky.traf.lat[acidx]
-                reflon = minisky.traf.lon[acidx]
+                reflat = self.traffic.lat[acidx]
+                reflon = self.traffic.lon[acidx]
 
-            success, posobj = txt2pos(wpname, float(reflat), float(reflon))
+            success, posobj = txt2pos(
+                wpname,
+                float(reflat),
+                float(reflon),
+                self.navigation,
+                self.traffic,
+            )
             if success:
                 assert isinstance(posobj, Position)
                 lat = posobj.lat
@@ -1075,8 +1098,8 @@ class Autopilot(TrafficArrays):
                 return False, "DEST: Position " + wpname + " not found."
 
         else:
-            lat = minisky.navdb.aptlat[apidx]
-            lon = minisky.navdb.aptlon[apidx]
+            lat = self.navigation.aptlat[apidx]
+            lon = self.navigation.aptlon[apidx]
 
         # Check if a speed constraint was given at destination
         dest_spd = -999 if casmach is None else casmach
@@ -1085,15 +1108,15 @@ class Autopilot(TrafficArrays):
         iwp = route.add_waypoint(acidx, self.dest[acidx], route.dest, lat, lon, 0.0, dest_spd)
         # If only waypoint: activate
         if (iwp == 0) or (self.orig[acidx] != "" and len(route.wpname) == 2):
-            minisky.traf.actwp.lat[acidx] = route.wplat[iwp]
-            minisky.traf.actwp.lon[acidx] = route.wplon[iwp]
-            minisky.traf.actwp.nextaltco[acidx] = route.wpalt[iwp]
-            minisky.traf.actwp.spd[acidx] = route.wpspd[iwp]
+            self.traffic.actwp.lat[acidx] = route.wplat[iwp]
+            self.traffic.actwp.lon[acidx] = route.wplon[iwp]
+            self.traffic.actwp.nextaltco[acidx] = route.wpalt[iwp]
+            self.traffic.actwp.spd[acidx] = route.wpspd[iwp]
 
-            minisky.traf.swlnav[acidx] = True
-            minisky.traf.swvnav[acidx] = True
+            self.traffic.swlnav[acidx] = True
+            self.traffic.swvnav[acidx] = True
             route.iactwp = iwp
-            minisky.traffic.route.direct(acidx, route.wpname[iwp])
+            direct(self.traffic, acidx, route.wpname[iwp])
 
         # If not found, say so
         elif iwp < 0:
@@ -1104,7 +1127,7 @@ class Autopilot(TrafficArrays):
     def setorig(self, acidx: int, wpname: Wpt | None = None) -> tuple[bool, str]:
         """Set (or show) the origin of an aircraft.
 
-        Implements the ORIG stack command: ``ORIG acid, latlon/airport``.
+        Implements the ORIG stack command: `ORIG acid, latlon/airport`.
         The origin is stored as the first waypoint of the route; it is
         bookkeeping only and does not activate guidance.
 
@@ -1117,21 +1140,27 @@ class Autopilot(TrafficArrays):
             tuple: (success flag, message).
         """
         if wpname is None:
-            return True, "ORIG " + minisky.traf.callsign[acidx] + ": " + self.orig[acidx]
+            return True, "ORIG " + self.traffic.callsign[acidx] + ": " + self.orig[acidx]
 
         route = self.route[acidx]
 
-        apidx = minisky.navdb.getaptidx(wpname)
+        apidx = self.navigation.getaptidx(wpname)
 
         if apidx < 0:
             if len(route.wpname) > 0:
                 reflat = route.wplat[-1]
                 reflon = route.wplon[-1]
             else:
-                reflat = minisky.traf.lat[acidx]
-                reflon = minisky.traf.lon[acidx]
+                reflat = self.traffic.lat[acidx]
+                reflon = self.traffic.lon[acidx]
 
-            success, posobj = txt2pos(wpname, float(reflat), float(reflon))
+            success, posobj = txt2pos(
+                wpname,
+                float(reflat),
+                float(reflon),
+                self.navigation,
+                self.traffic,
+            )
             if success:
                 assert isinstance(posobj, Position)
                 lat = posobj.lat
@@ -1140,13 +1169,13 @@ class Autopilot(TrafficArrays):
                 return False, ("ORIG: Position " + wpname + " not found.")
 
         else:
-            lat = minisky.navdb.aptlat[apidx]
-            lon = minisky.navdb.aptlon[apidx]
+            lat = self.navigation.aptlat[apidx]
+            lon = self.navigation.aptlon[apidx]
 
         # Origin: bookkeeping only for now, store in route as origin
         self.orig[acidx] = wpname
         iwp = route.add_waypoint(
-            acidx, self.orig[acidx], route.orig, lat, lon, 0.0, minisky.traf.cas[acidx]
+            acidx, self.orig[acidx], route.orig, lat, lon, 0.0, self.traffic.cas[acidx]
         )
         if iwp < 0:
             return False, (self.orig[acidx] + " not found.")
@@ -1156,7 +1185,7 @@ class Autopilot(TrafficArrays):
     def setVNAV(self, idx: Any, flag: OnOff | None = None) -> tuple[bool, str]:
         """Switch VNAV (vertical FMS guidance) on or off, or show its state.
 
-        Implements the VNAV stack command: ``VNAV acid, [ON/OFF]``. VNAV can
+        Implements the VNAV stack command: `VNAV acid, [ON/OFF]`. VNAV can
         only be engaged when LNAV is on and a route with waypoints exists;
         engaging it recalculates the flight plan and the VNAV profile for
         the active leg. Switching VNAV also switches VNAV speed guidance.
@@ -1172,9 +1201,9 @@ class Autopilot(TrafficArrays):
         if not isinstance(idx, Collection):
             if idx is None:
                 # All aircraft are targeted
-                minisky.traf.swvnav = np.array(minisky.traf.ntraf * [flag])
-                minisky.traf.swvnavspd = np.array(minisky.traf.ntraf * [flag])
-                idx = np.arange(minisky.traf.ntraf)
+                self.traffic.swvnav = np.array(self.traffic.ntraf * [flag])
+                self.traffic.swvnavspd = np.array(self.traffic.ntraf * [flag])
+                idx = np.arange(self.traffic.ntraf)
             else:
                 # Prepare for the loop
                 idx = np.array([idx])
@@ -1184,22 +1213,22 @@ class Autopilot(TrafficArrays):
         for i in idx:
             if flag is None:
                 msg = (
-                    minisky.traf.callsign[i]
+                    self.traffic.callsign[i]
                     + ": VNAV is "
-                    + ("ON" if minisky.traf.swvnav[i] else "OFF")
+                    + ("ON" if self.traffic.swvnav[i] else "OFF")
                 )
-                if not minisky.traf.swvnavspd[i]:
+                if not self.traffic.swvnavspd[i]:
                     msg += " but VNAVSPD is OFF"
                 output.append(msg)
 
             elif flag:
-                if not minisky.traf.swlnav[i]:
-                    return False, (minisky.traf.callsign[i] + ": VNAV ON requires LNAV to be ON")
+                if not self.traffic.swlnav[i]:
+                    return False, (self.traffic.callsign[i] + ": VNAV ON requires LNAV to be ON")
 
                 route = self.route[i]
                 if len(route.wpname) > 0:
-                    minisky.traf.swvnav[i] = True
-                    minisky.traf.swvnavspd[i] = True
+                    self.traffic.swvnav[i] = True
+                    self.traffic.swvnavspd[i] = True
                     self.route[i].calcfp()
                     actwpidx = self.route[i].iactwp
                     self.ComputeVNAV(
@@ -1209,17 +1238,17 @@ class Autopilot(TrafficArrays):
                         self.route[i].wptorta[actwpidx],
                         self.route[i].wpxtorta[actwpidx],
                     )
-                    minisky.traf.actwp.nextaltco[i] = self.route[i].wptoalt[actwpidx]
+                    self.traffic.actwp.nextaltco[i] = self.route[i].wptoalt[actwpidx]
 
                 else:
                     return False, (
                         "VNAV "
-                        + minisky.traf.callsign[i]
+                        + self.traffic.callsign[i]
                         + ": no waypoints or destination specified"
                     )
             else:
-                minisky.traf.swvnav[i] = False
-                minisky.traf.swvnavspd[i] = False
+                self.traffic.swvnav[i] = False
+                self.traffic.swvnavspd[i] = False
         if flag == None:
             return True, "\n".join(output)
 
@@ -1228,7 +1257,7 @@ class Autopilot(TrafficArrays):
     def setLNAV(self, idx: Any, flag: OnOff | None = None) -> tuple[bool, str]:
         """Switch LNAV (lateral FMS guidance) on or off, or show its state.
 
-        Implements the LNAV stack command: ``LNAV acid, [ON/OFF]``. LNAV can
+        Implements the LNAV stack command: `LNAV acid, [ON/OFF]`. LNAV can
         only be engaged when the aircraft has a route; engaging it selects
         the best waypoint to fly to (see Route.findact()) and issues a
         direct-to towards it.
@@ -1244,8 +1273,8 @@ class Autopilot(TrafficArrays):
         if not isinstance(idx, Collection):
             if idx is None:
                 # All aircraft are targeted
-                minisky.traf.swlnav = np.array(minisky.traf.ntraf * [flag])
-                idx = np.arange(minisky.traf.ntraf)
+                self.traffic.swlnav = np.array(self.traffic.ntraf * [flag])
+                idx = np.arange(self.traffic.ntraf)
             else:
                 # Prepare for the loop
                 idx = np.array([idx])
@@ -1255,9 +1284,9 @@ class Autopilot(TrafficArrays):
         for i in idx:
             if flag is None:
                 output.append(
-                    minisky.traf.callsign[i]
+                    self.traffic.callsign[i]
                     + ": LNAV is "
-                    + ("ON" if minisky.traf.swlnav[i] else "OFF")
+                    + ("ON" if self.traffic.swlnav[i] else "OFF")
                 )
 
             elif flag:
@@ -1265,14 +1294,14 @@ class Autopilot(TrafficArrays):
                 if len(route.wpname) <= 0:
                     return False, (
                         "LNAV "
-                        + minisky.traf.callsign[i]
+                        + self.traffic.callsign[i]
                         + ": no waypoints or destination specified"
                     )
-                elif not minisky.traf.swlnav[i]:
-                    minisky.traf.swlnav[i] = True
-                    minisky.traffic.route.direct(i, route.wpname[route.findact(i)])
+                elif not self.traffic.swlnav[i]:
+                    self.traffic.swlnav[i] = True
+                    direct(self.traffic, i, route.wpname[route.findact(i)])
             else:
-                minisky.traf.swlnav[i] = False
+                self.traffic.swlnav[i] = False
         if flag is None:
             return True, "\n".join(output)
 
@@ -1281,7 +1310,7 @@ class Autopilot(TrafficArrays):
     def setswtoc(self, idx: Any, flag: OnOff | None = None) -> tuple[bool, str]:
         """Switch the Top-of-Climb logic on or off, or show its state.
 
-        Implements the SWTOC stack command: ``SWTOC acid, [ON/OFF]``. With
+        Implements the SWTOC stack command: `SWTOC acid, [ON/OFF]`. With
         ToC logic on (default) the aircraft climbs as early as possible with
         the default steepness; with it off, the climb angle is chosen to
         arrive at the altitude constraint exactly at its waypoint.
@@ -1298,8 +1327,8 @@ class Autopilot(TrafficArrays):
         if not isinstance(idx, Collection):
             if idx is None:
                 # All aircraft are targeted
-                self.swtoc = np.array(minisky.traf.ntraf * [flag])
-                idx = np.arange(minisky.traf.ntraf)
+                self.swtoc = np.array(self.traffic.ntraf * [flag])
+                idx = np.arange(self.traffic.ntraf)
             else:
                 # Prepare for the loop
                 idx = np.array([idx])
@@ -1309,7 +1338,7 @@ class Autopilot(TrafficArrays):
         for i in idx:
             if flag is None:
                 output.append(
-                    minisky.traf.callsign[i] + ": SWTOC is " + ("ON" if self.swtoc[i] else "OFF")
+                    self.traffic.callsign[i] + ": SWTOC is " + ("ON" if self.swtoc[i] else "OFF")
                 )
 
             elif flag:
@@ -1324,7 +1353,7 @@ class Autopilot(TrafficArrays):
     def setswtod(self, idx: Any, flag: OnOff | None = None) -> tuple[bool, str]:
         """Switch the Top-of-Descent logic on or off, or show its state.
 
-        Implements the SWTOD stack command: ``SWTOD acid, [ON/OFF]``. With
+        Implements the SWTOD stack command: `SWTOD acid, [ON/OFF]`. With
         ToD logic on (default) the aircraft descends as late as possible
         with the default steepness; with it off, the descent angle is chosen
         to arrive at the altitude constraint exactly at its waypoint.
@@ -1340,8 +1369,8 @@ class Autopilot(TrafficArrays):
         if not isinstance(idx, Collection):
             if idx is None:
                 # All aircraft are targeted
-                self.swtod = np.array(minisky.traf.ntraf * [flag])
-                idx = np.arange(minisky.traf.ntraf)
+                self.swtod = np.array(self.traffic.ntraf * [flag])
+                idx = np.arange(self.traffic.ntraf)
             else:
                 # Prepare for the loop
                 idx = np.array([idx])
@@ -1351,7 +1380,7 @@ class Autopilot(TrafficArrays):
         for i in idx:
             if flag is None:
                 output.append(
-                    minisky.traf.callsign[i] + ": SWTOD is " + ("ON" if self.swtod[i] else "OFF")
+                    self.traffic.callsign[i] + ": SWTOD is " + ("ON" if self.swtod[i] else "OFF")
                 )
 
             elif flag:

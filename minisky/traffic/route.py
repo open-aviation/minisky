@@ -1,6 +1,6 @@
 """Route implementation for the BlueSky FMS.
 
-Contains the per-aircraft :class:`Route` class (the flight plan: an ordered
+Contains the per-aircraft [`Route`][minisky.traffic.route.Route] class (the flight plan: an ordered
 list of waypoints with optional altitude, speed, RTA and turn constraints)
 plus the module-level functions that implement the route-editing stack
 commands: ADDWPT, ADDWPTMODE, AFTER, BEFORE, AT, DIRECT, RTA, LISTRTE,
@@ -8,25 +8,27 @@ DELRTE and DELWPT.
 
 The route itself is passive data with flight-plan pre-calculations
 (calcfp()); the actual guidance along the route is performed by
-:class:`~minisky.traffic.autopilot.Autopilot`, which pulls waypoint data
-into the vectorized :class:`~minisky.traffic.activewpdata.ActiveWaypoint`
+[`Autopilot`][minisky.traffic.autopilot.Autopilot], which pulls waypoint data
+into the vectorized [`ActiveWaypoint`][minisky.traffic.activewpdata.ActiveWaypoint]
 arrays via getnextwp()/getnextturnwp().
 """
 
+from __future__ import annotations
+
 import math
+from typing import TYPE_CHECKING
 
 import numpy as np
 
-import minisky
-from minisky import stack
-
 # from minisky.core import Replaceable
-from minisky.stack import Command
 from minisky.stack.argparser import Alt, Spd, Time, Wpt
 from minisky.tools import geo
 from minisky.tools.aero import casormach2tas, ft, g0, kts, mach2cas, nm
 from minisky.tools.convert import degto180, txt2alt, txt2spd
 from minisky.tools.position import Position, txt2pos
+
+if TYPE_CHECKING:
+    from minisky.traffic import Traffic
 
 
 class Route:
@@ -36,7 +38,7 @@ class Route:
     constraint, speed constraint, required time of arrival (RTA), turn
     specification (fly-by/fly-over/fly-turn with radius, speed or heading
     rate) and stack commands to execute when the waypoint is passed. One
-    Route object is kept per aircraft in ``minisky.traf.ap.route``.
+    Route object is kept per aircraft in `minisky.traf.ap.route`.
 
     Waypoints from the navigation database are resolved to the entry
     closest to the given lat/lon. For plain lat/lon waypoints the aircraft
@@ -91,7 +93,9 @@ class Route:
     # # Aircraft route objects
     # _routes: WeakValueDictionary[str, "Route"] = WeakValueDictionary()
 
-    def __init__(self, acid: str) -> None:
+    def __init__(self, traffic: Traffic, acid: str) -> None:
+        self.traffic = traffic
+        self.navigation = traffic.navigation
         self.acid = acid
 
         # Waypoint data
@@ -234,7 +238,7 @@ class Route:
         wpok = True  # switch for waypoint check
 
         # Check if name already exists, if so add integer 01, 02, 03 etc.
-        wprtename = get_available_name(self.wpname, name)
+        wprtename = get_available_name(self.wpname, name, self.traffic.callsign)
         # Select on wptype
         # ORIGIN: Wptype is origin/destination?
         if wptype == Route.orig or wptype == Route.dest:
@@ -242,11 +246,11 @@ class Route:
             wpidx = 0 if orig else -1
             suffix = "ORIG" if orig else "DEST"
 
-            if name != minisky.traf.callsign[iac] + suffix:  # published identifier
-                i = minisky.navdb.getaptidx(name)
+            if name != self.traffic.callsign[iac] + suffix:  # published identifier
+                i = self.navigation.getaptidx(name)
                 if i >= 0:
-                    wplat = minisky.navdb.aptlat[i]
-                    wplon = minisky.navdb.aptlon[i]
+                    wplat = self.navigation.aptlat[i]
+                    wplon = self.navigation.aptlon[i]
 
             if not orig and alt < 0:
                 alt = 0
@@ -288,25 +292,25 @@ class Route:
         else:
             # Lat/lon: wpname is then call sign of aircraft: add number
             if wptype == Route.wplatlon:
-                newname = get_available_name(self.wpname, name, 3)
+                newname = get_available_name(self.wpname, name, self.traffic.callsign, 3)
 
             # Else make data complete with nav database and closest to given lat,lon
             else:  # so wptypewpnav
                 newname = wprtename
 
                 if wptype != Route.runway:
-                    i = minisky.navdb.getwpidx(name, lat, lon)
+                    i = self.navigation.getwpidx(name, lat, lon)
                     wpok = i >= 0
 
                     if wpok:
-                        wplat = minisky.navdb.wplat[i]
-                        wplon = minisky.navdb.wplon[i]
+                        wplat = self.navigation.wplat[i]
+                        wplon = self.navigation.wplon[i]
                     else:
-                        i = minisky.navdb.getaptidx(name)
+                        i = self.navigation.getaptidx(name)
                         wpok = i >= 0
                         if wpok:
-                            wplat = minisky.navdb.aptlat[i]
-                            wplon = minisky.navdb.aptlon[i]
+                            wplat = self.navigation.aptlat[i]
+                            wplon = self.navigation.aptlon[i]
 
             # Check if afterwp or beforewp is specified and found:
             aftwp = afterwp.upper().strip()  # Remove space, upper case
@@ -340,8 +344,8 @@ class Route:
 
         # update qdr and "last waypoint switch" in traffic
         if idx >= 0:
-            minisky.traf.actwp.next_qdr[iac] = self.getnextqdr()
-            minisky.traf.actwp.swlastwp[iac] = self.iactwp == n_wpt - 1
+            self.traffic.actwp.next_qdr[iac] = self.getnextqdr()
+            self.traffic.actwp.swlastwp[iac] = self.iactwp == n_wpt - 1
 
         # Update waypoints
         if wptype != Route.calcwp:
@@ -349,7 +353,7 @@ class Route:
 
         # Update autopilot settings
         if wpok and 0 <= self.iactwp < n_wpt:
-            direct(iac, self.wpname[self.iactwp])
+            direct(self.traffic, iac, self.wpname[self.iactwp])
 
         return idx
 
@@ -432,16 +436,16 @@ class Route:
                     rwykey = name[7:10]
 
             # Use this code to look up runway heading
-            wphdg = minisky.navdb.rwythresholds[name[:4]][rwykey][2]
+            wphdg = self.navigation.rwythresholds[name[:4]][rwykey][2]
 
             # keep constant runway heading
-            stack.stack("HDG " + str(self.acid) + " " + str(wphdg))
+            self.traffic.stack_command("HDG " + str(self.acid) + " " + str(wphdg))
 
             # start decelerating
-            stack.stack("DELAY " + "10 " + "SPD " + str(self.acid) + " " + "10")
+            self.traffic.stack_command("DELAY " + "10 " + "SPD " + str(self.acid) + " " + "10")
 
             # delete aircraft
-            stack.stack("DELAY " + "42 " + "DEL " + str(self.acid))
+            self.traffic.stack_command("DELAY " + "42 " + "DEL " + str(self.acid))
 
             swlastwp = self.iactwp == n_wpt - 1
 
@@ -525,7 +529,7 @@ class Route:
         and are issued when the aircraft passes the waypoint.
         """
         for cmdline in self.wpstack[self.iactwp]:
-            stack.stack(cmdline)
+            self.traffic.stack_command(cmdline)
             # debug
             # stack.stack("ECHO "+self.acid+" AT "+self.wpname[self.iactwp]+" command issued:"+cmdline)
         return
@@ -605,9 +609,9 @@ class Route:
         # Also add "from direction" as to directions so no need to shift for actwpdata
         # direction to will be overwritten in actwpdata in case of a direct to
         # Add current pos to first waypoint as default value for direction to 1st waypoint
-        iac = minisky.traf.idx(self.acid)
+        iac = self.traffic.idx(self.acid)
         qdr, dist = geo.qdrdist(
-            minisky.traf.lat[iac], minisky.traf.lon[iac], self.wplat[0], self.wplon[0]
+            self.traffic.lat[iac], self.traffic.lon[iac], self.wplat[0], self.wplon[0]
         )
         self.wpdirto = [qdr] + self.wpdirfrom[0:-1]  # [deg] Direction to waypoints
 
@@ -716,8 +720,8 @@ class Route:
         # Find closest
         wplat = np.array(self.wplat)
         wplon = np.array(self.wplon)
-        dy = wplat - minisky.traf.lat[i]
-        dx = (wplon - minisky.traf.lon[i]) * minisky.traf.coslat[i]
+        dy = wplat - self.traffic.lat[i]
+        dx = (wplon - self.traffic.lon[i]) * self.traffic.coslat[i]
         dist2 = dx * dx + dy * dy
         # Note: the max() prevents walking back, even in cases when this might be apropriate,
         # such as when previous waypoints have been deleted
@@ -727,16 +731,16 @@ class Route:
         # Unless behind us, next waypoint?
         if iwpnear + 1 < n_wpt:
             qdr = math.degrees(math.atan2(dx[iwpnear], dy[iwpnear]))
-            delhdg = abs(degto180(minisky.traf.trk[i] - qdr))
+            delhdg = abs(degto180(self.traffic.trk[i] - qdr))
 
             # we only turn to the first waypoint if we can reach the required
             # heading before reaching the waypoint
             time_turn = (
-                max(0.01, minisky.traf.tas[i])
+                max(0.01, self.traffic.tas[i])
                 * math.radians(delhdg)
-                / (g0 * math.tan(minisky.traf.ap.bankdef[i]))
+                / (g0 * math.tan(self.traffic.ap.bankdef[i]))
             )
-            time_straight = math.sqrt(dist2[iwpnear]) * 60.0 * nm / max(0.01, minisky.traf.tas[i])
+            time_straight = math.sqrt(dist2[iwpnear]) * 60.0 * nm / max(0.01, self.traffic.tas[i])
 
             if time_turn > time_straight:
                 iwpnear += 1
@@ -765,7 +769,9 @@ class Route:
 # ---- following are functions managing the routes ----
 
 
-def get_available_name(data: list, name_: str, len_: int = 2) -> str:
+def get_available_name(
+    data: list, name_: str, callsigns: list[str], len_: int = 2
+) -> str:
     """Make a waypoint name unique by appending a zero-padded number.
 
     Checks if the name already exists in the given list (or matches an
@@ -785,7 +791,7 @@ def get_available_name(data: list, name_: str, len_: int = 2) -> str:
     fmt_ = "{:0" + str(len_) + "d}"
 
     # Avoid using call sign without number
-    if minisky.traf.callsign.count(name_) > 0:
+    if callsigns.count(name_) > 0:
         appi = 1
         name_ = name_ + fmt_.format(appi)
 
@@ -795,7 +801,9 @@ def get_available_name(data: list, name_: str, len_: int = 2) -> str:
     return name_
 
 
-def change_wpt_mode(acidx: int, mode=None, value=None) -> bool | None:
+def change_wpt_mode(
+    traffic: Traffic, acidx: int, mode=None, value=None
+) -> bool | None:
     """Change the mode with which ADDWPT adds new waypoints.
 
     Implements the ADDWPTMODE stack command. Available modes: FLYBY,
@@ -815,13 +823,13 @@ def change_wpt_mode(acidx: int, mode=None, value=None) -> bool | None:
         bool: True on success.
     """
     # Get aircraft route
-    minisky.traf.callsign[acidx]
-    acrte = minisky.traf.ap.route[acidx]
+    traffic.callsign[acidx]
+    acrte = traffic.ap.route[acidx]
     # First, we want to check what 'mode' is, and then call addwpt_stack
     # accordingly.
     if mode in ["FLYBY", "FLYOVER", "FLYTURN"]:
         # We're just changing addwpt mode, call the appropriate function.
-        addwpt(acidx, mode)
+        addwpt(traffic, acidx, mode)
         return True
 
     elif mode in [
@@ -834,29 +842,29 @@ def change_wpt_mode(acidx: int, mode=None, value=None) -> bool | None:
         "TURNHDGR",
     ]:
         # We're changing the turn speed or radius
-        addwpt(acidx, mode, value)
+        addwpt(traffic, acidx, mode, value)
         return True
 
     elif mode == None:
         # Just echo the current wptmode
         if acrte.swflyby == True and acrte.swflyturn == False:
-            minisky.scr.echo("Current ADDWPT mode is FLYBY.")
+            traffic.console.echo("Current ADDWPT mode is FLYBY.")
             return True
 
         elif acrte.swflyby == False and acrte.swflyturn == False:
-            minisky.scr.echo("Current ADDWPT mode is FLYOVER.")
+            traffic.console.echo("Current ADDWPT mode is FLYOVER.")
             return True
 
         else:
-            minisky.scr.echo("Current ADDWPT mode is FLYTURN.")
+            traffic.console.echo("Current ADDWPT mode is FLYTURN.")
             return True
 
 
-def addwpt(ac: str | int, *args) -> bool | tuple:  # args: all arguments of addwpt
+def addwpt(traffic: Traffic, ac: str | int, *args) -> bool | tuple:  # args: all arguments of addwpt
     """Add a waypoint to the route of an aircraft.
 
     Implements the ADDWPT stack command:
-    ``ADDWPT acid, (wpname/lat,lon), [alt], [spd], [afterwp], [beforewp]``.
+    `ADDWPT acid, (wpname/lat,lon), [alt], [spd], [afterwp], [beforewp]`.
 
     Besides adding a regular waypoint (navdb waypoint, airport, runway or
     lat/lon position, with optional altitude constraint [m] and speed
@@ -882,13 +890,13 @@ def addwpt(ac: str | int, *args) -> bool | tuple:  # args: all arguments of addw
 
     # First get the appropriate ac route
     if isinstance(ac, str):
-        acidx = minisky.traf.idx(ac)
+        acidx = traffic.idx(ac)
         callsign = ac
     else:
         acidx = ac
-        callsign = minisky.traf.callsign[acidx]
+        callsign = traffic.callsign[acidx]
 
-    acrte = minisky.traf.ap.route[acidx]
+    acrte = traffic.ap.route[acidx]
 
     # Check FLYBY or FLYOVER switch, instead of adding a waypoint
 
@@ -966,8 +974,8 @@ def addwpt(ac: str | int, *args) -> bool | tuple:  # args: all arguments of addw
     # Choose reference position ot look up VOR and waypoints
     # First waypoint: own position
     if n_wpt == 0:
-        reflat = minisky.traf.lat[acidx]
-        reflon = minisky.traf.lon[acidx]
+        reflat = traffic.lat[acidx]
+        reflon = traffic.lon[acidx]
 
     # Or last waypoint before destination
     else:
@@ -990,7 +998,7 @@ def addwpt(ac: str | int, *args) -> bool | tuple:  # args: all arguments of addw
     # Normal waypoint (no take-off waypoint => see else)
     if not takeoffwpt:
         # Get waypoint position
-        success, posobj = txt2pos(name, reflat, reflon)
+        success, posobj = txt2pos(name, reflat, reflon, traffic.navigation, traffic)
         if success:
             assert isinstance(posobj, Position)
             lat = posobj.lat
@@ -1040,17 +1048,17 @@ def addwpt(ac: str | int, *args) -> bool | tuple:  # args: all arguments of addw
             if rwyrteidx > 0:
                 rwylat = acrte.wplat[rwyrteidx]
                 rwylon = acrte.wplon[rwyrteidx]
-                aptidx = minisky.navdb.getapinear(rwylat, rwylon)
-                aptname = minisky.navdb.aptname[aptidx]
+                aptidx = traffic.navigation.getapinear(rwylat, rwylon)
+                aptname = traffic.navigation.aptname[aptidx]
 
                 rwyname = acrte.wpname[rwyrteidx].split("/")[1]
                 rwyid = rwyname.replace("RWY", "").replace("RW", "")
-                rwyhdg = minisky.navdb.rwythresholds[aptname][rwyid][2]
+                rwyhdg = traffic.navigation.rwythresholds[aptname][rwyid][2]
 
             else:
-                rwylat = minisky.traf.lat[acidx]
-                rwylon = minisky.traf.lon[acidx]
-                rwyhdg = minisky.traf.trk[acidx]
+                rwylat = traffic.lat[acidx]
+                rwylon = traffic.lon[acidx]
+                rwyhdg = traffic.trk[acidx]
 
         elif args[1].count("/") > 0 or len(args) > 2 and args[2]:  # we need apt,rwy
             # Take care of both EHAM/RW06 as well as EHAM,RWY18L (so /&, and RW/RWY)
@@ -1066,7 +1074,7 @@ def addwpt(ac: str | int, *args) -> bool | tuple:  # args: all arguments of addw
             # TODO: Add finding the runway heading with rwyrteidx>0 and navdb!!!
             # Try to get it from the database
             try:
-                rwyhdg = minisky.navdb.rwythresholds[aptid][rwyid][2]
+                rwyhdg = traffic.navigation.rwythresholds[aptid][rwyid][2]
             except Exception:
                 rwydir = rwyid.replace("L", "").replace("R", "").replace("C", "")
                 try:
@@ -1074,13 +1082,19 @@ def addwpt(ac: str | int, *args) -> bool | tuple:  # args: all arguments of addw
                 except ValueError:
                     return False, name + " not found."
 
-            success, posobj = txt2pos(aptid + "/RW" + rwyid, reflat, reflon)
+            success, posobj = txt2pos(
+                aptid + "/RW" + rwyid,
+                reflat,
+                reflon,
+                traffic.navigation,
+                traffic,
+            )
             if success:
                 assert isinstance(posobj, Position)
                 rwylat, rwylon = posobj.lat, posobj.lon
             else:
-                rwylat = minisky.traf.lat[acidx]
-                rwylon = minisky.traf.lon[acidx]
+                rwylat = traffic.lat[acidx]
+                rwylon = traffic.lon[acidx]
 
         else:
             return False, "Use ADDWPT TAKEOFF,AIRPORTID,RWYNAME"
@@ -1114,15 +1128,15 @@ def addwpt(ac: str | int, *args) -> bool | tuple:  # args: all arguments of addw
         return False, "Waypoint " + name + " not added."
 
     # check for presence of orig/dest
-    norig = int(minisky.traf.ap.orig[acidx] != "")  # 1 if orig is present in route
-    ndest = int(minisky.traf.ap.dest[acidx] != "")  # 1 if dest is present in route
+    norig = int(traffic.ap.orig[acidx] != "")  # 1 if orig is present in route
+    ndest = int(traffic.ap.dest[acidx] != "")  # 1 if dest is present in route
 
     # Check whether this is first 'real' waypoint (not orig & dest),
     # And if so, make active
     if n_wpt - norig - ndest == 1:  # first waypoint: make active
-        direct(acidx, acrte.wpname[norig])  # 0 if no orig
+        direct(traffic, acidx, acrte.wpname[norig])  # 0 if no orig
         # print("direct ",self.wpname[norig])
-        minisky.traf.swlnav[acidx] = True
+        traffic.swlnav[acidx] = True
 
     if afterwp and acrte.wpname.count(afterwp) == 0:
         return (
@@ -1134,6 +1148,7 @@ def addwpt(ac: str | int, *args) -> bool | tuple:  # args: all arguments of addw
 
 
 def addwpt_before(
+    traffic: Traffic,
     acidx: int,
     beforewp: Wpt,
     addwptkey,
@@ -1144,7 +1159,7 @@ def addwpt_before(
     """Add a waypoint to a route before an existing waypoint.
 
     Implements the BEFORE stack command:
-    ``acid BEFORE wpt ADDWPT (wpname/lat,lon), [alt], [spd]``.
+    `acid BEFORE wpt ADDWPT (wpname/lat,lon), [alt], [spd]`.
     Thin wrapper around addwpt() with the insertion point set.
 
     Args:
@@ -1158,10 +1173,11 @@ def addwpt_before(
     Returns:
         bool or tuple: Result of addwpt().
     """
-    return addwpt(acidx, waypoint, alt, spd, None, beforewp)
+    return addwpt(traffic, acidx, waypoint, alt, spd, None, beforewp)
 
 
 def addwpt_after(
+    traffic: Traffic,
     acidx: int,
     afterwp: Wpt,
     addwptkey,
@@ -1172,7 +1188,7 @@ def addwpt_after(
     """Add a waypoint to a route after an existing waypoint.
 
     Implements the AFTER stack command:
-    ``acid AFTER wpt ADDWPT (wpname/lat,lon), [alt], [spd]``.
+    `acid AFTER wpt ADDWPT (wpname/lat,lon), [alt], [spd]`.
     Thin wrapper around addwpt() with the insertion point set.
 
     Args:
@@ -1186,24 +1202,24 @@ def addwpt_after(
     Returns:
         bool or tuple: Result of addwpt().
     """
-    return addwpt(acidx, waypoint, alt, spd, afterwp)
+    return addwpt(traffic, acidx, waypoint, alt, spd, afterwp)
 
 
-def at_wpt(acidx: int, atwp: Wpt, *args) -> bool | tuple:
+def at_wpt(traffic: Traffic, acidx: int, atwp: Wpt, *args) -> bool | tuple:
     """Show, set or delete constraints and commands at a route waypoint.
 
     Implements the AT stack command:
-    ``AT acid, wpt [DEL] ALT/SPD/DO alt/spd/stack command``.
+    `AT acid, wpt [DEL] ALT/SPD/DO alt/spd/stack command`.
 
     Usage examples:
 
-    - ``KL204 AT LOPIK``: show altitude/speed constraints at the waypoint.
-    - ``KL204 AT LOPIK FL090/250``: set both altitude and speed constraint.
-    - ``KL204 AT LOPIK ALT FL090``: set the altitude constraint.
-    - ``KL204 AT LOPIK SPD 250``: set the speed constraint.
-    - ``KL204 AT LOPIK DO SPD 250``: stack a command when passing the
+    - `KL204 AT LOPIK`: show altitude/speed constraints at the waypoint.
+    - `KL204 AT LOPIK FL090/250`: set both altitude and speed constraint.
+    - `KL204 AT LOPIK ALT FL090`: set the altitude constraint.
+    - `KL204 AT LOPIK SPD 250`: set the speed constraint.
+    - `KL204 AT LOPIK DO SPD 250`: stack a command when passing the
       waypoint (own callsign is prepended when the command needs one).
-    - ``KL204 AT LOPIK DEL ALT/SPD/BOTH/ALL``: delete constraint(s).
+    - `KL204 AT LOPIK DEL ALT/SPD/BOTH/ALL`: delete constraint(s).
 
     After editing, the flight plan and active-waypoint guidance are
     recalculated.
@@ -1216,8 +1232,8 @@ def at_wpt(acidx: int, atwp: Wpt, *args) -> bool | tuple:
     Returns:
         bool or tuple: True on success, or (success flag, message).
     """
-    acid = minisky.traf.callsign[acidx]
-    acrte = minisky.traf.ap.route[acidx]
+    acid = traffic.callsign[acidx]
+    acrte = traffic.ap.route[acidx]
     if atwp in acrte.wpname:
         wpidx = acrte.wpname.index(atwp)
 
@@ -1314,7 +1330,7 @@ def at_wpt(acidx: int, atwp: Wpt, *args) -> bool | tuple:
 
             # If success: update flight plan and guidance
             acrte.calcfp()
-            direct(acidx, acrte.wpname[acrte.iactwp])
+            direct(traffic, acidx, acrte.wpname[acrte.iactwp])
 
         # acid AT wpt ALT/SPD alt/spd
         elif len(args) >= 2:
@@ -1350,10 +1366,10 @@ def at_wpt(acidx: int, atwp: Wpt, *args) -> bool | tuple:
 
                 # IF command starts with aircraft id, it is not missing
                 cmd = args[1].upper()
-                if cmd not in minisky.traf.callsign:
+                if cmd not in traffic.callsign:
                     # Look up arg types
                     try:
-                        cmdobj = Command.cmddict[cmd]
+                        cmdobj = traffic.command_registry[cmd]
 
                         # Command found, check arguments
                         argtypes = cmdobj.annotations  # type: ignore[attr-defined]
@@ -1361,7 +1377,7 @@ def at_wpt(acidx: int, atwp: Wpt, *args) -> bool | tuple:
                         if (
                             len(argtypes) > 0
                             and argtypes[0] == int
-                            and not (len(args) > 2 and args[2].upper() in minisky.traf.callsign)
+                            and not (len(args) > 2 and args[2].upper() in traffic.callsign)
                         ):
                             # missing acid, so add ownship acid
                             acrte.wpstack[wpidx].append(acid + " " + " ".join(args[1:]))
@@ -1398,7 +1414,7 @@ def at_wpt(acidx: int, atwp: Wpt, *args) -> bool | tuple:
 
             # If success: update flight plan and guidance
             acrte.calcfp()
-            direct(acidx, acrte.wpname[acrte.iactwp])
+            direct(traffic, acidx, acrte.wpname[acrte.iactwp])
 
     # Waypoint not found in route
     else:
@@ -1407,10 +1423,10 @@ def at_wpt(acidx: int, atwp: Wpt, *args) -> bool | tuple:
     return True
 
 
-def direct(acidx: int, wpname: Wpt) -> bool:
+def direct(traffic: Traffic, acidx: int, wpname: Wpt) -> bool:
     """Go direct to a specified waypoint in the route.
 
-    Implements the DIRECT stack command: ``DIRECT acid wpname``. Makes the
+    Implements the DIRECT stack command: `DIRECT acid wpname`. Makes the
     given waypoint the active waypoint, copies its data (position, fly-by/
     fly-turn settings, next-turn data) into the active-waypoint arrays,
     recalculates the flight plan and the VNAV profile, sets the next-leg
@@ -1424,26 +1440,26 @@ def direct(acidx: int, wpname: Wpt) -> bool:
     Returns:
         bool: True on success.
     """
-    minisky.traf.callsign[acidx]
-    acrte = minisky.traf.ap.route[acidx]
+    traffic.callsign[acidx]
+    acrte = traffic.ap.route[acidx]
     wpidx = acrte.wpname.index(wpname)
 
     acrte.iactwp = wpidx
-    minisky.traf.actwp.lat[acidx] = acrte.wplat[wpidx]
-    minisky.traf.actwp.lon[acidx] = acrte.wplon[wpidx]
-    minisky.traf.actwp.flyby[acidx] = acrte.wpflyby[wpidx]
-    minisky.traf.actwp.flyturn[acidx] = acrte.wpflyturn[wpidx]
-    minisky.traf.actwp.turnrad[acidx] = acrte.wpturnrad[wpidx]
-    minisky.traf.actwp.turnspd[acidx] = acrte.wpturnspd[wpidx]
-    minisky.traf.actwp.turnhdgr[acidx] = acrte.wpturnhdgr[wpidx]
+    traffic.actwp.lat[acidx] = acrte.wplat[wpidx]
+    traffic.actwp.lon[acidx] = acrte.wplon[wpidx]
+    traffic.actwp.flyby[acidx] = acrte.wpflyby[wpidx]
+    traffic.actwp.flyturn[acidx] = acrte.wpflyturn[wpidx]
+    traffic.actwp.turnrad[acidx] = acrte.wpturnrad[wpidx]
+    traffic.actwp.turnspd[acidx] = acrte.wpturnspd[wpidx]
+    traffic.actwp.turnhdgr[acidx] = acrte.wpturnhdgr[wpidx]
 
     (
-        minisky.traf.actwp.nextturnlat[acidx],
-        minisky.traf.actwp.nextturnlon[acidx],
-        minisky.traf.actwp.nextturnspd[acidx],
-        minisky.traf.actwp.nextturnrad[acidx],
-        minisky.traf.actwp.nextturnhdgr[acidx],
-        minisky.traf.actwp.nextturnidx[acidx],
+        traffic.actwp.nextturnlat[acidx],
+        traffic.actwp.nextturnlon[acidx],
+        traffic.actwp.nextturnspd[acidx],
+        traffic.actwp.nextturnrad[acidx],
+        traffic.actwp.nextturnhdgr[acidx],
+        traffic.actwp.nextturnidx[acidx],
     ) = acrte.getnextturnwp()
 
     # Determine next turn waypoint data
@@ -1451,14 +1467,14 @@ def direct(acidx: int, wpname: Wpt) -> bool:
     # Do calculation for VNAV
     acrte.calcfp()
 
-    minisky.traf.actwp.xtoalt[acidx] = acrte.wpxtoalt[wpidx]
-    minisky.traf.actwp.nextaltco[acidx] = acrte.wptoalt[wpidx]
+    traffic.actwp.xtoalt[acidx] = acrte.wpxtoalt[wpidx]
+    traffic.actwp.nextaltco[acidx] = acrte.wptoalt[wpidx]
 
-    minisky.traf.actwp.torta[acidx] = acrte.wptorta[wpidx]  # available for active RTA-guidance
-    minisky.traf.actwp.xtorta[acidx] = acrte.wpxtorta[wpidx]  # available for active RTA-guidance
+    traffic.actwp.torta[acidx] = acrte.wptorta[wpidx]  # available for active RTA-guidance
+    traffic.actwp.xtorta[acidx] = acrte.wpxtorta[wpidx]  # available for active RTA-guidance
 
     # VNAV calculations like V/S and speed for RTA
-    minisky.traf.ap.ComputeVNAV(
+    traffic.ap.ComputeVNAV(
         acidx,
         acrte.wptoalt[wpidx],
         acrte.wpxtoalt[wpidx],
@@ -1470,45 +1486,45 @@ def direct(acidx: int, wpname: Wpt) -> bool:
     if acrte.wpspd[wpidx] > 0.0:
         # Set target speed for autopilot
 
-        alt = minisky.traf.alt[acidx] if acrte.wpalt[wpidx] < 0.0 else acrte.wpalt[wpidx]
+        alt = traffic.alt[acidx] if acrte.wpalt[wpidx] < 0.0 else acrte.wpalt[wpidx]
 
         # Check for valid Mach or CAS
         cas = mach2cas(acrte.wpspd[wpidx], alt) if acrte.wpspd[wpidx] < 2.0 else acrte.wpspd[wpidx]
 
         # Save it for next leg
-        minisky.traf.actwp.nextspd[acidx] = cas
+        traffic.actwp.nextspd[acidx] = cas
 
     # No speed specified for next leg
     else:
-        minisky.traf.actwp.nextspd[acidx] = -999.0
+        traffic.actwp.nextspd[acidx] = -999.0
 
     qdr_, dist_ = geo.qdrdist(
-        minisky.traf.lat[acidx],
-        minisky.traf.lon[acidx],
-        minisky.traf.actwp.lat[acidx],
-        minisky.traf.actwp.lon[acidx],
+        traffic.lat[acidx],
+        traffic.lon[acidx],
+        traffic.actwp.lat[acidx],
+        traffic.actwp.lon[acidx],
     )
 
     # Save leg length & direction in actwp data
-    minisky.traf.actwp.curlegdir[acidx] = qdr_  # [deg]
-    minisky.traf.actwp.curleglen[acidx] = dist_ * nm  # [m]
+    traffic.actwp.curlegdir[acidx] = qdr_  # [deg]
+    traffic.actwp.curleglen[acidx] = dist_ * nm  # [m]
 
     if acrte.wpflyturn[wpidx] and acrte.wpturnrad[wpidx] > 0.0:  # turn radius specified
         turnrad = acrte.wpturnrad[wpidx]
     # Overwrite is hdgrate  defined
     if acrte.wpflyturn[wpidx] and acrte.wpturnhdgr[wpidx] > 0.0:  # heading rate specified
-        turnrad = minisky.traf.tas[acidx] * 360.0 / (2 * math.pi * acrte.wpturnhdgr[wpidx])
+        turnrad = traffic.tas[acidx] * 360.0 / (2 * math.pi * acrte.wpturnhdgr[wpidx])
     else:  # nothing specified, use default bank ang;e
         turnrad = (
-            minisky.traf.tas[acidx]
-            * minisky.traf.tas[acidx]
+            traffic.tas[acidx]
+            * traffic.tas[acidx]
             / math.tan(math.radians(acrte.bank))
             / g0
             / nm
         )  # [nm]default bank angle e.g. 25 deg
 
-    minisky.traf.actwp.turndist[acidx] = (
-        np.logical_or(acrte.wpturnhdgr[wpidx] > 0.0, minisky.traf.actwp.flyby[acidx] > 0.5)
+    traffic.actwp.turndist[acidx] = (
+        np.logical_or(acrte.wpturnhdgr[wpidx] > 0.0, traffic.actwp.flyby[acidx] > 0.5)
         * turnrad
         * abs(
             math.tan(
@@ -1517,14 +1533,14 @@ def direct(acidx: int, wpname: Wpt) -> bool:
         )
     )  # [nm]
 
-    minisky.traf.swlnav[acidx] = True
+    traffic.swlnav[acidx] = True
     return True
 
 
-def set_rta(acidx: int, wpname: Wpt, time: Time) -> bool:  # all arguments of setRTA
+def set_rta(traffic: Traffic, acidx: int, wpname: Wpt, time: Time) -> bool:  # all arguments of setRTA
     """Set a required time of arrival (RTA) at a route waypoint.
 
-    Implements the RTA stack command: ``RTA acid, wpname, time``. The RTA
+    Implements the RTA stack command: `RTA acid, wpname, time`. The RTA
     is stored with the waypoint and the guidance to the active waypoint is
     recomputed so the autopilot can adjust its speed schedule.
 
@@ -1536,22 +1552,22 @@ def set_rta(acidx: int, wpname: Wpt, time: Time) -> bool:  # all arguments of se
     Returns:
         bool: True on success.
     """
-    minisky.traf.callsign[acidx]
-    acrte = minisky.traf.ap.route[acidx]
+    traffic.callsign[acidx]
+    acrte = traffic.ap.route[acidx]
     wpidx = acrte.wpname.index(wpname)
     acrte.wprta[wpidx] = time
 
     # Recompute route and update actwp because of RTA addition
-    direct(acidx, acrte.wpname[acrte.iactwp])
+    direct(traffic, acidx, acrte.wpname[acrte.iactwp])
 
     return True
 
 
-def listrte(acidx: int, ipagetxt: str = "0") -> tuple | None:
+def listrte(traffic: Traffic, acidx: int, ipagetxt: str = "0") -> tuple | None:
     """Show the route of an aircraft in the console, page by page.
 
-    Implements the LISTRTE stack command: ``LISTRTE acid, [pagenr]``.
-    Each line shows the waypoint name (active waypoint marked with ``*``),
+    Implements the LISTRTE stack command: `LISTRTE acid, [pagenr]`.
+    Each line shows the waypoint name (active waypoint marked with `*`),
     its altitude constraint (ft or FL), speed constraint (kts or Mach) and
     type ([orig], [dest], [C] fly-by, [|] fly-over, [U] fly-turn). Seven
     waypoints are shown per page.
@@ -1565,7 +1581,7 @@ def listrte(acidx: int, ipagetxt: str = "0") -> tuple | None:
     """
     # First get the appropriate ac route
     ipage = int(ipagetxt)
-    acrte = minisky.traf.ap.route[acidx]
+    acrte = traffic.ap.route[acidx]
 
     n_wpt = len(acrte.wpname)
 
@@ -1612,14 +1628,14 @@ def listrte(acidx: int, ipagetxt: str = "0") -> tuple | None:
                 txt += "[|]"
 
             # Display message
-            minisky.scr.echo(txt)
+            traffic.console.echo(txt)
 
 
-def delrte(acidx: int | None = None) -> bool | tuple:
+def delrte(traffic: Traffic, acidx: int | None = None) -> bool | tuple:
     """Delete the complete route (including origin/destination) of an
     aircraft.
 
-    Implements the DELRTE stack command: ``DELRTE acid``. The route is
+    Implements the DELRTE stack command: `DELRTE acid`. The route is
     re-initialized empty and LNAV/VNAV are disengaged. When no callsign is
     given and exactly one aircraft exists, that aircraft is used.
 
@@ -1630,28 +1646,28 @@ def delrte(acidx: int | None = None) -> bool | tuple:
         bool or tuple: True on success, or (False, error message).
     """
     if acidx is None:
-        if minisky.traf.ntraf == 0:
+        if traffic.ntraf == 0:
             return False, "No aircraft in simulation"
-        if minisky.traf.ntraf > 1:
+        if traffic.ntraf > 1:
             return False, "Specify callsign of aircraft to delete route of"
         acidx = 0
     # Simple re-initialize this route as empty
-    acid = minisky.traf.callsign[acidx]
-    acrte = minisky.traf.ap.route[acidx]
+    acid = traffic.callsign[acidx]
+    acrte = traffic.ap.route[acidx]
     acrte.__init__(acid)
 
     # Also disable LNAV,VNAV if route is deleted
-    minisky.traf.swlnav[acidx] = False
-    minisky.traf.swvnav[acidx] = False
-    minisky.traf.swvnavspd[acidx] = False
+    traffic.swlnav[acidx] = False
+    traffic.swvnav[acidx] = False
+    traffic.swvnavspd[acidx] = False
 
     return True
 
 
-def delwpt(acidx: int, wpname: Wpt) -> bool | tuple:
+def delwpt(traffic: Traffic, acidx: int, wpname: Wpt) -> bool | tuple:
     """Delete a single waypoint from the route of an aircraft.
 
-    Implements the DELWPT stack command: ``DELWPT acid, wpname``. When the
+    Implements the DELWPT stack command: `DELWPT acid, wpname`. When the
     deleted waypoint is the active one (and not the last), guidance is
     redirected to the following waypoint. LNAV/VNAV are disengaged when
     the route becomes empty.
@@ -1665,7 +1681,7 @@ def delwpt(acidx: int, wpname: Wpt) -> bool | tuple:
     """
 
     # Look up waypoint
-    acrte = minisky.traf.ap.route[acidx]
+    acrte = traffic.ap.route[acidx]
     n_wpt = len(acrte.wpname)
 
     try:
@@ -1676,7 +1692,7 @@ def delwpt(acidx: int, wpname: Wpt) -> bool | tuple:
     # check if active way point is the one being deleted and that it is not the last wpt.
     # If active wpt is deleted then change path of aircraft
     if acrte.iactwp == wpidx and wpidx != n_wpt - 1:
-        direct(acidx, acrte.wpname[wpidx + 1])
+        direct(traffic, acidx, acrte.wpname[wpidx + 1])
 
     n_wpt = n_wpt - 1
 
@@ -1701,8 +1717,8 @@ def delwpt(acidx: int, wpname: Wpt) -> bool | tuple:
 
     # If no waypoints left, make sure to disable LNAV/VNAV
     if n_wpt == 0 and (acidx or acidx == 0):
-        minisky.traf.swlnav[acidx] = False
-        minisky.traf.swvnav[acidx] = False
-        minisky.traf.swvnavspd[acidx] = False
+        traffic.swlnav[acidx] = False
+        traffic.swvnav[acidx] = False
+        traffic.swvnavspd[acidx] = False
 
     return True

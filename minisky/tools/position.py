@@ -6,12 +6,24 @@ identifiers, runways (e.g. "EHAM/RW06"), and aircraft callsigns - into
 latitude/longitude coordinates [deg] via the Position class.
 """
 
-import minisky
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
 
 from .convert import txt2lat, txt2lon
 
+if TYPE_CHECKING:
+    from minisky.tools.navdata import Navdatabase
+    from minisky.traffic import Traffic
 
-def txt2pos(name: str, reflat: float, reflon: float) -> "tuple[bool, Position | str]":
+
+def txt2pos(
+    name: str,
+    reflat: float,
+    reflon: float,
+    navigation: Navdatabase,
+    traffic: Traffic,
+) -> tuple[bool, Position | str]:
     """Parse a position text into a Position object.
 
     Args:
@@ -23,7 +35,7 @@ def txt2pos(name: str, reflat: float, reflon: float) -> "tuple[bool, Position | 
     Returns:
         tuple: (True, Position) on success, or (False, error message).
     """
-    pos = Position(name.upper().strip(), reflat, reflon)
+    pos = Position(name.upper().strip(), reflat, reflon, navigation, traffic)
     if not pos.error:
         return True, pos
     return False, name + " not found in database"
@@ -86,7 +98,14 @@ class Position:
     # position types: "latlon","nav","apt","rwy"
 
     # Initialize using text
-    def __init__(self, name: str, reflat: float, reflon: float) -> None:
+    def __init__(
+        self,
+        name: str,
+        reflat: float,
+        reflon: float,
+        navigation: Navdatabase,
+        traffic: Traffic,
+    ) -> None:
         """Resolve a position text relative to a reference position.
 
         Args:
@@ -112,33 +131,33 @@ class Position:
             try:
                 aptname, rwytxt = name.split("/RW")
                 rwyname = rwytxt.lstrip("Y").upper()  # remove Y and spaces
-                self.lat, self.lon, self.refhdg = minisky.navdb.rwythresholds[aptname][rwyname]
+                self.lat, self.lon, self.refhdg = navigation.rwythresholds[aptname][rwyname]
             except KeyError:
                 self.error = True
             self.type = "rwy"
 
         # airport?
-        elif minisky.navdb.aptid.count(name) > 0:
-            idx = minisky.navdb.aptid.index(name.upper())
+        elif navigation.aptid.count(name) > 0:
+            idx = navigation.aptid.index(name.upper())
 
-            self.lat = minisky.navdb.aptlat[idx]
-            self.lon = minisky.navdb.aptlon[idx]
+            self.lat = navigation.aptlat[idx]
+            self.lon = navigation.aptlon[idx]
             self.type = "apt"
 
         # fix or navaid?
-        elif minisky.navdb.wpid.count(name) > 0:
-            idx = minisky.navdb.getwpidx(name, reflat, reflon)
-            self.lat = minisky.navdb.wplat[idx]
-            self.lon = minisky.navdb.wplon[idx]
+        elif navigation.wpid.count(name) > 0:
+            idx = navigation.getwpidx(name, reflat, reflon)
+            self.lat = navigation.wplat[idx]
+            self.lon = navigation.wplon[idx]
             self.type = "nav"
 
         # aircraft id?
-        elif name in minisky.traf.callsign:
-            idx = minisky.traf.idx(name)
+        elif name in traffic.callsign:
+            idx = traffic.idx(name)
             self.name = ""
             self.type = "latlon"
-            self.lat = minisky.traf.lat[idx]
-            self.lon = minisky.traf.lon[idx]
+            self.lat = traffic.lat[idx]
+            self.lon = traffic.lon[idx]
 
             # exception for pan, check for LEFT, RIGHT, ABOVE or DOWN
         elif name.upper() in ["LEFT", "RIGHT", "ABOVE", "DOWN"]:

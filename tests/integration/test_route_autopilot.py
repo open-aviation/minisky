@@ -98,7 +98,7 @@ class TestRouteEditing:
 
     def test_addwpt_accepts_string_callsign(self, bs, run_cmd, aircraft):
         # addwpt() with a callsign string used to crash on the callsign lookup
-        result = bs.traffic.route.addwpt(aircraft, "52.5,5.0")
+        result = bs.traffic.route.addwpt(bs.traf, aircraft, "52.5,5.0")
         assert result is True
         route = bs.traf.ap.route[0]
         assert route.wplat[0] == pytest.approx(52.5)
@@ -108,7 +108,7 @@ class TestRouteEditing:
         run_cmd(f"ADDWPT {aircraft} 52.5,5.0")
         run_cmd(f"ADDWPT {aircraft} 53.0,6.0")
         route = bs.traf.ap.route[0]
-        assert bs.traffic.route.direct(0, route.wpname[1]) is True
+        assert bs.traffic.route.direct(bs.traf, 0, route.wpname[1]) is True
         assert route.iactwp == 1
         assert bs.traf.actwp.lat[0] == pytest.approx(53.0)
 
@@ -142,7 +142,7 @@ class TestRouteEditing:
         run_cmd(f"ADDWPT {aircraft} 52.5,5.0")
         run_cmd(f"ADDWPT {aircraft} 53.0,6.0")
         route = bs.traf.ap.route[0]
-        result = bs.traffic.route.at_wpt(0, route.wpname[1], "FL090/250")
+        result = bs.traffic.route.at_wpt(bs.traf, 0, route.wpname[1], "FL090/250")
         assert result is True
         assert route.wpalt[1] == pytest.approx(9000 * FT, rel=1e-3)
         assert route.wpspd[1] == pytest.approx(250 * KTS, rel=1e-3)
