@@ -14,88 +14,103 @@ the plugin selects on load:
   coupling for multicopter rows.
 - ``AUTOPILOT``  -> :class:`MulticopterAutopilot` — HOVER/DELIVER mission
   primitives and a fixed waypoint capture radius.
+- ``OPENAP``     -> :class:`MulticopterPerf` — electric performance: power
+  from a propeller/motor map, battery state of charge, sagging envelope.
 
 Fixed-wing aircraft in the same simulation are untouched: every override
 calls ``super()`` and adjusts only the multicopter rows. Helicopters are out
 of scope — membership is a typecode set, not ``LIFT_ROTOR``.
 
-Stack commands: MCOPT, YAW, YAWRATE, HOVER, DELIVER.
+Stack commands: MCOPT, YAW, YAWRATE, HOVER, DELIVER, BATT.
 """
 
 from __future__ import annotations
 
-import minisky
-from minisky import stack
-from minisky.core.trafficarrays import select_implementation
+from typing import TYPE_CHECKING, Any
 
 from .aporasas import MulticopterAPorASAS
 from .autopilot import MulticopterAutopilot
 from .entity import Multicopter
 from .kinematics import MulticopterKinematics
+from .perf import MulticopterPerf
 
-#: The plugin's per-aircraft state entity; None until init_plugin() ran.
-multicopter: Multicopter | None = None
+if TYPE_CHECKING:
+    from minisky import MiniSky
 
 #: Replaceable base -> multicopter implementation, selected on load and reset.
 IMPLEMENTATIONS = (
     ("KINEMATICS", MulticopterKinematics),
     ("APORASAS", MulticopterAPorASAS),
     ("AUTOPILOT", MulticopterAutopilot),
+    ("OPENAP", MulticopterPerf),
 )
 
 
-def init_plugin():
-    """Initialise the multicopter plugin.
+def init_plugin(runtime: MiniSky) -> tuple[dict[str, Any], dict[str, list[Any]]]:
+    """Initialise the multicopter plugin for one MiniSky runtime.
 
-    Creates the per-aircraft state entity, swaps in the three multicopter
-    implementations, and registers the stack commands.
+    Creates the per-aircraft state entity on the runtime's traffic tree,
+    swaps in the multicopter implementations, and returns the stack commands.
+
+    Args:
+        runtime: MiniSky runtime loading this plugin.
+
+    Returns:
+        A `(config, stack_functions)` tuple consumed by the plugin manager.
     """
-    global multicopter
+    mc = Multicopter(runtime.traffic)
+    _select_implementations(runtime)
 
-    multicopter = mc = Multicopter()
-    _select_implementations()
-
-    ap = minisky.traf.ap  # the MulticopterAutopilot instance just selected
-    if not isinstance(ap, MulticopterAutopilot):
-        raise RuntimeError("MULTICOPTER: could not select MulticopterAutopilot")
-    _register_commands(mc, ap)
+    # The instances just selected onto traf; commands bind to these
+    ap = runtime.traffic.ap
+    perf = runtime.traffic.perf
+    if not isinstance(ap, MulticopterAutopilot) or not isinstance(perf, MulticopterPerf):
+        raise RuntimeError("MULTICOPTER: could not select the multicopter implementations")
 
     config = {
         "plugin_name": "MULTICOPTER",
-        "reset": reset,
+        "reset": lambda: _select_implementations(runtime),
+        "state": mc,
     }
-    return config
+    return config, _stack_functions(mc, ap, perf)
 
 
-def _select_implementations() -> None:
-    """Swap the multicopter implementations onto ``traf``.
+def _select_implementations(runtime: MiniSky) -> None:
+    """Swap the multicopter implementations onto the runtime's ``traf``.
 
     Equivalent to issuing ``SELECTIMPL <BASE> <IMPL>`` for each entry of
     :data:`IMPLEMENTATIONS`; replaces the live instance immediately and
-    rebinds any stack commands bound to the old one.
+    rebinds any stack commands bound to the old one. Also called from the
+    reset hook, since a reset reverts every replaceable to its core default.
     """
     for basename, impl in IMPLEMENTATIONS:
-        select_implementation(basename, impl.__name__)
+        runtime.replaceables.select(basename, impl.__name__)
 
 
-def _register_commands(mc: Multicopter, ap: MulticopterAutopilot) -> None:
-    """Register the plugin's stack commands.
+def _stack_functions(
+    mc: Multicopter, ap: MulticopterAutopilot, perf: MulticopterPerf
+) -> dict[str, list[Any]]:
+    """Build the plugin's stack-command table.
 
-    Registered as bound methods, so a later SELECTIMPL swap rebinds them to
-    the new instance. Argument specifications are given explicitly, so they
-    override the plain Python annotations on the callbacks.
+    Bound to the freshly selected instances; a later SELECTIMPL swap rebinds
+    them to the new instance. Argument specifications are given explicitly,
+    so they override the plain Python annotations on the callbacks.
     """
-    stack.command(mc.mcopt, name="MCOPT", arguments="callsign,[onoff]")
-    stack.command(mc.yaw, name="YAW", arguments="callsign,hdg")
-    stack.command(mc.setyawrate, name="YAWRATE", arguments="callsign,[float]")
-    stack.command(ap.hover, name="HOVER", arguments="callsign,[time]")
-    stack.command(ap.deliver, name="DELIVER", arguments="callsign,alt,[time]")
-
-
-def reset() -> None:
-    """Re-arm the plugin after a simulation reset.
-
-    A reset reverts every replaceable to its core default, so the
-    multicopter implementations have to be selected again.
-    """
-    _select_implementations()
+    return {
+        "MCOPT": [mc.mcopt, "callsign,[onoff]", "MCOPT callsign,[onoff]", mc.mcopt.__doc__],
+        "YAW": [mc.yaw, "callsign,hdg", "YAW callsign,hdg", mc.yaw.__doc__],
+        "YAWRATE": [
+            mc.setyawrate,
+            "callsign,[float]",
+            "YAWRATE callsign,[rate]",
+            mc.setyawrate.__doc__,
+        ],
+        "HOVER": [ap.hover, "callsign,[time]", "HOVER callsign,[time]", ap.hover.__doc__],
+        "DELIVER": [
+            ap.deliver,
+            "callsign,alt,[time]",
+            "DELIVER callsign,alt,[time]",
+            ap.deliver.__doc__,
+        ],
+        "BATT": [perf.batt, "callsign", "BATT callsign", perf.batt.__doc__],
+    }
