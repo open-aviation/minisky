@@ -1,17 +1,16 @@
-"""Airborne Separation Assurance System (ASAS) package.
+"""Airborne Separation Assurance System package.
 
-This package bundles MiniSky's conflict detection and resolution (CD&R)
-functionality:
+This package bundles MiniSky's conflict detection and resolution:
 
-- ``detection``: pairwise state-based conflict detection (:class:`ConflictDetection`),
-  which linearly extrapolates aircraft states to find protected-zone intrusions
-  within a lookahead time.
-- ``resolution``: the conflict resolution base class (:class:`ConflictResolution`),
-  which manages resolution state and navigation recovery after conflicts.
-- ``mvp``: the Modified Voltage Potential (:class:`MVP`) resolution algorithm.
+- `detection`: pairwise state-based
+  [`ConflictDetection`][minisky.traffic.asas.detection.ConflictDetection].
+- `resolution`: shared
+  [`ConflictResolution`][minisky.traffic.asas.resolution.ConflictResolution]
+  state and navigation recovery.
+- `mvp`: the Modified Voltage Potential
+  [`MVP`][minisky.traffic.asas.mvp.MVP] resolution algorithm.
 
-The active detection and resolution instances live on the traffic object as
-``minisky.traf.cd`` and ``minisky.traf.cr``.
+The active instances are [`runtime.traffic.cd`][minisky.traffic.asas.detection.ConflictDetection] and [`runtime.traffic.cr`][minisky.traffic.asas.resolution.ConflictResolution].
 """
 
 # isort: off

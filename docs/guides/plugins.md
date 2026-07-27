@@ -60,7 +60,7 @@ The config dictionary supports these lifecycle entries:
 | `state` | Optional plugin-owned object exposed through the variable explorer |
 
 Plugin records, loaded state, timers, hooks, and returned state belong to
-`runtime.plugins`. Loading the same plugin into two runtimes creates separate
+[`runtime.plugins`][minisky.plugin.plugin.PluginManager]. Loading the same plugin into two runtimes creates separate
 records and hook sets.
 
 ## Per-aircraft data: `Entity`

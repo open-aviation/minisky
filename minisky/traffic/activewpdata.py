@@ -5,7 +5,7 @@ is currently flying towards. The [`ActiveWaypoint`][minisky.traffic.activewpdata
 interface between the per-aircraft [`Route`][minisky.traffic.route.Route]
 objects (event-driven, scalar waypoint switching) and the vectorized
 LNAV/VNAV guidance in [`Autopilot`][minisky.traffic.autopilot.Autopilot].
-Available at runtime as `minisky.traf.actwp`.
+Available as [`runtime.traffic.actwp`][minisky.traffic.activewpdata.ActiveWaypoint].
 """
 
 from __future__ import annotations

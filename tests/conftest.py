@@ -1,62 +1,56 @@
 """Shared fixtures for MiniSky integration tests.
 
-Most existing integration tests still exercise the temporary module-level
-compatibility aliases (`minisky.traf`, `minisky.sim`, ...), so:
-- one explicit runtime is constructed for the test session and activates those
-  aliases;
-- each test gets a clean state via minisky.sim.reset();
-- always access singletons through the module (bs.traf), never via
-  `from minisky import traf` (that binds None at import time).
-
-Note on output: scr.echo() truncates the buffer on every call, so
-scr.read_output_buffer() only ever returns the *last* echoed message.
+One explicit runtime is constructed for the test session. Each test resets the
+simulation state before use. Output from `ConsoleIO.echo()` is destructive:
+`read_output_buffer()` returns only the most recently echoed message.
 """
+
+from __future__ import annotations
+
+from collections.abc import Callable, Iterator
 
 import pytest
 
-import minisky
+from minisky import MiniSky
+from minisky.core.settings import DEFAULT_SETTINGS_FILE, MiniSkySettings
 
 
 @pytest.fixture(scope="session")
-def runtime():
+def runtime() -> Iterator[MiniSky]:
     """Session-wide explicit MiniSky runtime."""
-    return minisky.init()
-
-
-@pytest.fixture(scope="session")
-def bs(runtime):
-    """Compatibility module activated for the session runtime."""
-    return minisky
+    instance = MiniSky(MiniSkySettings.from_file(DEFAULT_SETTINGS_FILE))
+    yield instance
+    instance.close()
 
 
 @pytest.fixture
-def sim(bs):
+def sim(runtime: MiniSky):
     """Fresh simulation state for each test."""
-    bs.sim.reset()
-    bs.scr.read_output_buffer()  # drain "Simulation reset" echo
-    return bs.sim
+    runtime.simulation.reset()
+    runtime.console.read_output_buffer()  # drain "Simulation reset" echo
+    return runtime.simulation
 
 
 @pytest.fixture
-def run_cmd(bs, sim):
+def run_cmd(runtime: MiniSky, sim) -> Callable[..., str]:
     """Queue a stack command, step the sim, and return the last echoed output."""
 
-    def _run(cmd, steps=1):
-        minisky.stack.stack(cmd)
+    def _run(cmd: str, steps: int = 1) -> str:
+        runtime.commands.stack(cmd)
         for _ in range(steps):
-            bs.sim.step()
-        return bs.scr.read_output_buffer()
+            runtime.simulation.step()
+        return runtime.console.read_output_buffer()
 
     return _run
 
 
 @pytest.fixture
-def step_until(bs):
+def step_until(runtime: MiniSky):
     """Step the simulation until a predicate holds, failing after max_steps."""
 
-    def _step(pred, max_steps=600):
+    def _step(pred: Callable[[], bool], max_steps: int = 600) -> int:
         for i in range(max_steps):
-            bs.sim.step()
+            runtime.simulation.step()
             if pred():
                 return i
         pytest.fail(f"condition not met within {max_steps} simulation steps")

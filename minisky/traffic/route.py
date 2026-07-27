@@ -38,7 +38,7 @@ class Route:
     constraint, speed constraint, required time of arrival (RTA), turn
     specification (fly-by/fly-over/fly-turn with radius, speed or heading
     rate) and stack commands to execute when the waypoint is passed. One
-    Route object is kept per aircraft in `minisky.traf.ap.route`.
+    Route object is kept per aircraft in [`runtime.traffic.ap.route`][minisky.traffic.route.Route].
 
     Waypoints from the navigation database are resolved to the entry
     closest to the given lat/lon. For plain lat/lon waypoints the aircraft

@@ -11,9 +11,17 @@ routes, conflict detection and resolution, aircraft performance, wind, and turbu
 
 ::: minisky.traffic.autopilot.Autopilot
 
+## Active waypoint
+
+::: minisky.traffic.activewpdata.ActiveWaypoint
+
 ## Route
 
 ::: minisky.traffic.route.Route
+
+## ASAS command target
+
+::: minisky.traffic.aporasas.APorASAS
 
 ## Conflict detection
 
@@ -24,6 +32,24 @@ routes, conflict detection and resolution, aircraft performance, wind, and turbu
 ::: minisky.traffic.asas.resolution.ConflictResolution
 
 ::: minisky.traffic.asas.mvp.MVP
+
+## Wind
+
+::: minisky.traffic.wind.Windfield
+
+::: minisky.traffic.wind.Wind
+
+## Uncertainty
+
+::: minisky.traffic.uncertainty.SurveillanceUncertainty
+
+## Trails
+
+::: minisky.traffic.trails.Trails
+
+## Groups
+
+::: minisky.traffic.trafficgroups.TrafficGroups
 
 ## Performance (OpenAP)
 

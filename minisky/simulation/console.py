@@ -4,8 +4,7 @@ Defines `ConsoleIO`, the text output channel of the simulator. Stack
 commands and simulation state changes report back through its `echo`
 method, which prints to stdout and stores the message in a buffer that remote
 clients (such as the HTTP API served by `minisky server`) can read asynchronously.
-A single instance is owned by `MiniSky` and temporarily available as
-`minisky.scr` through the compatibility facade.
+Each `MiniSky` runtime owns one instance as [`runtime.console`][minisky.simulation.console.ConsoleIO].
 """
 
 from __future__ import annotations
@@ -21,7 +20,7 @@ from colorama import Fore, Style
 class ConsoleIO:
     """Class within sim task which sends/receives data to/from GUI task.
 
-    Acts as the simulator's screen/console object (`minisky.scr`). Output
+    Acts as the runtime's screen/console object ([`runtime.console`][minisky.simulation.console.ConsoleIO]). Output
     produced with `echo` is printed to stdout and kept in an in-memory
     buffer; an `asyncio.Event` is set on every echo so that awaiting
     consumers (e.g. the HTTP API's `/stack` endpoint) know new output is
@@ -63,7 +62,8 @@ class ConsoleIO:
         """Count one simulation sample while the simulation is operating.
 
         Increments the sample counter only when the simulation state is
-        `OP`; used for bookkeeping of the effective update rate.
+        [`SimulationState.OP`][minisky.simulation.simulation.SimulationState];
+        used for bookkeeping of the effective update rate.
         """
         if self.is_operating():
             self.samplecount += 1

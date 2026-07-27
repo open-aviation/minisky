@@ -529,7 +529,7 @@ class ConflictResolution(TrafficArrays):
         """Select a Conflict Resolution method.
 
         Implements the RESO stack command. Selecting "MVP" replaces the
-        traffic object's resolution instance (`minisky.traf.cr`) with a new
+        traffic object's resolution instance ([`runtime.traffic.cr`][minisky.traffic.asas.resolution.ConflictResolution]) with a new
         MVP instance and activates it.
 
         Args:

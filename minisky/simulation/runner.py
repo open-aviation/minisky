@@ -4,8 +4,7 @@ Defines the `Runner`, the asyncio-based main loop of MiniSky. It calls
 `self.simulation.step()` repeatedly at an interval derived from the requested
 simulation speed, and supports fast-forward jumps where the sleep interval is
 reduced to a minimum until a target simulation time is reached. A single
-instance is owned by `MiniSky` and temporarily available as `minisky.runner`
-through the compatibility facade.
+instance is owned by `MiniSky`.
 """
 
 from __future__ import annotations
@@ -139,6 +138,10 @@ class Runner:
             await asyncio.sleep(sleep_time)
 
         self.console.echo("Simulation completed")
+
+    def shutdown(self) -> None:
+        """Stop the run loop regardless of scenario shutdown policy."""
+        self.running = False
 
     def stop(self) -> None:
         """Request the run loop to stop.

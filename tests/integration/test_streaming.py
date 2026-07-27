@@ -8,10 +8,11 @@ import json
 
 import pytest
 
+from minisky.simulation import SimulationState
 from minisky.streaming import STREAM_MAX_HZ, StreamHub, build_snapshot
 
 
-def test_snapshot_structure_and_units(runtime, bs, sim, run_cmd):
+def test_snapshot_structure_and_units(runtime, sim, run_cmd):
     # Two steps: the first creates the aircraft, the second flips INIT -> OP.
     run_cmd("CRE KL001 A320 52.0 4.0 90 FL100 250", steps=2)
 
@@ -29,7 +30,7 @@ def test_snapshot_structure_and_units(runtime, bs, sim, run_cmd):
         "scenname",
     }
     assert info["ntraf"] == 1
-    assert info["state"] == bs.OP  # running after a CRE
+    assert info["state"] == SimulationState.OP  # running after a CRE
     assert isinstance(info["simutc"], str)
 
     ac = snap["acdata"]
@@ -42,7 +43,7 @@ def test_snapshot_structure_and_units(runtime, bs, sim, run_cmd):
     assert ac["inconf"] == [False]
 
 
-def test_snapshot_is_json_serialisable(runtime, bs, sim, run_cmd):
+def test_snapshot_is_json_serialisable(runtime, sim, run_cmd):
     run_cmd("CRE KL001 A320 52.0 4.0 90 FL100 250")
     # Must not raise: no numpy scalars leak into the snapshot.
     json.dumps(
@@ -50,20 +51,20 @@ def test_snapshot_is_json_serialisable(runtime, bs, sim, run_cmd):
     )
 
 
-def test_snapshot_empty_when_no_traffic(runtime, bs, sim):
+def test_snapshot_empty_when_no_traffic(runtime, sim):
     snap = build_snapshot(runtime.simulation, runtime.traffic, runtime.runner, runtime.commands)
     assert snap["siminfo"]["ntraf"] == 0
     assert snap["acdata"]["callsign"] == []
     assert snap["acdata"]["alt"] == []
 
 
-def test_dtmult_sets_runner_speed(bs, sim, run_cmd):
+def test_dtmult_sets_runner_speed(runtime, sim, run_cmd):
     run_cmd("DTMULT 8")
-    assert bs.runner.speed == 8.0
+    assert runtime.runner.speed == 8.0
 
 
-def test_dtmult_rejects_non_positive(bs, sim):
-    ok, msg = bs.runner.setspeed(0)
+def test_dtmult_rejects_non_positive(runtime, sim):
+    ok, msg = runtime.runner.setspeed(0)
     assert ok is False
     assert "positive" in msg.lower()
 

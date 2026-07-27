@@ -60,23 +60,28 @@ See the [command-line interface](guides/cli.md), [REST API](guides/rest-api.md),
 ## From Python
 
 ```python
-import minisky
+from minisky import DEFAULT_SETTINGS_FILE, MiniSky, MiniSkySettings
 
-minisky.init()
+settings = MiniSkySettings.from_file(DEFAULT_SETTINGS_FILE)
+with MiniSky(settings) as runtime:
+    runtime.simulation.reset()
+    runtime.traffic.cre(
+        "KL315", lat=52.0, lon=4.0, hdg=45, alt=5000, spd=250
+    )
+    runtime.commands.stack("KL315 ADDWPT HELEN FL100 250")
 
-minisky.sim.reset()
-minisky.traf.cre("KL315", lat=52.0, lon=4.0, hdg=45, alt=5000, spd=250)
-minisky.stack.stack("KL315 ADDWPT HELEN FL100 250")
+    runtime.simulation.simdt = 10  # 10-second timesteps
 
-minisky.sim.simdt = 10  # 10-second timesteps
-
-for _ in range(5):
-    minisky.sim.step()
-    print(f"t={minisky.sim.simt}s  lat={minisky.traf.lat}  lon={minisky.traf.lon}")
+    for _ in range(5):
+        runtime.simulation.step()
+        print(
+            f"t={runtime.simulation.simt}s  "
+            f"lat={runtime.traffic.lat}  lon={runtime.traffic.lon}"
+        )
 ```
 
-See the [Python library guide](guides/python-api.md) for details on the singleton objects
-and stepping the simulation yourself.
+See the [Python library guide](guides/python-api.md) for details on runtime
+ownership and stepping the simulation yourself.
 
 ## Configuration
 

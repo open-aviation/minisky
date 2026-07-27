@@ -55,7 +55,6 @@ meet on the channel name, not on any shared configuration.
 just sync
 ```
 
-<!-- TODO(abraham): when we work on PR#24, this is no longer needed for end users because the wheel should have already contained the pre-built frontend. it only applies for *developers*. -->
 
 In `settings.toml`:
 

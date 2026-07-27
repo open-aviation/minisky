@@ -31,11 +31,14 @@ reach a bare-minimum simulator that is easy to read, embed, and extend.
 - **Python library** — import `minisky` and step the simulation from your own code.
 
     ```python
-    import minisky
+    from minisky import DEFAULT_SETTINGS_FILE, MiniSky, MiniSkySettings
 
-    minisky.init()
-    minisky.traf.cre("KL315", lat=52.0, lon=4.0, hdg=45, alt=5000, spd=250)
-    minisky.sim.step()
+    settings = MiniSkySettings.from_file(DEFAULT_SETTINGS_FILE)
+    with MiniSky(settings) as runtime:
+        runtime.traffic.cre(
+            "KL315", lat=52.0, lon=4.0, hdg=45, alt=5000, spd=250
+        )
+        runtime.simulation.step()
     ```
 
     → [Python library](guides/python-api.md)
@@ -46,7 +49,7 @@ reach a bare-minimum simulator that is easy to read, embed, and extend.
 
 | Component | Module | What it does |
 | --- | --- | --- |
-| Simulation loop | [`minisky.simulation`](api/simulation.md) | Time keeping, state machine (INIT/HOLD/OP/END), async runner |
+| Simulation loop | [`minisky.simulation`](api/simulation.md) | Time keeping, [`SimulationState`][minisky.simulation.simulation.SimulationState], async runner |
 | Traffic | [`minisky.traffic`](api/traffic.md) | Per-aircraft state arrays, autopilot, routes, conflict detection & resolution, OpenAP performance |
 | Command stack | [`minisky.stack`](api/stack.md) | Text-command interpreter shared by scenario files, the console, and the REST API |
 | Plugins | [`minisky.plugin`](api/plugin.md) | Discover and load user plugins with per-aircraft data and stack commands |

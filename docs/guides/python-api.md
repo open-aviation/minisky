@@ -1,128 +1,148 @@
 # Python library
 
-MiniSky can be embedded in your own Python code — step the simulation yourself, read
-aircraft state straight from NumPy arrays, and drive everything programmatically. This is
-the fastest way to run large numbers of simulations for experiments.
+MiniSky can be embedded in your own Python code. Construct one explicit runtime,
+step its simulation, read aircraft state directly from NumPy arrays, and close
+the runtime when finished.
 
 ## Minimal example
 
 ```python
-import minisky
+from minisky import DEFAULT_SETTINGS_FILE, MiniSky, MiniSkySettings
 
-minisky.init()
+settings = MiniSkySettings.from_file(DEFAULT_SETTINGS_FILE)
+with MiniSky(settings) as runtime:
+    runtime.simulation.reset()
+    runtime.traffic.cre(
+        "KL315", lat=52.0, lon=4.0, hdg=45, alt=5000, spd=250
+    )
+    runtime.commands.stack("KL315 ADDWPT HELEN FL100 250")
 
-minisky.sim.reset()
-minisky.traf.cre("KL315", lat=52.0, lon=4.0, hdg=45, alt=5000, spd=250)
-minisky.stack.stack("KL315 ADDWPT HELEN FL100 250")
-
-minisky.sim.simdt = 10  # advance 10 simulated seconds per step
-
-for _ in range(5):
-    minisky.sim.step()
-    print(f"t={minisky.sim.simt}s  lat={minisky.traf.lat}  lon={minisky.traf.lon}")
+    runtime.simulation.simdt = 10
+    for _ in range(5):
+        runtime.simulation.step()
+        print(
+            f"t={runtime.simulation.simt}s  "
+            f"lat={runtime.traffic.lat}  lon={runtime.traffic.lon}"
+        )
 ```
 
-## The singletons
+## Runtime ownership
 
-[`minisky.init()`][minisky.init] creates the global objects everything else hangs off
-(see [Architecture](../architecture.md) for how they interact):
+A [`MiniSky`][minisky.MiniSky] instance owns all mutable simulator state:
 
 ```python
-minisky.sim      # Simulation: clock, timestep, state machine
-minisky.traf     # Traffic: all per-aircraft state and subsystems
-minisky.runner   # Runner: async real-time loop (optional — you can step manually)
-minisky.scr      # ConsoleIO: buffered text output
-minisky.navdb    # Navdatabase: waypoints, airports, airways
+runtime.simulation  # clock, timestep, and state machine
+runtime.traffic     # aircraft state and traffic subsystems
+runtime.runner      # optional async real-time loop
+runtime.console     # buffered text output
+runtime.navigation  # waypoints, airports, and airways
+runtime.commands    # command registry, queue, and scenario state
+runtime.plugins     # plugin records, hooks, timers, and state
+runtime.streaming   # per-runtime snapshot fan-out
 ```
 
-Pass a scenario to start from a file: `minisky.init(scenario="scenarios/kl204.scn")`.
+Pass a scenario to the constructor to queue it immediately:
+
+```python
+runtime = MiniSky(settings, scenario="scenarios/kl204.scn")
+```
+
+Use `with MiniSky(...)` or `async with MiniSky(...)` so plugin resources,
+stream consumers, and the runner are closed deterministically.
 
 ## Creating and commanding aircraft
 
-Directly through the Traffic object:
+Directly through the traffic object:
 
 ```python
-minisky.traf.cre(
-    "KL315",       # callsign
-    actype="B738", # aircraft type (OpenAP performance model)
-    lat=52.0,      # deg
-    lon=4.0,       # deg
-    hdg=45,        # deg
-    alt=5000,      # ft (stack units)
-    spd=250,       # CAS kts
+runtime.traffic.cre(
+    "KL315",
+    actype="B738",
+    lat=52.0,
+    lon=4.0,
+    hdg=45,
+    alt=5000,
+    spd=250,
 )
 ```
 
-Or through the stack, using the same command language as scenario files:
+Or through the runtime-owned command stack:
 
 ```python
-minisky.stack.stack("CRE KL315 B738 52.0 4.0 45 5000 250")
-minisky.stack.stack("KL315 ALT FL200")
-minisky.stack.stack("KL315 ADDWPT HELEN FL100 250")
+runtime.commands.stack("CRE KL315 B738 52.0 4.0 45 5000 250")
+runtime.commands.stack("KL315 ALT FL200")
+runtime.commands.stack("KL315 ADDWPT HELEN FL100 250")
 ```
 
-Stack commands are queued and execute on the next `sim.step()`.
+Commands are queued and execute on the next `runtime.simulation.step()`.
 
 ## Reading state
 
-Aircraft state lives in per-aircraft NumPy arrays on `minisky.traf` — index `i` is the
-same aircraft in every array:
+Aircraft state lives in parallel per-aircraft arrays on [`runtime.traffic`][minisky.traffic.traffic.Traffic]:
 
 ```python
-traf = minisky.traf
+traffic = runtime.traffic
 
-traf.ntraf        # number of aircraft
-traf.callsign     # list of callsigns
-traf.lat, traf.lon  # position [deg]
-traf.alt          # altitude [m]
-traf.tas          # true airspeed [m/s]
-traf.cas          # calibrated airspeed [m/s]
-traf.gs           # ground speed [m/s]
-traf.hdg, traf.trk  # heading / track [deg]
-traf.vs           # vertical speed [m/s]
+traffic.ntraf
+traffic.callsign
+traffic.lat, traffic.lon
+traffic.alt
+traffic.tas
+traffic.cas
+traffic.gs
+traffic.hdg, traffic.trk
+traffic.vs
 ```
 
 !!! warning "Units"
-    Internal state is SI (metres, m/s). Convert with the constants in
+    Internal state is SI. Convert with constants in
     [`minisky.tools.aero`](../api/tools.md):
 
     ```python
     from minisky.tools import aero
 
-    alt_ft = minisky.traf.alt / aero.ft
-    tas_kts = minisky.traf.tas / aero.kts
+    alt_ft = runtime.traffic.alt / aero.ft
+    tas_kts = runtime.traffic.tas / aero.kts
     ```
 
-Conflict detection results are on `traf.cd`:
+Conflict-detection results are available on [`runtime.traffic.cd`][minisky.traffic.asas.detection.ConflictDetection]:
 
 ```python
-traf.cd.confpairs   # list of conflicting callsign pairs
-traf.cd.tcpa        # time to closest point of approach [s]
-traf.cd.tLOS        # time to loss of separation [s]
+runtime.traffic.cd.confpairs
+runtime.traffic.cd.tcpa
+runtime.traffic.cd.tLOS
 ```
 
 ## Stepping vs. running
 
-For experiments, call [`sim.step()`][minisky.simulation.simulation.Simulation.step] in a
-loop — each call advances the simulation by `sim.simdt` seconds as fast as the CPU allows:
+For experiments, step manually:
 
 ```python
-minisky.sim.simdt = 1
-while minisky.sim.simt < 3600:
-    minisky.sim.step()
+runtime.simulation.simdt = 1
+while runtime.simulation.simt < 3600:
+    runtime.simulation.step()
 ```
 
-To run in (scaled) real time instead, use the async runner:
+To run a scenario with scaled wall-clock pacing:
 
 ```python
 import asyncio
 
-minisky.runner.speed = 10       # 10x wall time
-asyncio.run(minisky.runner.run())
+async def main() -> None:
+    async with MiniSky(settings, scenario="scenarios/kl204.scn") as runtime:
+        runtime.load_plugins()
+        runtime.runner.speed = 10
+        await runtime.run()
+
+asyncio.run(main())
 ```
 
 ## Resetting between runs
 
-[`sim.reset()`][minisky.simulation.simulation.Simulation.reset] clears traffic, the
-stack, areas, and plugin state, and rewinds the clock — use it between repeated
-experiments in the same process rather than re-importing.
+[`Simulation.reset`][minisky.simulation.simulation.Simulation.reset] clears
+traffic, command state, areas, plugin timers, replaceable selections, and the
+clock:
+
+```python
+runtime.simulation.reset()
+```

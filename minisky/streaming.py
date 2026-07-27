@@ -15,8 +15,8 @@ The snapshot shape is defined by the [`Snapshot`][], [`SimInfo`][], and
 
 Units on the wire here are SI: positions in decimal degrees, `alt` in metres,
 speeds (`tas`/`cas`/`gs`) in m/s, `vs` in m/s, `trk` in degrees,
-`simt`/`simdt` in seconds. `state` is the numeric simulation state
-(0=INIT, 1=HOLD, 2=OP, 3=END). Each tick is a full snapshot; aircraft are
+`simt`/`simdt` in seconds. `state` is the integer value of
+[`SimulationState`][minisky.simulation.simulation.SimulationState]. Each tick is a full snapshot; aircraft are
 identified by `callsign` for their lifetime.
 """
 
@@ -48,7 +48,7 @@ class SimInfo(TypedDict):
     simt: float  # s
     simutc: str  # ISO-8601, timezone-aware
     ntraf: int
-    state: int  # 0=INIT, 1=HOLD, 2=OP, 3=END
+    state: int  # Serialized SimulationState value.
     scenname: str  # "" when no scenario is loaded
 
 
@@ -164,6 +164,7 @@ class StreamHub:
         self._last_publish = 0.0
         self.latest: Snapshot | None = None
         self.generation = 0
+        self._closed = False
 
     @property
     def active(self) -> bool:
@@ -193,7 +194,7 @@ class StreamHub:
         elapsed, so the cost of [`build_snapshot`][] is only paid when a
         consumer will actually receive it.
         """
-        if not self.active or not self._ready():
+        if self._closed or not self.active or not self._ready():
             return
         self.publish(self._build_snapshot())
 
@@ -209,3 +210,11 @@ class StreamHub:
     async def wait(self) -> None:
         """Block until the next snapshot is published."""
         await self._event.wait()
+        if self._closed:
+            raise RuntimeError("Stream hub is closed")
+
+    def close(self) -> None:
+        """Close the hub and wake any waiting consumers."""
+        self._closed = True
+        self._subscribers = 0
+        self._event.set()

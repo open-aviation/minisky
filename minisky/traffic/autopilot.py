@@ -53,7 +53,7 @@ class Autopilot(TrafficArrays):
     engaged, from the route stored in the per-aircraft [`Route`][minisky.traffic.route.Route]
     objects. Waypoint switching is event driven (see wppassingcheck()),
     while the continuous guidance in update() is fully vectorized over all
-    aircraft. Accessible at runtime as `minisky.traf.ap`.
+    aircraft. Accessible as [`runtime.traffic.ap`][minisky.traffic.autopilot.Autopilot].
 
     Attributes:
         trk (ndarray): Commanded track angle [deg].
@@ -454,7 +454,7 @@ class Autopilot(TrafficArrays):
                     + self.route[iac].wpxtorta[iwp]
                 )  # last term zero for active waypoint RTA
 
-                # Set minisky.traf.actwp.spd to RTA speed, if necessary
+                # Set self.traffic.actwp.spd to RTA speed, if necessary
                 self.setspeedforRTA(iac, self.traffic.actwp.torta[iac], dist2go4rta)
 
                 # If VNAV speed is on (by default coupled to VNAV), use it for speed guidance
@@ -509,7 +509,7 @@ class Autopilot(TrafficArrays):
         #
         # When Top of Descent (ToD) switch is on, descend as late as possible,
         # But when Top of Climb switch is on or off, climb as soon as possible, only difference is steepness used in ComputeVNAV
-        # to calculate minisky.traf.actwp.vs
+        # to calculate self.traffic.actwp.vs
 
         startdescorclimb = (self.traffic.actwp.nextaltco >= -0.1) * np.logical_or(
             (self.traffic.alt > self.traffic.actwp.nextaltco)
@@ -536,12 +536,12 @@ class Autopilot(TrafficArrays):
         # Recalculate V/S based on current altitude and distance to next altitude constraint
         # How much time do we have before we need to descend?
         # Now done in ComputeVNAV
-        # See ComputeVNAV for minisky.traf.actwp.vs calculation
+        # See ComputeVNAV for self.traffic.actwp.vs calculation
 
         self.vnavvs = np.where(self.swvnavvs, self.traffic.actwp.vs, self.vnavvs)
-        # was: self.vnavvs  = np.where(self.swvnavvs, self.steepness * minisky.traf.gs, self.vnavvs)
+        # was: self.vnavvs  = np.where(self.swvnavvs, self.steepness * self.traffic.gs, self.vnavvs)
 
-        # self.vs = np.where(self.swvnavvs, self.vnavvs, self.vsdef * minisky.traf.limvs_flag)
+        # self.vs = np.where(self.swvnavvs, self.vnavvs, self.vsdef * self.traffic.limvs_flag)
         # for VNAV use fixed V/S and change start of descent
         selvs = np.where(abs(self.traffic.selvs) > 0.1, self.traffic.selvs, self.vsdef)  # m/s
         self.vs = np.where(self.swvnavvs, self.vnavvs, selvs)
@@ -698,7 +698,7 @@ class Autopilot(TrafficArrays):
 
         Output if this function:
         self.dist2vs = distance 2 next waypoint where climb/descent needs to activated
-        minisky.traf.actwp.vs =  V/S to be used during climb/descent part, so when dist2wp<dist2vs [m] (to next waypoint)
+        self.traffic.actwp.vs =  V/S to be used during climb/descent part, so when dist2wp<dist2vs [m] (to next waypoint)
 
         Args:
             idx: Aircraft index (scalar).
@@ -710,11 +710,11 @@ class Autopilot(TrafficArrays):
             xtorta: Distance from the active waypoint to the RTA waypoint [m].
         """
 
-        # print ("ComputeVNAV for",minisky.traf.id[idx],":",toalt/ft,"ft  ",xtoalt/nm,"nm")
+        # print ("ComputeVNAV for",self.traffic.id[idx],":",toalt/ft,"ft  ",xtoalt/nm,"nm")
         # print("Called by",callstack()[1].function)
 
         # Check  whether active waypoint speed needs to be adjusted for RTA
-        # sets minisky.traf.actwp.spd, if necessary
+        # sets self.traffic.actwp.spd, if necessary
         # debug print("xtorta+legdist =",(xtorta+legdist)/nm)
         self.setspeedforRTA(idx, torta, xtorta + self.dist2wp[idx])  # all scalar
 
@@ -726,7 +726,7 @@ class Autopilot(TrafficArrays):
             return
 
         # So: somewhere there is an altitude constraint ahead
-        # Compute proper values for minisky.traf.actwp.nextaltco, self.dist2vs, self.alt, minisky.traf.actwp.vs
+        # Compute proper values for self.traffic.actwp.nextaltco, self.dist2vs, self.alt, self.traffic.actwp.vs
         # Descent VNAV mode (T/D logic)
         #
         # xtoalt  =  distance to go to next altitude constraint at a waypoint in the route
@@ -795,7 +795,7 @@ class Autopilot(TrafficArrays):
                 )  # [m] required length for descent, uses default steepness!
                 self.dist2vs[idx] = descdist - xtoalt  # [m] part of that length on this leg
 
-                # print(minisky.traf.id[idx],"traf.alt =",minisky.traf.alt[idx]/ft,"ft toalt = ",toalt/ft,"ft descdist =",descdist/nm,"nm")
+                # print(self.traffic.id[idx],"traf.alt =",self.traffic.alt[idx]/ft,"ft toalt = ",toalt/ft,"ft descdist =",descdist/nm,"nm")
                 # print ("d2wp = ",self.dist2wp[idx]/nm,"nm d2vs = ",self.dist2vs[idx]/nm,"nm")
                 # print("xtoalt =",xtoalt/nm,"nm descdist =",descdist/nm,"nm")
 
@@ -835,7 +835,7 @@ class Autopilot(TrafficArrays):
                     99999.0  # [m] Forces immediate descent as current distance to next wp will be less
                 )
 
-                # print("in else swtod for ", minisky.traf.id[idx])
+                # print("in else swtod for ", self.traffic.id[idx])
 
         # VNAV climb mode: climb as soon as possible (T/C logic)
         elif self.traffic.alt[idx] < toalt - 9.9 * ft:

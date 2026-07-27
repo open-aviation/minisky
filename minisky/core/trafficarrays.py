@@ -288,6 +288,12 @@ class TrafficArrays:
         newparent._children.append(self)
         self._parent = newparent
 
+    def detach(self) -> None:
+        """Detach this object from its current traffic-array parent."""
+        if self._parent is not None:
+            self._parent._children.remove(self)
+            self._parent = None
+
     @property
     def tree_root(self) -> TrafficArrays:
         """Return the root node of this object's traffic-array tree."""

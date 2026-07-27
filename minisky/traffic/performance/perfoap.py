@@ -1,7 +1,7 @@
 """OpenAP-based aircraft performance model.
 
 This module provides [`OpenAP`][minisky.traffic.performance.perfoap.OpenAP], the aircraft performance implementation
-used by the MiniSky traffic object (`minisky.traf.perf`). It combines the
+used by the MiniSky traffic object ([`runtime.traffic.perf`][minisky.traffic.performance.perfoap.OpenAP]). It combines the
 coefficient database (`coeff`), flight-phase logic (`phase`), and the
 empirical thrust/fuel-flow models (`thrust`) into per-aircraft vectorised
 computations of drag, thrust, fuel flow, and kinematic envelope limits. All

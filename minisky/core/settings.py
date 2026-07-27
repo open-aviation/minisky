@@ -15,7 +15,6 @@ class MiniSkySettings(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="allow")
 
-    prefer_compiled: bool = True
     asas_dtlookahead: Annotated[float, Field(), annotated_types.Ge(0)] = 300.0
     asas_pzr: Annotated[float, Field(), annotated_types.Gt(0)] = 5.0
     asas_pzh: Annotated[float, Field(), annotated_types.Gt(0)] = 1000.0
@@ -32,25 +31,8 @@ class MiniSkySettings(BaseModel):
             return cls.model_validate(tomllib.load(file))
 
 
-#
-# compat
-#
-
 DEFAULT_SETTINGS_FILE = Path(__file__).parent.parent.parent / "settings.toml"
 PACKAGE_DATA_DIR = Path(__file__).parent.parent / "data"
-
-# TODO(abraham): remove these module-level compatibility settings once all
-# callers receive MiniSkySettings explicitly.
-filename_settings = DEFAULT_SETTINGS_FILE
-default_settings = MiniSkySettings.from_file(filename_settings)
-prefer_compiled = default_settings.prefer_compiled
-asas_dtlookahead = default_settings.asas_dtlookahead
-asas_pzr = default_settings.asas_pzr
-asas_pzh = default_settings.asas_pzh
-asas_marh = default_settings.asas_marh
-asas_marv = default_settings.asas_marv
-plugin_path = default_settings.plugin_path
-enabled_plugins = list(default_settings.enabled_plugins)
 
 
 def data(path: str) -> Path:

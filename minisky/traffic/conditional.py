@@ -5,7 +5,7 @@ KL204 ATALT FL100 KL204 SPD 350
 Implements the ATALT, ATSPD and ATDIST stack commands: a command line is
 stored together with a trigger condition on an aircraft's altitude, speed
 or distance to a position. The `Condition` instance owned by
-`minisky.traf` is checked every simulation step; when the monitored
+[`runtime.traffic`][minisky.traffic.traffic.Traffic] is checked every simulation step; when the monitored
 value crosses its target, the stored command is issued on the stack and
 the condition is removed.
 """

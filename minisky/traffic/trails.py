@@ -28,7 +28,7 @@ class Trails(TrafficArrays):
     Segments are kept in a foreground buffer for drawing and can be moved
     to a background buffer with buffer(). Segment colors fade towards the
     "old" color over `tcol0` seconds. Available at runtime as
-    `minisky.traf.trails`.
+    [`runtime.traffic.trails`][minisky.traffic.trails.Trails].
 
     Attributes:
         active (bool): Whether trails are recorded and shown.
@@ -254,7 +254,7 @@ class Trails(TrafficArrays):
         self.clearnew()
         return
 
-    def setTrails(self, *args) -> bool | tuple[bool, str]:
+    def setTrails(self, *args: Any) -> bool | tuple[bool, str]:
         """Switch trails on/off, or change the trail color of an aircraft.
 
         Implements the TRAIL stack command:

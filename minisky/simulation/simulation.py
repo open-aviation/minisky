@@ -3,8 +3,7 @@
 Defines the `Simulation` class, the central clock and state machine of
 the simulator. It advances simulation time, processes the command stack,
 triggers plugin pre-/post-update hooks, and updates all aircraft in the
-traffic object once per timestep. A single instance is created by
-`minisky.init` and made available as `minisky.sim`.
+traffic object once per timestep. Each `MiniSky` runtime owns one instance.
 """
 
 from __future__ import annotations
@@ -12,6 +11,7 @@ from __future__ import annotations
 import datetime
 import time
 from collections.abc import Callable
+from enum import IntEnum
 from random import seed
 from typing import TYPE_CHECKING, Any
 
@@ -26,8 +26,13 @@ if TYPE_CHECKING:
     from minisky.tools.navdata import Navdatabase
     from minisky.traffic import Traffic
 
-# Simulation states
-INIT, HOLD, OP, END = (0, 1, 2, 3)  # TODO(abraham): use IntEnum.
+class SimulationState(IntEnum):
+    """Simulation lifecycle states."""
+
+    INIT = 0
+    HOLD = 1
+    OP = 2
+    END = 3
 
 # Minimum sleep interval
 MINSLEEP = 1e-3
@@ -44,8 +49,7 @@ class Simulation:
     `reset` and `stop`.
 
     Attributes:
-        state: Current simulation state, one of `minisky.INIT`,
-            `minisky.HOLD`, `minisky.OP` or `minisky.END`.
+        state: Current [`SimulationState`][minisky.simulation.simulation.SimulationState] value.
         prevstate: Previous simulation state (unused placeholder).
         simt: Elapsed simulation time [s].
         simdt: Simulation timestep [s].
@@ -78,8 +82,8 @@ class Simulation:
         self.replaceables = replaceables
         self.stop_runner = stop_runner
         self.publish_tick = publish_tick
-        self.state = INIT
-        self.prevstate = None
+        self.state = SimulationState.INIT
+        self.prevstate: SimulationState | None = None
 
         # Simulation time [seconds]
         self.simt: float = 0
@@ -118,7 +122,7 @@ class Simulation:
         4. Publish the runtime stream snapshot when subscribers are present.
         """
         # Simulation starts as soon as there is traffic, or pending commands
-        if self.state == INIT and (
+        if self.state == SimulationState.INIT and (
             self.traffic.ntraf > 0 or len(self.commands.get_scendata()[0]) > 0
         ):
             self.op()
@@ -126,7 +130,7 @@ class Simulation:
         # Always update stack
         self.commands.process()
 
-        if self.state == OP:
+        if self.state == SimulationState.OP:
             self.simt += self.simdt
 
             # Update UTC time
@@ -152,7 +156,7 @@ class Simulation:
         `minisky.simulation.runner.Runner.prevent_shutdown`, the loop
         keeps running and only the state changes.
         """
-        self.state = END
+        self.state = SimulationState.END
         self.stop_runner()
 
     def op(self) -> None:
@@ -163,7 +167,7 @@ class Simulation:
         timestep [s].
         """
         self.syst = time.time() + self.simdt
-        self.state = OP
+        self.state = SimulationState.OP
         self.console.echo("Simulation running")
 
     def hold(self) -> None:
@@ -174,7 +178,7 @@ class Simulation:
         simulation can be resumed with the `OP` command.
         """
         self.syst = time.time() + self.simdt
-        self.state = HOLD
+        self.state = SimulationState.HOLD
         self.plugins.hold()
         self.console.echo("Simulation paused")
 
@@ -187,7 +191,7 @@ class Simulation:
         console output, replaceable entities (autopilot, performance models,
         etc.) and plugin timers/hooks reset to their defaults.
         """
-        self.state = INIT
+        self.state = SimulationState.INIT
         self.syst = 0
         self.simt = 0
         self.simdt = 1
