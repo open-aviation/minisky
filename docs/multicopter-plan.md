@@ -125,7 +125,26 @@ reset (mirror the existing `tests/integration/test_plugin.py` replaceable test).
 
 ## Phase 2 — the `multicopter` plugin: membership + kinematics
 
-New file `plugins/multicopter.py` (plugin name `MULTICOPTER`), no core changes.
+New package `example_plugins/multicopter/` (plugin name `MULTICOPTER`), no core changes. One
+module per class, so each piece stays small and readable:
+
+```
+example_plugins/multicopter/
+├── plugin.py       # init_plugin(): plugin config, SELECTIMPL swaps on load, reset handling
+├── entity.py       # MULTICOPTER_TYPES + Multicopter Entity (ismulticopter, selhdg, yawrate)
+│                   # and its stack commands: MCOPT, YAW, YAWRATE
+├── kinematics.py   # MulticopterKinematics(Kinematics)
+├── aporasas.py     # MulticopterAPorASAS(APorASAS)
+├── autopilot.py    # MulticopterAutopilot(Autopilot): HOVER, DELIVER, capture-radius clamp
+├── perf.py         # MulticopterPerf(OpenAP) + BATT              (Phase 3)
+└── data/           # generated perf maps + vendored PyThrust data (Phase 3)
+```
+
+Loader notes: plugin discovery scans `**/*.py` under `plugin_path` recursively and skips
+`_`-prefixed files, so `__init__.py` cannot be the entry point — `plugin.py` is the one module
+defining `init_plugin()`; the sibling modules are parsed but not registered (no `init_plugin`).
+The folder is imported as a package (`example_plugins.multicopter.plugin`), so `plugin.py`
+imports the class modules with relative imports (`from .kinematics import ...`).
 
 ### Membership
 
@@ -218,15 +237,17 @@ subclass calling `super()` and adjusting only the masked multicopter rows.
 
 ### Phase 2 checklist
 
-- [ ] `plugins/multicopter.py` skeleton: `init_plugin()`, plugin name `MULTICOPTER`
-- [ ] `MULTICOPTER_TYPES` set + `Entity` with `ismulticopter`, `selhdg`, `yawrate` arrays,
-      auto-set from typecode in `create()`
-- [ ] Stack commands: `MCOPT`, `YAW`, `YAWRATE`
-- [ ] `MulticopterKinematics(Kinematics)`: yaw-rate-limited heading, track-driven velocity
-      vector, single `update_pos()` pass
-- [ ] `MulticopterAPorASAS(APorASAS)`: skip trk→hdg coupling for multicopter rows
-- [ ] `MulticopterAutopilot(Autopilot)`: `HOVER`, `DELIVER`, capture-radius clamp,
-      fly-over route defaults
+- [ ] `example_plugins/multicopter/` package skeleton with `plugin.py` (`init_plugin()`,
+      plugin name `MULTICOPTER`)
+- [ ] `entity.py`: `MULTICOPTER_TYPES` set + `Entity` with `ismulticopter`, `selhdg`,
+      `yawrate` arrays, auto-set from typecode in `create()`; stack commands `MCOPT`,
+      `YAW`, `YAWRATE`
+- [ ] `kinematics.py`: `MulticopterKinematics(Kinematics)` — yaw-rate-limited heading,
+      track-driven velocity vector, single `update_pos()` pass
+- [ ] `aporasas.py`: `MulticopterAPorASAS(APorASAS)` — skip trk→hdg coupling for
+      multicopter rows
+- [ ] `autopilot.py`: `MulticopterAutopilot(Autopilot)` — `HOVER`, `DELIVER`,
+      capture-radius clamp, fly-over route defaults
 - [ ] Plugin issues the three `SELECTIMPL` swaps on load; defaults restored on reset
 - [ ] Integration tests: hover-hold, yaw at gs = 0, strafe (fixed nose, moving track),
       leg-to-leg course capture, `HOVER`, `DELIVER`, fixed-wing regression guard
@@ -260,10 +281,10 @@ Pipeline, following the existing regen conventions (navdb parquet, `minisky comm
    {prop, motor, cell, series/parallel, n_rotors, mass}), and emits one small artifact per type:
    a grid `(airspeed, thrust) → (power_w, current_a, feasible)` (~30 KB float32 npz/parquet)
    plus the battery curves.
-2. Artifacts are **checked in** next to the plugin (`plugins/data/multicopter/`). The handful of
-   vendored source CSV/JSONs (~1 MB) live under `plugins/data/multicopter/pythrust/` together
-   with PyThrust's LICENSE and an attribution note (the prop tables are repackaged APC published
-   performance data).
+2. Artifacts are **checked in** inside the plugin package (`example_plugins/multicopter/data/`).
+   The handful of vendored source CSV/JSONs (~1 MB) live under
+   `example_plugins/multicopter/data/pythrust/` together with PyThrust's LICENSE and an
+   attribution note (the prop tables are repackaged APC published performance data).
 3. Runtime: `MulticopterPerf` loads the artifacts at plugin load and evaluates with vectorised
    `np.interp`/`RegularGridInterpolator`. Zero per-step Python loops, zero new dependencies.
 
@@ -291,15 +312,16 @@ for the map interpolation against a few hand-computed points from the source CSV
 
 ### Phase 3 checklist
 
-- [ ] Vendor the needed prop CSVs + motor JSONs under `plugins/data/multicopter/pythrust/`
-      with PyThrust's LICENSE and an attribution note
+- [ ] Vendor the needed prop CSVs + motor JSONs under
+      `example_plugins/multicopter/data/pythrust/` with PyThrust's LICENSE and an
+      attribution note
 - [ ] Per-typecode config: `{prop, motor, cell, series/parallel, n_rotors, mass, CdS}`
 - [ ] `scripts/gen_multicopter_perf.py` (numpy-only, no pythrust import) emitting per-type
       `(airspeed, thrust) → (power, current, feasible)` maps + battery curves
-- [ ] Check in the generated artifacts (`plugins/data/multicopter/*.npz`)
-- [ ] `MulticopterPerf(OpenAP)`: required-thrust model, vectorised map interpolation,
-      per-aircraft SoC integration, envelope feedback in `limits()`
-- [ ] Stack command: `BATT`
+- [ ] Check in the generated artifacts (`example_plugins/multicopter/data/*.npz`)
+- [ ] `perf.py`: `MulticopterPerf(OpenAP)` — required-thrust model, vectorised map
+      interpolation, per-aircraft SoC integration, envelope feedback in `limits()`;
+      stack command `BATT`
 - [ ] Unit tests: interpolation vs hand-computed CSV points; SoC monotonically decreasing;
       envelope tightens below SoC threshold
 - [ ] Sanity: MAVIC-class hover endurance in the 20–35 min range
