@@ -109,16 +109,18 @@ reset (mirror the existing `tests/integration/test_plugin.py` replaceable test).
 
 ### Phase 1 checklist
 
-- [ ] Create `minisky/traffic/kinematics.py`: `Kinematics(TrafficArrays)` with
+- [x] Create `minisky/traffic/kinematics.py`: `Kinematics(TrafficArrays)` with
       `update_airspeed` / `update_groundspeed` / `update_pos` and the `ax`, `az`, `swhdgsel`,
-      `swaltsel` arrays moved over from `Traffic`
-- [ ] Instantiate as `self.kinematics = Kinematics()` inside `Traffic.__init__`'s
+      `swaltsel` arrays moved over from `Traffic` (`ax`/`swhdgsel` registered in `settrafarrays`;
+      `az`/`swaltsel` remain step-computed as before)
+- [x] Instantiate as `self.kinematics = Kinematics()` inside `Traffic.__init__`'s
       `settrafarrays()` block; `Traffic.update()` calls `self.kinematics.update()`
-- [ ] Grep external readers of the moved arrays (`streaming.py`, `perfoap.py`, tests) and expose
-      delegating properties on `Traffic` where needed
-- [ ] Verify `SELECTIMPL KINEMATICS` lists the base implementation
-- [ ] Test: register a trivial subclass, select it, verify it takes effect and reverts on reset
-- [ ] `uv run pytest`, `uv run ruff check .`, `uv run pyright` all green
+- [x] Grep external readers of the moved arrays: only `perfoap.py` reads `ax`
+      (`streaming.py` does not); pointed it at `traf.kinematics.ax` (no property needed)
+- [x] Verify `SELECTIMPL KINEMATICS` lists the base implementation
+- [x] Test: register a trivial subclass, select it, verify it takes effect and reverts on reset
+      (`tests/integration/test_kinematics.py`)
+- [x] `uv run pytest`, `uv run ruff check .`, `uv run pyright` all green
 
 ## Phase 2 — the `multicopter` plugin: membership + kinematics
 
