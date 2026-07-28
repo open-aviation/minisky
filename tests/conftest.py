@@ -13,6 +13,8 @@ import pytest
 
 from minisky import MiniSky
 from minisky.core.settings import DEFAULT_SETTINGS_FILE, MiniSkySettings
+from minisky.simulation import Simulation
+from tests._types import RunCommand, StepUntil
 
 
 @pytest.fixture(scope="session")
@@ -24,7 +26,7 @@ def runtime() -> Iterator[MiniSky]:
 
 
 @pytest.fixture
-def sim(runtime: MiniSky):
+def sim(runtime: MiniSky) -> Simulation:
     """Fresh simulation state for each test."""
     runtime.simulation.reset()
     runtime.console.read_output_buffer()  # drain "Simulation reset" echo
@@ -32,7 +34,7 @@ def sim(runtime: MiniSky):
 
 
 @pytest.fixture
-def run_cmd(runtime: MiniSky, sim) -> Callable[..., str]:
+def run_cmd(runtime: MiniSky, sim: Simulation) -> RunCommand:
     """Queue a stack command, step the sim, and return the last echoed output."""
 
     def _run(cmd: str, steps: int = 1) -> str:
@@ -45,7 +47,7 @@ def run_cmd(runtime: MiniSky, sim) -> Callable[..., str]:
 
 
 @pytest.fixture
-def step_until(runtime: MiniSky):
+def step_until(runtime: MiniSky) -> StepUntil:
     """Step the simulation until a predicate holds, failing after max_steps."""
 
     def _step(pred: Callable[[], bool], max_steps: int = 600) -> int:

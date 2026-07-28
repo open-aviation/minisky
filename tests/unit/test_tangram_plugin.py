@@ -38,7 +38,7 @@ def make_snapshot() -> Snapshot:
     }
 
 
-def test_convert_snapshot_units_and_fields():
+def test_convert_snapshot_units_and_fields() -> None:
     payload = convert_snapshot(make_snapshot())
 
     assert payload["count"] == 1
@@ -65,7 +65,7 @@ def test_convert_snapshot_units_and_fields():
     assert ac["timestamp"] == 1767225600.0
 
 
-def test_convert_snapshot_no_traffic():
+def test_convert_snapshot_no_traffic() -> None:
     snapshot: Snapshot = {
         "siminfo": {
             "speed": 1.0,
@@ -113,7 +113,7 @@ def test_convert_snapshot_no_traffic():
     }
 
 
-def test_convert_snapshot_naive_simutc_is_utc():
+def test_convert_snapshot_naive_simutc_is_utc() -> None:
     # A simutc without tzinfo must be interpreted as UTC, never local time.
     snapshot = make_snapshot()
     snapshot["siminfo"]["simutc"] = "2026-01-01T00:00:00"
@@ -121,7 +121,7 @@ def test_convert_snapshot_naive_simutc_is_utc():
     assert payload["aircraft"][0]["timestamp"] == 1767225600.0
 
 
-def test_convert_snapshot_bad_simutc():
+def test_convert_snapshot_bad_simutc() -> None:
     snapshot = make_snapshot()
     snapshot["siminfo"]["simutc"] = "not a date"
     payload = convert_snapshot(snapshot)
@@ -144,5 +144,5 @@ def test_convert_snapshot_bad_simutc():
         ("[1, 2]", None),
     ],
 )
-def test_extract_command(payload, expected):
+def test_extract_command(payload: str | bytes, expected: str | None) -> None:
     assert extract_command(payload) == expected

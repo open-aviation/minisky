@@ -25,7 +25,7 @@ def redis_server() -> fakeredis.FakeServer:
 
 @pytest.fixture
 def bridge(
-    runtime, sim: Simulation, redis_server: fakeredis.FakeServer
+    runtime: MiniSky, sim: Simulation, redis_server: fakeredis.FakeServer
 ) -> Iterator[TangramBridge]:
     bridge = TangramBridge(
         "redis://fake",
@@ -113,10 +113,7 @@ def test_command_roundtrip(
     client.publish("from:minisky:command", json.dumps({"command": "HOLD"}))
     # The bridge thread stacks the command; the sim applies it on a step.
     deadline = time.monotonic() + 5.0
-    while (
-        time.monotonic() < deadline
-        and runtime.simulation.state != SimulationState.HOLD
-    ):
+    while time.monotonic() < deadline and runtime.simulation.state != SimulationState.HOLD:
         runtime.simulation.step()
         time.sleep(0.02)
     assert runtime.simulation.state == SimulationState.HOLD

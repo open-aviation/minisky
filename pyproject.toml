@@ -75,8 +75,12 @@ ignore = [
 "minisky/plugin/*.py" = ["F401"]  # plugin API surface re-exports
 
 [tool.pyright]
-include = ["minisky", "example_plugins"]
-exclude = ["**/__pycache__", "**/node_modules", ".venv", "build", "site"]
+include = ["minisky", "example_plugins", "tests"]
+exclude = [
+    "**/.*", "**/__pycache__", "**/node_modules", ".venv", "build", "site",
+    # TODO(abraham): these files will need extensive typing, deferring for now
+    "tests/test_aero.py", "tests/test_detection.py"
+]
 pythonVersion = "3.11"
 # "standard" catches useful bugs while staying practical for this numpy/scipy-heavy fork.
 typeCheckingMode = "standard"
