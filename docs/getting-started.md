@@ -109,7 +109,7 @@ just test-api  # REST API smoke tests (separate process)
 
 ## Building this documentation
 
-The documentation is built with [MkDocs Material](https://squidfunk.github.io/mkdocs-material/)
+The documentation is built with [Zensical](https://zensical.org/)
 and [mkdocstrings](https://mkdocstrings.github.io/); the API reference is generated from the
 docstrings in the source code.
 

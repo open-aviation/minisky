@@ -1,0 +1,98 @@
+[project]
+site_name = "MiniSky"
+site_description = "A minimal command line air traffic simulator with REST API (a BlueSky fork)"
+repo_url = "https://github.com/open-aviation/minisky"
+repo_name = "open-aviation/minisky"
+nav = [
+  { "Home" = "index.md" },
+  { "Getting started" = "getting-started.md" },
+  { "Architecture" = "architecture.md" },
+  { "Upstream decisions" = "upstream.md" },
+  { "Guides" = [
+    { "Command-line interface" = "guides/cli.md" },
+    { "Running scenarios" = "guides/running-scenarios.md" },
+    { "REST API server" = "guides/rest-api.md" },
+    { "Control console" = "guides/console.md" },
+    { "Python library" = "guides/python-api.md" },
+    { "Writing plugins" = "guides/plugins.md" },
+    { "Streaming to tangram" = "guides/tangram.md" },
+  ] },
+  { "Reference" = [
+    { "Stack commands" = "reference/commands.md" },
+    { "API" = [
+      { "minisky" = "api/minisky.md" },
+      { "simulation" = "api/simulation.md" },
+      { "traffic" = "api/traffic.md" },
+      { "stack" = "api/stack.md" },
+      { "plugin" = "api/plugin.md" },
+      { "core" = "api/core.md" },
+      { "tools" = "api/tools.md" },
+      { "tangram_minisky" = "api/tangram-minisky.md" },
+    ] },
+  ] },
+]
+
+[project.theme]
+features = [
+  "navigation.sections",
+  "navigation.top",
+  "content.code.copy",
+  "search.suggest",
+]
+
+[project.theme.icon]
+logo = "material/airplane"
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme: light)"
+scheme = "default"
+primary = "blue grey"
+accent = "indigo"
+
+[project.theme.palette.toggle]
+icon = "material/weather-night"
+name = "Switch to dark mode"
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme: dark)"
+scheme = "slate"
+primary = "blue grey"
+accent = "indigo"
+
+[project.theme.palette.toggle]
+icon = "material/weather-sunny"
+name = "Switch to light mode"
+
+[project.plugins]
+search = {}
+
+[project.plugins.mkdocstrings.handlers.python]
+# tangram_minisky lives in its own workspace and is not installed in the docs
+# environment; point griffe at its source so it can analyse it statically.
+paths = ["example_plugins/tangram/tangram_minisky/src"]
+
+[project.plugins.mkdocstrings.handlers.python.options]
+docstring_style = "google"
+docstring_section_style = "table"
+show_source = true
+show_root_heading = true
+members_order = "source"
+merge_init_into_class = true
+separate_signature = true
+show_signature_annotations = false
+filters = ["!^_"]
+
+[project.markdown_extensions]
+admonition = {}
+attr_list = {}
+"pymdownx.details" = {}
+"pymdownx.superfences" = {}
+"pymdownx.highlight" = {}
+"pymdownx.inlinehilite" = {}
+"pymdownx.snippets" = {}
+
+[project.markdown_extensions."pymdownx.tabbed"]
+alternate_style = true
+
+[project.markdown_extensions.toc]
+permalink = true

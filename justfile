@@ -32,7 +32,7 @@ docs-generate:
     uv run minisky commands docs
 
 docs-serve: docs-generate
-    uv run --group docs mkdocs serve
+    uv run --group docs zensical serve
 
 docs-build: docs-generate
-    uv run --group docs mkdocs build
+    uv run --group docs zensical build
