@@ -25,6 +25,8 @@ FastAPI serves interactive OpenAPI docs at `http://localhost:8000/docs`.
 | GET | `/speed/{speed}` | Set the simulation speed multiplier |
 | GET | `/forward/{seconds}` | Fast-forward the simulation by a number of seconds |
 | GET | `/stack/{cmd}` | Execute any [stack command](../reference/commands.md) and return its output |
+| GET | `/commands` | List canonical stack commands and usage strings |
+| WebSocket | `/stream` | Receive rate-capped full simulation snapshots |
 | GET/POST | `/scn` | Upload and load a scenario file (GET serves a small upload form) |
 | GET | `/map` | Browser-based aircraft map viewer (served from `static/`) |
 | GET | `/plugins` | List available and loaded plugins |

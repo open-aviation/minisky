@@ -16,15 +16,9 @@ uv run pytest tests/unit                   # fast pure-function tests only
 uv run pytest tests/integration/test_stack.py::test_name   # single test
 uv run pytest -m api tests/test_api.py     # REST API tests — spawn a separate process, opt-in
 
-uv run ruff check .                        # lint
-uv run ruff format .                       # format (line-length 100)
-uv run pyright                             # type check (standard mode; covers example_plugins EXCEPT example_plugins/tangram)
-
-# tangram frontend plugin — its own self-contained uv + pnpm workspace (separate .venv);
-# all commands run from example_plugins/tangram/ (see its justfile)
-cd example_plugins/tangram && just check    # ruff + pyright + pnpm (eslint + vue-tsc + tsc)
-cd example_plugins/tangram && just fmt      # ruff --fix/format + pnpm lint:fix
-cd example_plugins/tangram && pnpm build    # bundle each plugin into dist-frontend/
+just check                                 # ruff, pyright, frontend checks
+just fmt                                   # lint fixes and tangram/frontend formatting
+pnpm build                                 # tangram frontend bundle
 
 uv run minisky commands docs               # regenerate docs/reference/commands.md after changing commands
 uv run minisky docs serve                  # docs live preview
@@ -47,9 +41,9 @@ The FastAPI app lives in `minisky/server.py`; `minisky server` is the CLI entry 
 
 Full details in `docs/architecture.md` — read it before making structural changes. The essentials:
 
-**Singletons.** `minisky.init()` constructs module-level singletons everything else references: `sim` (clock/state machine), `traf` (all aircraft state + flight-dynamics update), `runner` (async loop stepping at a controllable rate), `scr` (`ConsoleIO` output buffer), `navdb` (waypoints/airports/airways from parquet). They are `None` until `init()` runs. Call `load_plugins()` after `init()` to activate plugins from `settings.toml`.
+**Runtime ownership.** [`MiniSky`][minisky.runtime.MiniSky] owns one simulator object graph: settings, simulation, traffic, runner, console, navigation, command stack, plugins, replaceables, areas, variable explorer, random generators, and streaming hub. Unlike `bluesky`, there is no package-level `traf`, `sim`, `scr`, `runner`, or `navdb`.
 
-**Import order in `minisky/__init__.py` is load-bearing.** `traffic` is imported last and separately because the performance model runs module-level code touching `minisky.data` (set up by the settings import). Reordering causes a circular import.
+**Lifecycle.** Use `with MiniSky(settings)` for manually stepped synchronous work. Use `async with MiniSky(settings)` and `await runtime.run()` when running the async loop. The FastAPI lifespan owns its background runner task and awaits asynchronous cleanup.
 
 **Simulation loop.** `sim.step()` runs, in order: stack processing → time advance (only in `OP` state) → plugin `preupdate` → `traf.update()` (autopilot/FMS, conflict detection+resolution, performance limits, wind, position integration) → plugin `update`. States: `INIT`, `OP`, `HOLD`, `END`. Drive it either by calling `sim.step()` manually (embedding) or via `runner.run()` (wall-clock paced; `runner.speed` and `runner.forward()`).
 

@@ -1,8 +1,7 @@
 # Architecture
 
 MiniSky keeps BlueSky's core simulation model but removes the GUI, networking,
-and node management. What remains is a single-process simulator whose mutable
-state is owned by one [`MiniSky`][minisky.MiniSky] runtime.
+and node management. The mutabl state is owned by one [`MiniSky`][minisky.MiniSky] runtime.
 
 ## Runtime ownership
 
@@ -17,6 +16,9 @@ Constructing `MiniSky` creates an independent object graph:
 | [`runtime.navigation`][minisky.tools.navdata.Navdatabase] | [`Navdatabase`][minisky.tools.navdata.Navdatabase] | Waypoints, airports, and airways |
 | [`runtime.commands`][minisky.stack.CommandStack] | [`CommandStack`][minisky.stack.CommandStack] | Command registry, queue, and scenario state |
 | [`runtime.plugins`][minisky.plugin.plugin.PluginManager] | [`PluginManager`][minisky.plugin.plugin.PluginManager] | Plugin records, hooks, timers, and state |
+| `runtime.areas` | [`AreaFilter`][minisky.tools.areafilter.AreaFilter] | Named geographic areas |
+| `runtime.variables` | [`VariableExplorer`][minisky.core.varexplorer.VariableExplorer] | Runtime data inspection |
+| `runtime.streaming` | `StreamHub` | Rate-capped snapshot fan-out |
 
 ```python
 from minisky import DEFAULT_SETTINGS_FILE, MiniSky, MiniSkySettings
@@ -32,15 +34,17 @@ with MiniSky(settings) as runtime:
 The simulation advances in discrete timesteps of [`runtime.simulation.simdt`][minisky.simulation.simulation.Simulation] seconds (default 1 s). One
 call to [`Simulation.step`][minisky.simulation.simulation.Simulation.step] does, in order:
 
-1. **Stack processing** — pending text commands are parsed and executed
+1. `INIT` switches to `OP` when traffic or scenario work exists.
+2. pending text commands are parsed and executed
    ([`CommandStack.process`][minisky.stack.CommandStack.process]).
-2. **Time advance** — [`runtime.simulation.simt`][minisky.simulation.simulation.Simulation] and the simulated UTC clock move forward by `simdt`
+3. [`runtime.simulation.simt`][minisky.simulation.simulation.Simulation] and the simulated UTC clock move forward by `simdt`
    (only in the `OP` state).
-3. **Plugin pre-update** — timed plugin functions registered with the `preupdate` hook.
-4. **Traffic update** — [`Traffic.update`][minisky.traffic.traffic.Traffic.update]
+4. Timed plugin functions registered with the `preupdate` hook.
+5. [`Traffic.update`][minisky.traffic.traffic.Traffic.update]
    integrates aircraft state: autopilot/FMS logic, conflict detection and resolution,
    aircraft performance limits, wind, and finally position integration.
-5. **Plugin update** — timed plugin functions registered with the `update` hook.
+6. Timed plugin functions registered with the `update` hook.
+7. The runtime-owned hub publishes when subscribers are present.
 
 The simulation state machine uses [`SimulationState`][minisky.simulation.simulation.SimulationState]:
 `SimulationState.INIT` waits for traffic, `SimulationState.OP` runs,

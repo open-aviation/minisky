@@ -1,8 +1,7 @@
 # Python library
 
 MiniSky can be embedded in your own Python code. Construct one explicit runtime,
-step its simulation, read aircraft state directly from NumPy arrays, and close
-the runtime when finished.
+step its simulation, and read aircraft state directly from NumPy arrays.
 
 ## Minimal example
 
@@ -44,11 +43,13 @@ runtime.streaming   # per-runtime snapshot fan-out
 Pass a scenario to the constructor to queue it immediately:
 
 ```python
-runtime = MiniSky(settings, scenario="scenarios/kl204.scn")
+with MiniSky(settings, scenario="scenarios/kl204.scn") as runtime:
+    runtime.simulation.step()
 ```
 
-Use `with MiniSky(...)` or `async with MiniSky(...)` so plugin resources,
-stream consumers, and the runner are closed deterministically.
+Use `with MiniSky(...)` for manually stepped synchronous work. Use
+`async with MiniSky(...)` when running `await runtime.run()` so asynchronous
+runner cleanup is awaited.
 
 ## Creating and commanding aircraft
 

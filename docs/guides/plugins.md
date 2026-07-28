@@ -59,9 +59,10 @@ The config dictionary supports these lifecycle entries:
 | `shutdown` | Callback when the owning runtime shuts down |
 | `state` | Optional plugin-owned object exposed through the variable explorer |
 
-Plugin records, loaded state, timers, hooks, and returned state belong to
-[`runtime.plugins`][minisky.plugin.plugin.PluginManager]. Loading the same plugin into two runtimes creates separate
-records and hook sets.
+Plugin records, timers, hooks, and returned state belong to
+[`runtime.plugins`][minisky.plugin.plugin.PluginManager]. Each `init_plugin` call
+must create runtime-specific state; imported Python modules and class declarations
+are still process-wide.
 
 ## Per-aircraft data: `Entity`
 
@@ -99,7 +100,7 @@ correct runtime:
 class Example(plugin.Entity):
     # ...
 
-    def passengers(self, callsign: str, count: int = -1):
+    def passengers(self, callsign: str, count: int = -1) -> tuple[bool, str]:
         callsign = callsign.upper()
         if callsign not in self.traffic.callsign:
             return False, f"Aircraft {callsign} not found"
@@ -116,7 +117,7 @@ A command entry contains the callback, argument parser specification, brief
 usage text, and help text. Command handlers return `(success, message)`;
 returning `None` counts as success with no message.
 
-The [`@stack.command`][minisky.plugin.plugin_decorators.command] decorator is
+The [`@plugin.command`][minisky.plugin.plugin_decorators.command] decorator is
 also available for stateless module-level declarations. Importing a decorated
 function only stores metadata. The command is registered when the owning
 runtime loads that plugin module.
@@ -128,26 +129,24 @@ discovery during construction.
 
 Load plugins in any of these ways:
 
-- **At startup** — list names under `enabled_plugins`, then call
-  `runtime.load_plugins()`.
-- **From the stack** — use `PLUGINS LIST` and `PLUGINS LOAD EXAMPLE`.
-- **From Python** — call `runtime.plugins.load("EXAMPLE")`.
-- **Over the REST API** — use `GET /plugins` and
-  `GET /plugins/load/EXAMPLE`.
+- At startup: list names under `enabled_plugins`, then call `runtime.load_plugins()`.
+- From the stack: use `PLUGINS LIST` and `PLUGINS LOAD EXAMPLE`.
+- From Python: call [`runtime.plugins.load("EXAMPLE")`][minisky.plugin.plugin.PluginManager.load].
+- REST API: use `GET /plugins` and `GET /plugins/load/EXAMPLE`.
 
 ```python
 from minisky import MiniSky, MiniSkySettings
 
 settings = MiniSkySettings.from_file("settings.toml")
-runtime = MiniSky(settings)
-runtime.load_plugins()
+with MiniSky(settings) as runtime:
+    runtime.load_plugins()
 ```
 
 ## Replaceable implementations
 
 A plugin can declare a subclass of a replaceable traffic component, such as
-[`Autopilot`][minisky.traffic.autopilot.Autopilot]. Importing the class adds it
-to the shared declaration catalog, while selection belongs to each runtime:
+[`Autopilot`][minisky.traffic.autopilot.Autopilot]. Python tracks the subclass declaration process-wide, while the selected instance
+belongs to each runtime:
 
 ```python
 runtime.replaceables.select("AUTOPILOT", "CUSTOMAUTOPILOT")
