@@ -28,11 +28,8 @@ test-unit:
 test-api:
     uv run pytest -m api tests/test_api.py
 
-docs-generate:
-    uv run minisky commands docs
-
-docs-serve: docs-generate
+docs-serve:
     uv run --group docs zensical serve
 
-docs-build: docs-generate
+docs-build:
     uv run --group docs zensical build

@@ -9,9 +9,7 @@ reach a bare-minimum simulator that is easy to read, embed, and extend.
 
 ## Three ways to use it
 
-<div class="grid cards" markdown>
-
-- **Command line** — run a scenario file to completion, no interaction needed.
+1. Run a scenario file to completion, no interaction needed.
 
     ```bash
     uv run minisky run --scenario scenarios/kl204.scn
@@ -19,7 +17,7 @@ reach a bare-minimum simulator that is easy to read, embed, and extend.
 
     → [Running scenarios](guides/running-scenarios.md)
 
-- **REST API** — start a FastAPI server and drive the simulation over HTTP.
+2. Start a FastAPI server and drive the simulation over HTTP.
 
     ```bash
     uv run minisky server
@@ -28,7 +26,7 @@ reach a bare-minimum simulator that is easy to read, embed, and extend.
 
     → [REST API server](guides/rest-api.md)
 
-- **Python library** — import `minisky` and step the simulation from your own code.
+3. Import `minisky` and step the simulation from your own code.
 
     ```python
     from minisky import DEFAULT_SETTINGS_FILE, MiniSky, MiniSkySettings
@@ -42,8 +40,6 @@ reach a bare-minimum simulator that is easy to read, embed, and extend.
     ```
 
     → [Python library](guides/python-api.md)
-
-</div>
 
 ## What's inside
 
