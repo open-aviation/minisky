@@ -78,6 +78,7 @@ class TangramPluginSettings(BaseModel):
 # not advancing (paused/init), so the frontend still sees state changes.
 HEARTBEAT_SECS = 1.0
 
+
 def _state_name(state: int) -> str:
     """Return the enum member name for a serialized simulation state."""
     try:

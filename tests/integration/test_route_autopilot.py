@@ -1,16 +1,22 @@
 """Integration tests for route management (ADDWPT/DEST) and autopilot guidance."""
 
+from __future__ import annotations
+
+import numpy as np
 import pytest
 
+from minisky import MiniSky
 from minisky.tools import geo
 from minisky.traffic import route as route_commands
+from minisky.traffic.route import Route
+from tests._types import RunCommand, StepUntil
 
 FT = 0.3048
 KTS = 0.514444
 
 
 @pytest.fixture
-def aircraft(runtime, run_cmd):
+def aircraft(runtime: MiniSky, run_cmd: RunCommand) -> str:
     """A single aircraft at (52, 4) heading east at FL100."""
     run_cmd("CRE KL001,A320,52,4,90,FL100,250")
     assert runtime.traffic.ntraf == 1
@@ -18,33 +24,41 @@ def aircraft(runtime, run_cmd):
 
 
 class TestAddwpt:
-    def test_addwpt_by_latlon(self, runtime, run_cmd, aircraft):
+    def test_addwpt_by_latlon(self, runtime: MiniSky, run_cmd: RunCommand, aircraft: str) -> None:
         run_cmd(f"ADDWPT {aircraft} 52.5,5.0")
         route = runtime.traffic.ap.route[0]
         assert len(route.wpname) == 1
         assert route.wplat[0] == pytest.approx(52.5)
         assert route.wplon[0] == pytest.approx(5.0)
 
-    def test_addwpt_by_navdb_name(self, runtime, run_cmd, aircraft):
+    def test_addwpt_by_navdb_name(
+        self, runtime: MiniSky, run_cmd: RunCommand, aircraft: str
+    ) -> None:
         # SUGOL is a real waypoint near EHAM in the bundled navdata
         run_cmd(f"ADDWPT {aircraft} SUGOL")
         route = runtime.traffic.ap.route[0]
         assert len(route.wpname) == 1
         assert "SUGOL" in route.wpname[0]
 
-    def test_addwpt_multiple_in_order(self, runtime, run_cmd, aircraft):
+    def test_addwpt_multiple_in_order(
+        self, runtime: MiniSky, run_cmd: RunCommand, aircraft: str
+    ) -> None:
         run_cmd(f"ADDWPT {aircraft} 52.5,5.0")
         run_cmd(f"ADDWPT {aircraft} 53.0,6.0")
         route = runtime.traffic.ap.route[0]
         assert len(route.wpname) == 2
         assert route.wplat == [52.5, 53.0]
 
-    def test_addwpt_with_altitude_constraint(self, runtime, run_cmd, aircraft):
+    def test_addwpt_with_altitude_constraint(
+        self, runtime: MiniSky, run_cmd: RunCommand, aircraft: str
+    ) -> None:
         run_cmd(f"ADDWPT {aircraft} 52.5,5.0 FL150")
         route = runtime.traffic.ap.route[0]
         assert route.wpalt[0] == pytest.approx(15000 * FT, rel=1e-3)
 
-    def test_dest_resolves_airport(self, runtime, run_cmd, aircraft):
+    def test_dest_resolves_airport(
+        self, runtime: MiniSky, run_cmd: RunCommand, aircraft: str
+    ) -> None:
         run_cmd(f"DEST {aircraft} EHAM")
         route = runtime.traffic.ap.route[0]
         # EHAM (Schiphol) is at approximately (52.31, 4.76)
@@ -53,19 +67,23 @@ class TestAddwpt:
 
 
 class TestLnav:
-    def test_lnav_turns_toward_waypoint(self, runtime, run_cmd, step_until, aircraft):
+    def test_lnav_turns_toward_waypoint(
+        self, runtime: MiniSky, run_cmd: RunCommand, step_until: StepUntil, aircraft: str
+    ) -> None:
         # Waypoint to the north; aircraft initially heading east
         run_cmd(f"ADDWPT {aircraft} 54.0,4.0")
         run_cmd(f"LNAV {aircraft} ON")
         assert runtime.traffic.swlnav[0]
 
-        def heading_north():
+        def heading_north() -> bool:
             hdg = runtime.traffic.hdg[0] % 360.0
             return hdg > 350.0 or hdg < 10.0
 
         step_until(heading_north, max_steps=300)
 
-    def test_lnav_off_keeps_heading(self, runtime, run_cmd, aircraft):
+    def test_lnav_off_keeps_heading(
+        self, runtime: MiniSky, run_cmd: RunCommand, aircraft: str
+    ) -> None:
         run_cmd(f"ADDWPT {aircraft} 54.0,4.0")
         run_cmd(f"LNAV {aircraft} OFF")
         for _ in range(30):
@@ -74,12 +92,16 @@ class TestLnav:
 
 
 class TestVerticalGuidance:
-    def test_alt_command_captures_altitude(self, runtime, run_cmd, step_until, aircraft):
+    def test_alt_command_captures_altitude(
+        self, runtime: MiniSky, run_cmd: RunCommand, step_until: StepUntil, aircraft: str
+    ) -> None:
         target = 11000 * FT
         run_cmd(f"ALT {aircraft} FL110")
         step_until(lambda: abs(runtime.traffic.alt[0] - target) < 50 * FT, max_steps=600)
 
-    def test_vertical_speed_settles_after_capture(self, runtime, run_cmd, step_until, aircraft):
+    def test_vertical_speed_settles_after_capture(
+        self, runtime: MiniSky, run_cmd: RunCommand, step_until: StepUntil, aircraft: str
+    ) -> None:
         target = 11000 * FT
         run_cmd(f"ALT {aircraft} FL110")
         step_until(lambda: abs(runtime.traffic.alt[0] - target) < 20 * FT, max_steps=600)
@@ -88,7 +110,9 @@ class TestVerticalGuidance:
         assert runtime.traffic.vs[0] == pytest.approx(0.0, abs=0.5)
         assert runtime.traffic.alt[0] == pytest.approx(target, rel=1e-2)
 
-    def test_descent(self, runtime, run_cmd, step_until, aircraft):
+    def test_descent(
+        self, runtime: MiniSky, run_cmd: RunCommand, step_until: StepUntil, aircraft: str
+    ) -> None:
         target = 8000 * FT
         run_cmd(f"ALT {aircraft} FL080")
         step_until(lambda: abs(runtime.traffic.alt[0] - target) < 50 * FT, max_steps=600)
@@ -97,7 +121,9 @@ class TestVerticalGuidance:
 class TestRouteEditing:
     """Regression tests for route-editing bugs from docs/known-issues.md."""
 
-    def test_addwpt_accepts_string_callsign(self, runtime, run_cmd, aircraft):
+    def test_addwpt_accepts_string_callsign(
+        self, runtime: MiniSky, run_cmd: RunCommand, aircraft: str
+    ) -> None:
         # addwpt() with a callsign string used to crash on the callsign lookup
         result = route_commands.addwpt(runtime.traffic, aircraft, "52.5,5.0")
         assert result is True
@@ -105,7 +131,9 @@ class TestRouteEditing:
         assert route.wplat[0] == pytest.approx(52.5)
         assert route.wplon[0] == pytest.approx(5.0)
 
-    def test_direct_switches_active_waypoint(self, runtime, run_cmd, aircraft):
+    def test_direct_switches_active_waypoint(
+        self, runtime: MiniSky, run_cmd: RunCommand, aircraft: str
+    ) -> None:
         run_cmd(f"ADDWPT {aircraft} 52.5,5.0")
         run_cmd(f"ADDWPT {aircraft} 53.0,6.0")
         route = runtime.traffic.ap.route[0]
@@ -113,7 +141,9 @@ class TestRouteEditing:
         assert route.iactwp == 1
         assert runtime.traffic.actwp.lat[0] == pytest.approx(53.0)
 
-    def test_direct_with_turn_heading_rate(self, runtime, run_cmd, aircraft):
+    def test_direct_with_turn_heading_rate(
+        self, runtime: MiniSky, run_cmd: RunCommand, aircraft: str
+    ) -> None:
         # direct() used bare `pi` in the heading-rate branch (NameError)
         run_cmd(f"ADDWPT {aircraft} TURNHDG 3")
         run_cmd(f"ADDWPT {aircraft} 52.5,5.0")
@@ -125,7 +155,9 @@ class TestRouteEditing:
         assert route.iactwp == 0
         assert runtime.traffic.swlnav[0]
 
-    def test_delwpt_active_waypoint_redirects(self, runtime, run_cmd, aircraft):
+    def test_delwpt_active_waypoint_redirects(
+        self, runtime: MiniSky, run_cmd: RunCommand, aircraft: str
+    ) -> None:
         # delwpt() used to call the nonexistent Route.direct method
         run_cmd(f"ADDWPT {aircraft} 52.5,5.0")
         run_cmd(f"ADDWPT {aircraft} 53.0,6.0")
@@ -137,7 +169,9 @@ class TestRouteEditing:
         assert route.iactwp == 0
         assert runtime.traffic.actwp.lat[0] == pytest.approx(53.0)
 
-    def test_at_wpt_sets_alt_and_spd_constraints(self, runtime, run_cmd, aircraft):
+    def test_at_wpt_sets_alt_and_spd_constraints(
+        self, runtime: MiniSky, run_cmd: RunCommand, aircraft: str
+    ) -> None:
         # The alt/spd branch wrote the speed into the altitude constraint
         # and called the nonexistent Route.direct method
         run_cmd(f"ADDWPT {aircraft} 52.5,5.0")
@@ -148,7 +182,9 @@ class TestRouteEditing:
         assert route.wpalt[1] == pytest.approx(9000 * FT, rel=1e-3)
         assert route.wpspd[1] == pytest.approx(250 * KTS, rel=1e-3)
 
-    def test_lnav_reengage_issues_direct(self, runtime, run_cmd, aircraft):
+    def test_lnav_reengage_issues_direct(
+        self, runtime: MiniSky, run_cmd: RunCommand, aircraft: str
+    ) -> None:
         # setLNAV used to call the nonexistent Route.direct method
         run_cmd(f"ADDWPT {aircraft} 52.5,5.0")
         run_cmd(f"ADDWPT {aircraft} 53.0,6.0")
@@ -158,7 +194,9 @@ class TestRouteEditing:
         assert "Error" not in out
         assert runtime.traffic.swlnav[0]
 
-    def test_at_via_stack_sets_constraints(self, runtime, run_cmd, aircraft):
+    def test_at_via_stack_sets_constraints(
+        self, runtime: MiniSky, run_cmd: RunCommand, aircraft: str
+    ) -> None:
         # The AT registration used help text as its argument spec, so the
         # command never reached at_wpt() from the stack
         run_cmd(f"ADDWPT {aircraft} 52.5,5.0")
@@ -169,7 +207,7 @@ class TestRouteEditing:
         assert route.wpalt[1] == pytest.approx(9000 * FT, rel=1e-3)
         assert route.wpspd[1] == pytest.approx(250 * KTS, rel=1e-3)
 
-    def test_direct_via_stack(self, runtime, run_cmd, aircraft):
+    def test_direct_via_stack(self, runtime: MiniSky, run_cmd: RunCommand, aircraft: str) -> None:
         # The DIRECT argument spec had a stray space (" wpt"), dropping the
         # waypoint parameter so DIRECT always rejected its second argument
         run_cmd(f"ADDWPT {aircraft} 52.5,5.0")
@@ -179,7 +217,9 @@ class TestRouteEditing:
         assert "Error" not in out
         assert route.iactwp == 1
 
-    def test_after_and_before_via_stack(self, runtime, run_cmd, aircraft):
+    def test_after_and_before_via_stack(
+        self, runtime: MiniSky, run_cmd: RunCommand, aircraft: str
+    ) -> None:
         # AFTER/BEFORE specs contained unparseable tokens, and the ADDWPT
         # keyword parameter shadowed the addwpt() function
         run_cmd(f"ADDWPT {aircraft} EH007")
@@ -193,7 +233,9 @@ class TestRouteEditing:
 
 
 class TestStatusQueries:
-    def test_vnav_query_reports_state(self, runtime, run_cmd, aircraft):
+    def test_vnav_query_reports_state(
+        self, runtime: MiniSky, run_cmd: RunCommand, aircraft: str
+    ) -> None:
         # The VNAV query path referenced nonexistent traffic.id
         run_cmd(f"ADDWPT {aircraft} 52.5,5.0 FL110")
         run_cmd(f"ADDWPT {aircraft} 53.0,6.0")
@@ -204,7 +246,9 @@ class TestStatusQueries:
         out = run_cmd(f"VNAV {aircraft}")
         assert f"{aircraft}: VNAV is OFF" in out
 
-    def test_swtod_status_reflects_switch(self, runtime, run_cmd, aircraft):
+    def test_swtod_status_reflects_switch(
+        self, runtime: MiniSky, run_cmd: RunCommand, aircraft: str
+    ) -> None:
         # SWTOD status output used to read swtoc instead of swtod
         out = run_cmd(f"SWTOD {aircraft}")
         assert f"{aircraft}: SWTOD is ON" in out
@@ -215,7 +259,9 @@ class TestStatusQueries:
 
 
 class TestActiveWaypointDefaults:
-    def test_mcre_initialises_nextaltco_for_all(self, runtime, run_cmd):
+    def test_mcre_initialises_nextaltco_for_all(
+        self, runtime: MiniSky, run_cmd: RunCommand
+    ) -> None:
         # ActiveWaypoint.create() used nextaltco[-n] instead of [-n:],
         # leaving all but one new aircraft without the -999 sentinel
         run_cmd("MCRE 3")
@@ -224,13 +270,19 @@ class TestActiveWaypointDefaults:
 
 
 class TestGuidanceGeometry:
-    def test_aircraft_approaches_waypoint_with_lnav(self, runtime, run_cmd, step_until, aircraft):
+    def test_aircraft_approaches_waypoint_with_lnav(
+        self, runtime: MiniSky, run_cmd: RunCommand, step_until: StepUntil, aircraft: str
+    ) -> None:
         wplat, wplon = 52.6, 4.0
         run_cmd(f"ADDWPT {aircraft} {wplat},{wplon}")
         run_cmd(f"LNAV {aircraft} ON")
 
-        def dist_nm():
-            return geo.kwikdist(runtime.traffic.lat[0], runtime.traffic.lon[0], wplat, wplon)
+        def dist_nm() -> float:
+            return float(
+                np.asarray(
+                    geo.kwikdist(runtime.traffic.lat[0], runtime.traffic.lon[0], wplat, wplon)
+                ).item()
+            )
 
         start = dist_nm()
         step_until(lambda: dist_nm() < start / 2, max_steps=600)
@@ -249,14 +301,16 @@ class TestWaypointSwitching:
     WPTS = [(52.00, 4.05), (52.03, 4.10), (52.00, 4.15), (52.03, 4.20)]
 
     @pytest.fixture
-    def route(self, runtime, run_cmd, aircraft):
+    def route(self, runtime: MiniSky, run_cmd: RunCommand, aircraft: str) -> Route:
         for lat, lon in self.WPTS:
             run_cmd(f"ADDWPT {aircraft} {lat},{lon}")
         run_cmd(f"LNAV {aircraft} ON")
         run_cmd(f"VNAV {aircraft} ON")
         return runtime.traffic.ap.route[0]
 
-    def test_switches_through_route_and_disengages_at_end(self, runtime, step_until, route):
+    def test_switches_through_route_and_disengages_at_end(
+        self, runtime: MiniSky, step_until: StepUntil, route: Route
+    ) -> None:
         assert route.iactwp == 0
         for target in range(1, len(self.WPTS)):
             step_until(lambda target=target: route.iactwp == target, max_steps=200)
@@ -266,16 +320,22 @@ class TestWaypointSwitching:
         step_until(lambda: not runtime.traffic.swlnav[0], max_steps=200)
         assert not runtime.traffic.swvnav[0]
 
-    def test_next_qdr_matches_next_leg_bearing(self, runtime, step_until, route):
+    def test_next_qdr_matches_next_leg_bearing(
+        self, runtime: MiniSky, step_until: StepUntil, route: Route
+    ) -> None:
         step_until(lambda: route.iactwp == 1, max_steps=200)
         expected, _ = geo.qdrdist(*self.WPTS[1], *self.WPTS[2])
         assert runtime.traffic.actwp.next_qdr[0] == pytest.approx(expected)
 
-    def test_next_qdr_sentinel_on_last_waypoint(self, runtime, step_until, route):
+    def test_next_qdr_sentinel_on_last_waypoint(
+        self, runtime: MiniSky, step_until: StepUntil, route: Route
+    ) -> None:
         step_until(lambda: route.iactwp == len(self.WPTS) - 1, max_steps=600)
         assert runtime.traffic.actwp.next_qdr[0] == -999.0
 
-    def test_nextturn_data_tracks_upcoming_flyturn(self, runtime, run_cmd, step_until, aircraft):
+    def test_nextturn_data_tracks_upcoming_flyturn(
+        self, runtime: MiniSky, run_cmd: RunCommand, step_until: StepUntil, aircraft: str
+    ) -> None:
         # Waypoint 2 is a fly-turn waypoint with a turn speed; 0, 1 and 3 are fly-by
         run_cmd(f"ADDWPT {aircraft} {self.WPTS[0][0]},{self.WPTS[0][1]}")
         run_cmd(f"ADDWPT {aircraft} {self.WPTS[1][0]},{self.WPTS[1][1]}")
@@ -302,6 +362,8 @@ class TestWaypointSwitching:
         step_until(lambda: route.iactwp == 3, max_steps=600)
         assert runtime.traffic.actwp.nextturnidx[0] == -999
 
-    def test_no_flyturn_waypoints_gives_defaults(self, runtime, step_until, route):
+    def test_no_flyturn_waypoints_gives_defaults(
+        self, runtime: MiniSky, step_until: StepUntil, route: Route
+    ) -> None:
         step_until(lambda: route.iactwp == 1, max_steps=200)
         assert runtime.traffic.actwp.nextturnidx[0] == -999

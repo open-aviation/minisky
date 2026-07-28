@@ -13,40 +13,40 @@ NM_IN_M = 1852.0
 
 
 class TestQdrDist:
-    def test_eastbound_along_equator(self):
+    def test_eastbound_along_equator(self) -> None:
         qdr, dist = geo.qdrdist(0.0, 0.0, 0.0, 1.0)
         assert qdr == pytest.approx(90.0, abs=0.1)
         assert dist == pytest.approx(60.1, abs=0.2)  # 1 deg lon at equator
 
-    def test_northbound_along_meridian(self):
+    def test_northbound_along_meridian(self) -> None:
         qdr, dist = geo.qdrdist(0.0, 0.0, 1.0, 0.0)
         assert qdr == pytest.approx(0.0, abs=0.1)
         assert dist == pytest.approx(60.1, abs=0.5)
 
-    def test_reciprocal_bearing(self):
+    def test_reciprocal_bearing(self) -> None:
         qdr_fwd, dist_fwd = geo.qdrdist(52.0, 4.0, 53.0, 5.0)
         qdr_rev, dist_rev = geo.qdrdist(53.0, 5.0, 52.0, 4.0)
         assert dist_fwd == pytest.approx(dist_rev, rel=1e-6)
         assert (qdr_rev - qdr_fwd) % 360.0 == pytest.approx(180.0, abs=1.0)
 
-    def test_zero_distance_same_point(self):
+    def test_zero_distance_same_point(self) -> None:
         _, dist = geo.qdrdist(52.0, 4.0, 52.0, 4.0)
         assert dist == pytest.approx(0.0, abs=1e-6)
 
 
 class TestDistanceFunctions:
-    def test_latlondist_matches_qdrdist(self):
+    def test_latlondist_matches_qdrdist(self) -> None:
         _, dist_nm = geo.qdrdist(52.0, 4.0, 52.5, 4.5)
         dist_m = geo.latlondist(52.0, 4.0, 52.5, 4.5)
         assert dist_m / NM_IN_M == pytest.approx(dist_nm, rel=1e-3)
 
-    def test_kwikdist_approximates_latlondist(self):
+    def test_kwikdist_approximates_latlondist(self) -> None:
         # kwikdist is a fast flat-earth approximation, good at short range
         dist_kwik_nm = geo.kwikdist(52.0, 4.0, 52.1, 4.1)
         dist_m = geo.latlondist(52.0, 4.0, 52.1, 4.1)
         assert dist_kwik_nm == pytest.approx(dist_m / NM_IN_M, rel=0.01)
 
-    def test_kwikqdrdist_approximates_qdrdist(self):
+    def test_kwikqdrdist_approximates_qdrdist(self) -> None:
         qdr, dist = geo.qdrdist(52.0, 4.0, 52.1, 4.1)
         kqdr, kdist = geo.kwikqdrdist(52.0, 4.0, 52.1, 4.1)
         assert kqdr == pytest.approx(qdr, abs=1.0)
@@ -59,7 +59,7 @@ class TestMatrixVariants:
     LAT2 = np.array([4.0, 6.0])
     LON2 = np.array([5.0, 8.0])
 
-    def test_latlondist_matrix_returns_metres_like_scalar(self):
+    def test_latlondist_matrix_returns_metres_like_scalar(self) -> None:
         # Regression: latlondist_matrix returned nm while latlondist returns m
         dist = geo.latlondist_matrix(self.LAT1, self.LON1, self.LAT2, self.LON2)
         assert dist.shape == (2, 2)
@@ -68,7 +68,7 @@ class TestMatrixVariants:
                 expected_m = geo.latlondist(self.LAT1[i], self.LON1[i], self.LAT2[j], self.LON2[j])
                 assert dist[i, j] == pytest.approx(expected_m, rel=1e-3)
 
-    def test_latlondist_matrix_high_latitude_matches_scalar(self):
+    def test_latlondist_matrix_high_latitude_matches_scalar(self) -> None:
         # Regression: the matrix variants evaluated the earth radius at
         # lat1 + lat2 instead of 0.5 * (lat1 + lat2), skewing distances
         # at higher latitudes
@@ -78,47 +78,45 @@ class TestMatrixVariants:
         expected_m = geo.latlondist(60.0, 10.0, 70.0, 20.0)
         assert dist[0, 0] == pytest.approx(expected_m, rel=1e-9)
 
-    def test_latlondist_matrix_returns_plain_ndarray(self):
+    def test_latlondist_matrix_returns_plain_ndarray(self) -> None:
         # Regression: np.asmatrix is deprecated; result must not be np.matrix
         dist = geo.latlondist_matrix(self.LAT1, self.LON1, self.LAT2, self.LON2)
         assert isinstance(dist, np.ndarray)
         assert not isinstance(dist, np.matrix)
 
-    def test_qdrdist_matrix_matches_scalar(self):
+    def test_qdrdist_matrix_matches_scalar(self) -> None:
         qdr, dist = geo.qdrdist_matrix(self.LAT1, self.LON1, self.LAT2, self.LON2)
         assert not isinstance(qdr, np.matrix)
         assert not isinstance(dist, np.matrix)
         for i in range(2):
             for j in range(2):
-                sqdr, sdist_nm = geo.qdrdist(
-                    self.LAT1[i], self.LON1[i], self.LAT2[j], self.LON2[j]
-                )
+                sqdr, sdist_nm = geo.qdrdist(self.LAT1[i], self.LON1[i], self.LAT2[j], self.LON2[j])
                 assert qdr[i, j] == pytest.approx(sqdr, abs=1e-9)
                 assert dist[i, j] == pytest.approx(sdist_nm, rel=1e-3)
 
 
 class TestProjection:
     @pytest.mark.parametrize("qdr,dist", [(0.0, 60.0), (45.0, 100.0), (270.0, 30.0)])
-    def test_qdrpos_roundtrip(self, qdr, dist):
+    def test_qdrpos_roundtrip(self, qdr: float, dist: float) -> None:
         lat2, lon2 = geo.qdrpos(52.0, 4.0, qdr, dist)
         qdr_back, dist_back = geo.qdrdist(52.0, 4.0, lat2, lon2)
         assert qdr_back % 360.0 == pytest.approx(qdr % 360.0, abs=0.5)
         assert dist_back == pytest.approx(dist, rel=1e-3)
 
-    def test_qdrpos_north_increases_latitude(self):
+    def test_qdrpos_north_increases_latitude(self) -> None:
         lat2, lon2 = geo.qdrpos(52.0, 4.0, 0.0, 60.0)
         assert lat2 > 52.0
         assert lon2 == pytest.approx(4.0, abs=1e-6)
 
 
 class TestWgs84:
-    def test_equatorial_radius(self):
+    def test_equatorial_radius(self) -> None:
         assert geo.rwgs84(0.0) == pytest.approx(6378137.0, rel=1e-6)
 
-    def test_polar_radius(self):
+    def test_polar_radius(self) -> None:
         assert geo.rwgs84(90.0) == pytest.approx(6356752.3, rel=1e-6)
 
-    def test_radius_within_bounds(self):
+    def test_radius_within_bounds(self) -> None:
         for lat in (10.0, 30.0, 45.0, 60.0, 80.0):
             r = geo.rwgs84(lat)
             assert 6356752.0 < r < 6378138.0
