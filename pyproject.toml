@@ -41,8 +41,8 @@ dev = [
     "fakeredis>=2.26",
 ]
 docs = [
-    "mkdocs-material>=9.5.0",
-    "mkdocstrings[python]>=0.27.0",
+    "zensical>=0.0.47",
+    "mkdocstrings-python>=2.0.5",
 ]
 
 [tool.pytest.ini_options]
