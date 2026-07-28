@@ -30,7 +30,7 @@ from collections.abc import Callable, Iterator
 from functools import partial
 from io import StringIO
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 import numpy as np
 
@@ -46,6 +46,11 @@ if TYPE_CHECKING:
     from minisky.tools.areafilter import AreaFilter
     from minisky.tools.navdata import Navdatabase
     from minisky.traffic import Traffic
+
+
+class CommandResult(NamedTuple):
+    success: bool
+    echotext: str
 
 
 class Command:
@@ -69,7 +74,6 @@ class Command:
         valid: False when the callback is an unbound class/instance method.
     """
 
-
     def __init__(
         self,
         func,
@@ -91,7 +95,7 @@ class Command:
         self.parent = parent
         self.callback = func
 
-    def __call__(self, argstring: str):
+    def __call__(self, argstring: str) -> CommandResult:
         """Parse an argument string and execute this command.
 
         The command's Parameter objects convert the argument text into
@@ -99,9 +103,6 @@ class Command:
 
         Args:
             argstring: The command-line text following the command name.
-
-        Returns:
-            tuple: (success (bool), echotext (str)) describing the result.
 
         Raises:
             ArgumentError: When argument parsing fails, or when more
@@ -135,13 +136,13 @@ class Command:
         ret = self.callback(*args)
         # Always return a tuple with a success value and a message string
         if ret is None:
-            return True, ""
-        if isinstance(ret, (tuple, list)) and ret:
+            return CommandResult(success=True, echotext="")
+        if isinstance(ret, (tuple, list)):
             if len(ret) > 1:
-                # Assume that (success, echotext) is returned
-                return ret[:2]
-            ret = ret[0]  # type: ignore[misc]
-        return ret, ""
+                return CommandResult(success=bool(ret[0]), echotext=str(ret[1]))
+            if len(ret) == 1:
+                ret = bool(ret[0])
+        return CommandResult(success=bool(ret), echotext="")
 
     def __repr__(self) -> str:
         if self.valid:
