@@ -70,17 +70,24 @@ search = {}
 # tangram_minisky lives in its own workspace and is not installed in the docs
 # environment; point griffe at its source so it can analyse it statically.
 paths = ["example_plugins/tangram/tangram_minisky/src"]
+inventories = [
+  "https://docs.python.org/3/objects.inv",
+  "https://fastapi.tiangolo.com/objects.inv",
+]
 
 [project.plugins.mkdocstrings.handlers.python.options]
 docstring_style = "google"
 docstring_section_style = "table"
 show_source = true
 show_root_heading = true
+show_root_full_path = false
+show_symbol_type_heading = true
+show_symbol_type_toc = true
 members_order = "source"
 merge_init_into_class = true
 separate_signature = true
-show_signature_annotations = false
-filters = ["!^_"]
+show_signature_annotations = true
+signature_crossrefs = true
 
 [project.markdown_extensions]
 admonition = {}

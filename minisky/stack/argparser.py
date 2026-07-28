@@ -137,7 +137,7 @@ class Parameter:
         # processing a stack command line.
         self.valid = bool(self.parsers) and self.canwrap(param)
 
-    def __call__(self, argstring: str):
+    def __call__(self, argstring: str) -> tuple[Any, ...]:
         """Parse the next argument(s) for this parameter from argstring.
 
         Args:
