@@ -1,12 +1,6 @@
 """Smoke tests for the FastAPI endpoints.
 
-The API application is created explicitly for this test module and owns its
-own MiniSky runtime. These tests are marked `api` and excluded from the default
-run; execute them in a separate process:
-
-```console
-uv run minisky test api
-```
+Use `just test-api`.
 
 The `/stack/{cmd}` endpoint requires the async runner loop and is not tested
 here because it is flaky under `TestClient`.

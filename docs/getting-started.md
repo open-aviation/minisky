@@ -102,9 +102,9 @@ enabled_plugins = []
 ## Running the tests
 
 ```bash
-uv run minisky test all                   # unit + integration tests
-uv run minisky test unit                  # fast pure-function tests only
-uv run minisky test api                   # REST API smoke tests (separate process)
+just test      # unit + integration tests
+just test-unit # fast pure-function tests only
+just test-api  # REST API smoke tests (separate process)
 ```
 
 ## Building this documentation
@@ -115,13 +115,13 @@ docstrings in the source code.
 
 ```bash
 uv sync --group docs
-uv run minisky docs serve    # live preview at http://localhost:8000
-uv run minisky docs build    # static site in site/
+just docs-serve    # live preview at http://localhost:8000
+just docs-build    # static site in site/
 ```
 
 To refresh the [stack command reference](reference/commands.md) after adding or changing
 commands:
 
 ```bash
-uv run minisky commands docs
+just docs-generate
 ```

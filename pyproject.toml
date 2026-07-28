@@ -50,7 +50,7 @@ testpaths = ["tests"]
 pythonpath = ["."]
 addopts = "-ra -m 'not api'"
 markers = [
-    "api: FastAPI endpoint tests, run separately: uv run pytest -m api tests/test_api.py",
+    "api: FastAPI endpoint tests, run separately with just test-api",
 ]
 
 [tool.ruff]
@@ -79,7 +79,7 @@ include = ["minisky", "example_plugins", "tests"]
 exclude = [
     "**/.*", "**/__pycache__", "**/node_modules", ".venv", "build", "site",
     # TODO(abraham): these files will need extensive typing, deferring for now
-    "tests/test_aero.py", "tests/test_detection.py"
+    "tests/unit/test_aero.py", "tests/unit/test_detection.py"
 ]
 pythonVersion = "3.11"
 # "standard" catches useful bugs while staying practical for this numpy/scipy-heavy fork.
