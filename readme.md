@@ -1,4 +1,4 @@
-# MiniSky - A minimal command line air traffic simulator with REST API
+# MiniSky
 
 MiniSky is a hackable air traffic control simulator, a fork of [BlueSky](https://github.com/TUDelft-CNS-ATM/bluesky).
 
@@ -9,27 +9,26 @@ MiniSky is being optimized for:
 - use in command-line
 - interact with the simulator through REST API
 - call simulations in your own Python code
+- running multiple independent simulations side by side in one process, with each runtime owning its own state and lifecycle
 
 ## Usage
 
-### 1. Run a scenario file without interaction
-
-Run the simulator with a scenario file:
+### 1. Run a scenario
 
 ```bash
+uv sync
 uv run minisky run --scenario scenarios/kl204.scn
+uv run minisky run --scenario scenarios/kl204.scn --speed 10
 ```
 
-### 2. Run simulator with REST API server
-
-Start the simulator with a REST API endpoint for interactions:
+### 2. Run the API server
 
 ```bash
-uv run minisky server                 # serves on 0.0.0.0:8000
-uv run minisky server --reload        # development server with auto-reload
+uv run minisky server  # serves on 0.0.0.0:8000 by default
+uv run minisky server --reload
 ```
 
-#### Interaction with API
+### 3. Interaction with API
 
 Once the fastapi server is running, some simple examples:
 
@@ -100,19 +99,19 @@ Note that commands are case-insensitive.
 Use the simulator in your Python code:
 
 ```python
-import minisky
+from minisky import DEFAULT_SETTINGS_FILE, MiniSky, MiniSkySettings
 
-minisky.init()
+settings = MiniSkySettings.from_file(DEFAULT_SETTINGS_FILE)
+with MiniSky(settings) as runtime:
+    runtime.traffic.cre(
+        "KL315", lat=52.0, lon=4.0, hdg=45, alt=5000, spd=250
+    )
+    runtime.commands.stack("KL315 ADDWPT HELEN FL100 250")
 
-minisky.sim.reset()
-minisky.traf.cre('KL315', lat=52.0, lon=4.0, hdg=45, alt=5000, spd=250)
-minisky.stack.stack('KL315 ADDWPT HELEN FL100 250')
-
-minisky.sim.simdt = 10
-
-for i in range(5):
-    minisky.sim.step()
-    print(f"time-{minisky.sim.simt}s, positions: {minisky.traf.lat} {minisky.traf.lon}")
+    runtime.simulation.simdt = 10
+    for _ in range(5):
+        runtime.simulation.step()
+        print(runtime.simulation.simt, runtime.traffic.lat, runtime.traffic.lon)
 ```
 
 ## Documentation

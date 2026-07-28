@@ -1,7 +1,7 @@
 # `minisky.tools`
 
-Aeronautics and geodesy utilities. These are pure functions, usable outside the
-simulator.
+Aeronautics and geodesy utilities, plus runtime-owned area, navigation, and
+position helpers.
 
 ## Aeronautics (`aero`)
 

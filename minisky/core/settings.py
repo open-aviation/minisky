@@ -22,6 +22,7 @@ class MiniSkySettings(BaseModel):
     asas_pzh: Annotated[float, Field(), annotated_types.Gt(0)] = 1000.0
     asas_marh: Annotated[float, Field(), annotated_types.Gt(0)] = 1.05
     asas_marv: Annotated[float, Field(), annotated_types.Gt(0)] = 1.05
+    # TODO(abraham): delete this.
     plugin_path: Annotated[str, Field(), annotated_types.MinLen(1)] = "plugins"
     enabled_plugins: tuple[str, ...] = ()
 

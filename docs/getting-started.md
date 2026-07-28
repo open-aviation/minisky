@@ -86,16 +86,17 @@ ownership and stepping the simulation yourself.
 ## Configuration
 
 Runtime settings live in `settings.toml` at the repository root, e.g. conflict-detection
-lookahead time and protected-zone sizes, the plugin search directory, and which plugins to
-load at startup:
+lookahead time and protected-zone sizes, plus the current plugin search directory and startup list:
 
-```yaml
-asas_dtlookahead: 300      # ASAS lookahead time [sec]
-asas_pzr: 5                # ASAS horizontal protected zone radius [nm]
-asas_pzh: 1000             # ASAS vertical protected zone height [ft]
+```toml
+asas_dtlookahead = 300
+asas_pzr = 5
+asas_pzh = 1000
+asas_marh = 1.05
+asas_marv = 1.05
 
-plugin_path: example_plugins
-# enabled_plugins: ['EXAMPLE']
+plugin_path = "example_plugins"
+enabled_plugins = []
 ```
 
 ## Running the tests

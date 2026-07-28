@@ -2,7 +2,7 @@
 
 Every text command understood by the simulator — usable in scenario files, the
 [console](../guides/console.md), the REST [`stack/` endpoint](../guides/rest-api.md),
-or `runtime.commands.stack()` from Python. Commands are
+or [`runtime.commands.stack()`][minisky.stack.CommandStack.stack] from Python. Commands are
 case-insensitive.
 
 Argument conventions: optional arguments are enclosed in `[...]`; `callsign` is an
