@@ -116,19 +116,13 @@ with MiniSky(settings) as runtime:
 
 ## Documentation
 
-The documentation lives in `docs/` and is built with MkDocs Material; the API reference
+The documentation lives in `docs/` and is built with Zensical; the API reference
 is generated from the docstrings with mkdocstrings.
 
 ```bash
 uv sync --group docs
 just docs-serve                  # live preview at http://localhost:8000
 just docs-build                  # static site in site/
-```
-
-Regenerate the stack command reference after adding or changing commands:
-
-```bash
-just docs-generate
 ```
 
 ## Tests

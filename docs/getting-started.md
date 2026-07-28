@@ -118,10 +118,3 @@ uv sync --group docs
 just docs-serve    # live preview at http://localhost:8000
 just docs-build    # static site in site/
 ```
-
-To refresh the [stack command reference](reference/commands.md) after adding or changing
-commands:
-
-```bash
-just docs-generate
-```
