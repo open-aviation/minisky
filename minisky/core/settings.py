@@ -11,8 +11,10 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class MiniSkySettings(BaseModel):
-    """Validated, immutable settings for the MiniSky runtime."""
+    """Validated settings for the MiniSky runtime."""
 
+    # TODO(abraham): when we work on issue #24 we should add a [plugin]
+    # namespace for plugin-specific config and disallow extras
     model_config = ConfigDict(frozen=True, extra="allow")
 
     asas_dtlookahead: Annotated[float, Field(), annotated_types.Ge(0)] = 300.0
@@ -29,13 +31,12 @@ class MiniSkySettings(BaseModel):
         with Path(path).expanduser().open("rb") as file:
             return cls.model_validate(tomllib.load(file))
 
-
+# TODO(abraham): delete this, require users to pass in an explicit path and
+# use platformdirs for default loading
 DEFAULT_SETTINGS_FILE = Path(__file__).parent.parent.parent / "settings.toml"
 PACKAGE_DATA_DIR = Path(__file__).parent.parent / "data"
 
 
 def data(path: str) -> Path:
     """Return an absolute path inside the package data directory."""
-    # NOTE(abraham): in the case where we need to distribute as a wheel this
-    # should be removed.
     return PACKAGE_DATA_DIR / path

@@ -253,6 +253,8 @@ class TrafficArrays:
                 return candidate
         return cls
 
+    # TODO(abraham): replace process-wide subclass discovery with plugin declarations
+    # or ideally remove implementation inheritance altogether
     @classmethod
     def derived(cls):
         """Recursively find all derived classes."""

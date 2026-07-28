@@ -14,7 +14,7 @@ Latitudes, longitudes, bearings, and headings are in degrees; distances
 are in nautical miles unless stated otherwise.
 """
 
-from typing import Final
+from functools import cache
 
 import numpy as np
 import pandas as pd
@@ -624,7 +624,7 @@ def magdec(latd, lond) -> float:
     of the actual data. Axes were regularly spaced at one degree. The direct
     manual linear interpolation also 6 x times faster.
     """
-    decl_lat_lon = MAGNETIC_DECLINATION
+    decl_lat_lon = load_magnetic_declination()
 
     # Use fact that whole degrees are used as ticks on both lat & lon axis
     i_lat = min(max(0, int(90.0 - latd)), 180)
@@ -647,6 +647,7 @@ def magdec(latd, lond) -> float:
     return d_hdg
 
 
+@cache
 def load_magnetic_declination() -> np.ndarray:
     """
     Called by Init
@@ -706,9 +707,6 @@ def load_magnetic_declination() -> np.ndarray:
     # lon = -180 ... 180 (columns)
     decl_lat_lon.setflags(write=False)
     return decl_lat_lon
-
-
-MAGNETIC_DECLINATION: Final[np.ndarray] = load_magnetic_declination()
 
 
 # Command MAGVAR to get magnetic variation at position lat,lon

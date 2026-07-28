@@ -94,6 +94,7 @@ class MiniSky:
     def _stop_runner(self) -> None:
         self.runner.stop()
 
+    # TODO(abraham): load configured plugins during async entry and make this private
     def load_plugins(self) -> None:
         """Load plugins enabled in this runtime's settings."""
         self.plugins.load_enabled()
@@ -104,6 +105,7 @@ class MiniSky:
             raise RuntimeError("MiniSky runtime is closed")
         await self.runner.run()
 
+    # TODO(abraham): move background task ownership to callers and remove start()
     def start(self) -> asyncio.Task[None]:
         """Start the simulation runner in an owned asyncio task."""
         if self._closed:
@@ -138,8 +140,9 @@ class MiniSky:
         if errors:
             raise ExceptionGroup(message, errors)
 
+    # TODO(abraham): remove sync close when teardown has one async ownership path
     def close(self) -> None:
-        """Release synchronous resources owned by this runtime."""
+        """Release synchronous resources and request runner-task cancellation."""
         errors = self._close_resources()
         task = self._run_task
         try:
@@ -157,6 +160,7 @@ class MiniSky:
                 except Exception as exc:
                     errors.append(exc)
             else:
+                # only aclose() can await cancellation of an asyncio task
                 task.cancel()
 
         self._raise_errors("MiniSky cleanup failed", errors)
