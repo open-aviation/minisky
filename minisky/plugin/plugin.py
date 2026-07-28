@@ -36,6 +36,7 @@ if TYPE_CHECKING:
     from minisky.stack import CommandStack
 
 
+# TODO(abraham): split discovered and loaded records so loaded state has no optionals
 @dataclass
 class Plugin:
     """Information about one plugin discovered for one runtime.
@@ -139,8 +140,7 @@ class PluginManager:
             self.console.echo(f"Plugin directory not found: {plugin_path}")
             return
 
-        # TODO(abraham): replace this process-wide sys.path mutation with a
-        # path-based importer that still supports plugin-local package imports.
+        # TODO(abraham): replace sys.path mutation with a path-based importer
         plugin_parent = str(plugin_path.parent)
         if plugin_parent not in sys.path:
             sys.path.insert(0, plugin_parent)
@@ -210,10 +210,13 @@ class PluginManager:
         if plugin.loaded:
             return False, f"Plugin {plugin.plugin_name} already loaded"
 
+        # TODO(abraham): make loading transactional before adding unload or reload
         try:
             # Load and initialize the plugin for this runtime.
+            # TODO(abraham): isolate module namespaces before supporting unload
             module = importlib.import_module(plugin.fullname)
             result = module.init_plugin(self.runtime)
+            # TODO(abraham): replace dict and tuple returns with a typed plugin plan
             config = result if isinstance(result, dict) else result[0]
             stack_functions = (
                 result[1] if isinstance(result, (tuple, list)) and len(result) > 1 else None
@@ -311,6 +314,7 @@ class PluginManager:
     def shutdown(self) -> None:
         """Run shutdown callbacks and release all runtime-owned plugin state."""
         errors: list[Exception] = []
+        # TODO(abraham): own plugin tasks and handles through one async exit stack.
         for plugin in reversed(tuple(self.loaded_plugins.values())):
             try:
                 callback = plugin.config.get("shutdown")

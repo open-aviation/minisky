@@ -752,6 +752,7 @@ class CommandStack:
                 commands separated by ";".
             sender_id: Optional network route/id of the command sender.
         """
+        # TODO(abraham): replace this list with an owned mailbox?
         for cmdline in cmdlines:
             cmdline = cmdline.strip()
             if cmdline:
