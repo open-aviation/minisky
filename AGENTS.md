@@ -10,19 +10,7 @@ Before evaluating or porting an upstream BlueSky PR/feature, check `docs/upstrea
 
 ## Commands
 
-```bash
-uv run pytest                              # unit + integration (excludes api by default)
-uv run pytest tests/unit                   # fast pure-function tests only
-uv run pytest tests/integration/test_stack.py::test_name   # single test
-uv run pytest -m api tests/test_api.py     # REST API tests — spawn a separate process, opt-in
-
-just check                                 # ruff, pyright, frontend checks
-just fmt                                   # lint fixes and tangram/frontend formatting
-pnpm build                                 # tangram frontend bundle
-
-uv run minisky commands docs               # regenerate docs/reference/commands.md after changing commands
-uv run minisky docs serve                  # docs live preview
-```
+Read `docs/guides/cli.md`.
 
 The `api` marker is excluded via `addopts = -m 'not api'`; API tests start a real FastAPI process and must be run explicitly.
 
