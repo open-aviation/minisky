@@ -50,7 +50,7 @@ From the console or REST API, load a scenario with the `IC` stack command
 (`IC scenarios/kl204.scn`), or POST a local file to the running server:
 
 ```bash
-curl -F "file=@scenarios/kl204.scn" http://localhost:8000/scn
+curl -F "file=@packages/minisky/scenarios/kl204.scn" http://localhost:8000/scn
 ```
 
 The console's `/load path/to/file.scn` command does this POST for you — handy because the

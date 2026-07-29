@@ -25,7 +25,7 @@ updated after `cr.update()`. Motivation is research extensibility (a
 
 - Zero behavioural change — MiniSky already has the identical past-CPA
   algorithm in `ConflictResolution.resumenav()`
-  (`minisky/traffic/asas/resolution.py`), with slightly more robust variable
+  (`packages/minisky/minisky/traffic/asas/resolution.py`), with slightly more robust variable
   initialisation than the upstream version.
 - The seam depends on the replaceable-`Entity` registry
   (`select()`/`selected()`/`derived()`), machinery MiniSky deliberately

@@ -80,7 +80,7 @@ The `/scn` POST endpoint accepts a multipart file upload and feeds it to the sta
 it were loaded with `IC`:
 
 ```bash
-curl -F "file=@scenarios/kl204.scn" http://localhost:8000/scn
+curl -F "file=@packages/minisky/scenarios/kl204.scn" http://localhost:8000/scn
 ```
 
 This lets you run the server remotely and push local scenario files to it — the

@@ -3,7 +3,7 @@ site_name = "MiniSky"
 site_description = "A minimal command line air traffic simulator with REST API (a BlueSky fork)"
 repo_url = "https://github.com/open-aviation/minisky"
 repo_name = "open-aviation/minisky"
-watch = ["minisky"]
+watch = ["packages/minisky/minisky"]
 nav = [
   { "Home" = "index.md" },
   { "Getting started" = "getting-started.md" },
@@ -70,7 +70,7 @@ search = {}
 [project.plugins.mkdocstrings.handlers.python]
 # tangram_minisky lives in its own workspace and is not installed in the docs
 # environment; point griffe at its source so it can analyse it statically.
-paths = ["example_plugins/tangram/tangram_minisky/src"]
+paths = ["packages/tangram-minisky/src"]
 inventories = [
   "https://docs.python.org/3/objects.inv",
   "https://fastapi.tiangolo.com/objects.inv",

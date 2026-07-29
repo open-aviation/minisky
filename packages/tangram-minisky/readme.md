@@ -6,7 +6,7 @@ renders live traffic from a MiniSky simulator.
 This package is **frontend-only** and deliberately disposable: it contains no
 business logic and no simulation state. Everything simulator-side (unit
 conversion, snapshot publishing, command handling) lives in MiniSky's own
-`TANGRAM` plugin (`example_plugins/tangram.py`), which talks to tangram
+`TANGRAM` plugin (`packages/minisky/example_plugins/tangram.py`), which talks to tangram
 exclusively over Redis pub/sub — tangram's one transport layer that has been
 stable across its recent plugin API churn. If tangram's frontend API breaks
 again, only this package needs touching.
@@ -48,7 +48,7 @@ Run with published tangram using either route:
 
 ```bash
 uv tool install tangram_core \
-  --with ./example_plugins/tangram/tangram_minisky \
+  --with ./packages/tangram-minisky \
   --force
 tangram serve --config ../tangram_minisky_exe/tangram.toml
 ```
@@ -62,7 +62,7 @@ uv run tangram serve --config tangram.toml
 ```
 
 The complete setup and temporary local-checkout overrides are documented in
-[Streaming to a tangram map](../../../docs/guides/tangram.md).
+[Streaming to a tangram map](../../docs/guides/tangram.md).
 
 ## Run the simulator side
 
