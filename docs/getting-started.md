@@ -85,7 +85,7 @@ ownership and stepping the simulation yourself.
 
 ## Configuration
 
-Runtime settings live in `settings.toml` at the repository root, e.g. conflict-detection
+Runtime settings live in `packages/minisky/settings.toml`, e.g. conflict-detection
 lookahead time and protected-zone sizes, plus the current plugin search directory and startup list:
 
 ```toml

@@ -1,0 +1,30 @@
+[project]
+name = "minisky"
+version = "0.1.0"
+description = "A minimal command line air traffic simulator with REST API (a BlueSky fork)"
+readme = { text = "MiniSky is a minimal command-line air traffic simulator with a REST API.", content-type = "text/markdown" }
+requires-python = ">=3.11"
+dependencies = [
+    "typer>=0.15.0",
+    "colorama>=0.4.6",
+    "fastapi[standard]>=0.115.7",
+    "matplotlib>=3.10.0",
+    "numpy>=2.2.2",
+    "openap>=2.4",
+    "pandas>=2.2.3",
+    "prompt-toolkit>=3.0.50",
+    "pyarrow>=19.0.1",
+    "requests>=2.32.3",
+    "rtree>=1.3.0",
+    "scipy>=1.15.1",
+]
+
+[project.scripts]
+minisky = "minisky.cli:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["minisky"]

@@ -1,5 +1,5 @@
 packages:
-  - example_plugins/tangram/*
+  - packages/*
 
 # to use a local version of tangram-core instead, uncomment this.
 # link paths are relative to this workspace root; the deck.gl links point at the

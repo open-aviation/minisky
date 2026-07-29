@@ -3,8 +3,8 @@
   "private": true,
   "packageManager": "pnpm@11.17.0",
   "scripts": {
-    "build": "pnpm --filter './example_plugins/tangram/*' run build",
-    "check": "pnpm --filter './example_plugins/tangram/*' run check",
-    "lint:fix": "pnpm --filter './example_plugins/tangram/*' run lint:fix"
+    "build": "pnpm --filter './packages/tangram-minisky' run build",
+    "check": "pnpm --filter './packages/tangram-minisky' run check",
+    "lint:fix": "pnpm --filter './packages/tangram-minisky' run lint:fix"
   }
 }

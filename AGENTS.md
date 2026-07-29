@@ -22,7 +22,7 @@ minisky server [--reload]                                  # REST API server
 minisky console                                            # interactive console against the API
 ```
 
-The FastAPI app lives in `minisky/server.py`; `minisky server` is the CLI entry point
+The FastAPI app lives in `packages/minisky/minisky/server.py`; `minisky server` is the CLI entry point
 (`MINISKY_HOST`/`MINISKY_PORT` env vars, default `0.0.0.0:8000`).
 
 ## Architecture
@@ -45,11 +45,11 @@ Full details in `docs/architecture.md` — read it before making structural chan
 
 ## The command stack (critical convention)
 
-Every text command — scenario file, REST `stack/` endpoint, or console — goes through `minisky.stack`. The built-in command table is `minisky/stack/commands.py`; plugins add commands with the `@command` decorator.
+Every text command — scenario file, REST `stack/` endpoint, or console — goes through `minisky.stack`. The built-in command table is `packages/minisky/minisky/stack/commands.py`; plugins add commands with the `@command` decorator.
 
-**Stack command arguments are parsed at runtime from the parameter annotations.** `minisky/stack/argparser.py` inspects `param.annotation` when a command is registered:
-- **`Annotated` aliases (preferred):** `minisky/stack/argparser.py` exports `Acid`, `Wpt`, `Alt`, `Spd`, `Vspd`, `Hdg`, `Time`, `Txt`, `String`, `OnOff`, `Lat`, `Lon` — e.g. `def selaltcmd(self, idx: int, alt: Alt, vspd: Vspd | None = None)`. These are real type hints (lint- and pyright-clean) carrying the parser key as `Annotated` metadata; unions with `None` are unwrapped.
-- **Argument-spec strings in the command table** (`minisky/stack/commands.py`, e.g. `"callsign,alt,[vspd]"`) are plain data looked up in the `argparsers` dict and *override* function annotations.
+**Stack command arguments are parsed at runtime from the parameter annotations.** `packages/minisky/minisky/stack/argparser.py` inspects `param.annotation` when a command is registered:
+- **`Annotated` aliases (preferred):** `packages/minisky/minisky/stack/argparser.py` exports `Acid`, `Wpt`, `Alt`, `Spd`, `Vspd`, `Hdg`, `Time`, `Txt`, `String`, `OnOff`, `Lat`, `Lon` — e.g. `def selaltcmd(self, idx: int, alt: Alt, vspd: Vspd | None = None)`. These are real type hints (lint- and pyright-clean) carrying the parser key as `Annotated` metadata; unions with `None` are unwrapped.
+- **Argument-spec strings in the command table** (`packages/minisky/minisky/stack/commands.py`, e.g. `"callsign,alt,[vspd]"`) are plain data looked up in the `argparsers` dict and *override* function annotations.
 - **Legacy DSL strings** as annotations (`alt: "alt"`) still parse, but don't write new ones — use the `Annotated` aliases so linting works.
 - A real `type` annotation gets wrapped in `Parser(type)` (called on the argument text — fine for `int`/`float`/`str`, wrong for `bool`; use `OnOff`).
 
@@ -57,10 +57,10 @@ Every text command — scenario file, REST `stack/` endpoint, or console — goe
 
 `E711`/`E712`/`E721` are ignored in `pyproject.toml` because numpy overrides `==`/`is` elementwise, so `arr == None` is intentional and *not* equivalent to `arr is None`.
 
-`minisky/traffic/asas/__init__.py` has a deliberately non-alphabetical import block wrapped in `# isort: off/on` (resolution before mvp, since MVP subclasses ConflictResolution) — don't "fix" it.
+`packages/minisky/minisky/traffic/asas/__init__.py` has a deliberately non-alphabetical import block wrapped in `# isort: off/on` (resolution before mvp, since MVP subclasses ConflictResolution) — don't "fix" it.
 
 ## Conventions
 
 - Package/dependency management is **uv**. Prefix Python invocations with `uv run`.
 - After adding or changing a stack command, regenerate `docs/reference/commands.md` with the gen script.
-- `settings.toml` holds runtime config (ASAS protected-zone margins, plugin path, `enabled_plugins`).
+- `packages/minisky/settings.toml` holds runtime config (ASAS protected-zone margins, plugin path, `enabled_plugins`).

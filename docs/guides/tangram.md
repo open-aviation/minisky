@@ -18,13 +18,13 @@ minisky process (TANGRAM plugin)          tangram process
   listens on from:minisky:command ◀─ Redis ◀────────────────────── ┘
 ```
 
-- **`example_plugins/tangram.py`** (the `TANGRAM` MiniSky plugin) owns all the
+- **`packages/minisky/example_plugins/tangram.py`** (the `TANGRAM` MiniSky plugin) owns all the
   logic: it converts each simulation snapshot to aviation units, publishes it
   to Redis, relays console output, and executes stack commands pushed from the
   browser. MiniSky talks to tangram *only* through Redis pub/sub — tangram's
   transport convention (`to:<topic>:<event>` / `from:<topic>:<event>`) that
   has stayed stable across its plugin API changes.
-- **`example_plugins/tangram/tangram_minisky/`** is a separately packaged, thin
+- **`packages/tangram-minisky/`** is a separately packaged, thin
   tangram frontend plugin: it registers a `minisky_aircraft` entity type, a
   deck.gl layer, trail rendering via tangram's shared trajectory store, and
   the control widget. No business logic lives there, so it is cheap to rewrite
@@ -104,7 +104,7 @@ There are two options:
 
 ```bash
 uv tool install tangram_core \
-  --with ./example_plugins/tangram/tangram_minisky \
+  --with ./packages/tangram-minisky \
   --force
 tangram serve --config /path/to/tangram.toml
 ```
@@ -134,7 +134,7 @@ requires-python = ">=3.11"
 dependencies = ["tangram-core", "tangram-minisky"]
 
 [tool.uv.sources]
-tangram-minisky = { path = "../minisky/example_plugins/tangram/tangram_minisky", editable = true }
+tangram-minisky = { path = "../minisky/packages/tangram-minisky", editable = true }
 ```
 
 Run it with:
@@ -159,7 +159,7 @@ dependencies = ["tangram-core", "tangram-minisky"]
 
 [tool.uv.sources]
 tangram-core = { path = "../tangram/packages/tangram_core", editable = true }
-tangram-minisky = { path = "../minisky/example_plugins/tangram/tangram_minisky", editable = true }
+tangram-minisky = { path = "../minisky/packages/tangram-minisky", editable = true }
 ```
 
 In MiniSky's root `pnpm-workspace.yaml`, temporarily add:
