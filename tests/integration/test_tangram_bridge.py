@@ -9,10 +9,10 @@ import fakeredis
 import pytest
 from redis.client import PubSub
 
-from example_plugins.tangram import TangramBridge
 from minisky import MiniSky
 from minisky.simulation import Simulation, SimulationState
 from minisky.streaming import build_snapshot
+from minisky_tangram import TangramBridge
 
 Observer = tuple[fakeredis.FakeRedis, PubSub]
 StepUntil = Callable[[Callable[[], bool]], int]

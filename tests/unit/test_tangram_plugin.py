@@ -2,8 +2,8 @@
 
 import pytest
 
-from example_plugins.tangram import convert_snapshot, extract_command
 from minisky.streaming import Snapshot
+from minisky_tangram import convert_snapshot, extract_command
 
 
 def make_snapshot() -> Snapshot:

@@ -18,7 +18,7 @@ minisky process (TANGRAM plugin)          tangram process
   listens on from:minisky:command ◀─ Redis ◀────────────────────── ┘
 ```
 
-- **`packages/minisky/example_plugins/tangram.py`** (the `TANGRAM` MiniSky plugin) owns all the
+- **`packages/minisky-tangram/src/minisky_tangram/__init__.py`** (the `TANGRAM` MiniSky plugin) owns all the
   logic: it converts each simulation snapshot to aviation units, publishes it
   to Redis, relays console output, and executes stack commands pushed from the
   browser. MiniSky talks to tangram *only* through Redis pub/sub — tangram's

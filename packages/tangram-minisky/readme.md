@@ -6,7 +6,7 @@ renders live traffic from a MiniSky simulator.
 This package is **frontend-only** and deliberately disposable: it contains no
 business logic and no simulation state. Everything simulator-side (unit
 conversion, snapshot publishing, command handling) lives in MiniSky's own
-`TANGRAM` plugin (`packages/minisky/example_plugins/tangram.py`), which talks to tangram
+`TANGRAM` plugin (`packages/minisky-tangram/src/minisky_tangram/__init__.py`), which talks to tangram
 exclusively over Redis pub/sub — tangram's one transport layer that has been
 stable across its recent plugin API churn. If tangram's frontend API breaks
 again, only this package needs touching.
