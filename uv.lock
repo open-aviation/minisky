@@ -19,6 +19,9 @@ resolution-markers = [
 [manifest]
 members = [
     "minisky",
+    "minisky-example",
+    "minisky-example-customautopilot",
+    "minisky-tangram",
     "tangram-minisky",
 ]
 
@@ -1282,6 +1285,50 @@ requires-dist = [
     { name = "rtree", specifier = ">=1.3.0" },
     { name = "scipy", specifier = ">=1.15.1" },
     { name = "typer", specifier = ">=0.15.0" },
+]
+
+[[package]]
+name = "minisky-example"
+version = "0.1.0"
+source = { editable = "packages/minisky-example" }
+dependencies = [
+    { name = "minisky" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
+    { name = "numpy", version = "2.5.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "minisky", editable = "packages/minisky" },
+    { name = "numpy", specifier = ">=2.2.2" },
+]
+
+[[package]]
+name = "minisky-example-customautopilot"
+version = "0.1.0"
+source = { editable = "packages/minisky-example-customautopilot" }
+dependencies = [
+    { name = "minisky" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "minisky", editable = "packages/minisky" }]
+
+[[package]]
+name = "minisky-tangram"
+version = "0.1.0"
+source = { editable = "packages/minisky-tangram" }
+dependencies = [
+    { name = "minisky" },
+    { name = "pydantic" },
+    { name = "redis" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "minisky", editable = "packages/minisky" },
+    { name = "pydantic", specifier = ">=2.0" },
+    { name = "redis", specifier = ">=5.0" },
 ]
 
 [[package]]

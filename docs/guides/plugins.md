@@ -2,7 +2,7 @@
 
 Plugins extend a [`MiniSky`][minisky.MiniSky] runtime without modifying
 core code. A plugin can own per-aircraft data, register timed lifecycle hooks,
-and add stack commands. The `packages/minisky/example_plugins/` directory contains working
+and add stack commands. The `packages/minisky-example*/` directory contains working
 examples.
 
 ## Anatomy of a plugin
@@ -154,4 +154,4 @@ runtime.replaceables.select("AUTOPILOT", "CUSTOMAUTOPILOT")
 
 The `SELECTIMPL` stack command calls the same runtime-owned manager. Resetting a
 simulation restores base implementations only on that runtime's traffic tree.
-See `packages/minisky/example_plugins/customautopilot.py` for a complete example.
+See `packages/minisky-example-customautopilot/src/minisky_example_customautopilot/__init__.py` for a complete example.

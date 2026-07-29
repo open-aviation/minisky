@@ -1,0 +1,18 @@
+[project]
+name = "minisky-example-customautopilot"
+version = "0.1.0"
+description = "Example MiniSky plugin demonstrating replaceable autopilot implementations"
+readme = { text = "A private example plugin for MiniSky.", content-type = "text/markdown" }
+requires-python = ">=3.11"
+dependencies = ["minisky>=0.1.0"]
+classifiers = ["Private :: Do Not Upload"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/minisky_example_customautopilot"]
+
+[tool.uv.sources]
+minisky = { workspace = true }

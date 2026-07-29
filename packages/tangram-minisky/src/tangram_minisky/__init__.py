@@ -3,7 +3,7 @@
 This package is deliberately frontend-only: it registers no API routes and
 runs no background services inside tangram. All simulator-side logic (unit
 conversion, snapshot publishing, command handling) lives in MiniSky's own
-`TANGRAM` plugin (`packages/minisky/example_plugins/tangram.py` in the MiniSky repo),
+`TANGRAM` plugin (`packages/minisky-tangram/src/minisky_tangram/__init__.py` in the MiniSky repo),
 which talks to tangram exclusively over Redis pub/sub:
 
 - `to:<channel>:new-data`  full state snapshots (aviation units)

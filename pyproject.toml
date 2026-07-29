@@ -44,12 +44,21 @@ ignore = [
 "packages/minisky/minisky/plugin/*.py" = ["F401"]  # plugin API surface re-exports
 
 [tool.ruff.lint.isort]
-known-first-party = ["minisky", "example_plugins", "tests"]
+known-first-party = [
+    "minisky",
+    "minisky_example",
+    "minisky_example_customautopilot",
+    "minisky_tangram",
+    "example_plugins",
+    "tests",
+]
 
 [tool.pyright]
 include = [
     "packages/minisky/minisky",
     "packages/minisky/example_plugins",
+    "packages/minisky-example*/src",
+    "packages/minisky-tangram/src",
     "packages/tangram-minisky/src",
     "tests",
 ]
@@ -58,11 +67,20 @@ exclude = [
     # TODO(abraham): these files will need extensive typing, deferring for now
     "tests/unit/test_aero.py", "tests/unit/test_detection.py"
 ]
-extraPaths = ["packages/minisky", "packages/tangram-minisky/src"]
+extraPaths = [
+    "packages/minisky",
+    "packages/minisky-example/src",
+    "packages/minisky-example-customautopilot/src",
+    "packages/minisky-tangram/src",
+    "packages/tangram-minisky/src",
+]
 pythonVersion = "3.11"
 # "standard" catches useful bugs while staying practical for this numpy/scipy-heavy fork.
 typeCheckingMode = "standard"
 # Fully-typed files where any leftover implicit Any should be an error.
-strict = ["packages/minisky/example_plugins/*.py"]
+strict = [
+    "packages/minisky-example*/src/**/*.py",
+    "packages/minisky-tangram/src/**/*.py",
+]
 reportMissingTypeStubs = false
 reportWildcardImportFromLibrary = false

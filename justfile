@@ -7,13 +7,13 @@ sync:
     uv sync --all-packages
 
 fmt:
-    uv run ruff check {{minisky_dir}}/minisky {{minisky_dir}}/example_plugins {{plugin_dir}} tests --fix
-    uv run ruff format {{minisky_dir}}/example_plugins/tangram.py {{plugin_dir}}
+    uv run ruff check packages tests --fix
+    uv run ruff format packages/minisky-example*/src packages/minisky-tangram/src {{minisky_dir}}/example_plugins/legacy {{plugin_dir}}
     pnpm lint:fix
 
 check:
-    uv run ruff check {{minisky_dir}}/minisky {{minisky_dir}}/example_plugins {{plugin_dir}} tests
-    uv run ruff format {{minisky_dir}}/example_plugins/tangram.py {{plugin_dir}} --check
+    uv run ruff check packages tests
+    uv run ruff format packages/minisky-example*/src packages/minisky-tangram/src {{minisky_dir}}/example_plugins/legacy {{plugin_dir}} --check
     uv run pyright
     pnpm check
 

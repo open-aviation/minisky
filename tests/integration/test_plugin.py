@@ -15,7 +15,7 @@ from tests._types import RunCommand
 class TestDiscovery:
     def test_discover_finds_example_plugins(self, runtime: MiniSky) -> None:
         runtime.plugins.discover()
-        assert "EXAMPLE" in runtime.plugins.plugins
+        assert {"CUSTOMAUTOPILOT", "EXAMPLE", "TANGRAM"} <= runtime.plugins.plugins.keys()
 
     def test_discovery_does_not_import(self, runtime: MiniSky) -> None:
         plugin = runtime.plugins.plugins["EXAMPLE"]
