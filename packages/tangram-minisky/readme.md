@@ -32,7 +32,7 @@ again, only this package needs touching.
 - `from:<channel>:command` — `{command: "OP"}` stack commands from the browser
 
 `<channel>` defaults to `minisky` and is configurable on both sides
-(`[tangram].channel` in MiniSky's `settings.toml`, `channel` in tangram's
+(`plugins.tangram.channel` in MiniSky's `settings.toml`, `channel` in tangram's
 `tangram.toml` under `[plugins.tangram_minisky]`).
 
 ## Build and run
@@ -70,7 +70,7 @@ In the MiniSky repo:
 
 ```bash
 just sync
-# settings.toml: enabled_plugins = ["TANGRAM"], and (optionally) a [tangram] table
+# settings.toml: enabled_plugins = ["TANGRAM"], and (optionally) a [plugins.tangram] table
 # with redis_url pointing at the same Redis instance tangram uses
 minisky server        # or: minisky run --scenario scenarios/kl204.scn
 ```

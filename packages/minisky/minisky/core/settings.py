@@ -4,18 +4,21 @@ from __future__ import annotations
 
 import tomllib
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any, TypeAlias
 
 import annotated_types
 from pydantic import BaseModel, ConfigDict, Field
+from pydantic.functional_validators import BeforeValidator
+
+from minisky.identifiers import validate_plugin_id
+
+PluginId: TypeAlias = Annotated[str, BeforeValidator(validate_plugin_id)]
 
 
 class MiniSkySettings(BaseModel):
     """Validated settings for the MiniSky runtime."""
 
-    # TODO(abraham): when we work on issue #24 we should add a [plugin]
-    # namespace for plugin-specific config and disallow extras
-    model_config = ConfigDict(frozen=True, extra="allow")
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     asas_dtlookahead: Annotated[float, Field(), annotated_types.Ge(0)] = 300.0
     asas_pzr: Annotated[float, Field(), annotated_types.Gt(0)] = 5.0
@@ -25,12 +28,14 @@ class MiniSkySettings(BaseModel):
     # TODO(abraham): delete this.
     plugin_path: Annotated[str, Field(), annotated_types.MinLen(1)] = "plugins"
     enabled_plugins: tuple[str, ...] = ()
+    plugins: dict[PluginId, dict[str, Any]] = Field(default_factory=dict)
 
     @classmethod
     def from_file(cls, path: str | Path) -> MiniSkySettings:
         """Load and validate settings from a TOML file."""
         with Path(path).expanduser().open("rb") as file:
             return cls.model_validate(tomllib.load(file))
+
 
 # TODO(abraham): delete this, require users to pass in an explicit path and
 # use platformdirs for default loading

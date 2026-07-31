@@ -23,7 +23,7 @@ blocks on the network, and so commands are still received while the
 simulation is paused (plugin update hooks only fire in the OP state; the
 command stack itself is processed in every state).
 
-Settings (optional, under a `[tangram]` table in `settings.toml`):
+Settings (optional, under `[plugins.tangram]` in `settings.toml`):
 
 - `redis_url`: Redis connection URL (default `redis://127.0.0.1:6379`).
 - `channel`: channel/topic name (default `minisky`).
@@ -48,7 +48,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, TypedDict, cast
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
 
 from minisky.simulation import SimulationState
 from minisky.streaming import Snapshot, build_snapshot
@@ -61,17 +61,13 @@ if TYPE_CHECKING:
 
 
 class TangramSettings(BaseModel):
-    """Validated `[tangram]` config from `settings.toml`."""
+    """Validated `[plugins.tangram]` configuration."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     redis_url: str = "redis://127.0.0.1:6379"
     channel: str = "minisky"
     max_hz: float = 5.0
-
-
-class TangramPluginSettings(BaseModel):
-    tangram: TangramSettings = Field(default_factory=TangramSettings)
 
 
 # How often the background thread republishes state while the simulation is
@@ -453,8 +449,7 @@ def init_plugin(
         A `(config, stack_functions)` tuple consumed by the runtime-owned
         plugin manager.
     """
-    extras = runtime.settings.model_extra or {}
-    cfg = TangramPluginSettings.model_validate({"tangram": extras.get("tangram", {})}).tangram
+    cfg = TangramSettings.model_validate(runtime.settings.plugins.get("tangram", {}))
     bridge = TangramBridge(
         redis_url=cfg.redis_url,
         channel=cfg.channel,
