@@ -20,6 +20,7 @@ from pydantic import TypeAdapter
 
 from minisky.core.trafficarrays import TrafficArrays
 from minisky.identifiers import validate_plugin_id
+from minisky.plugin.entity import Entity
 from minisky.plugin.plugin_decorators import (
     HookName,
     declared_commands,
@@ -124,6 +125,7 @@ class _PluginRecord:
     spec: PluginSpec | None = None
     commands: tuple[PreparedCommand, ...] = ()
     hooks: tuple[_PreparedHook, ...] = ()
+    entities: tuple[Entity, ...] = ()
 
 
 class PluginManager:
@@ -216,12 +218,13 @@ class PluginManager:
         if plugin.loaded:
             return False, f"Plugin {plugin.plugin_name} already loaded"
 
+        entities: tuple[Entity, ...] = ()
         try:
             loaded = plugin.entry_point.load()
             if isinstance(loaded, Plugin):
                 key = plugin.plugin_name.lower()
                 spec = self._build(key, loaded)
-                commands, hooks = self._prepare_typed(key, spec)
+                commands, hooks, entities = self._prepare_typed(key, spec)
                 module = None
                 config: dict[str, Any] = {}
                 state = spec.state
@@ -236,9 +239,12 @@ class PluginManager:
             state_name = plugin.plugin_name.lower()
             if state_parent is not None:
                 self.variables.validate_data_parent(state_name)
+
             if spec is None:
                 self._register_legacy_hooks(plugin.plugin_name, config)
             else:
+                for entity in entities:
+                    entity._publish()
                 self._register_typed_hooks(hooks)
 
             self.commands.install_commands(commands)
@@ -253,12 +259,17 @@ class PluginManager:
             plugin.spec = spec
             plugin.commands = commands
             plugin.hooks = hooks
+            plugin.entities = entities
             self.loaded_plugins[plugin.plugin_name] = plugin
             return True, f"Successfully loaded plugin {plugin.plugin_name}"
 
         except ImportError as exc:
+            for entity in reversed(entities):
+                entity._abort()
             return False, f"Failed to load {plugin.plugin_name}: {exc}"
         except Exception as exc:
+            for entity in reversed(entities):
+                entity._abort()
             traceback.print_exc()
             return False, f"Error loading {plugin.plugin_name}: {exc}"
 
@@ -282,12 +293,13 @@ class PluginManager:
 
     def _prepare_typed(
         self, key: str, spec: PluginSpec
-    ) -> tuple[tuple[PreparedCommand, ...], tuple[_PreparedHook, ...]]:
+    ) -> tuple[
+        tuple[PreparedCommand, ...],
+        tuple[_PreparedHook, ...],
+        tuple[Entity, ...],
+    ]:
         commands: list[PreparedCommand] = []
-        hooks: list[_PreparedHook] = []
         command_names: set[str] = set()
-        hook_names: set[str] = set()
-
         for component in spec.components:
             try:
                 for bound in declared_commands(component):
@@ -304,7 +316,13 @@ class PluginManager:
                         raise PluginError(f"plugin {key} repeats command name: {min(overlap)}")
                     command_names.update(prepared.names)
                     commands.append(prepared)
+            except (TypeError, ValueError) as exc:
+                raise PluginError(str(exc)) from exc
 
+        hooks: list[_PreparedHook] = []
+        hook_names: set[str] = set()
+        for component in spec.components:
+            try:
                 for bound in declared_hooks(component):
                     prepared = self._prepare_hook(
                         key,
@@ -322,7 +340,21 @@ class PluginManager:
 
         command_tuple = tuple(commands)
         self.commands.validate_commands(command_tuple)
-        return command_tuple, tuple(hooks)
+
+        entities = tuple(
+            component for component in spec.components if isinstance(component, Entity)
+        )
+        prepared_entities: list[Entity] = []
+        try:
+            for entity in entities:
+                entity._prepare(self.runtime.traffic)
+                prepared_entities.append(entity)
+        except BaseException:
+            for entity in reversed(prepared_entities):
+                entity._abort()
+            raise
+
+        return command_tuple, tuple(hooks), entities
 
     @staticmethod
     def _prepare_hook(
@@ -472,8 +504,10 @@ class PluginManager:
                     self.variables.unregister_data_parent(
                         plugin.plugin_name.lower(), expected=plugin.state_parent
                     )
-                if isinstance(plugin.state, TrafficArrays):
+                if plugin.spec is None and isinstance(plugin.state, TrafficArrays):
                     plugin.state.detach()
+                for entity in reversed(plugin.entities):
+                    entity._retire()
 
                 plugin.loaded = False
                 plugin.module = None
@@ -483,6 +517,7 @@ class PluginManager:
                 plugin.spec = None
                 plugin.commands = ()
                 plugin.hooks = ()
+                plugin.entities = ()
 
         self.timed.clear()
         self.loaded_plugins.clear()

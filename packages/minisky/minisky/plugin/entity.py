@@ -1,28 +1,4 @@
-"""Entity base class for MiniSky plugin-owned per-aircraft data.
-
-`Entity` extends [`TrafficArrays`][minisky.core.trafficarrays.TrafficArrays]
-so plugin data can participate in the owning runtime's aircraft-array tree.
-An entity is attached explicitly to one [`Traffic`][minisky.traffic.Traffic]
-object; it is not a process-wide singleton and does not use a proxy.
-
-Usage:
-
-```python
-class MyPlugin(Entity):
-    def __init__(self, traffic: Traffic) -> None:
-        super().__init__(traffic)
-        with self.settrafarrays():
-            self.mydata = np.array([])
-```
-
-Arrays and lists registered inside `settrafarrays()` grow, shrink, and reset
-with the aircraft in that runtime. Separate runtimes can therefore load
-independent instances of the same plugin class.
-
-For replaceable core traffic components, inherit from `TrafficArrays`
-directly and select implementations through the runtime's
-`ReplaceableManager`.
-"""
+"""Per-aircraft state for MiniSky plugins."""
 
 from __future__ import annotations
 
@@ -37,32 +13,68 @@ if TYPE_CHECKING:
 class Entity(TrafficArrays):
     """Base class for plugin-owned per-aircraft arrays.
 
-    Combines the automatic create, delete, and reset behavior of
-    [`TrafficArrays`][minisky.core.trafficarrays.TrafficArrays] with an
-    explicit reference to the traffic tree that owns the plugin entity.
+    Create a fresh entity in every plugin build and declare arrays or lists
+    inside `with self.settrafarrays():`. MiniSky sizes and attaches the entity
+    when the plugin loads, then retires it during shutdown.
 
-    Usage:
-
-    ```python
-    class MyPlugin(Entity):
-        def __init__(self, traffic: Traffic) -> None:
-            super().__init__(traffic)
-            with self.settrafarrays():
-                self.mydata = np.array([])
-
-        def create(self, n: int = 1) -> None:
-            super().create(n)
-            self.mydata[-n:] = default_values
-    ```
-
-    Args:
-        traffic: Traffic object whose tree owns this entity.
-
-    Attributes:
-        traffic: The owning runtime's traffic object.
+    `traffic` is available only while the plugin is active. Do not use it in
+    `__init__`.
     """
 
-    def __init__(self, traffic: Traffic) -> None:
-        """Attach this entity to `traffic` and initialize its array bookkeeping."""
-        self.traffic = traffic
-        super().__init__(traffic)
+    def __init__(self) -> None:
+        super().__init__()
+        self._traffic: Traffic | None = None
+        self._prepared_traffic: Traffic | None = None
+        self._retired = False
+
+    @property
+    def traffic(self) -> Traffic:
+        """Return the owning traffic object while the plugin is active."""
+        if self._traffic is None:
+            raise RuntimeError("plugin entity is detached")
+        return self._traffic
+
+    @property
+    def ownerless(self) -> bool:
+        return (
+            not self._retired
+            and self._parent is None
+            and self._traffic is None
+            and self._prepared_traffic is None
+        )
+
+    def _prepare(self, traffic: Traffic) -> None:
+        """Size arrays for existing traffic without exposing live traffic."""
+        if not self.ownerless:
+            raise RuntimeError("plugin entity must be fresh and detached")
+        try:
+            if traffic.ntraf:
+                # NOTE(abraham): custom create() may initialize private arrays,
+                # but traffic remains unavailable until publication.
+                self.create(traffic.ntraf)
+        except BaseException:
+            TrafficArrays.reset(self)
+            raise
+        self._prepared_traffic = traffic
+
+    def _publish(self) -> None:
+        traffic = self._prepared_traffic
+        if traffic is None or self._parent is not None:
+            raise RuntimeError("plugin entity is not prepared")
+        self.reparent(traffic)
+        self._traffic = traffic
+        self._prepared_traffic = None
+
+    def _abort(self) -> None:
+        """Undo preparation after a failed load."""
+        self.detach()
+        self._traffic = None
+        self._prepared_traffic = None
+        TrafficArrays.reset(self)
+
+    def _retire(self) -> None:
+        """Detach permanently when the owning plugin stops."""
+        self.detach()
+        self._traffic = None
+        self._prepared_traffic = None
+        self._retired = True
