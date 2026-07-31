@@ -15,7 +15,7 @@ from pydantic import BaseModel
 from minisky import MiniSky, MiniSkySettings
 from minisky import plugin as plugin_api
 from minisky.core.trafficarrays import PreparedReplacement
-from minisky.plugin.plugin import _PreparedHook
+from minisky.plugin.plugin import _Hook
 from minisky.simulation import Simulation
 from minisky.stack import Command, PreparedCommand
 from minisky.traffic import Traffic
@@ -276,8 +276,8 @@ def test_multiple_hook_declarations_keep_independent_timing(
         ok, message = runtime.plugins.load("HOOKS")
         assert ok, message
         assert runtime.plugins.plugins["HOOKS"].hooks == (
-            _PreparedHook(component.pulse, "update", 2.0, "hooks.update.after"),
-            _PreparedHook(component.pulse, "preupdate", 0.0, "hooks.preupdate.before"),
+            _Hook(component.pulse, "update", 2.0, "after", True),
+            _Hook(component.pulse, "preupdate", 0.0, "before", True),
         )
 
         runtime.plugins.preupdate()
@@ -285,6 +285,50 @@ def test_multiple_hook_declarations_keep_independent_timing(
         runtime.plugins.preupdate()
         runtime.plugins.update()
         assert events == [("pulse", 1.0), ("pulse", 1.0), ("pulse", 2.0)]
+    finally:
+        runtime.close()
+
+
+def test_failing_hook_is_disabled_without_disabling_plugin(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = {"broken": 0, "healthy": 0}
+
+    class Component:
+        @plugin_api.hook
+        def update(self) -> None:
+            calls["broken"] += 1
+            raise RuntimeError("hook failed")
+
+        @plugin_api.hook("update", name="healthy")
+        def healthy(self) -> None:
+            calls["healthy"] += 1
+
+    component = Component()
+
+    def build(context: plugin_api.PluginContext[object]) -> plugin_api.PluginSpec:
+        context.mount(component, expose=False)
+        return context.finish()
+
+    install(monkeypatch, FakeEntryPoint("hooks", plugin_api.Plugin(build=build)))
+    runtime = MiniSky(MiniSkySettings())
+    try:
+        ok, message = runtime.plugins.load("HOOKS")
+        assert ok, message
+        runtime.plugins.update()
+        runtime.plugins.update()
+        assert (
+            calls,
+            runtime.plugins.plugins["HOOKS"].hooks,
+            tuple(runtime.plugins.loaded_plugins),
+        ) == (
+            {"broken": 1, "healthy": 2},
+            (
+                _Hook(component.update, "update", 0.0, "update", False, enabled=False),
+                _Hook(component.healthy, "update", 0.0, "healthy", False),
+            ),
+            ("HOOKS",),
+        )
     finally:
         runtime.close()
 

@@ -8,6 +8,7 @@ Provides hooks that are triggered at specific points in the simulation cycle:
 
 Each `TimedFunctionManager` owns the hooks and timers for one runtime.
 """
+# TODO(abraham): delete this module with `init_plugin(runtime)`.
 
 from __future__ import annotations
 
