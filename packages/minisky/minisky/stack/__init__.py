@@ -23,14 +23,17 @@ simulation time passes their timestamps.
 
 from __future__ import annotations
 
+import asyncio
 import inspect
 import os
 import traceback
-from collections.abc import Callable, Iterator
+from collections.abc import Awaitable, Callable, Iterator
+from contextlib import suppress
 from dataclasses import dataclass
 from functools import partial
 from io import StringIO
 from pathlib import Path
+from threading import Lock
 from typing import TYPE_CHECKING, Any, NamedTuple
 
 import numpy as np
@@ -52,7 +55,6 @@ if TYPE_CHECKING:
 class CommandResult(NamedTuple):
     success: bool
     echotext: str
-
 
 class Command:
     """Stack command object.
@@ -96,20 +98,9 @@ class Command:
         self.parent = parent
         self.callback = func
 
-    def __call__(self, argstring: str) -> CommandResult:
-        """Parse an argument string and execute this command.
-
-        The command's Parameter objects convert the argument text into
-        typed values, which are passed to the callback function.
-
-        Args:
-            argstring: The command-line text following the command name.
-
-        Raises:
-            ArgumentError: When argument parsing fails, or when more
-                arguments are given than the command accepts.
-        """
-        args = []
+    def __call__(self, argstring: str) -> CommandResult | Awaitable[CommandResult]:
+        """Parse arguments and execute the callback."""
+        args: list[Any] = []
         param = None
         # Use callback-specified parameter parsers to generate param list from strings
         for param in self.params:
@@ -127,23 +118,30 @@ class Command:
                 while argstring:
                     _, argstring = getnextarg(argstring)
                     count += 1
-                msg += f", but {count} were given"
-                raise ArgumentError(msg)
+                raise ArgumentError(f"{msg}, but {count} were given")
             result = param(argstring)
             argstring = result[-1]
             args.extend(result[:-1])
 
-        # Call callback function with parsed parameters
-        ret = self.callback(*args)
-        # Always return a tuple with a success value and a message string
-        if ret is None:
-            return CommandResult(success=True, echotext="")
-        if isinstance(ret, (tuple, list)):
-            if len(ret) > 1:
-                return CommandResult(success=bool(ret[0]), echotext=str(ret[1]))
-            if len(ret) == 1:
-                ret = bool(ret[0])
-        return CommandResult(success=bool(ret), echotext="")
+        result = self.callback(*args)
+        if inspect.isawaitable(result):
+            return self._await_result(result)
+        return self._result(result)
+
+    @staticmethod
+    async def _await_result(result: Awaitable[Any]) -> CommandResult:
+        return Command._result(await result)
+
+    @staticmethod
+    def _result(result: Any) -> CommandResult:
+        if result is None:
+            return CommandResult(True, "")
+        if isinstance(result, (tuple, list)):
+            if len(result) > 1:
+                return CommandResult(bool(result[0]), str(result[1]))
+            if len(result) == 1:
+                result = result[0]
+        return CommandResult(bool(result), "")
 
     def __repr__(self) -> str:
         if self.valid:
@@ -276,6 +274,14 @@ class PreparedCommand:
     names: tuple[str, ...]
 
 
+@dataclass(slots=True)
+class _PendingCommand:
+    task: asyncio.Future[CommandResult]
+    name: str
+    argstring: str
+    command: Command
+
+
 class CommandStack:
     """Command registry, queue, and scenario state for one runtime.
 
@@ -320,6 +326,8 @@ class CommandStack:
         self._get_runner = get_runner
         self.scenario_root = scenario_root or Path(__file__).parent.parent.parent
         self.cmddict: dict[str, Command] = {}
+        self._queue_lock = Lock()
+        self._pending_command: _PendingCommand | None = None
         self._reset_state()
 
     @property
@@ -438,7 +446,12 @@ class CommandStack:
         """Reset the runtime-owned command queue and scenario state."""
         # Stack data
         self.current = ""
-        self.cmdstack: list[tuple[str, bytes | None]] = []
+        with self._queue_lock:
+            self.cmdstack: list[tuple[str, bytes | None]] = []
+        pending, self._pending_command = self._pending_command, None
+        if pending is not None and not pending.task.done():
+            pending.task.cancel()
+            pending.task.add_done_callback(_consume_task_result)
 
         # Scenario details
         self.scenname = ""
@@ -448,18 +461,18 @@ class CommandStack:
         # Current command details
         self.sender_rte: bytes | None = None
 
-    def commands(self) -> Iterator[str]:
-        """Iterate over the command lines pending for this simulation step.
+    def _take_commands(self) -> list[tuple[str, bytes | None]]:
+        """Detach the current queue while preserving each command's sender."""
+        with self._queue_lock:
+            pending, self.cmdstack = self.cmdstack, []
+        return pending
 
-        Detaches the pending command list before iterating so that a
-        [`CommandStack.stack`][minisky.stack.CommandStack.stack] call from another thread, such as a plugin I/O thread,
-        cannot race with processing: a command lands either on the detached
-        list processed in this step or on the fresh list processed next step.
-        """
-        pending, self.cmdstack = self.cmdstack, []
-        # Assign to instance attributes so current and sender_rte track the loop.
-        for self.current, self.sender_rte in pending:
-            yield self.current
+    def commands(self) -> Iterator[str]:
+        """Iterate over the command lines pending for this simulation step."""
+        for current, sender in self._take_commands():
+            self.current = current
+            self.sender_rte = sender
+            yield current
 
     def init(self) -> None:
         """Initialise BlueSky base stack commands."""
@@ -512,27 +525,19 @@ class CommandStack:
         self._reset_state()
         self.argument_parser.reset()
 
-    def process(self) -> None:
-        """Sim-side stack processing; called once per simulation step.
+    def process(self) -> bool:
+        """Process commands until an awaitable callback owns the stack."""
+        if not self._finish_pending_command():
+            return False
 
-        First moves due scenario commands onto the stack (see checkscen), then
-        parses and executes every queued command line: the first word is looked
-        up in self.cmddict (an aircraft callsign may also be used as prefix,
-        in which case the second word is the command, defaulting to POS), the
-        remaining text is passed to the Command object for argument parsing and
-        execution, and any resulting message is echoed to the screen. The
-        pending commands are detached from the stack up front (see
-        CommandStack.commands), so commands stacked while processing runs — including
-        from other threads — are kept for the next step instead of being lost.
-        """
         # First check for commands in scenario file
         self.checkscen()
 
         # Process stack of commands
-        for cmdline in self.commands():
-            success = True
-            echotext = ""
-
+        pending = self._take_commands()
+        for index, (cmdline, sender_id) in enumerate(pending):
+            self.current = cmdline
+            self.sender_rte = sender_id
             # Get first argument from command line and check if it's a command
             cmd, argstring = argparser.getnextarg(cmdline)
             cmdu = cmd.upper()
@@ -546,39 +551,96 @@ class CommandStack:
                 cmdu = cmd.upper() if cmd else "POS"
                 cmdobj = self.cmddict.get(cmdu)
 
-            # Proceed if a command object was found
-            if cmdobj:
+            if cmdobj is None:
+                message = (
+                    f"error: unknown command or aircraft: {cmd}"
+                    if not argstring
+                    else f"error: unknown command: {cmd}"
+                )
+                self.console.echo(message)
+                continue
+
+            try:
+                result = cmdobj(argstring)
+            except argparser.ArgumentError as exc:
+                header = "" if not argstring else exc.args[0] if exc.args else "Argument error."
+                self.console.echo(f"{header}\nUsage:\n{cmdobj.brieftext()}")
+                continue
+            except Exception as exc:
+                self._echo_command_exception(cmdu, argstring, exc)
+                continue
+
+            if inspect.isawaitable(result):
                 try:
-                    # Call the command, passing the argument string
-                    success, echotext = cmdobj(argstring)
-                    if not success:
-                        if not argstring:
-                            echotext = echotext or cmdobj.brieftext()
-                        else:
-                            echotext = f"Error: {echotext or cmdobj.brieftext()}"
+                    asyncio.get_running_loop()
+                except RuntimeError:
+                    if inspect.iscoroutine(result):
+                        result.close()
+                    self.console.echo("asynchronous stack commands require a running event loop")
+                    continue
+                # NOTE(abraham): one awaitable owns the stack. later commands stay
+                # at the same simulation timestamp until it finishes.
+                # TODO(abraham): add per-caller completion handles if callers need
+                # responses independent of console output.
+                task = asyncio.ensure_future(result)
+                self._pending_command = _PendingCommand(task, cmdu, argstring, cmdobj)
+                self._prepend_commands(pending[index + 1 :])
+                return False
 
-                except argparser.ArgumentError as e:
-                    success = False
-                    header = "" if not argstring else e.args[0] if e.args else "Argument error."
-                    echotext = f"{header}\nUsage:\n{cmdobj.brieftext()}"
-                except Exception as e:
-                    header = "" if not argstring else e.args[0] if e.args else "Function error."
-                    echotext = (
-                        f"Error calling function implementation of {cmdu}: {header}\n"
-                        + "Traceback printed to terminal."
-                    )
-                    traceback.print_exc()
+            self._echo_command_result(cmdobj, argstring, result)
+        return True
 
-            # Command not found
+    def _finish_pending_command(self) -> bool:
+        pending = self._pending_command
+        if pending is None:
+            return True
+        if not pending.task.done():
+            return False
+        self._pending_command = None
+        try:
+            result = pending.task.result()
+        except asyncio.CancelledError:
+            return True
+        except Exception as exc:
+            self._echo_command_exception(pending.name, pending.argstring, exc)
+        else:
+            self._echo_command_result(pending.command, pending.argstring, result)
+        return True
+
+    def _prepend_commands(self, commands: list[tuple[str, bytes | None]]) -> None:
+        if not commands:
+            return
+        with self._queue_lock:
+            self.cmdstack[0:0] = commands
+
+    def _echo_command_result(
+        self, command_obj: Command, argstring: str, result: CommandResult
+    ) -> None:
+        success, text = result
+        if not success:
+            if not argstring:
+                text = text or command_obj.brieftext()
             else:
-                success = False
-                if not argstring:
-                    echotext = f"error: unknown command or aircraft: {cmd}"
-                else:
-                    echotext = f"error: unknown command: {cmd}"
+                text = f"Error: {text or command_obj.brieftext()}"
+        if text:
+            self.console.echo(text)
 
-            if echotext:
-                self.console.echo(echotext)
+    def _echo_command_exception(self, name: str, argstring: str, error: Exception) -> None:
+        header = "" if not argstring else error.args[0] if error.args else "Function error."
+        self.console.echo(
+            f"Error calling function implementation of {name}: {header}\n"
+            "Traceback printed to terminal."
+        )
+        traceback.print_exception(error)
+
+    @property
+    def command_pending(self) -> bool:
+        return self._pending_command is not None
+
+    async def wait_for_pending(self) -> None:
+        pending = self._pending_command
+        if pending is not None and not pending.task.done():
+            await asyncio.wait((pending.task,))
 
     def readscn(self, scn: str | Path | StringIO) -> Iterator[tuple[float, str]]:
         """Read a scenario file and yield its timestamped commands.
@@ -816,12 +878,13 @@ class CommandStack:
                 commands separated by ";".
             sender_id: Optional network route/id of the command sender.
         """
-        # TODO(abraham): replace this list with an owned mailbox?
+        queued: list[tuple[str, bytes | None]] = []
         for cmdline in cmdlines:
-            cmdline = cmdline.strip()
-            if cmdline:
-                for line in cmdline.split(";"):
-                    self.cmdstack.append((line, sender_id))
+            text = cmdline.strip()
+            if text:
+                queued.extend((line, sender_id) for line in text.split(";") if line)
+        with self._queue_lock:
+            self.cmdstack.extend(queued)
 
     def sender(self):
         """Return the sender of the currently executed stack command.
@@ -854,3 +917,8 @@ class CommandStack:
         """Set the scenario data. This is used by the batch logic."""
         self.scentime = newtime
         self.scencmd = newcmd
+
+
+def _consume_task_result(task: asyncio.Future[Any]) -> None:
+    with suppress(asyncio.CancelledError, Exception):
+        task.result()
