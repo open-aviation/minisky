@@ -1,112 +1,254 @@
-"""Stack command declarations for MiniSky plugins.
+"""Decorators for plugin commands and simulation hooks.
 
-The `@command` decorator stores command metadata on a function. Importing a
-plugin module does not register that command globally. Instead, the
-[`PluginManager`][minisky.plugin.plugin.PluginManager] that loads the module
-registers its declarations with the owning runtime's
-[`CommandStack`][minisky.stack.CommandStack].
+The decorators store metadata only. Typed plugins mount an instance with
+[PluginContext][minisky.plugin.plugin.PluginContext] before MiniSky binds its
+declarations to that runtime.
 """
+# TODO(abraham): delete the legacy module scanner along with `init_plugin(runtime)`
 
 from __future__ import annotations
 
 import inspect
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from dataclasses import dataclass
 from types import ModuleType
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal, TypeVar, overload
+
+from minisky.identifiers import normalize_public_name
 
 if TYPE_CHECKING:
     from minisky.stack import CommandStack, PreparedCommand
 
+#
+# commands
+#
 
+CommandCallback = Callable[..., Any]
+CommandTarget = TypeVar("CommandTarget", bound=CommandCallback)
+_COMMAND = "__minisky_command__"
+
+
+@dataclass(frozen=True, slots=True)
+class CommandDeclaration:
+    """Command metadata stored on a decorated method."""
+
+    arguments: str = ""
+    name: str = ""
+    aliases: tuple[str, ...] = ()
+    brief: str = ""
+    help: str = ""
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "name", normalize_public_name(self.name) if self.name else "")
+        object.__setattr__(
+            self,
+            "aliases",
+            tuple(normalize_public_name(alias) for alias in self.aliases),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class BoundCommand:
+    """A command declaration bound to one component instance."""
+
+    callback: CommandCallback
+    declaration: CommandDeclaration
+
+    @property
+    def name(self) -> str:
+        return self.declaration.name or normalize_public_name(self.callback.__name__)
+
+    @property
+    def aliases(self) -> tuple[str, ...]:
+        return self.declaration.aliases
+
+    @property
+    def brief(self) -> str:
+        if self.declaration.brief:
+            return self.declaration.brief
+        parameters: list[str] = []
+        for parameter in inspect.signature(self.callback).parameters.values():
+            name = parameter.name
+            if parameter.kind is inspect.Parameter.VAR_POSITIONAL:
+                name = f"{name},..."
+            if parameter.default is not inspect.Parameter.empty:
+                name = f"[{name}]"
+            parameters.append(name)
+        suffix = f" {','.join(parameters)}" if parameters else ""
+        return f"{self.name}{suffix}"
+
+    @property
+    def help(self) -> str:
+        return self.declaration.help or inspect.cleandoc(inspect.getdoc(self.callback) or "")
+
+
+@overload
+def command(func: CommandTarget, /) -> CommandTarget: ...
+
+
+@overload
 def command(
-    func: Callable[..., Any] | None = None,
+    *,
+    arguments: str = "",
     name: str = "",
     aliases: tuple[str, ...] = (),
     brief: str = "",
     help: str = "",
+) -> Callable[[CommandTarget], CommandTarget]: ...
+
+
+def command(
+    func: CommandTarget | None = None,
+    /,
+    *,
     arguments: str = "",
-) -> Any:
-    """Declare a function as a stack command.
+    name: str = "",
+    aliases: tuple[str, ...] = (),
+    brief: str = "",
+    help: str = "",
+) -> CommandTarget | Callable[[CommandTarget], CommandTarget]:
+    """Declare an instance method as a stack command.
 
-    The declaration is stored on the function and registered only when the
-    runtime-owned plugin manager loads the containing module. This keeps module
-    import free of command-registry side effects while preserving the familiar
-    decorator syntax.
-
-    Args:
-        func: Function to decorate. It may be omitted when using
-            `@command(...)` syntax.
-        name: Command name. Defaults to the function name.
-        aliases: Alternative command names.
-        brief: Brief usage string.
-        help: Detailed help text. When omitted, the function docstring is used.
-        arguments: Argument specification string, for example
-            `callsign,alt,[spd]`.
-
-    Example:
-        from minisky import stack
-        from minisky.stack.argparser import Txt
-
-        @stack.command
-        def mycommand(arg1: Txt, arg2: int = 5):
-            '''Help text for mycommand.'''
-            return True, "Success"
-
-        @stack.command(name="MYCMD", aliases=("MC",))
-        def my_command(arg: str):
-            '''Help text.'''
-            return True, "Done"
-
-    Returns:
-        The original function or descriptor, unmodified apart from the stored
-        declaration metadata.
+    The method name becomes the command name unless `name` is provided. Its
+    docstring becomes command help and its signature becomes the brief usage
+    text unless those values are passed explicitly for compatibility.
     """
 
-    def deco(declared: Callable[..., Any]) -> Any:
-        # Static and class methods store their declaration on the underlying
-        # function so the plugin loader can inspect them uniformly.
-        actual_func = (
-            declared.__func__ if isinstance(declared, (staticmethod, classmethod)) else declared
-        )
-        declaration = {
-            "name": name or actual_func.__name__,
-            "aliases": aliases,
-            "brief": brief,
-            "help": help or inspect.cleandoc(inspect.getdoc(actual_func) or ""),
-            "arguments": arguments,
-        }
-        actual_func.__stack_command__ = declaration  # type: ignore[reportFunctionMemberAccess]
-        return declared
+    def decorate(target: CommandTarget) -> CommandTarget:
+        actual = _underlying_function(target)
+        if _COMMAND in vars(actual):
+            raise TypeError("a plugin command may be declared only once")
+        setattr(actual, _COMMAND, CommandDeclaration(arguments, name, aliases, brief, help))
+        return target
 
-    # Allow both `@command` and `@command(...)` forms.
-    return deco(func) if func else deco
+    return decorate(func) if func is not None else decorate
 
+
+def declared_commands(component: object) -> Iterator[BoundCommand]:
+    """Bind command declarations to this exact component instance."""
+    for attribute_name, value in _declaration_namespace(component).items():
+        declaration = getattr(_underlying_function(value), _COMMAND, None)
+        if isinstance(declaration, CommandDeclaration):
+            yield BoundCommand(_bound_method(component, attribute_name, "command"), declaration)
+
+#
+# hooks
+#
+
+HookCallback = Callable[..., Any]
+HookTarget = TypeVar("HookTarget", bound=HookCallback)
+HookName = Literal["preupdate", "update", "reset", "hold"]
+_HOOKS = "__minisky_hooks__"
+_HOOK_NAMES = frozenset({"preupdate", "update", "reset", "hold"})
+
+
+@dataclass(frozen=True, slots=True)
+class HookDeclaration:
+    """Simulation-hook metadata stored on a decorated method."""
+
+    hook: HookName | None = None
+    interval: float = 0.0
+    name: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class BoundHook:
+    """A hook declaration bound to one component instance."""
+
+    callback: HookCallback
+    declaration: HookDeclaration
+
+    @property
+    def hook(self) -> HookName:
+        value = self.declaration.hook or self.callback.__name__.lower()
+        if value not in _HOOK_NAMES:
+            raise ValueError(
+                f"cannot infer plugin hook from {self.callback.__name__!r}; "
+                "specify preupdate, update, reset, or hold"
+            )
+        return value  # type: ignore[return-value]
+
+    @property
+    def name(self) -> str:
+        return self.declaration.name or self.callback.__name__
+
+
+@overload
+def hook(func: HookTarget, /) -> HookTarget: ...
+
+
+@overload
+def hook(
+    hook_name: HookName | None = None,
+    /,
+    *,
+    interval: float = 0.0,
+    name: str = "",
+) -> Callable[[HookTarget], HookTarget]: ...
+
+
+def hook(
+    func_or_name: HookTarget | HookName | None = None,
+    /,
+    *,
+    interval: float = 0.0,
+    name: str = "",
+) -> HookTarget | Callable[[HookTarget], HookTarget]:
+    """Declare a synchronous simulation hook on an instance method."""
+
+    def decorate(target: HookTarget, hook_name: HookName | None) -> HookTarget:
+        actual = _underlying_function(target)
+        declarations = tuple(getattr(actual, _HOOKS, ()))
+        setattr(actual, _HOOKS, (*declarations, HookDeclaration(hook_name, interval, name)))
+        return target
+
+    if callable(func_or_name):
+        return decorate(func_or_name, None)
+    return lambda target: decorate(target, func_or_name)
+
+
+def declared_hooks(component: object) -> Iterator[BoundHook]:
+    """Bind hook declarations to this exact component instance."""
+    for attribute_name, value in _declaration_namespace(component).items():
+        declarations = getattr(_underlying_function(value), _HOOKS, ())
+        if not declarations:
+            continue
+        callback = _bound_method(component, attribute_name, "hook")
+        for declaration in declarations:
+            if not isinstance(declaration, HookDeclaration):
+                raise TypeError(f"invalid hook declaration on {attribute_name!r}")
+            yield BoundHook(callback, declaration)
+
+#
+#
+#
 
 def prepare_declared_commands(
     command_stack: CommandStack, module: ModuleType
 ) -> tuple[PreparedCommand, ...]:
-    """Construct command declarations from a plugin module."""
+    """Construct declarations from a legacy plugin module."""
     commands: list[PreparedCommand] = []
     for value in vars(module).values():
-        actual_func = value.__func__ if isinstance(value, (staticmethod, classmethod)) else value
-        declaration = getattr(actual_func, "__stack_command__", None)
-        if declaration is not None:
-            commands.append(command_stack.prepare_command(actual_func, **declaration))
+        callback = _underlying_function(value)
+        declaration = getattr(callback, _COMMAND, None)
+        if not isinstance(declaration, CommandDeclaration):
+            continue
+        bound = BoundCommand(callback, declaration)
+        commands.append(
+            command_stack.prepare_command(
+                callback,
+                name=bound.name,
+                aliases=bound.aliases,
+                arguments=declaration.arguments,
+                brief=bound.brief,
+                help=bound.help,
+            )
+        )
     return tuple(commands)
 
 
 def register_declared_commands(command_stack: CommandStack, module: ModuleType) -> None:
-    """Register command declarations from one plugin module.
-
-    Only the supplied module is inspected. This is intentionally narrower than
-    scanning `sys.modules`: loading a plugin into one runtime must not register
-    commands imported for another runtime.
-
-    Args:
-        command_stack: Runtime-owned command registry that receives the
-            declarations.
-        module: Imported plugin module whose decorated functions are inspected.
-    """
+    """Register command declarations from a legacy plugin module."""
     commands = prepare_declared_commands(command_stack, module)
     command_stack.validate_commands(commands)
     command_stack.install_commands(commands)
@@ -143,20 +285,27 @@ def append_commands(
     newcommands: dict[str, list[Any] | tuple[Any, ...]],
     syndict: dict[str, list[str]] | None = None,
 ) -> None:
-    """Append a plugin command dictionary to one runtime's command registry.
-
-    This supports the original plugin return format in which `init_plugin`
-    returns a second dictionary mapping command names to a callback, argument
-    specification, brief usage text, and full help text.
-
-    Args:
-        command_stack: Runtime-owned command registry that receives the
-            commands.
-        newcommands: Mapping of command name to
-            `[function, arguments, brief, help]`. Missing trailing values are
-            treated as empty strings.
-        syndict: Optional mapping of command name to aliases.
-    """
+    """Append commands from the original plugin return format."""
     commands = prepare_commands(command_stack, newcommands, syndict)
     command_stack.validate_commands(commands)
     command_stack.install_commands(commands)
+
+
+def _bound_method(component: object, name: str, kind: str) -> Callable[..., Any]:
+    callback = getattr(component, name)
+    if not inspect.ismethod(callback) or callback.__self__ is not component:
+        raise TypeError(f"decorated {kind} {name!r} must be an instance method")
+    return callback
+
+
+def _declaration_namespace(component: object) -> dict[str, Any]:
+    namespace: dict[str, Any] = {}
+    for cls in reversed(type(component).__mro__):
+        namespace.update(vars(cls))
+    return namespace
+
+
+def _underlying_function(value: Any) -> Any:
+    if isinstance(value, (staticmethod, classmethod)):
+        value = value.__func__
+    return inspect.unwrap(value) if callable(value) else value

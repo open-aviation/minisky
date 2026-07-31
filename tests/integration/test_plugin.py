@@ -12,7 +12,9 @@ from pydantic import BaseModel
 
 from minisky import MiniSky, MiniSkySettings
 from minisky import plugin as plugin_api
+from minisky.plugin.plugin import _PreparedHook
 from minisky.simulation import Simulation
+from minisky.stack import Command, PreparedCommand
 from tests._types import RunCommand
 
 
@@ -89,33 +91,140 @@ class FakeEntryPoint:
         return self.declaration
 
 
+def install(monkeypatch: pytest.MonkeyPatch, *entries: FakeEntryPoint) -> None:
+    module = importlib.import_module("minisky.plugin.plugin")
+    monkeypatch.setattr(module.metadata, "entry_points", lambda *, group: entries)
+
+
+@dataclass(frozen=True, slots=True)
+class CommandValue:
+    callback: object
+    name: str
+    aliases: tuple[str, ...]
+    brief: str
+    help: str
+    arguments: tuple[tuple[str, bool], ...]
+    impl: str
+
+    @classmethod
+    def from_command(cls, command: Command) -> CommandValue:
+        return cls(
+            command.callback,
+            command.name,
+            command.aliases,
+            command.brief,
+            command.help,
+            command.arguments,
+            command.impl,
+        )
+
+
 def test_typed_declaration_builds_validated_runtime_state(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     class Config(BaseModel):
         value: int
 
+    @dataclass(frozen=True)
     class State:
-        def __init__(self, value: int, random: object) -> None:
-            self.value = value
-            self.random = random
+        value: int
+        random: object
 
     def build(context: plugin_api.PluginContext[Config]) -> plugin_api.PluginSpec:
         context.mount(State(context.config.value, context.python_random))
         return context.finish()
 
     entry = FakeEntryPoint("typed", plugin_api.Plugin(build=build, config_class=Config))
-    module = importlib.import_module("minisky.plugin.plugin")
-    monkeypatch.setattr(module.metadata, "entry_points", lambda *, group: (entry,))
+    install(monkeypatch, entry)
 
     runtime = MiniSky(MiniSkySettings(plugins={"typed": {"value": 7}}))
     try:
         ok, message = runtime.plugins.load("TYPED")
         assert ok, message
-        state = runtime.variables.varlist["typed"][0]
-        assert isinstance(state, State)
-        assert state.value == 7
-        assert state.random is runtime.python_random
-        assert runtime.plugins.plugins["TYPED"].spec is not None
+        state = State(7, runtime.python_random)
+        assert runtime.variables.varlist["typed"] == (state, ["value", "random"])
+        assert runtime.plugins.plugins["TYPED"].spec == plugin_api.PluginSpec((state,), state)
+    finally:
+        runtime.close()
+
+
+def test_mount_binds_command_to_exact_instance_and_infers_text(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class Component:
+        def __init__(self) -> None:
+            self.values: list[int] = []
+
+        @plugin_api.command(arguments="int")
+        def record(self, value: int) -> tuple[bool, str]:
+            """Record an integer."""
+            self.values.append(value)
+            return True, f"recorded {value}"
+
+    component = Component()
+
+    def build(context: plugin_api.PluginContext[object]) -> plugin_api.PluginSpec:
+        context.mount(component)
+        return context.finish()
+
+    install(monkeypatch, FakeEntryPoint("mounted", plugin_api.Plugin(build=build)))
+    runtime = MiniSky(MiniSkySettings())
+    try:
+        assert "RECORD" not in runtime.commands.cmddict
+        ok, message = runtime.plugins.load("MOUNTED")
+        assert ok, message
+        command = runtime.commands.cmddict["RECORD"]
+        assert runtime.plugins.plugins["MOUNTED"].commands == (
+            PreparedCommand(command, ("RECORD",)),
+        )
+        assert CommandValue.from_command(command) == CommandValue(
+            component.record,
+            "RECORD",
+            (),
+            "RECORD value",
+            "Record an integer.",
+            (("int", False),),
+            "Component",
+        )
+
+        runtime.commands.stack("RECORD 7")
+        runtime.simulation.step()
+        assert component.values == [7]
+    finally:
+        runtime.close()
+
+
+def test_multiple_hook_declarations_keep_independent_timing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[tuple[str, float]] = []
+
+    class Component:
+        @plugin_api.hook("preupdate", name="before")
+        @plugin_api.hook("update", interval=2.0, name="after")
+        def pulse(self, dt: float) -> None:
+            events.append(("pulse", dt))
+
+    component = Component()
+
+    def build(context: plugin_api.PluginContext[object]) -> plugin_api.PluginSpec:
+        context.mount(component, expose=False)
+        return context.finish()
+
+    install(monkeypatch, FakeEntryPoint("hooks", plugin_api.Plugin(build=build)))
+    runtime = MiniSky(MiniSkySettings())
+    try:
+        ok, message = runtime.plugins.load("HOOKS")
+        assert ok, message
+        assert runtime.plugins.plugins["HOOKS"].hooks == (
+            _PreparedHook(component.pulse, "update", 2.0, "hooks.update.after"),
+            _PreparedHook(component.pulse, "preupdate", 0.0, "hooks.preupdate.before"),
+        )
+
+        runtime.plugins.preupdate()
+        runtime.plugins.update()
+        runtime.plugins.preupdate()
+        runtime.plugins.update()
+        assert events == [("pulse", 1.0), ("pulse", 1.0), ("pulse", 2.0)]
     finally:
         runtime.close()

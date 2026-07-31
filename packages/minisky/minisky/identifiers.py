@@ -15,3 +15,12 @@ def validate_plugin_id(value: object) -> str:
     if value in _RESERVED_PLUGIN_IDS:
         raise ValueError(f"reserved plugin id: {value!r}")
     return value
+
+_PUBLIC_NAME = re.compile(r"^[A-Z][A-Z0-9_]*$")
+
+def normalize_public_name(value: str) -> str:
+    """Normalize a command or replacement name."""
+    name = value.strip().upper()
+    if not _PUBLIC_NAME.fullmatch(name):
+        raise ValueError(f"invalid public name: {value!r}")
+    return name

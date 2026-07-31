@@ -9,11 +9,12 @@ from __future__ import annotations
 
 from minisky.plugin.entity import Entity
 from minisky.plugin.plugin import Plugin, PluginContext, PluginError, PluginManager, PluginSpec
-from minisky.plugin.plugin_decorators import command
+from minisky.plugin.plugin_decorators import HookName, command, hook
 from minisky.plugin.timedfunction import TimedFunctionManager, Timer
 
 __all__ = (
     "Entity",
+    "HookName",
     "Plugin",
     "PluginContext",
     "PluginError",
@@ -22,4 +23,5 @@ __all__ = (
     "TimedFunctionManager",
     "Timer",
     "command",
+    "hook",
 )
