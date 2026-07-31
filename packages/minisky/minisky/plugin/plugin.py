@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 from minisky.core.trafficarrays import TrafficArrays
 from minisky.identifiers import validate_plugin_id
-from minisky.plugin.plugin_decorators import append_commands, register_declared_commands
+from minisky.plugin.plugin_decorators import prepare_commands, prepare_declared_commands
 from minisky.plugin.timedfunction import TimedFunctionManager
 
 if TYPE_CHECKING:
@@ -23,7 +23,7 @@ if TYPE_CHECKING:
     from minisky.core.varexplorer import VariableExplorer
     from minisky.runtime import MiniSky
     from minisky.simulation import ConsoleIO, Simulation
-    from minisky.stack import CommandStack
+    from minisky.stack import CommandStack, PreparedCommand
 
 
 # TODO(abraham): replace this compatibility record with separate discovered and
@@ -38,7 +38,7 @@ class Plugin:
     module: ModuleType | None = None
     config: dict[str, Any] = field(default_factory=dict)
     state: Any = None
-    command_names: set[str] = field(default_factory=set)
+    commands: tuple[PreparedCommand, ...] = ()
 
 
 class PluginManager:
@@ -144,20 +144,16 @@ class PluginManager:
         if plugin.loaded:
             return False, f"Plugin {plugin.plugin_name} already loaded"
 
-        # TODO(abraham): build and validate a registration plan before mutating
-        # MiniSky-owned registries. legacy initialiser may already have external
-        # side effects, so do not claim to provide general rollback.
         try:
             # Load and initialize the plugin for this runtime.
-            # TODO(abraham): replace the callable and tuple/dict protocol with a
-            # typed declaration after entry-point discovery has settled.
+            # TODO(abraham): replace the entry point callable and tuple/dict
+            # protocol with the typed plugin declaration.
             loaded = plugin.entry_point.load()
             if not callable(loaded):
                 return False, f"Plugin {plugin.plugin_name} entry point is not callable"
             initializer = cast("Callable[[MiniSky], Any]", loaded)
             module = importlib.import_module(plugin.entry_point.module)
             result = initializer(self.runtime)
-            # TODO(abraham): replace dict and tuple returns with a typed plugin plan
             config = result if isinstance(result, dict) else result[0]
             stack_functions = (
                 result[1] if isinstance(result, (tuple, list)) and len(result) > 1 else None
@@ -165,7 +161,21 @@ class PluginManager:
             if not isinstance(config, dict):
                 return False, f"Plugin {plugin.plugin_name} returned an invalid config"
 
-            # Get update interval (minimum is simdt) and register hooks.
+            # NOTE(abraham): init_plugin already ran, so this is not rollback.
+            # we only make our command and variable registry writes predictable.
+            prepared_commands = list(prepare_declared_commands(self.commands, module))
+            if stack_functions:
+                prepared_commands.extend(prepare_commands(self.commands, stack_functions))
+            commands = tuple(prepared_commands)
+            self.commands.validate_commands(commands)
+
+            state = config.get("state")  # ew
+            state_parent = state if state is not None else module
+            state_name = plugin.plugin_name.lower()
+            self.variables.validate_data_parent(state_name)
+
+            # TODO(abraham): prepare hooks too after replacing the legacy return
+            # protocol. for now command/state failures happen before hook mutation.
             interval = max(float(config.get("update_interval", 0.0)), self.simulation.simdt)
             for hook_name in ("preupdate", "update", "reset", "hold"):
                 callback = config.get(hook_name)
@@ -177,25 +187,14 @@ class PluginManager:
                         hook=hook_name,
                     )
 
-            # Register stack functions only on this runtime.
-            command_names_before = set(self.commands.cmddict)
-            register_declared_commands(self.commands, module)
-            if stack_functions:
-                append_commands(self.commands, stack_functions)
-            command_names = set(self.commands.cmddict) - command_names_before
-
-            # Register plugin state, or the module when no state object is returned.
-            state = config.get("state")
-            self.variables.register_data_parent(
-                state if state is not None else module,
-                plugin.plugin_name.lower(),
-            )
+            self.commands.install_commands(commands)
+            self.variables.register_data_parent(state_parent, state_name)
 
             plugin.loaded = True
             plugin.module = module
             plugin.config = config
             plugin.state = state
-            plugin.command_names = command_names
+            plugin.commands = commands
             self.loaded_plugins[plugin.plugin_name] = plugin
             return True, f"Successfully loaded plugin {plugin.plugin_name}"
 
@@ -264,10 +263,12 @@ class PluginManager:
             except Exception as exc:  # noqa: BLE001 - finish releasing every plugin
                 errors.append(exc)
             finally:
-                for command_name in plugin.command_names:
-                    self.commands.cmddict.pop(command_name, None)
+                self.commands.remove_commands(plugin.commands)
 
-                self.variables.unregister_data_parent(plugin.plugin_name.lower())
+                state_parent = plugin.state if plugin.state is not None else plugin.module
+                self.variables.unregister_data_parent(
+                    plugin.plugin_name.lower(), expected=state_parent
+                )
                 if isinstance(plugin.state, TrafficArrays):
                     plugin.state.detach()
 
@@ -275,7 +276,7 @@ class PluginManager:
                 plugin.module = None
                 plugin.config.clear()
                 plugin.state = None
-                plugin.command_names.clear()
+                plugin.commands = ()
 
         self.timed.clear()
         self.loaded_plugins.clear()

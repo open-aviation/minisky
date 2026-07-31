@@ -42,6 +42,11 @@ class VariableExplorer:
             ]
         )
 
+    def validate_data_parent(self, name: str) -> None:
+        """Reject a top-level name already owned by another data source."""
+        if name in self.varlist:
+            raise ValueError(f"variable parent already registered: {name}")
+
     def register_data_parent(self, obj: Any, name: str) -> None:
         """Register an object as a searchable data source of the variable explorer.
 
@@ -51,9 +56,11 @@ class VariableExplorer:
         """
         self.varlist[name] = (obj, getvarsfromobj(obj))
 
-    def unregister_data_parent(self, name: str) -> None:
-        """Remove a previously registered top-level data source."""
-        self.varlist.pop(name, None)
+    def unregister_data_parent(self, name: str, *, expected: object | None = None) -> None:
+        """Remove a parent only while it still refers to the expected object."""
+        current = self.varlist.get(name)
+        if current is not None and (expected is None or current[0] is expected):
+            del self.varlist[name]
 
     def lsvar(self, varname: str = "") -> tuple[bool, str]:
         """Stack function to list information on simulation variables in the

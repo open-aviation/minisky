@@ -27,6 +27,7 @@ import inspect
 import os
 import traceback
 from collections.abc import Callable, Iterator
+from dataclasses import dataclass
 from functools import partial
 from io import StringIO
 from pathlib import Path
@@ -267,6 +268,14 @@ class Command:
         return tuple(argtypes)
 
 
+@dataclass(frozen=True, slots=True)
+class PreparedCommand:
+    """A parsed command ready for registry installation."""
+
+    command: Command
+    names: tuple[str, ...]
+
+
 class CommandStack:
     """Command registry, queue, and scenario state for one runtime.
 
@@ -321,6 +330,60 @@ class CommandStack:
     def runner(self) -> Runner:
         return self._get_runner()
 
+    def prepare_command(
+        self,
+        func: Callable[..., Any],
+        *,
+        name: str = "",
+        aliases: tuple[str, ...] = (),
+        arguments: str = "",
+        brief: str = "",
+        help: str = "",
+    ) -> PreparedCommand:
+        """Construct and parse one command without registering it."""
+        callback = func.__func__ if isinstance(func, (staticmethod, classmethod)) else func
+        command_name = (name or callback.__name__).upper()
+        alias_names = tuple(alias.upper() for alias in aliases)
+        names = (command_name, *alias_names)
+        if len(names) != len(set(names)):
+            raise ValueError(f"command {command_name} repeats an alias")
+        command_obj = Command(
+            callback,
+            name=command_name,
+            argument_parser=self.argument_parser,
+            aliases=alias_names,
+            arguments=arguments,
+            brief=brief,
+            help=help,
+        )
+        return PreparedCommand(command_obj, names)
+
+    def validate_commands(self, commands: tuple[PreparedCommand, ...]) -> None:
+        """Reject command names already used by this stack or the same batch."""
+        seen: set[str] = set()
+        for prepared in commands:
+            for name in prepared.names:
+                if name in seen:
+                    raise ValueError(f"command name repeated in batch: {name}")
+                if name in self.cmddict:
+                    raise ValueError(f"command already registered: {name}")
+                seen.add(name)
+
+    def install_commands(self, commands: tuple[PreparedCommand, ...]) -> None:
+        """Install commands that were already constructed and validated."""
+        for prepared in commands:
+            for name in prepared.names:
+                self.cmddict[name] = prepared.command
+
+    def remove_commands(self, commands: tuple[PreparedCommand, ...]) -> None:
+        """Remove command names only while they still refer to the same object."""
+        for prepared in commands:
+            for name in prepared.names:
+                if self.cmddict.get(name) is prepared.command:
+                    del self.cmddict[name]
+
+    # TODO(abraham): route core command batches through prepare/validate too.
+    # keep the old reimplementation escape hatch until plugin migration is done.
     def addcommand(
         self,
         func: Callable,
