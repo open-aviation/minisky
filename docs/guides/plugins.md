@@ -7,8 +7,16 @@ examples.
 
 ## Anatomy of a plugin
 
-A plugin is a Python file in the directory configured by `plugin_path` that
-defines `init_plugin(runtime)`:
+A plugin is an installed Python package. You should expose its
+`init_plugin(runtime)` function through package metadata:
+
+```toml
+[project.entry-points."minisky.plugins"]
+example = "my_package:init_plugin"
+```
+
+The entry-point name is the plugin ID used by `PLUGINS LOAD` and
+`enabled_plugins`. The callable keeps the existing plugin contract:
 
 ```python
 """My example plugin."""
@@ -124,8 +132,9 @@ runtime loads that plugin module.
 
 ## Discovery and loading
 
-Discovery parses plugin source without importing it. `MiniSky` performs this
-discovery during construction.
+Discovery reads installed entry-point metadata without importing plugin code.
+`MiniSky` performs this discovery during construction. You should install the
+plugin package in the same environment as MiniSky before trying to load it.
 
 Load plugins in any of these ways:
 

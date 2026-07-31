@@ -16,3 +16,6 @@ packages = ["src/minisky_example_customautopilot"]
 
 [tool.uv.sources]
 minisky = { workspace = true }
+
+[project.entry-points."minisky.plugins"]
+customautopilot = "minisky_example_customautopilot:init_plugin"

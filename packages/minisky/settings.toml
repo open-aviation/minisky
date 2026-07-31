@@ -5,7 +5,6 @@ asas_marh = 1.05 # ASAS protected zone factors - horizontal
 asas_marv = 1.05 # ASAS protected zone factors - vertical
 
 # Plugin settings
-plugin_path = "example_plugins" # Directory to search for plugins
 enabled_plugins = ["TANGRAM"] # Plugins to load at startup
 
 # Tangram bridge plugin (enabled_plugins = ["TANGRAM"], installed by `just sync`).

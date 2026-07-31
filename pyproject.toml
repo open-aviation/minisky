@@ -56,7 +56,6 @@ known-first-party = [
 [tool.pyright]
 include = [
     "packages/minisky/minisky",
-    "packages/minisky/example_plugins",
     "packages/minisky-example*/src",
     "packages/minisky-tangram/src",
     "packages/tangram-minisky/src",
