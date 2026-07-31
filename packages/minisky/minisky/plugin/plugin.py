@@ -5,6 +5,8 @@
 from __future__ import annotations
 
 import importlib
+import inspect
+import math
 import traceback
 from collections.abc import Callable
 from copy import deepcopy
@@ -18,7 +20,13 @@ from pydantic import TypeAdapter
 
 from minisky.core.trafficarrays import TrafficArrays
 from minisky.identifiers import validate_plugin_id
-from minisky.plugin.plugin_decorators import prepare_commands, prepare_declared_commands
+from minisky.plugin.plugin_decorators import (
+    HookName,
+    declared_commands,
+    declared_hooks,
+    prepare_commands,
+    prepare_declared_commands,
+)
 from minisky.plugin.timedfunction import TimedFunctionManager
 
 if TYPE_CHECKING:
@@ -94,6 +102,14 @@ class Plugin:
     config_class: type | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class _PreparedHook:
+    callback: Callable[..., Any]
+    phase: HookName
+    interval: float
+    name: str
+
+
 @dataclass
 class _PluginRecord:
     """Entry-point metadata and loaded state for a runtime."""
@@ -107,6 +123,7 @@ class _PluginRecord:
     state_parent: object | None = None
     spec: PluginSpec | None = None
     commands: tuple[PreparedCommand, ...] = ()
+    hooks: tuple[_PreparedHook, ...] = ()
 
 
 class PluginManager:
@@ -202,25 +219,27 @@ class PluginManager:
         try:
             loaded = plugin.entry_point.load()
             if isinstance(loaded, Plugin):
-                spec = self._build(plugin.plugin_name.lower(), loaded)
-                # TODO(abraham): bind declarations from exact mounted instances.
-                # components are retained but intentionally inert in this slice.
+                key = plugin.plugin_name.lower()
+                spec = self._build(key, loaded)
+                commands, hooks = self._prepare_typed(key, spec)
                 module = None
                 config: dict[str, Any] = {}
                 state = spec.state
                 state_parent = state
-                commands: tuple[PreparedCommand, ...] = ()
             else:
                 module, config, state, state_parent, commands = self._load_legacy(
                     plugin.plugin_name, loaded, plugin.entry_point.module
                 )
                 spec = None
+                hooks = ()
 
             state_name = plugin.plugin_name.lower()
             if state_parent is not None:
                 self.variables.validate_data_parent(state_name)
             if spec is None:
                 self._register_legacy_hooks(plugin.plugin_name, config)
+            else:
+                self._register_typed_hooks(hooks)
 
             self.commands.install_commands(commands)
             if state_parent is not None:
@@ -233,6 +252,7 @@ class PluginManager:
             plugin.state_parent = state_parent
             plugin.spec = spec
             plugin.commands = commands
+            plugin.hooks = hooks
             self.loaded_plugins[plugin.plugin_name] = plugin
             return True, f"Successfully loaded plugin {plugin.plugin_name}"
 
@@ -259,6 +279,85 @@ class PluginManager:
         if not isinstance(spec, PluginSpec):
             raise PluginError(f"plugin {key} build did not return PluginSpec")
         return spec
+
+    def _prepare_typed(
+        self, key: str, spec: PluginSpec
+    ) -> tuple[tuple[PreparedCommand, ...], tuple[_PreparedHook, ...]]:
+        commands: list[PreparedCommand] = []
+        hooks: list[_PreparedHook] = []
+        command_names: set[str] = set()
+        hook_names: set[str] = set()
+
+        for component in spec.components:
+            try:
+                for bound in declared_commands(component):
+                    prepared = self.commands.prepare_command(
+                        bound.callback,
+                        name=bound.name,
+                        aliases=bound.aliases,
+                        arguments=bound.declaration.arguments,
+                        brief=bound.brief,
+                        help=bound.help,
+                    )
+                    overlap = command_names.intersection(prepared.names)
+                    if overlap:
+                        raise PluginError(f"plugin {key} repeats command name: {min(overlap)}")
+                    command_names.update(prepared.names)
+                    commands.append(prepared)
+
+                for bound in declared_hooks(component):
+                    prepared = self._prepare_hook(
+                        key,
+                        bound.callback,
+                        bound.hook,
+                        bound.declaration.interval,
+                        bound.name,
+                    )
+                    if prepared.name in hook_names:
+                        raise PluginError(f"plugin {key} repeats hook name: {bound.name}")
+                    hook_names.add(prepared.name)
+                    hooks.append(prepared)
+            except (TypeError, ValueError) as exc:
+                raise PluginError(str(exc)) from exc
+
+        command_tuple = tuple(commands)
+        self.commands.validate_commands(command_tuple)
+        return command_tuple, tuple(hooks)
+
+    @staticmethod
+    def _prepare_hook(
+        key: str,
+        callback: Callable[..., Any],
+        phase: HookName,
+        interval: float,
+        name: str,
+    ) -> _PreparedHook:
+        if inspect.iscoroutinefunction(callback):
+            raise PluginError(f"plugin {key} hook {name} must be synchronous")
+        if not math.isfinite(interval) or interval < 0:
+            raise PluginError(f"plugin {key} hook {name} has invalid interval")
+        if phase in ("reset", "hold") and interval:
+            raise PluginError(f"plugin {key} gives interval to non-periodic {phase} hook")
+
+        signature = inspect.signature(callback)
+        accepts_dt = phase in ("preupdate", "update") and "dt" in signature.parameters
+        try:
+            signature.bind(dt=0.0) if accepts_dt else signature.bind()
+        except TypeError as exc:
+            raise PluginError(f"plugin {key} hook {name} has incompatible signature") from exc
+
+        # NOTE(abraham): TimedFunctionManager keys hooks by name. include the
+        # phase until typed hooks own their own runtime-local scheduler.
+        return _PreparedHook(callback, phase, interval, f"{key}.{phase}.{name}")
+
+    def _register_typed_hooks(self, hooks: tuple[_PreparedHook, ...]) -> None:
+        for prepared in hooks:
+            self.timed.register(
+                prepared.callback,
+                name=prepared.name,
+                dt=prepared.interval,
+                hook=prepared.phase,
+            )
 
     def _load_legacy(
         self, plugin_name: str, loaded: object, module_name: str
@@ -296,7 +395,7 @@ class PluginManager:
 
     def _register_legacy_hooks(self, plugin_name: str, config: dict[str, Any]) -> None:
         """Keep old hook registration separate from typed declarations."""
-        # TODO(abraham): replace this with mounted hook declarations.
+        # TODO(abraham): delete this with init_plugin compatibility.
         interval = max(float(config.get("update_interval", 0.0)), self.simulation.simdt)
         for hook_name in ("preupdate", "update", "reset", "hold"):
             callback = config.get(hook_name)
@@ -383,6 +482,7 @@ class PluginManager:
                 plugin.state_parent = None
                 plugin.spec = None
                 plugin.commands = ()
+                plugin.hooks = ()
 
         self.timed.clear()
         self.loaded_plugins.clear()
