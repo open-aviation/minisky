@@ -119,6 +119,60 @@ class CommandValue:
         )
 
 
+@dataclass(frozen=True, slots=True)
+class EntityValue:
+    traffic: object | None
+    prepared_traffic: object | None
+    parent: object | None
+    ownerless: bool
+    retired: bool
+    arrays: tuple[tuple[str, int], ...]
+
+    @classmethod
+    def from_entity(cls, entity: plugin_api.Entity) -> EntityValue:
+        return cls(
+            entity._traffic,
+            entity._prepared_traffic,
+            entity._parent,
+            entity.ownerless,
+            entity._retired,
+            tuple((name, len(getattr(entity, name))) for name in entity._ArrVars),
+        )
+
+
+def test_example_entity_sizes_existing_traffic_and_retires() -> None:
+    runtime = MiniSky(MiniSkySettings())
+    runtime.traffic.cre("KL001", "A320", lat=52.0, lon=4.0, hdg=90, alt=3000, spd=150)
+    try:
+        ok, message = runtime.plugins.load("EXAMPLE")
+        assert ok, message
+        record = runtime.plugins.plugins["EXAMPLE"]
+        entity = record.entities[0]
+        assert (record.entities, record.spec, EntityValue.from_entity(entity)) == (
+            (entity,),
+            plugin_api.PluginSpec((entity,), entity),
+            EntityValue(
+                runtime.traffic,
+                None,
+                runtime.traffic,
+                False,
+                False,
+                (("npassengers", 1),),
+            ),
+        )
+    finally:
+        runtime.close()
+
+    assert EntityValue.from_entity(entity) == EntityValue(
+        None,
+        None,
+        None,
+        False,
+        True,
+        (("npassengers", 1),),
+    )
+
+
 def test_typed_declaration_builds_validated_runtime_state(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

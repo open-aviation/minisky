@@ -18,4 +18,4 @@ packages = ["src/minisky_example"]
 minisky = { workspace = true }
 
 [project.entry-points."minisky.plugins"]
-example = "minisky_example:init_plugin"
+example = "minisky_example:plugin"
