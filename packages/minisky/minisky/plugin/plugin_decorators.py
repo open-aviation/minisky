@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, Any, Literal, TypeVar, overload
 from minisky.identifiers import normalize_public_name
 
 if TYPE_CHECKING:
+    from minisky.core.trafficarrays import TrafficArrays
     from minisky.stack import CommandStack, PreparedCommand
 
 #
@@ -49,7 +50,7 @@ class CommandDeclaration:
 
 @dataclass(frozen=True, slots=True)
 class BoundCommand:
-    """A command declaration bound to one component instance."""
+    """A command declaration bound to a component instance."""
 
     callback: CommandCallback
     declaration: CommandDeclaration
@@ -131,6 +132,7 @@ def declared_commands(component: object) -> Iterator[BoundCommand]:
         if isinstance(declaration, CommandDeclaration):
             yield BoundCommand(_bound_method(component, attribute_name, "command"), declaration)
 
+
 #
 # hooks
 #
@@ -153,7 +155,7 @@ class HookDeclaration:
 
 @dataclass(frozen=True, slots=True)
 class BoundHook:
-    """A hook declaration bound to one component instance."""
+    """A hook declaration bound to a component instance."""
 
     callback: HookCallback
     declaration: HookDeclaration
@@ -219,9 +221,65 @@ def declared_hooks(component: object) -> Iterator[BoundHook]:
                 raise TypeError(f"invalid hook declaration on {attribute_name!r}")
             yield BoundHook(callback, declaration)
 
+
 #
+# replacements
 #
+
+ReplacementTarget = TypeVar("ReplacementTarget", bound=type[Any])
+_REPLACEMENT = "__minisky_replacement__"
+
+
+@dataclass(frozen=True, slots=True)
+class ReplacementDeclaration:
+    """Replacement metadata stored on a decorated class."""
+
+    base: type[TrafficArrays] | None = None
+    name: str = ""
+
+
+@overload
+def replacement(target: ReplacementTarget, /) -> ReplacementTarget: ...
+
+
+@overload
+def replacement(
+    *,
+    base: type[TrafficArrays] | None = None,
+    name: str = "",
+) -> Callable[[ReplacementTarget], ReplacementTarget]: ...
+
+
+def replacement(
+    target: ReplacementTarget | None = None,
+    /,
+    *,
+    base: type[TrafficArrays] | None = None,
+    name: str = "",
+) -> ReplacementTarget | Callable[[ReplacementTarget], ReplacementTarget]:
+    """Declare a runtime-local traffic implementation."""
+
+    def decorate(implementation: ReplacementTarget) -> ReplacementTarget:
+        if _REPLACEMENT in vars(implementation):
+            raise TypeError(f"replacement already declared: {implementation.__name__}")
+        setattr(implementation, _REPLACEMENT, ReplacementDeclaration(base, name))
+        return implementation
+
+    return decorate(target) if target is not None else decorate
+
+
+def declared_replacement(implementation: type[Any]) -> ReplacementDeclaration:
+    """Return replacement metadata for an explicitly declared class."""
+    declaration = vars(implementation).get(_REPLACEMENT)
+    if not isinstance(declaration, ReplacementDeclaration):
+        raise TypeError(f"replacement {implementation.__name__!r} must use @plugin.replacement")
+    return declaration
+
+
 #
+# legacy commands
+#
+
 
 def prepare_declared_commands(
     command_stack: CommandStack, module: ModuleType
