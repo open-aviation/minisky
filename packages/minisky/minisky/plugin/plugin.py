@@ -1,17 +1,20 @@
-"""Runtime-owned discovery and loading for installed MiniSky plugins."""
-# NOTE(abraham): discovery reads `minisky.plugins` entry point metadata
-# without importing plugin code. loading currently uses the synchronous
-# init_plugin(runtime), TODO replace the return protocol
+"""Runtime-owned declarations and loading for installed MiniSky plugins."""
+# NOTE(abraham): entry points may export Plugin or the old init_plugin(runtime)
+# callable. keep the compatibility path until the bundled plugins migrate.
 
 from __future__ import annotations
 
 import importlib
 import traceback
 from collections.abc import Callable
+from copy import deepcopy
 from dataclasses import dataclass, field
 from importlib import metadata
-from types import ModuleType
-from typing import TYPE_CHECKING, Any, cast
+from random import Random
+from types import MappingProxyType, ModuleType
+from typing import TYPE_CHECKING, Any, Generic, TypeVar, cast
+
+from pydantic import TypeAdapter
 
 from minisky.core.trafficarrays import TrafficArrays
 from minisky.identifiers import validate_plugin_id
@@ -26,11 +29,74 @@ if TYPE_CHECKING:
     from minisky.stack import CommandStack, PreparedCommand
 
 
-# TODO(abraham): replace this compatibility record with separate discovered and
-# active plugin types when `init_plugin` is replaced by a typed declaration.
-@dataclass
+ConfigT = TypeVar("ConfigT")
+ComponentT = TypeVar("ComponentT")
+
+
+class PluginError(RuntimeError):
+    """A plugin declaration or build operation failed."""
+
+
+@dataclass(frozen=True, slots=True)
+class PluginSpec:
+    """Components and state built for one runtime."""
+
+    components: tuple[object, ...]
+    state: object | None = None
+
+
+class PluginContext(Generic[ConfigT]):
+    """Build fresh plugin components for one runtime."""
+
+    def __init__(self, config: ConfigT, python_random: Random) -> None:
+        self.config = config
+        self.python_random = python_random
+        self._components: list[object] = []
+        self._state: object | None = None
+        self._finished = False
+
+    def mount(self, component: ComponentT, *, expose: bool = True) -> ComponentT:
+        """Add one component and optionally expose it through variable lookup."""
+        if self._finished:
+            raise RuntimeError("plugin context has already been finished")
+        if component is None:
+            raise TypeError("plugin component must not be None")
+        if any(existing is component for existing in self._components):
+            raise PluginError("plugin component mounted more than once")
+        if expose and self._state is not None:
+            raise PluginError("a plugin may expose only one state component")
+        self._components.append(component)
+        if expose:
+            self._state = component
+        return component
+
+    def finish(self) -> PluginSpec:
+        """Finish this context and return its immutable specification."""
+        if self._finished:
+            raise RuntimeError("plugin context has already been finished")
+        self._finished = True
+        return PluginSpec(tuple(self._components), self._state)
+
+
+PluginBuild = Callable[[PluginContext[Any]], PluginSpec]
+
+
+def _empty_build(context: PluginContext[Any]) -> PluginSpec:
+    return context.finish()
+
+
+# TODO(abraham): preserve the config type relation through entry-point metadata.
+@dataclass(frozen=True, slots=True)
 class Plugin:
-    """Entry-point metadata and loaded state for a plugin in a runtime."""
+    """Declare a plugin build function and its optional configuration type."""
+
+    build: PluginBuild = _empty_build
+    config_class: type | None = None
+
+
+@dataclass
+class _PluginRecord:
+    """Entry-point metadata and loaded state for a runtime."""
 
     entry_point: metadata.EntryPoint
     plugin_name: str
@@ -38,11 +104,13 @@ class Plugin:
     module: ModuleType | None = None
     config: dict[str, Any] = field(default_factory=dict)
     state: Any = None
+    state_parent: object | None = None
+    spec: PluginSpec | None = None
     commands: tuple[PreparedCommand, ...] = ()
 
 
 class PluginManager:
-    """Plugin discovery, loading, hooks, and state for one MiniSky runtime.
+    """Plugin discovery, loading, hooks, and state for a MiniSky runtime.
 
     Attributes:
         plugins: Dict mapping upper-case plugin names to all discovered plugin
@@ -66,8 +134,8 @@ class PluginManager:
         self._get_runtime = get_runtime
         self._get_simulation = get_simulation
         self._get_command_stack = get_command_stack
-        self.plugins: dict[str, Plugin] = {}
-        self.loaded_plugins: dict[str, Plugin] = {}
+        self.plugins: dict[str, _PluginRecord] = {}
+        self.loaded_plugins: dict[str, _PluginRecord] = {}
         self.timed = TimedFunctionManager(lambda: self.simulation.simdt)
 
     @property
@@ -88,10 +156,11 @@ class PluginManager:
     def discover(self) -> None:
         """Discover installed plugins without importing their modules.
 
-        Plugin packages register an `init_plugin` callable in the
-        `minisky.plugins` entry-point group. The entry-point name is the plugin
-        ID used by `PLUGINS LOAD` and `enabled_plugins`.
+        Plugin packages register a declaration in
+        the `minisky.plugins` entry-point group. The entry-point name is the
+        plugin ID used by `PLUGINS LOAD` and `enabled_plugins`.
         """
+        # or compatibility callable
         entries: dict[str, metadata.EntryPoint] = {}
         duplicates: set[str] = set()
         for entry_point in metadata.entry_points(group="minisky.plugins"):
@@ -115,7 +184,7 @@ class PluginManager:
             existing = self.plugins.get(plugin_name)
             if existing is not None and existing.loaded:
                 continue
-            self.plugins[plugin_name] = Plugin(entry_point, plugin_name)
+            self.plugins[plugin_name] = _PluginRecord(entry_point, plugin_name)
 
         for plugin_name in duplicates:
             existing = self.plugins.get(plugin_name)
@@ -123,21 +192,7 @@ class PluginManager:
                 self.plugins.pop(plugin_name, None)
 
     def load(self, name: str) -> tuple[bool, str]:
-        """Load a previously discovered plugin by name.
-
-        Imports the module, calls `init_plugin(runtime)`, registers returned
-        `preupdate`, `update`, `reset`, and `hold` hooks as timed functions,
-        registers plugin data with the variable explorer, and appends declared
-        stack commands to the owning runtime's command stack.
-
-        Args:
-            name: Plugin name, case-insensitive, as found during discovery.
-
-        Returns:
-            Tuple of `(success flag, status message)`. Loading fails when the
-            plugin is unknown, already loaded, returns an invalid config, or
-            raises during import or initialization.
-        """
+        """Load a discovered plugin by name."""
         plugin = self.plugins.get(name.upper())
         if plugin is None:
             return False, f"Error loading plugin: plugin {name} not found."
@@ -145,55 +200,38 @@ class PluginManager:
             return False, f"Plugin {plugin.plugin_name} already loaded"
 
         try:
-            # Load and initialize the plugin for this runtime.
-            # TODO(abraham): replace the entry point callable and tuple/dict
-            # protocol with the typed plugin declaration.
             loaded = plugin.entry_point.load()
-            if not callable(loaded):
-                return False, f"Plugin {plugin.plugin_name} entry point is not callable"
-            initializer = cast("Callable[[MiniSky], Any]", loaded)
-            module = importlib.import_module(plugin.entry_point.module)
-            result = initializer(self.runtime)
-            config = result if isinstance(result, dict) else result[0]
-            stack_functions = (
-                result[1] if isinstance(result, (tuple, list)) and len(result) > 1 else None
-            )
-            if not isinstance(config, dict):
-                return False, f"Plugin {plugin.plugin_name} returned an invalid config"
+            if isinstance(loaded, Plugin):
+                spec = self._build(plugin.plugin_name.lower(), loaded)
+                # TODO(abraham): bind declarations from exact mounted instances.
+                # components are retained but intentionally inert in this slice.
+                module = None
+                config: dict[str, Any] = {}
+                state = spec.state
+                state_parent = state
+                commands: tuple[PreparedCommand, ...] = ()
+            else:
+                module, config, state, state_parent, commands = self._load_legacy(
+                    plugin.plugin_name, loaded, plugin.entry_point.module
+                )
+                spec = None
 
-            # NOTE(abraham): init_plugin already ran, so this is not rollback.
-            # we only make our command and variable registry writes predictable.
-            prepared_commands = list(prepare_declared_commands(self.commands, module))
-            if stack_functions:
-                prepared_commands.extend(prepare_commands(self.commands, stack_functions))
-            commands = tuple(prepared_commands)
-            self.commands.validate_commands(commands)
-
-            state = config.get("state")  # ew
-            state_parent = state if state is not None else module
             state_name = plugin.plugin_name.lower()
-            self.variables.validate_data_parent(state_name)
-
-            # TODO(abraham): prepare hooks too after replacing the legacy return
-            # protocol. for now command/state failures happen before hook mutation.
-            interval = max(float(config.get("update_interval", 0.0)), self.simulation.simdt)
-            for hook_name in ("preupdate", "update", "reset", "hold"):
-                callback = config.get(hook_name)
-                if callback is not None:
-                    self.timed.register(
-                        callback,
-                        name=f"{plugin.plugin_name}.{callback.__name__}",
-                        dt=interval,
-                        hook=hook_name,
-                    )
+            if state_parent is not None:
+                self.variables.validate_data_parent(state_name)
+            if spec is None:
+                self._register_legacy_hooks(plugin.plugin_name, config)
 
             self.commands.install_commands(commands)
-            self.variables.register_data_parent(state_parent, state_name)
+            if state_parent is not None:
+                self.variables.register_data_parent(state_parent, state_name)
 
             plugin.loaded = True
             plugin.module = module
             plugin.config = config
             plugin.state = state
+            plugin.state_parent = state_parent
+            plugin.spec = spec
             plugin.commands = commands
             self.loaded_plugins[plugin.plugin_name] = plugin
             return True, f"Successfully loaded plugin {plugin.plugin_name}"
@@ -203,6 +241,72 @@ class PluginManager:
         except Exception as exc:
             traceback.print_exc()
             return False, f"Error loading {plugin.plugin_name}: {exc}"
+
+    def _build(self, key: str, declaration: Plugin) -> PluginSpec:
+        raw = deepcopy(self.settings.plugins.get(key, {}))
+        if declaration.config_class is None:
+            if raw:
+                raise PluginError(f"plugin {key} does not accept configuration")
+            config: object = MappingProxyType({})
+        else:
+            try:
+                config = TypeAdapter(declaration.config_class).validate_python(raw)
+            except Exception as exc:
+                raise PluginError(f"plugin {key} configuration is invalid: {exc}") from exc
+
+        context = PluginContext(config, self.runtime.python_random)
+        spec = declaration.build(context)
+        if not isinstance(spec, PluginSpec):
+            raise PluginError(f"plugin {key} build did not return PluginSpec")
+        return spec
+
+    def _load_legacy(
+        self, plugin_name: str, loaded: object, module_name: str
+    ) -> tuple[
+        ModuleType,
+        dict[str, Any],
+        object | None,
+        object,
+        tuple[PreparedCommand, ...],
+    ]:
+        """Run the old initializer and prepare its MiniSky-owned registrations."""
+        if not callable(loaded):
+            raise PluginError(f"Plugin {plugin_name} entry point is not callable")
+        initializer = cast("Callable[[MiniSky], Any]", loaded)
+        module = importlib.import_module(module_name)
+        result = initializer(self.runtime)
+        config = result if isinstance(result, dict) else result[0]
+        stack_functions = (
+            result[1] if isinstance(result, (tuple, list)) and len(result) > 1 else None
+        )
+        if not isinstance(config, dict):
+            raise PluginError(f"Plugin {plugin_name} returned an invalid config")
+
+        # NOTE(abraham): init_plugin already ran, so this is not rollback.
+        # we only make our command and variable registry writes predictable.
+        prepared_commands = list(prepare_declared_commands(self.commands, module))
+        if stack_functions:
+            prepared_commands.extend(prepare_commands(self.commands, stack_functions))
+        commands = tuple(prepared_commands)
+        self.commands.validate_commands(commands)
+
+        state = config.get("state")  # ew
+        state_parent = state if state is not None else module
+        return module, config, state, state_parent, commands
+
+    def _register_legacy_hooks(self, plugin_name: str, config: dict[str, Any]) -> None:
+        """Keep old hook registration separate from typed declarations."""
+        # TODO(abraham): replace this with mounted hook declarations.
+        interval = max(float(config.get("update_interval", 0.0)), self.simulation.simdt)
+        for hook_name in ("preupdate", "update", "reset", "hold"):
+            callback = config.get(hook_name)
+            if callback is not None:
+                self.timed.register(
+                    callback,
+                    name=f"{plugin_name}.{callback.__name__}",
+                    dt=interval,
+                    hook=hook_name,
+                )
 
     def load_enabled(self) -> None:
         """Load plugins enabled in this runtime's settings."""
@@ -265,10 +369,10 @@ class PluginManager:
             finally:
                 self.commands.remove_commands(plugin.commands)
 
-                state_parent = plugin.state if plugin.state is not None else plugin.module
-                self.variables.unregister_data_parent(
-                    plugin.plugin_name.lower(), expected=state_parent
-                )
+                if plugin.state_parent is not None:
+                    self.variables.unregister_data_parent(
+                        plugin.plugin_name.lower(), expected=plugin.state_parent
+                    )
                 if isinstance(plugin.state, TrafficArrays):
                     plugin.state.detach()
 
@@ -276,6 +380,8 @@ class PluginManager:
                 plugin.module = None
                 plugin.config.clear()
                 plugin.state = None
+                plugin.state_parent = None
+                plugin.spec = None
                 plugin.commands = ()
 
         self.timed.clear()

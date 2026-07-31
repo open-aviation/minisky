@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import importlib
 import warnings
+from dataclasses import dataclass
+from typing import Any
 
 import pytest
+from pydantic import BaseModel
 
-from minisky import MiniSky
-from minisky.plugin.plugin import Plugin
+from minisky import MiniSky, MiniSkySettings
+from minisky import plugin as plugin_api
 from minisky.simulation import Simulation
 from tests._types import RunCommand
 
@@ -40,7 +44,7 @@ class TestDiscovery:
 
 
 @pytest.fixture
-def loaded_example(runtime: MiniSky) -> Plugin:
+def loaded_example(runtime: MiniSky) -> Any:
     """Load the EXAMPLE plugin once into the session runtime."""
     plugin = runtime.plugins.plugins["EXAMPLE"]
     if not plugin.loaded:
@@ -50,26 +54,68 @@ def loaded_example(runtime: MiniSky) -> Plugin:
 
 
 class TestLoading:
-    def test_load_registers_plugin(self, runtime: MiniSky, loaded_example: Plugin) -> None:
+    def test_load_registers_plugin(self, runtime: MiniSky, loaded_example: Any) -> None:
         assert loaded_example.loaded
         assert "EXAMPLE" in runtime.plugins.loaded_plugins
 
-    def test_double_load_rejected(self, runtime: MiniSky, loaded_example: Plugin) -> None:
+    def test_double_load_rejected(self, runtime: MiniSky, loaded_example: Any) -> None:
         ok, message = runtime.plugins.load("EXAMPLE")
         assert not ok
         assert "already loaded" in message.lower()
 
     def test_plugin_stack_command_registered(
-        self, sim: Simulation, loaded_example: Plugin, run_cmd: RunCommand
+        self, sim: Simulation, loaded_example: Any, run_cmd: RunCommand
     ) -> None:
         run_cmd("CRE KL001,A320,52,4,90,FL100,250")
         output = run_cmd("PASSENGERS KL001 150")
         assert "150" in output
 
     def test_plugin_entity_tracks_aircraft(
-        self, sim: Simulation, loaded_example: Plugin, run_cmd: RunCommand
+        self, sim: Simulation, loaded_example: Any, run_cmd: RunCommand
     ) -> None:
         run_cmd("CRE KL001,A320,52,4,90,FL100,250")
         run_cmd("PASSENGERS KL001 42")
         output = run_cmd("PASSENGERS KL001")
         assert "42" in output
+
+
+@dataclass
+class FakeEntryPoint:
+    name: str
+    declaration: object
+    module: str = "unused"
+
+    def load(self) -> object:
+        return self.declaration
+
+
+def test_typed_declaration_builds_validated_runtime_state(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class Config(BaseModel):
+        value: int
+
+    class State:
+        def __init__(self, value: int, random: object) -> None:
+            self.value = value
+            self.random = random
+
+    def build(context: plugin_api.PluginContext[Config]) -> plugin_api.PluginSpec:
+        context.mount(State(context.config.value, context.python_random))
+        return context.finish()
+
+    entry = FakeEntryPoint("typed", plugin_api.Plugin(build=build, config_class=Config))
+    module = importlib.import_module("minisky.plugin.plugin")
+    monkeypatch.setattr(module.metadata, "entry_points", lambda *, group: (entry,))
+
+    runtime = MiniSky(MiniSkySettings(plugins={"typed": {"value": 7}}))
+    try:
+        ok, message = runtime.plugins.load("TYPED")
+        assert ok, message
+        state = runtime.variables.varlist["typed"][0]
+        assert isinstance(state, State)
+        assert state.value == 7
+        assert state.random is runtime.python_random
+        assert runtime.plugins.plugins["TYPED"].spec is not None
+    finally:
+        runtime.close()
