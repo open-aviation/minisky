@@ -111,7 +111,7 @@ class Simulation:
         # Keep track of known clients
         self.clients: set[Any] = set()
 
-    def step(self) -> None:
+    def step(self) -> bool:
         """Perform one simulation timestep.
 
         Call this function instead of update if you don't want to run with a fixed
@@ -133,8 +133,10 @@ class Simulation:
         ):
             self.op()
 
-        # Always update stack
-        self.commands.process()
+        # An awaitable stack command owns this boundary until it completes.
+        if not self.commands.process():
+            self.publish_tick()
+            return False
 
         if self.state == SimulationState.OP:
             self.simt += self.simdt
@@ -153,6 +155,7 @@ class Simulation:
         # Publish after command and state processing in every simulation state.
         # This is a no-op when the runtime has no stream subscribers.
         self.publish_tick()
+        return True
 
     def stop(self) -> None:
         """Stop the simulation (stack STOP/QUIT command).

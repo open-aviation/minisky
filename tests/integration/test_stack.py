@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from io import StringIO
 from pathlib import Path
 
@@ -40,6 +41,58 @@ class TestQueueing:
             next(drain)
         runtime.simulation.step()
         assert runtime.traffic.ntraf == 1
+
+    def test_awaitable_command_pauses_step_and_preserves_order(
+        self, runtime: MiniSky, sim: Simulation
+    ) -> None:
+        async def exercise() -> None:
+            events: list[str] = []
+            release = asyncio.Event()
+
+            async def pause() -> None:
+                events.append("pause:start")
+                await release.wait()
+                events.append("pause:end")
+
+            def queued() -> None:
+                events.append("queued")
+
+            def late() -> None:
+                events.append("late")
+
+            prepared = (
+                runtime.commands.prepare_command(pause, name="TESTPAUSE"),
+                runtime.commands.prepare_command(queued, name="TESTQUEUED"),
+                runtime.commands.prepare_command(late, name="TESTLATE"),
+            )
+            runtime.commands.validate_commands(prepared)
+            runtime.commands.install_commands(prepared)
+            try:
+                runtime.simulation.op()
+                start = runtime.simulation.simt
+                runtime.commands.stack("TESTPAUSE;TESTQUEUED")
+
+                assert not runtime.simulation.step()
+                await asyncio.sleep(0)
+                assert events == ["pause:start"]
+                assert runtime.commands.command_pending
+                assert runtime.simulation.simt == start
+
+                runtime.commands.stack("TESTLATE")
+                assert not runtime.simulation.step()
+                assert runtime.simulation.simt == start
+
+                release.set()
+                await runtime.commands.wait_for_pending()
+                assert runtime.simulation.step()
+                assert events == ["pause:start", "pause:end", "queued", "late"]
+                assert runtime.simulation.simt == start + runtime.simulation.simdt
+            finally:
+                runtime.commands.remove_commands(prepared)
+                runtime.commands.reset()
+                await asyncio.sleep(0)
+
+        asyncio.run(exercise())
 
 
 class TestCommands:
