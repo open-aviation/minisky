@@ -1,9 +1,9 @@
 """Plugin system for MiniSky.
 
-Plugins are Python modules in the configured plugin directory that define an
-`init_plugin(runtime)` function. They are discovered without being imported
-(AST parsing only) and loaded on demand by the runtime-owned
-[`PluginManager`][minisky.plugin.plugin.PluginManager]. Loading registers the
+Plugins are installed Python packages that expose an `init_plugin(runtime)`
+callable through the `minisky.plugins` entry-point group. Entry-point metadata
+is discovered without importing plugin code and loaded on demand by the
+runtime-owned [`PluginManager`][minisky.plugin.plugin.PluginManager]. Loading registers the
 plugin's periodic update functions, lifecycle callbacks, variable-explorer
 state, and stack commands with that runtime only.
 

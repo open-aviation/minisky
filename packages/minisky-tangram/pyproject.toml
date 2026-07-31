@@ -16,3 +16,6 @@ packages = ["src/minisky_tangram"]
 
 [tool.uv.sources]
 minisky = { workspace = true }
+
+[project.entry-points."minisky.plugins"]
+tangram = "minisky_tangram:init_plugin"

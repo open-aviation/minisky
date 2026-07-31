@@ -86,7 +86,7 @@ ownership and stepping the simulation yourself.
 ## Configuration
 
 Runtime settings live in `packages/minisky/settings.toml`, e.g. conflict-detection
-lookahead time and protected-zone sizes, plus the current plugin search directory and startup list:
+lookahead time and protected-zone sizes, plus the plugin startup list and configuration:
 
 ```toml
 asas_dtlookahead = 300
@@ -95,8 +95,9 @@ asas_pzh = 1000
 asas_marh = 1.05
 asas_marv = 1.05
 
-plugin_path = "example_plugins"
 enabled_plugins = []
+
+[plugins]
 ```
 
 ## Running the tests
