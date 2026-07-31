@@ -108,12 +108,24 @@ class Plugin:
     config_class: type | None = None
 
 
-@dataclass(frozen=True, slots=True)
-class _PreparedHook:
+@dataclass(slots=True)
+class _Hook:
     callback: Callable[..., Any]
     phase: HookName
     interval: float
     name: str
+    accepts_dt: bool
+    elapsed: float = 0.0
+    enabled: bool = True
+
+    def due(self, simdt: float) -> tuple[bool, float]:
+        if self.interval <= 0:
+            return True, simdt
+        self.elapsed += simdt
+        if self.elapsed + 1e-12 < self.interval:
+            return False, 0.0
+        elapsed, self.elapsed = self.elapsed, 0.0
+        return True, elapsed
 
 
 @dataclass
@@ -129,7 +141,7 @@ class _PluginRecord:
     state_parent: object | None = None
     spec: PluginSpec | None = None
     commands: tuple[PreparedCommand, ...] = ()
-    hooks: tuple[_PreparedHook, ...] = ()
+    hooks: tuple[_Hook, ...] = ()
     entities: tuple[Entity, ...] = ()
     replacements: tuple[PreparedReplacement, ...] = ()
 
@@ -141,7 +153,6 @@ class PluginManager:
         plugins: Dict mapping upper-case plugin names to all discovered plugin
             records for this runtime.
         loaded_plugins: Dict containing the plugins loaded into this runtime.
-        timed: Runtime-owned timer and lifecycle-hook manager.
     """
 
     def __init__(
@@ -161,7 +172,7 @@ class PluginManager:
         self._get_command_stack = get_command_stack
         self.plugins: dict[str, _PluginRecord] = {}
         self.loaded_plugins: dict[str, _PluginRecord] = {}
-        self.timed = TimedFunctionManager(lambda: self.simulation.simdt)
+        self._legacy_timed = TimedFunctionManager(lambda: self.simulation.simdt)
 
     @property
     def runtime(self) -> MiniSky:
@@ -252,7 +263,6 @@ class PluginManager:
             else:
                 for entity in entities:
                     entity._publish()
-                self._register_typed_hooks(hooks)
 
             self.commands.install_commands(commands)
             if state_parent is not None:
@@ -304,7 +314,7 @@ class PluginManager:
         self, key: str, spec: PluginSpec
     ) -> tuple[
         tuple[PreparedCommand, ...],
-        tuple[_PreparedHook, ...],
+        tuple[_Hook, ...],
         tuple[PreparedReplacement, ...],
         tuple[Entity, ...],
     ]:
@@ -329,22 +339,19 @@ class PluginManager:
             except (TypeError, ValueError) as exc:
                 raise PluginError(str(exc)) from exc
 
-        hooks: list[_PreparedHook] = []
-        hook_names: set[str] = set()
+        hooks: list[_Hook] = []
         for component in spec.components:
             try:
                 for bound in declared_hooks(component):
-                    prepared = self._prepare_hook(
-                        key,
-                        bound.callback,
-                        bound.hook,
-                        bound.declaration.interval,
-                        bound.name,
+                    hooks.append(
+                        self._prepare_hook(
+                            key,
+                            bound.callback,
+                            bound.hook,
+                            bound.declaration.interval,
+                            bound.name,
+                        )
                     )
-                    if prepared.name in hook_names:
-                        raise PluginError(f"plugin {key} repeats hook name: {bound.name}")
-                    hook_names.add(prepared.name)
-                    hooks.append(prepared)
             except (TypeError, ValueError) as exc:
                 raise PluginError(str(exc)) from exc
 
@@ -389,7 +396,7 @@ class PluginManager:
         phase: HookName,
         interval: float,
         name: str,
-    ) -> _PreparedHook:
+    ) -> _Hook:
         if inspect.iscoroutinefunction(callback):
             raise PluginError(f"plugin {key} hook {name} must be synchronous")
         if not math.isfinite(interval) or interval < 0:
@@ -404,18 +411,7 @@ class PluginManager:
         except TypeError as exc:
             raise PluginError(f"plugin {key} hook {name} has incompatible signature") from exc
 
-        # NOTE(abraham): TimedFunctionManager keys hooks by name. include the
-        # phase until typed hooks own their own runtime-local scheduler.
-        return _PreparedHook(callback, phase, interval, f"{key}.{phase}.{name}")
-
-    def _register_typed_hooks(self, hooks: tuple[_PreparedHook, ...]) -> None:
-        for prepared in hooks:
-            self.timed.register(
-                prepared.callback,
-                name=prepared.name,
-                dt=prepared.interval,
-                hook=prepared.phase,
-            )
+        return _Hook(callback, phase, interval, name, accepts_dt)
 
     def _load_legacy(
         self, plugin_name: str, loaded: object, module_name: str
@@ -458,7 +454,7 @@ class PluginManager:
         for hook_name in ("preupdate", "update", "reset", "hold"):
             callback = config.get(hook_name)
             if callback is not None:
-                self.timed.register(
+                self._legacy_timed.register(
                     callback,
                     name=f"{plugin_name}.{callback.__name__}",
                     dt=interval,
@@ -498,19 +494,48 @@ class PluginManager:
 
     def preupdate(self) -> None:
         """Called before traffic update each simulation step."""
-        self.timed.preupdate()
+        self._legacy_timed.preupdate()
+        self._run_hooks("preupdate")
 
     def update(self) -> None:
         """Called after traffic update each simulation step."""
-        self.timed.update()
+        self._legacy_timed.update()
+        self._run_hooks("update")
 
     def reset(self) -> None:
         """Called on simulation reset."""
-        self.timed.reset()
+        self._legacy_timed.reset()
+        for plugin in self.loaded_plugins.values():
+            for hook in plugin.hooks:
+                hook.elapsed = 0.0
+        self._run_hooks("reset")
 
     def hold(self) -> None:
         """Called when simulation pauses."""
-        self.timed.hold()
+        self._legacy_timed.hold()
+        self._run_hooks("hold")
+
+    def _run_hooks(self, phase: HookName) -> None:
+        simdt = self.simulation.simdt
+        for plugin in tuple(self.loaded_plugins.values()):
+            for hook in plugin.hooks:
+                if not hook.enabled or hook.phase != phase:
+                    continue
+                due, elapsed = hook.due(simdt)
+                if not due:
+                    continue
+                try:
+                    if hook.accepts_dt:
+                        hook.callback(dt=elapsed)
+                    else:
+                        hook.callback()
+                except Exception as exc:
+                    hook.enabled = False
+                    traceback.print_exception(exc)
+                    self.console.echo(
+                        f"Plugin {plugin.plugin_name} disabled failing {phase} hook "
+                        f"{hook.name}: {exc}"
+                    )
 
     def shutdown(self) -> None:
         """Run shutdown callbacks and release all runtime-owned plugin state."""
@@ -547,7 +572,7 @@ class PluginManager:
                 plugin.entities = ()
                 plugin.replacements = ()
 
-        self.timed.clear()
+        self._legacy_timed.clear()
         self.loaded_plugins.clear()
         if errors:
             raise ExceptionGroup("Plugin shutdown failed", errors)
