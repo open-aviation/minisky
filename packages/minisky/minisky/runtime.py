@@ -1,4 +1,4 @@
-"""Explicit ownership root for one MiniSky runtime."""
+"""Explicit ownership root for a MiniSky runtime."""
 
 from __future__ import annotations
 
@@ -17,10 +17,13 @@ from minisky.streaming import StreamHub, build_snapshot
 from minisky.tools.areafilter import AreaFilter
 from minisky.tools.navdata import Navdatabase
 from minisky.traffic import Traffic
+from minisky.traffic.asas import MVP, ConflictDetection, ConflictResolution
+from minisky.traffic.autopilot import Autopilot
+from minisky.traffic.performance.perfoap import OpenAP
 
 
 class MiniSky:
-    """Own the primary objects that make up one simulator runtime."""
+    """Own the primary objects that make up a simulator runtime."""
 
     def __init__(self, settings: MiniSkySettings, scenario: str | None = None) -> None:
         self.settings = settings
@@ -44,7 +47,12 @@ class MiniSky:
             get_command_registry=lambda: self.commands.cmddict,
             select_implementation=lambda base, impl: self.replaceables.select(base, impl),
         )
-        self.replaceables = ReplaceableManager(self.traffic, lambda: self.commands.cmddict)
+        self.replaceables = ReplaceableManager(
+            self.traffic,
+            lambda: self.commands.cmddict,
+            bases=(Autopilot, ConflictDetection, ConflictResolution, OpenAP),
+            core=(MVP,),
+        )
         self.plugins = PluginManager(
             settings=settings,
             console=self.console,
@@ -140,7 +148,7 @@ class MiniSky:
         if errors:
             raise ExceptionGroup(message, errors)
 
-    # TODO(abraham): remove sync close when teardown has one async ownership path
+    # TODO(abraham): remove sync close when teardown has an async ownership path
     def close(self) -> None:
         """Release synchronous resources and request runner-task cancellation."""
         errors = self._close_resources()

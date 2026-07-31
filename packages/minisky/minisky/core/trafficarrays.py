@@ -1,8 +1,8 @@
 """TrafficArrays: Base class for per-aircraft data arrays.
 
 Classes that derive from TrafficArrays get automated create, delete, and reset
-functionality for all registered child arrays. All subclasses are automatically
-replaceable via SELECTIMPL - see minisky/plugin/ for usage examples.
+functionality for all registered child arrays. Replaceable implementations are
+registered explicitly in a runtime before `SELECTIMPL` can use them.
 
 MiniSky stores aircraft state as parallel numpy arrays and lists, where
 index i in every array belongs to the same aircraft. Per-aircraft
@@ -22,120 +22,135 @@ in the simulation grows and shrinks in lockstep.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
+from dataclasses import dataclass
 from types import MappingProxyType
 from typing import TYPE_CHECKING
 
 import numpy as np
 
+from minisky.identifiers import normalize_public_name
+
 if TYPE_CHECKING:
     from minisky.stack import Command
 
 
-defaults = MappingProxyType(
-    {"float": 0.0, "int": 0, "uint": 0, "bool": False, "S": "", "str": ""}
-)
+defaults = MappingProxyType({"float": 0.0, "int": 0, "uint": 0, "bool": False, "S": "", "str": ""})
+
+
+@dataclass(frozen=True, slots=True)
+class PreparedReplacement:
+    """A validated runtime-local replacement entry."""
+
+    base: type[TrafficArrays]
+    name: str
+    implementation: type[TrafficArrays]
 
 
 class ReplaceableManager:
-    """Own replaceable implementation choices for one traffic tree.
-
-    Replaceable base classes are discovered from the actual objects attached
-    to this manager's traffic tree. Alternative implementations are discovered
-    from each base class's Python subclass hierarchy. No process-wide registry
-    or selected implementation is maintained.
-
-    Attributes:
-        traffic: Root traffic object whose replaceable child instances are
-            inspected and replaced.
-        _get_command_registry: Lazy callback returning the owning runtime's
-            command registry so bound callbacks can be rebound after a
-            replacement.
-    """
+    """Own replacement implementations visible to a runtime."""
 
     def __init__(
         self,
         traffic: TrafficArrays,
         get_command_registry: Callable[[], Mapping[str, Command]],
+        *,
+        bases: Iterable[type[TrafficArrays]],
+        core: Iterable[type[TrafficArrays]] = (),
     ) -> None:
         self.traffic = traffic
         self._get_command_registry = get_command_registry
+        self._bases = {base.__name__.upper(): base for base in bases}
+        self._implementations: dict[type[TrafficArrays], dict[str, type[TrafficArrays]]] = {
+            base: {base.__name__.upper(): base} for base in self._bases.values()
+        }
+        for implementation in core:
+            prepared = self.prepare(implementation)
+            self._implementations[prepared.base][prepared.name] = implementation
 
     def _instance(self, base: type[TrafficArrays]) -> TrafficArrays | None:
-        """Return the instance of `base` attached directly to this traffic object."""
         return next(
             (value for value in self.traffic.__dict__.values() if isinstance(value, base)),
             None,
         )
 
-    def _available(self) -> dict[str, type[TrafficArrays]]:
-        """Return replaceable base classes represented on this traffic tree.
+    def prepare(
+        self,
+        implementation: type[TrafficArrays],
+        *,
+        base: type[TrafficArrays] | None = None,
+        name: str = "",
+    ) -> PreparedReplacement:
+        if not isinstance(implementation, type) or not issubclass(implementation, TrafficArrays):
+            raise TypeError("replacement implementation must inherit TrafficArrays")
+        root = base or implementation.replaceable_base()
+        if self._bases.get(root.__name__.upper()) is not root:
+            raise ValueError(f"unsupported replacement base: {root.__name__}")
+        if not issubclass(implementation, root):
+            raise TypeError(f"replacement {implementation.__name__} must inherit {root.__name__}")
+        public_name = normalize_public_name(name or implementation.__name__)
+        if public_name in ("BASE", root.__name__.upper()):
+            raise ValueError(f"replacement name is reserved: {public_name}")
+        return PreparedReplacement(root, public_name, implementation)
 
-        The runtime's actual component instances are the source of truth. This
-        avoids a mutable import-time catalog while retaining load-order
-        independence for plugin subclasses.
-        """
-        available: dict[str, type[TrafficArrays]] = {}
-        for value in self.traffic.__dict__.values():
-            if isinstance(value, TrafficArrays):
-                base = type(value).replaceable_base()
-                available[base.__name__.upper()] = base
-        return available
+    def validate(self, replacements: tuple[PreparedReplacement, ...]) -> None:
+        seen: set[tuple[type[TrafficArrays], str]] = set()
+        for replacement in replacements:
+            key = (replacement.base, replacement.name)
+            if key in seen:
+                raise ValueError(f"replacement repeated: {replacement.name}")
+            if replacement.name in self._implementations[replacement.base]:
+                raise ValueError(f"replacement already registered: {replacement.name}")
+            seen.add(key)
+
+    def install(self, replacements: tuple[PreparedReplacement, ...]) -> None:
+        for replacement in replacements:
+            self._implementations[replacement.base][replacement.name] = replacement.implementation
+
+    def remove(self, replacements: tuple[PreparedReplacement, ...]) -> None:
+        registry = self._get_command_registry()
+        for replacement in reversed(replacements):
+            current = self._instance(replacement.base)
+            if current is not None and type(current) is replacement.implementation:
+                # NOTE(abraham): replacements are synchronous strategies.
+                _replace_instance_on_traf(
+                    replacement.base, replacement.base, self.traffic, registry
+                )
+            implementations = self._implementations[replacement.base]
+            if implementations.get(replacement.name) is replacement.implementation:
+                del implementations[replacement.name]
 
     def select(self, basename: str = "", implname: str = "") -> tuple[bool, str]:
-        """Select an implementation for a replaceable class.
-
-        Arguments:
-        - basename: Name of the replaceable base class, for example
-          `AUTOPILOT`.
-        - implname: Name of the implementation to select, for example
-          `CUSTOMAUTOPILOT`.
-
-        Returns:
-            A `(success, message)` tuple. With no arguments, the message lists
-            the replaceable classes available on this runtime. With only a
-            base name, it reports the current and available implementations.
-        """
-        available = self._available()
         if not basename:
-            return True, "Replaceable classes in MiniSky:\n" + ", ".join(sorted(available))
+            return True, "Replaceable classes in MiniSky:\n" + ", ".join(sorted(self._bases))
 
-        base = available.get(basename.upper())
+        base = self._bases.get(basename.upper())
         if base is None:
             return False, f"Replaceable {basename} not found."
-
-        impls = base.derived()
+        implementations = self._implementations[base]
         current_instance = self._instance(base)
         current = type(current_instance) if current_instance is not None else base
         if not implname:
             return True, (
                 f"Current implementation for {basename}: {current.__name__}\n"
-                f"Available implementations: {', '.join(sorted(impls))}"
+                f"Available implementations: {', '.join(sorted(implementations))}"
             )
 
-        impl = impls.get(base.__name__.upper() if implname.upper() == "BASE" else implname.upper())
-        if impl is None:
+        requested = base.__name__.upper() if implname.upper() == "BASE" else implname.upper()
+        implementation = implementations.get(requested)
+        if implementation is None:
             return False, f"Implementation {implname} not found for {basename}."
-
-        if current is not impl:
+        if current is not implementation:
             replaced = _replace_instance_on_traf(
-                base, impl, self.traffic, self._get_command_registry()
+                base, implementation, self.traffic, self._get_command_registry()
             )
             if not replaced:
                 return False, f"No {basename} instance exists on this traffic tree."
-
         return True, f"Selected {implname} for {basename}"
 
     def reset(self) -> None:
-        """Reset all replaceables to their base implementation.
-
-        Every replaceable component currently attached to this runtime's
-        traffic object is reinstantiated with its base implementation. Existing
-        per-aircraft arrays are preserved and stack commands bound to the old
-        object are rebound to the replacement.
-        """
         registry = self._get_command_registry()
-        for base in self._available().values():
+        for base in self._bases.values():
             current = self._instance(base)
             if current is not None and type(current) is not base:
                 _replace_instance_on_traf(base, base, self.traffic, registry)
@@ -147,51 +162,44 @@ def _replace_instance_on_traf(
     traffic: TrafficArrays,
     cmddict: Mapping[str, Command],
 ) -> bool:
-    """Replace an existing instance of `base` on traffic with `impl`.
-
-    This ensures `SELECTIMPL` takes effect immediately, not just for future
-    instantiations. It returns `True` when a matching component was found and
-    replaced, and `False` otherwise.
-    """
-    # Find the attribute on traffic that contains an instance of the base class.
+    """Replace an attached implementation while preserving shared state."""
     for attr_name, attr_value in traffic.__dict__.items():
         if isinstance(attr_value, base):
-            # Create a new instance with the old component's runtime dependencies.
             new_instance = attr_value.new_implementation(impl)
+            ntraf = int(getattr(traffic, "ntraf", 0))
+            if ntraf:
+                new_instance.create(ntraf)
+                new_instance.create_children(ntraf)
             if attr_value._parent is not None:
                 new_instance.reparent(attr_value._parent)
 
-            # Copy any existing per-aircraft array and list data to the replacement.
-            for arr_var in getattr(attr_value, "_ArrVars", []):
+            for arr_var in attr_value._ArrVars:
                 if hasattr(new_instance, arr_var):
                     setattr(new_instance, arr_var, getattr(attr_value, arr_var))
-            for lst_var in getattr(attr_value, "_LstVars", []):
+            for lst_var in attr_value._LstVars:
                 if hasattr(new_instance, lst_var):
                     setattr(new_instance, lst_var, getattr(attr_value, lst_var))
 
-            # Replace the traffic attribute and detach the old tree node.
             setattr(traffic, attr_name, new_instance)
-            if attr_value._parent is not None:
-                attr_value._parent._children.remove(attr_value)
-
-            # Commands bound to the old instance would otherwise mutate an orphan.
+            attr_value.detach()
             _rebind_stack_commands(attr_value, new_instance, cmddict)
             return True
     return False
 
 
+# TODO(abraham): replace callback rebinding with stable component slots.
 def _rebind_stack_commands(
     old_instance: TrafficArrays,
     new_instance: TrafficArrays,
     cmddict: Mapping[str, Command],
 ) -> None:
-    """Rebind stack command callbacks from `old_instance` to `new_instance`."""
+    """Rebind stack commands that still target the replaced instance."""
     import inspect
 
-    for cmdobj in set(cmddict.values()):
-        callback = cmdobj.callback
+    for command in set(cmddict.values()):
+        callback = command.callback
         if inspect.ismethod(callback) and callback.__self__ is old_instance:
-            cmdobj.callback = getattr(new_instance, callback.__func__.__name__, callback)
+            command.callback = getattr(new_instance, callback.__func__.__name__, callback)
 
 
 class RegisterElementParameters:
@@ -252,16 +260,6 @@ class TrafficArrays:
             if TrafficArrays in candidate.__bases__:
                 return candidate
         return cls
-
-    # TODO(abraham): replace process-wide subclass discovery with plugin declarations
-    # or ideally remove implementation inheritance altogether
-    @classmethod
-    def derived(cls):
-        """Recursively find all derived classes."""
-        ret = {cls.__name__.upper(): cls}
-        for sub in cls.__subclasses__():
-            ret.update(sub.derived())
-        return ret
 
     def __init__(self, parent: TrafficArrays | None = None) -> None:
         """Create a TrafficArrays node, optionally attached to `parent`.

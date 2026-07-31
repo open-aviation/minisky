@@ -18,4 +18,4 @@ packages = ["src/minisky_example_customautopilot"]
 minisky = { workspace = true }
 
 [project.entry-points."minisky.plugins"]
-customautopilot = "minisky_example_customautopilot:init_plugin"
+customautopilot = "minisky_example_customautopilot:plugin"

@@ -153,14 +153,27 @@ with MiniSky(settings) as runtime:
 
 ## Replaceable implementations
 
-A plugin can declare a subclass of a replaceable traffic component, such as
-[`Autopilot`][minisky.traffic.autopilot.Autopilot]. Python tracks the subclass declaration process-wide, while the selected instance
-belongs to each runtime:
+Decorate a subclass of a supported traffic component with
+[`@plugin.replacement`][minisky.plugin.plugin_decorators.replacement], then pass
+the class explicitly to [`PluginContext.finish`][minisky.plugin.plugin.PluginContext.finish]:
+
+```python
+@plugin.replacement
+class CustomAutoPilot(Autopilot):
+    ...
+
+def build(context):
+    return context.finish(replacements=(CustomAutoPilot,))
+```
+
+Loading the plugin adds that implementation only to the owning runtime. Select
+it from Python or with the `SELECTIMPL` stack command:
 
 ```python
 runtime.replaceables.select("AUTOPILOT", "CUSTOMAUTOPILOT")
 ```
 
-The `SELECTIMPL` stack command calls the same runtime-owned manager. Resetting a
-simulation restores base implementations only on that runtime's traffic tree.
-See `packages/minisky-example-customautopilot/src/minisky_example_customautopilot/__init__.py` for a complete example.
+Resetting the simulation restores base implementations. Plugin shutdown removes
+its replacement entries from that runtime. See
+`packages/minisky-example-customautopilot/src/minisky_example_customautopilot/__init__.py`
+for a complete example.

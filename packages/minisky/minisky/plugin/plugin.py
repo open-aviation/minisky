@@ -8,7 +8,7 @@ import importlib
 import inspect
 import math
 import traceback
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from copy import deepcopy
 from dataclasses import dataclass, field
 from importlib import metadata
@@ -18,13 +18,14 @@ from typing import TYPE_CHECKING, Any, Generic, TypeVar, cast
 
 from pydantic import TypeAdapter
 
-from minisky.core.trafficarrays import TrafficArrays
+from minisky.core.trafficarrays import PreparedReplacement, TrafficArrays
 from minisky.identifiers import validate_plugin_id
 from minisky.plugin.entity import Entity
 from minisky.plugin.plugin_decorators import (
     HookName,
     declared_commands,
     declared_hooks,
+    declared_replacement,
     prepare_commands,
     prepare_declared_commands,
 )
@@ -48,14 +49,15 @@ class PluginError(RuntimeError):
 
 @dataclass(frozen=True, slots=True)
 class PluginSpec:
-    """Components and state built for one runtime."""
+    """Components and state built for aruntime."""
 
     components: tuple[object, ...]
     state: object | None = None
+    replacements: tuple[type[TrafficArrays], ...] = ()
 
 
 class PluginContext(Generic[ConfigT]):
-    """Build fresh plugin components for one runtime."""
+    """Build fresh plugin components for aruntime."""
 
     def __init__(self, config: ConfigT, python_random: Random) -> None:
         self.config = config
@@ -65,7 +67,7 @@ class PluginContext(Generic[ConfigT]):
         self._finished = False
 
     def mount(self, component: ComponentT, *, expose: bool = True) -> ComponentT:
-        """Add one component and optionally expose it through variable lookup."""
+        """Add a component and optionally expose it through variable lookup."""
         if self._finished:
             raise RuntimeError("plugin context has already been finished")
         if component is None:
@@ -73,18 +75,21 @@ class PluginContext(Generic[ConfigT]):
         if any(existing is component for existing in self._components):
             raise PluginError("plugin component mounted more than once")
         if expose and self._state is not None:
-            raise PluginError("a plugin may expose only one state component")
+            raise PluginError("a plugin may expose only a state component")
         self._components.append(component)
         if expose:
             self._state = component
         return component
 
-    def finish(self) -> PluginSpec:
+    def finish(self, *, replacements: Iterable[type[TrafficArrays]] = ()) -> PluginSpec:
         """Finish this context and return its immutable specification."""
         if self._finished:
             raise RuntimeError("plugin context has already been finished")
         self._finished = True
-        return PluginSpec(tuple(self._components), self._state)
+        implementations = tuple(replacements)
+        if not all(isinstance(implementation, type) for implementation in implementations):
+            raise TypeError("plugin replacements must be classes")
+        return PluginSpec(tuple(self._components), self._state, implementations)
 
 
 PluginBuild = Callable[[PluginContext[Any]], PluginSpec]
@@ -126,6 +131,7 @@ class _PluginRecord:
     commands: tuple[PreparedCommand, ...] = ()
     hooks: tuple[_PreparedHook, ...] = ()
     entities: tuple[Entity, ...] = ()
+    replacements: tuple[PreparedReplacement, ...] = ()
 
 
 class PluginManager:
@@ -219,12 +225,13 @@ class PluginManager:
             return False, f"Plugin {plugin.plugin_name} already loaded"
 
         entities: tuple[Entity, ...] = ()
+        replacements: tuple[PreparedReplacement, ...] = ()
         try:
             loaded = plugin.entry_point.load()
             if isinstance(loaded, Plugin):
                 key = plugin.plugin_name.lower()
                 spec = self._build(key, loaded)
-                commands, hooks, entities = self._prepare_typed(key, spec)
+                commands, hooks, replacements, entities = self._prepare_typed(key, spec)
                 module = None
                 config: dict[str, Any] = {}
                 state = spec.state
@@ -250,6 +257,7 @@ class PluginManager:
             self.commands.install_commands(commands)
             if state_parent is not None:
                 self.variables.register_data_parent(state_parent, state_name)
+            self.runtime.replaceables.install(replacements)
 
             plugin.loaded = True
             plugin.module = module
@@ -260,6 +268,7 @@ class PluginManager:
             plugin.commands = commands
             plugin.hooks = hooks
             plugin.entities = entities
+            plugin.replacements = replacements
             self.loaded_plugins[plugin.plugin_name] = plugin
             return True, f"Successfully loaded plugin {plugin.plugin_name}"
 
@@ -296,6 +305,7 @@ class PluginManager:
     ) -> tuple[
         tuple[PreparedCommand, ...],
         tuple[_PreparedHook, ...],
+        tuple[PreparedReplacement, ...],
         tuple[Entity, ...],
     ]:
         commands: list[PreparedCommand] = []
@@ -341,6 +351,22 @@ class PluginManager:
         command_tuple = tuple(commands)
         self.commands.validate_commands(command_tuple)
 
+        replacements: list[PreparedReplacement] = []
+        for implementation in spec.replacements:
+            declaration = declared_replacement(implementation)
+            try:
+                replacements.append(
+                    self.runtime.replaceables.prepare(
+                        implementation,
+                        base=declaration.base,
+                        name=declaration.name,
+                    )
+                )
+            except (TypeError, ValueError) as exc:
+                raise PluginError(str(exc)) from exc
+        replacement_tuple = tuple(replacements)
+        self.runtime.replaceables.validate(replacement_tuple)
+
         entities = tuple(
             component for component in spec.components if isinstance(component, Entity)
         )
@@ -354,7 +380,7 @@ class PluginManager:
                 entity._abort()
             raise
 
-        return command_tuple, tuple(hooks), entities
+        return command_tuple, tuple(hooks), replacement_tuple, entities
 
     @staticmethod
     def _prepare_hook(
@@ -489,7 +515,7 @@ class PluginManager:
     def shutdown(self) -> None:
         """Run shutdown callbacks and release all runtime-owned plugin state."""
         errors: list[Exception] = []
-        # TODO(abraham): own plugin tasks and handles through one async exit stack.
+        # TODO(abraham): own plugin tasks and handles through a async exit stack.
         for plugin in reversed(tuple(self.loaded_plugins.values())):
             try:
                 callback = plugin.config.get("shutdown")
@@ -506,6 +532,7 @@ class PluginManager:
                     )
                 if plugin.spec is None and isinstance(plugin.state, TrafficArrays):
                     plugin.state.detach()
+                self.runtime.replaceables.remove(plugin.replacements)
                 for entity in reversed(plugin.entities):
                     entity._retire()
 
@@ -518,6 +545,7 @@ class PluginManager:
                 plugin.commands = ()
                 plugin.hooks = ()
                 plugin.entities = ()
+                plugin.replacements = ()
 
         self.timed.clear()
         self.loaded_plugins.clear()

@@ -4,17 +4,22 @@ from __future__ import annotations
 
 import importlib
 import warnings
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
+import numpy as np
 import pytest
 from pydantic import BaseModel
 
 from minisky import MiniSky, MiniSkySettings
 from minisky import plugin as plugin_api
+from minisky.core.trafficarrays import PreparedReplacement
 from minisky.plugin.plugin import _PreparedHook
 from minisky.simulation import Simulation
 from minisky.stack import Command, PreparedCommand
+from minisky.traffic import Traffic
+from minisky.traffic.autopilot import Autopilot
 from tests._types import RunCommand
 
 
@@ -280,5 +285,62 @@ def test_multiple_hook_declarations_keep_independent_timing(
         runtime.plugins.preupdate()
         runtime.plugins.update()
         assert events == [("pulse", 1.0), ("pulse", 1.0), ("pulse", 2.0)]
+    finally:
+        runtime.close()
+
+
+def test_replacement_visibility_is_runtime_local_and_removed_on_shutdown() -> None:
+    from minisky_example_customautopilot import CustomAutoPilot
+
+    runtime_a = MiniSky(MiniSkySettings())
+    runtime_b = MiniSky(MiniSkySettings())
+    try:
+        assert runtime_a.replaceables.select("AUTOPILOT", "CUSTOMAUTOPILOT")[0] is False
+        assert runtime_b.replaceables.select("AUTOPILOT", "CUSTOMAUTOPILOT")[0] is False
+
+        ok, message = runtime_a.plugins.load("CUSTOMAUTOPILOT")
+        assert ok, message
+        assert runtime_a.plugins.plugins["CUSTOMAUTOPILOT"].replacements == (
+            PreparedReplacement(Autopilot, "CUSTOMAUTOPILOT", CustomAutoPilot),
+        )
+
+        assert runtime_a.replaceables.select("AUTOPILOT", "CUSTOMAUTOPILOT")[0] is True
+        assert type(runtime_a.traffic.ap) is CustomAutoPilot
+        assert runtime_b.replaceables.select("AUTOPILOT", "CUSTOMAUTOPILOT")[0] is False
+
+        runtime_a.plugins.shutdown()
+        assert (
+            type(runtime_a.traffic.ap),
+            runtime_a.replaceables.select("AUTOPILOT", "CUSTOMAUTOPILOT")[0],
+        ) == (Autopilot, False)
+    finally:
+        runtime_a.close()
+        runtime_b.close()
+
+
+def test_replacement_arrays_size_existing_traffic(monkeypatch: pytest.MonkeyPatch) -> None:
+    @plugin_api.replacement
+    class ArrayAutopilot(Autopilot):
+        def __init__(self, traffic: Traffic, get_simulation: Callable[[], Simulation]) -> None:
+            super().__init__(traffic, get_simulation)
+            with self.settrafarrays():
+                self.plugin_value = np.array([])
+
+    def build(context: plugin_api.PluginContext[object]) -> plugin_api.PluginSpec:
+        return context.finish(replacements=(ArrayAutopilot,))
+
+    install(monkeypatch, FakeEntryPoint("arrays", plugin_api.Plugin(build=build)))
+    runtime = MiniSky(MiniSkySettings())
+    try:
+        runtime.traffic.cre("KL001", alt=3000.0, spd=150.0)
+        ok, message = runtime.plugins.load("ARRAYS")
+        assert ok, message
+        assert runtime.plugins.plugins["ARRAYS"].replacements == (
+            PreparedReplacement(Autopilot, "ARRAYAUTOPILOT", ArrayAutopilot),
+        )
+
+        assert runtime.replaceables.select("AUTOPILOT", "ARRAYAUTOPILOT")[0] is True
+        selected = cast(ArrayAutopilot, runtime.traffic.ap)
+        assert (type(selected), selected.plugin_value.tolist()) == (ArrayAutopilot, [0.0])
     finally:
         runtime.close()
