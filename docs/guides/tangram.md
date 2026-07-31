@@ -61,8 +61,8 @@ In `settings.toml`:
 ```toml
 enabled_plugins = ["TANGRAM"]
 
-# [tangram] is optional; uncomment to override the defaults shown here.
-# [tangram]
+# [plugins.tangram] is optional; uncomment it to override the defaults.
+# [plugins.tangram]
 # redis_url = "redis://127.0.0.1:6379"
 # channel = "minisky"
 # max_hz = 5
@@ -91,7 +91,7 @@ redis-cli publish "from:minisky:command" '{"command": "HOLD"}'
 redis-cli publish "from:minisky:command" '{"command": "OP"}'
 ```
 
-Expect `to:minisky:new-data` snapshots (~`[tangram].max_hz`/s while running,
+Expect `to:minisky:new-data` snapshots (~`plugins.tangram.max_hz`/s while running,
 1/s heartbeat otherwise) reacting to the commands, plus `to:minisky:console`
 lines. If this works, the simulator side is done; everything after this point
 is tangram-side only.
@@ -199,7 +199,7 @@ Work upstream-to-downstream:
 3. **Channel joins succeed but the widget says "Simulator offline"** — no
    snapshot or heartbeat arrived for 5 seconds. Almost always a Redis URL
    mismatch: `tangram.toml`'s `redis_url` and `settings.toml`'s
-   `[tangram].redis_url` must point at the *same* Redis instance (mind
+   `plugins.tangram.redis_url` must point at the *same* Redis instance (mind
    host-vs-container addressing: a dockerised tangram reaches a compose
    Redis at `redis://redis:6379`, a host process at `redis://127.0.0.1:6379`).
    A channel-name mismatch between the two sides has the same symptom.
@@ -216,7 +216,7 @@ happens in the MiniSky plugin, keeping `minisky.streaming` consumer-agnostic.
   groundspeed, tas, ias, vertical_rate, track, inconf, timestamp}],
   "count": n, "siminfo": {simt, simdt, simutc, speed, ntraf, state,
   state_name, scenname, nconf_cur, nlos_cur}}`.
-  Published on every simulation step (wall-clock capped at `[tangram].max_hz`).
+  Published on every simulation step (wall-clock capped at `plugins.tangram.max_hz`).
   Whenever the simulation is not advancing — including a freshly started
   simulator with no scenario — a heartbeat with refreshed `siminfo` (and the
   last aircraft list) is republished every second, so the frontend always
