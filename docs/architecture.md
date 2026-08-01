@@ -15,7 +15,7 @@ Constructing `MiniSky` creates an independent object graph:
 | [`runtime.console`][minisky.simulation.console.ConsoleIO] | [`ConsoleIO`][minisky.simulation.console.ConsoleIO] | Buffered text output |
 | [`runtime.navigation`][minisky.tools.navdata.Navdatabase] | [`Navdatabase`][minisky.tools.navdata.Navdatabase] | Waypoints, airports, and airways |
 | [`runtime.commands`][minisky.stack.CommandStack] | [`CommandStack`][minisky.stack.CommandStack] | Command registry, queue, and scenario state |
-| [`runtime.plugins`][minisky.plugin.plugin.PluginManager] | [`PluginManager`][minisky.plugin.plugin.PluginManager] | Plugin records, hooks, timers, and state |
+| [`runtime.plugins`][minisky.plugin.plugin.PluginManager] | [`PluginManager`][minisky.plugin.plugin.PluginManager] | Plugin declarations, hooks, and lifespans |
 | `runtime.areas` | [`AreaFilter`][minisky.tools.areafilter.AreaFilter] | Named geographic areas |
 | `runtime.variables` | [`VariableExplorer`][minisky.core.varexplorer.VariableExplorer] | Runtime data inspection |
 | `runtime.streaming` | `StreamHub` | Rate-capped snapshot fan-out |
@@ -46,11 +46,11 @@ call to [`Simulation.step`][minisky.simulation.simulation.Simulation.step] does,
    ([`CommandStack.process`][minisky.stack.CommandStack.process]).
 3. [`runtime.simulation.simt`][minisky.simulation.simulation.Simulation] and the simulated UTC clock move forward by `simdt`
    (only in the `OP` state).
-4. Timed plugin functions registered with the `preupdate` hook.
+4. Plugin callbacks registered for the `preupdate` phase.
 5. [`Traffic.update`][minisky.traffic.traffic.Traffic.update]
    integrates aircraft state: autopilot/FMS logic, conflict detection and resolution,
    aircraft performance limits, wind, and finally position integration.
-6. Timed plugin functions registered with the `update` hook.
+6. Plugin callbacks registered for the `update` phase.
 7. The runtime-owned hub publishes when subscribers are present.
 
 The simulation state machine uses [`SimulationState`][minisky.simulation.simulation.SimulationState]:
