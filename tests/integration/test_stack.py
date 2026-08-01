@@ -7,9 +7,9 @@ from io import StringIO
 from pathlib import Path
 
 import pytest
-
 from minisky import MiniSky
 from minisky.simulation import Simulation
+
 from tests._types import RunCommand
 
 FT = 0.3048

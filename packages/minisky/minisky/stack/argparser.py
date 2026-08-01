@@ -196,8 +196,6 @@ class Parameter:
 class ArgumentError(Exception):
     """This error is raised when stack argument parsing fails."""
 
-    pass
-
 
 class Parser:
     """Base implementation of argument parsers

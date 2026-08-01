@@ -13,7 +13,6 @@ from collections.abc import Iterator
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-
 from minisky import MiniSky, MiniSkyConfig
 
 pytestmark = pytest.mark.api

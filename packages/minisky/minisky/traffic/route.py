@@ -532,7 +532,6 @@ class Route:
             self.traffic.stack_command(cmdline)
             # debug
             # stack.stack("ECHO "+self.acid+" AT "+self.wpname[self.iactwp]+" command issued:"+cmdline)
-        return
 
     def insertcalcwp(self, i: int, name: str) -> None:
         """Insert an empty calculated waypoint (T/C, T/D) at location i."""
@@ -599,7 +598,7 @@ class Route:
         # Calculate lateral leg data
         # LNAV: Calculate leg distances and directions
 
-        for i in range(0, n_wpt - 1):
+        for i in range(n_wpt - 1):
             qdr, dist = geo.qdrdist(
                 self.wplat[i], self.wplon[i], self.wplat[i + 1], self.wplon[i + 1]
             )
@@ -757,7 +756,7 @@ class Route:
         """
         # get qdr for next leg
         if -1 < self.iactwp < len(self.wpname) - 1:
-            nextqdr, dist = geo.qdrdist(
+            nextqdr, _dist = geo.qdrdist(
                 self.wplat[self.iactwp],
                 self.wplon[self.iactwp],
                 self.wplat[self.iactwp + 1],
@@ -925,7 +924,7 @@ def addwpt(traffic: Traffic, ac: str | int, *args) -> bool | tuple:  # args: all
                     acrte.turnrad = -999
                 else:
                     acrte.turnrad = float(args[1] / ft * nm)  # arg was originally parsed as wpalt
-            except Exception:
+            except (TypeError, ValueError):
                 return False, "Error in processing value of turn radius"
 
             # Switch flyturn automatically when this is set
@@ -942,7 +941,7 @@ def addwpt(traffic: Traffic, ac: str | int, *args) -> bool | tuple:  # args: all
                     acrte.turnspd = (
                         args[1] * kts / ft
                     )  # [m/s] Arg was wpalt Keep it as IAS/CAS orig in kts, now in m/s
-            except Exception:
+            except (TypeError, ValueError):
                 return False, "Error in processing value of turn speed"
 
             # Switch flyturn automatically when this is set
@@ -955,7 +954,7 @@ def addwpt(traffic: Traffic, ac: str | int, *args) -> bool | tuple:  # args: all
                     acrte.turnhdgr = -999
                 else:
                     acrte.turnhdgr = args[1] / ft  # [deg/s] turn rate
-            except Exception:
+            except (TypeError, ValueError):
                 return False, "Error in processing value of turn heading rate"
 
             # Switch flyturn automatically when this is set
@@ -1073,7 +1072,7 @@ def addwpt(traffic: Traffic, ac: str | int, *args) -> bool | tuple:  # args: all
             # Try to get it from the database
             try:
                 rwyhdg = traffic.navigation.rwythresholds[aptid][rwyid][2]
-            except Exception:
+            except (IndexError, KeyError, TypeError):
                 rwydir = rwyid.replace("L", "").replace("R", "").replace("C", "")
                 try:
                     rwyhdg = float(rwydir) * 10.0
@@ -1264,11 +1263,11 @@ def at_wpt(traffic: Traffic, acidx: int, atwp: Wpt, *args) -> bool | tuple:
                     txt += "-----"
 
                 elif acrte.wpalt[wpidx] > 4500 * ft:
-                    fl = int(round(acrte.wpalt[wpidx] / (100.0 * ft)))
+                    fl = round(acrte.wpalt[wpidx] / (100.0 * ft))
                     txt += "FL" + str(fl)
 
                 else:
-                    txt += str(int(round(acrte.wpalt[wpidx] / ft)))
+                    txt += str(round(acrte.wpalt[wpidx] / ft))
 
                 if swspd:
                     txt += "/"
@@ -1278,7 +1277,7 @@ def at_wpt(traffic: Traffic, acidx: int, atwp: Wpt, *args) -> bool | tuple:
                 if acrte.wpspd[wpidx] < 0:
                     txt += "---"
                 else:
-                    txt += str(int(round(acrte.wpspd[wpidx] / kts)))
+                    txt += str(round(acrte.wpspd[wpidx] / kts))
 
             # Type
             if swalt and swspd:
@@ -1382,7 +1381,7 @@ def at_wpt(traffic: Traffic, acidx: int, atwp: Wpt, *args) -> bool | tuple:
                         else:
                             # This command does not need an acid or it is already first argument
                             acrte.wpstack[wpidx].append(" ".join(args[1:]))
-                    except Exception:
+                    except (AttributeError, IndexError, KeyError, TypeError):
                         return (
                             False,
                             "Stacked command " + cmd + " unknown or syntax error",
@@ -1597,17 +1596,17 @@ def listrte(traffic: Traffic, acidx: int, ipagetxt: str = "0") -> tuple | None:
                 txt += "-----/"
 
             elif acrte.wpalt[i] > 4500 * ft:
-                fl = int(round(acrte.wpalt[i] / (100.0 * ft)))
+                fl = round(acrte.wpalt[i] / (100.0 * ft))
                 txt += "FL" + str(fl) + "/"
 
             else:
-                txt += str(int(round(acrte.wpalt[i] / ft))) + "/"
+                txt += str(round(acrte.wpalt[i] / ft)) + "/"
 
             # Speed
             if acrte.wpspd[i] < 0.0:
                 txt += "---"
             elif acrte.wpspd[i] > 2.0:
-                txt += str(int(round(acrte.wpspd[i] / kts)))
+                txt += str(round(acrte.wpspd[i] / kts))
             else:
                 txt += "M" + str(acrte.wpspd[i])
 

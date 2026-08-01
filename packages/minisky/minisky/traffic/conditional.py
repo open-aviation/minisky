@@ -109,7 +109,7 @@ class Condition:
         )  # Invalid number which never triggers anything is extremely large
         for j in range(self.ncond):
             if self.condtype[j] == postype:
-                qdr, dist = qdrdist(
+                _qdr, dist = qdrdist(
                     self.traffic.lat[acidxlst[j]],
                     self.traffic.lon[acidxlst[j]],
                     self.posdata[j][0],
@@ -213,7 +213,7 @@ class Condition:
         Returns:
             bool: True (the condition is always added).
         """
-        qdr, actdist = qdrdist(self.traffic.lat[acidx], self.traffic.lon[acidx], lat, lon)
+        _qdr, actdist = qdrdist(self.traffic.lat[acidx], self.traffic.lon[acidx], lat, lon)
         self.addcondition(acidx, postype, targdist, actdist, cmdtxt, (lat, lon))
         return True
 
@@ -255,7 +255,6 @@ class Condition:
 
         self.ncond = self.ncond + 1
         # print("addcondition: self.ncond",self.ncond)
-        return
 
     def renameac(self, oldid: str, newid: str) -> None:
         """Update stored callsigns after an aircraft has been renamed.

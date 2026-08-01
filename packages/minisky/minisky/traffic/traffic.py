@@ -256,9 +256,11 @@ class Traffic(TrafficArrays):
         if threshold is None:
             return (
                 True,
-                "CASMACHTHR: The current CAS/Mach threshold is "
-                f"{self.casmach_threshold} m/s "
-                f"({self.casmach_threshold / kts} kts)",
+                (
+                    "CASMACHTHR: The current CAS/Mach threshold is "
+                    f"{self.casmach_threshold} m/s "
+                    f"({self.casmach_threshold / kts} kts)"
+                ),
             )
 
         self.casmach_threshold = threshold
@@ -873,7 +875,6 @@ class Traffic(TrafficArrays):
             engid: New engine type identifier.
         """
         self.perf.engchange(acid, engid)  # type: ignore[attr-defined]
-        return
 
     def move(
         self,
@@ -1037,7 +1038,7 @@ class Traffic(TrafficArrays):
             lines += (
                 f"{aptname} is a {airport_size} airport in {country_name} ({country_code}):\n"
                 f"Position: {latlon2txt(aptlat, aptlon)}\n"
-                f"Elevation: {int(round(aptelev / ft))} ft \n"
+                f"Elevation: {round(aptelev / ft)} ft \n"
             )
 
             if self.navigation.aptid[idx_airport] in self.navigation.rwythresholds:
@@ -1149,8 +1150,8 @@ class Traffic(TrafficArrays):
             return False, "Transition level needs to be ft/FL and larger than zero"
 
         # In case no value is given, show it
-        tlvl = int(round(self.translvl / ft))
-        return True, f"Transition level = {tlvl}/FL{int(round(tlvl / 100.0))}"
+        tlvl = round(self.translvl / ft)
+        return True, f"Transition level = {tlvl}/FL{round(tlvl / 100.0)}"
 
     def setbanklim(self, idx: int, bankangle: float | None = None) -> bool | tuple[bool, str]:
         """Set or show the bank angle limit for a given aircraft.

@@ -12,7 +12,7 @@ the DEL command.
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Self
 
 import numpy as np
 
@@ -32,7 +32,7 @@ class GroupArray(np.ndarray):
     """
 
     # Similar to normal numpy arrays, but with the attribute of a groupname
-    def __new__(cls, *args, groupname: str = "", **kwargs) -> GroupArray:
+    def __new__(cls, *args, groupname: str = "", **kwargs) -> Self:
         ret = np.array(*args, **kwargs).view(cls)
         ret.groupname = groupname
         return ret

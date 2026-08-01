@@ -6,7 +6,6 @@ latlondist returns meters, rwgs84 returns meters.
 
 import numpy as np
 import pytest
-
 from minisky.tools import geo
 
 NM_IN_M = 1852.0

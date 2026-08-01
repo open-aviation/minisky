@@ -500,7 +500,7 @@ def pressure(h: float) -> float:  # h [m]
     Returns:
         Pressure [Pa].
     """
-    p, r, T = atmos(h)
+    p, _r, _T = atmos(h)
     return p
 
 
@@ -513,7 +513,7 @@ def density(h: float) -> float:  # air density at given altitude h [m]
     Returns:
         Density [kg/m3].
     """
-    p, r, T = atmos(h)
+    _p, r, _T = atmos(h)
     return r
 
 
@@ -613,7 +613,7 @@ def cas2tas(cas: float, h: float) -> float:
     Returns:
         True airspeed [m/s].
     """
-    p, rho, T = atmos(h)
+    p, rho, _T = atmos(h)
     qdyn = p0 * ((1.0 + rho0 * cas * cas / (7.0 * p0)) ** 3.5 - 1.0)
     tas = np.sqrt(7.0 * p / rho * ((1.0 + qdyn / p) ** (2.0 / 7.0) - 1.0))
     tas = -1 * tas if cas < 0 else tas
@@ -634,7 +634,7 @@ def tas2cas(tas: float, h: float) -> float:
     Returns:
         Calibrated airspeed [m/s].
     """
-    p, rho, T = atmos(h)
+    p, rho, _T = atmos(h)
     qdyn = p * ((1.0 + rho * tas * tas / (7.0 * p)) ** 3.5 - 1.0)
     cas = np.sqrt(7.0 * p0 / rho0 * ((qdyn / p0 + 1.0) ** (2.0 / 7.0) - 1.0))
     cas = -1 * cas if tas < 0 else cas
@@ -729,7 +729,7 @@ def metres_to_feet_rounded(metres: float) -> int:
     Converts metres to feet.
     Returns feet as rounded integer.
     """
-    return int(round(metres / ft))
+    return round(metres / ft)
 
 
 def metric_spd_to_knots_rounded(speed: float) -> int:
@@ -737,4 +737,4 @@ def metric_spd_to_knots_rounded(speed: float) -> int:
     Converts speed in m/s to knots.
     Returns knots as rounded integer.
     """
-    return int(round(speed / kts))
+    return round(speed / kts)

@@ -7,6 +7,7 @@ import io
 import sys
 import traceback
 from collections.abc import Callable
+from typing import Self
 
 from colorama import Fore, Style
 
@@ -27,7 +28,7 @@ class ConsoleSubscription:
         self._closed = True
         self._console._unsubscribe(self._token)
 
-    def __enter__(self) -> ConsoleSubscription:
+    def __enter__(self) -> Self:
         return self
 
     def __exit__(self, *_args: object) -> None:
@@ -95,7 +96,7 @@ class ConsoleIO:
         for token, callback in tuple(self._subscribers.items()):
             try:
                 callback(text)
-            except Exception as exc:
+            except Exception as exc:  # ruff: ignore[BLE001] subscribers are arbitrary
                 self._subscribers.pop(token, None)
                 traceback.print_exception(exc)
 
@@ -115,11 +116,9 @@ class ConsoleIO:
 
     def addnavwpt(self, name: str, lat: float, lon: float) -> None:
         """Add a waypoint marker. Stub for non-GUI mode."""
-        pass
 
     def removenavwpt(self, name: str) -> None:
         """Remove a waypoint marker. Stub for non-GUI mode."""
-        pass
 
     def read_output_buffer(self) -> str:
         """Return and clear buffered console output."""

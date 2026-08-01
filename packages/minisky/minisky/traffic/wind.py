@@ -71,7 +71,6 @@ class Windfield:
 
         # Clear actual field
         self.clear()
-        return
 
     def clear(self) -> None:  # Clear actual field
         """Remove all wind vectors, leaving a windless (winddim 0) field."""
@@ -86,7 +85,6 @@ class Windfield:
         self.nvec = 0
         self.fe = None
         self.fn = None
-        return
 
     def addpointvne(
         self,
@@ -156,7 +154,7 @@ class Windfield:
                         bounds_error=False,
                         fill_value=0.0,
                     )
-                except Exception:
+                except Exception:  # ruff: ignore[BLE001] scipy interpolation may fail broadly
                     # Create vn, ve if RGI is not possible
                     vnaxis = fnorth(self.altaxis).T
                     veaxis = feast(self.altaxis).T
@@ -404,8 +402,6 @@ class Windfield:
             if self.winddim < 3 or len(self.iprof) == 0 or len(self.lat) == 0:
                 self.winddim = min(2, len(self.lat))  # Check for 0, 1D, 2D or 3D
 
-        return
-
 
 class Wind(TrafficArrays, Windfield):
     """Wind field with the stack-command interface of the simulation.
@@ -484,6 +480,6 @@ class Wind(TrafficArrays, Windfield):
         wdir = (np.degrees(np.arctan2(ve, vn)) + 180.0) % 360.0
         wspd = np.sqrt(vn * vn + ve * ve)
 
-        txt = f"WIND AT {lat:.5f}, {lon:.5f}: {int(round(wdir)):03d}/{int(round(wspd / kts))}"
+        txt = f"WIND AT {lat:.5f}, {lon:.5f}: {round(wdir):03d}/{round(wspd / kts)}"
 
         return True, txt

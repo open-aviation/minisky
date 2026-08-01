@@ -68,11 +68,11 @@ async def lifespan(app: FastAPI):
         with suppress(asyncio.CancelledError):
             try:
                 await runner_task
-            except Exception as exc:
+            except Exception as exc:  # ruff: ignore[BLE001] aggregate server cleanup failures
                 errors.append(exc)
         try:
             await runtime.aclose()
-        except Exception as exc:
+        except Exception as exc:  # ruff: ignore[BLE001] aggregate server cleanup failures
             errors.append(exc)
         if len(errors) == 1:
             raise errors[0]
@@ -245,7 +245,7 @@ def upload_form() -> Response:
     return Response(content=content, media_type="text/html")
 
 
-async def scn(runtime: Runtime, file: UploadFile = File(...)) -> dict[str, str]:
+async def scn(runtime: Runtime, file: Annotated[UploadFile, File()]) -> dict[str, str]:
     """Load an uploaded scenario file into the running simulation."""
     runtime.console.event.clear()
     contents = await file.read()

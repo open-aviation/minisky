@@ -5,7 +5,6 @@ The fixed-wing altitude bands must be non-overlapping: an aircraft exactly at
 """
 
 import numpy as np
-
 from minisky.traffic.performance import phase
 from minisky.traffic.performance.coeff import LIFT_FIXWING, LIFT_ROTOR
 

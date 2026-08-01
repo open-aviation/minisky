@@ -585,7 +585,6 @@ class Autopilot(TrafficArrays):
             self.traffic.alt,
             self.traffic.casmach_threshold,
         )
-        #
         dxspdconchg = distaccel(self.traffic.tas, nexttas, self.traffic.perf.axmax)
 
         qdrturn, dist2turn = geo.qdrdist(
@@ -769,7 +768,6 @@ class Autopilot(TrafficArrays):
         # - Descend at the latest when necessary for next altitude constraint
         #   which can be many waypoints beyond current actual waypoint
         epsalt = 2.0 * ft  # deadzone
-        #
         if self.traffic.alt[idx] > toalt + epsalt:
             # Stop potential current climb (e.g. due to not making it to previous altco)
             # then stop immediately, as in: do not make it worse.

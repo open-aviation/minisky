@@ -7,4 +7,9 @@ text/value converters (convert), named area shapes and inside-tests
 parsing (position).
 """
 
-from . import aero, areafilter, convert, geo, navdata, position
+from . import aero as aero
+from . import areafilter as areafilter
+from . import convert as convert
+from . import geo as geo
+from . import navdata as navdata
+from . import position as position

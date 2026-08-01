@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-
 from minisky import MiniSky
 from minisky.simulation import Simulation
+
 from tests._types import RunCommand
 
 FT = 0.3048
@@ -15,7 +15,9 @@ KTS = 0.514444
 
 class TestCreate:
     def test_cre_single(self, runtime: MiniSky, sim: Simulation) -> None:
-        ok, msg = runtime.traffic.cre("KL001", "A320", lat=52.0, lon=4.0, hdg=90, alt=3000, spd=150)
+        ok, _msg = runtime.traffic.cre(
+            "KL001", "A320", lat=52.0, lon=4.0, hdg=90, alt=3000, spd=150
+        )
         assert ok
         assert runtime.traffic.ntraf == 1
         assert runtime.traffic.callsign[0] == "KL001"
@@ -29,7 +31,7 @@ class TestCreate:
 
     def test_cre_duplicate_callsign_rejected(self, runtime: MiniSky, sim: Simulation) -> None:
         runtime.traffic.cre("KL001")
-        ok, msg = runtime.traffic.cre("KL001")
+        ok, _msg = runtime.traffic.cre("KL001")
         assert not ok
         assert runtime.traffic.ntraf == 1
 

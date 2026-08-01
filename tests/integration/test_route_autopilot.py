@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 import numpy as np
 import pytest
-
 from minisky import MiniSky
 from minisky.tools import geo
 from minisky.traffic import route as route_commands
 from minisky.traffic.route import Route
+
 from tests._types import RunCommand, StepUntil
 
 FT = 0.3048
@@ -298,7 +300,12 @@ class TestWaypointSwitching:
     """
 
     # Zig-zag legs of ~2 nm force a real heading change at every waypoint
-    WPTS = [(52.00, 4.05), (52.03, 4.10), (52.00, 4.15), (52.03, 4.20)]
+    WPTS: ClassVar[list[tuple[float, float]]] = [
+        (52.00, 4.05),
+        (52.03, 4.10),
+        (52.00, 4.15),
+        (52.03, 4.20),
+    ]
 
     @pytest.fixture
     def route(self, runtime: MiniSky, run_cmd: RunCommand, aircraft: str) -> Route:
