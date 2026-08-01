@@ -29,9 +29,9 @@ The FastAPI app lives in `packages/minisky/minisky/server.py`; `minisky server` 
 
 Full details in `docs/architecture.md` — read it before making structural changes. The essentials:
 
-**Runtime ownership.** [`MiniSky`][minisky.runtime.MiniSky] owns one simulator object graph: settings, simulation, traffic, runner, console, navigation, command stack, plugins, replaceables, areas, variable explorer, random generators, and streaming hub. Unlike `bluesky`, there is no package-level `traf`, `sim`, `scr`, `runner`, or `navdb`.
+**Runtime ownership.** [`MiniSky`][minisky.runtime.MiniSky] owns one simulator object graph: config, simulation, traffic, runner, console, navigation, command stack, plugins, replaceables, areas, variable explorer, random generators, and streaming hub. Unlike `bluesky`, there is no package-level `traf`, `sim`, `scr`, `runner`, or `navdb`.
 
-**Lifecycle.** Use `with MiniSky(settings)` for manually stepped synchronous work. Use `async with MiniSky(settings)` and `await runtime.run()` when running the async loop. The FastAPI lifespan owns its background runner task and awaits asynchronous cleanup.
+**Lifecycle.** Use `with MiniSky()` for manually stepped synchronous work with the default user config, or pass `config=` explicitly. Use `async with MiniSky()` and `await runtime.run()` when running the async loop. The FastAPI lifespan owns its background runner task and awaits asynchronous cleanup.
 
 **Simulation loop.** `sim.step()` runs, in order: stack processing → time advance (only in `OP` state) → plugin `preupdate` → `traf.update()` (autopilot/FMS, conflict detection+resolution, performance limits, wind, position integration) → plugin `update`. States: `INIT`, `OP`, `HOLD`, `END`. Drive it either by calling `sim.step()` manually (embedding) or via `runner.run()` (wall-clock paced; `runner.speed` and `runner.forward()`).
 
@@ -63,4 +63,4 @@ Every text command — scenario file, REST `stack/` endpoint, or console — goe
 
 - Package/dependency management is **uv**. Prefix Python invocations with `uv run`.
 - After adding or changing a stack command, regenerate `docs/reference/commands.md` with the gen script.
-- `packages/minisky/settings.toml` holds runtime config; `[plugins.<id>]` tables enable and configure plugins.
+- MiniSky config defaults live only on `MiniSkyConfig`. The CLI optionally reads `default_user_config_toml_path()`; `--config` selects another file explicitly. `[plugins.<id>]` tables enable and configure plugins.

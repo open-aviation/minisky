@@ -6,7 +6,7 @@ from random import Random
 
 import numpy as np
 
-from minisky.core.settings import MiniSkySettings, data
+from minisky.core.config import MiniSkyConfig, data, default_user_config_toml_path
 from minisky.core.trafficarrays import ReplaceableManager
 from minisky.core.varexplorer import VariableExplorer
 from minisky.plugin import PluginManager
@@ -22,10 +22,24 @@ from minisky.traffic.performance.perfoap import OpenAP
 
 
 class MiniSky:
-    """Own the primary objects that make up a simulator runtime."""
+    """Own the primary objects that make up a simulator runtime.
 
-    def __init__(self, settings: MiniSkySettings, scenario: str | None = None) -> None:
-        self.settings = settings
+    When `config` is omitted, MiniSky loads the optional default user
+    config and otherwise falls back to [`MiniSkyConfig`][minisky.MiniSkyConfig]
+    defaults.
+    """
+
+    def __init__(
+        self,
+        config: MiniSkyConfig | None = None,
+        scenario: str | None = None,
+    ) -> None:
+        if config is None:
+            try:
+                config = MiniSkyConfig.from_path(default_user_config_toml_path())
+            except FileNotFoundError:
+                config = MiniSkyConfig()
+        self.config = config
         self._closed = False
         self.python_random = Random()
         self.numpy_random = np.random.RandomState()
@@ -34,7 +48,7 @@ class MiniSky:
         self.areas = AreaFilter()
         self.variables = VariableExplorer()
         self.traffic = Traffic(
-            settings=settings,
+            config=config,
             python_random=self.python_random,
             numpy_random=self.numpy_random,
             areas=self.areas,
@@ -51,7 +65,7 @@ class MiniSky:
             core=(MVP,),
         )
         self.plugins = PluginManager(
-            settings=settings,
+            config=config,
             console=self.console,
             variables=self.variables,
             get_runtime=lambda: self,

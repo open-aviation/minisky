@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-from minisky.core.settings import MiniSkySettings
+from minisky.core.config import MiniSkyConfig
 from minisky.core.trafficarrays import TrafficArrays
 from minisky.stack.argparser import Txt
 from minisky.tools.aero import ft, nm
@@ -69,12 +69,12 @@ class ConflictResolution(TrafficArrays):
 
     def __init__(
         self,
-        settings: MiniSkySettings,
+        config: MiniSkyConfig,
         traffic: Traffic,
         select_implementation: Callable[[str, str], tuple[bool, str]],
     ) -> None:
         super().__init__()
-        self.settings = settings
+        self.config = config
         self.traffic = traffic
         self.select_implementation = select_implementation
         self.activate = False
@@ -87,8 +87,8 @@ class ConflictResolution(TrafficArrays):
         # Resolution factors:
         # set < 1 to maneuver only a fraction of the resolution
         # set > 1 to add a margin to separation values
-        self.resofach = self.settings.asas_marh
-        self.resofacv = self.settings.asas_marv
+        self.resofach = self.config.asas_marh
+        self.resofacv = self.config.asas_marv
 
         # Switches to guarantee last reso zone commands keep valid if cd zone changes
         self.resodhrelative = (
@@ -108,7 +108,7 @@ class ConflictResolution(TrafficArrays):
 
     def new_implementation(self, implementation: Callable[..., TrafficArrays]) -> TrafficArrays:
         """Construct a replacement with this runtime's traffic and selector."""
-        return implementation(self.settings, self.traffic, self.select_implementation)
+        return implementation(self.config, self.traffic, self.select_implementation)
 
     def switch(self, flag: bool | None = None) -> None:
         """Turn conflict resolution on or off.
@@ -123,14 +123,14 @@ class ConflictResolution(TrafficArrays):
 
         Called on simulation reset: clears priority settings and pending
         resolution pairs, and restores the resolution zone factors from the
-        simulation settings.
+        simulation config.
         """
         super().reset()
         self.swprio = False
         self.priocode = ""
         self.resopairs.clear()
-        self.resofach = self.settings.asas_marh
-        self.resofacv = self.settings.asas_marv
+        self.resofach = self.config.asas_marh
+        self.resofacv = self.config.asas_marv
         self.resodhrelative = True
         self.resorrelative = True
 

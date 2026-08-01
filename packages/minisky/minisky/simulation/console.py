@@ -37,7 +37,6 @@ class ConsoleSubscription:
 class ConsoleIO:
     """Text output and subscriptions owned by a runtime."""
 
-
     # Prefix for the stdout copy of echoed text, aligned with uvicorn's
     # "INFO:     " column. Only the terminal print gets it; the output
     # buffer read by remote clients stays unprefixed.

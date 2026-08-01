@@ -14,7 +14,7 @@ import warnings
 import numpy as np
 from openap import WRAP, drag, prop
 
-from minisky.core.settings import data
+from minisky.core.config import data
 
 LIFT_FIXWING = 1  # fixwing aircraft
 LIFT_ROTOR = 2  # rotor aircraft

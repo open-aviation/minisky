@@ -19,7 +19,7 @@ from functools import cache
 import numpy as np
 import pandas as pd
 
-from minisky.core.settings import data
+from minisky.core.config import data
 
 # Type alias for values that may be a scalar or a numpy array
 FloatOrArray = float | np.ndarray

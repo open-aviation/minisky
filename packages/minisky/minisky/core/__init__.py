@@ -1,21 +1,21 @@
 """Core simulation infrastructure of MiniSky.
 
-Contains the per-aircraft array bookkeeping (trafficarrays), the settings
-loader (settings), and the variable explorer (varexplorer). The classes
-TrafficArrays and RegisterElementParameters, which all traffic-related
-simulation entities build on, are re-exported here for convenience.
+Contains configuration loading, per-aircraft array bookkeeping, and the
+variable explorer. The classes TrafficArrays and RegisterElementParameters,
+which all traffic-related simulation entities build on, are re-exported here
+for convenience.
 """
 
 from __future__ import annotations
 
 from minisky.core.trafficarrays import RegisterElementParameters, TrafficArrays
 
-from . import settings, trafficarrays, varexplorer
+from . import config, trafficarrays, varexplorer
 
 __all__ = (
     "RegisterElementParameters",
     "TrafficArrays",
-    "settings",
+    "config",
     "trafficarrays",
     "varexplorer",
 )

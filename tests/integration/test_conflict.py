@@ -129,7 +129,7 @@ class TestDetectionCommands:
 
     def test_hpz_default_consistent_after_reset(self, runtime: MiniSky, sim: Simulation) -> None:
         # reset() must restore the same default as __init__
-        assert runtime.traffic.cd.hpz_def == pytest.approx(runtime.settings.asas_pzh * FT)
+        assert runtime.traffic.cd.hpz_def == pytest.approx(runtime.config.asas_pzh * FT)
 
     def test_zoner_with_callsign_sets_aircraft_rpz(
         self, runtime: MiniSky, run_cmd: RunCommand

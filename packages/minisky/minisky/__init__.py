@@ -1,11 +1,15 @@
 """MiniSky air traffic simulator.
 
 [`MiniSky`][minisky.runtime.MiniSky] is the explicit ownership root for a
-simulator runtime. Construct it with validated [`MiniSkySettings`][] and access
-simulation components through that instance.
+simulator runtime. Construct it without arguments to use the optional default
+user config, or pass a validated [`MiniSkyConfig`][] explicitly.
 """
 
-from minisky.core.settings import DEFAULT_SETTINGS_FILE, MiniSkySettings
+from minisky.core.config import (
+    MiniSkyConfig,
+    default_user_config_dir,
+    default_user_config_toml_path,
+)
 from minisky.runtime import MiniSky
 from minisky.simulation import SimulationState
 
@@ -19,8 +23,9 @@ __all__ = (
     "BS_CMDERR",
     "BS_FUNERR",
     "BS_OK",
-    "DEFAULT_SETTINGS_FILE",
+    "default_user_config_dir",
+    "default_user_config_toml_path",
     "MiniSky",
-    "MiniSkySettings",
+    "MiniSkyConfig",
     "SimulationState",
 )

@@ -5,8 +5,10 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import tomllib
+from pathlib import Path
 from pprint import pprint
-from typing import TYPE_CHECKING, Annotated
+from typing import TYPE_CHECKING, Annotated, TypeAlias
 
 import requests
 import typer
@@ -15,29 +17,54 @@ from colorama import Fore, Style
 from prompt_toolkit import prompt
 from prompt_toolkit.completion import NestedCompleter, PathCompleter
 from prompt_toolkit.history import FileHistory
+from pydantic import ValidationError
+
+from minisky.core.config import MiniSkyConfig
 
 if TYPE_CHECKING:
     from minisky.runtime import MiniSky
 
 app = typer.Typer(help="MiniSky command-line tools.", no_args_is_help=True)
 
+_ConfigOption: TypeAlias = Annotated[
+    Path | None,
+    typer.Option(help="Config TOML file. Overrides the default user config path."),
+]
+
 history_file = os.path.expanduser("/tmp/hacksky_console_history")
 path_completer = PathCompleter()
 completer = NestedCompleter.from_nested_dict({"load": path_completer, "/load": path_completer})
 
 
-def _new_runtime(scenario: str | None = None) -> MiniSky:
-    """Construct a runtime from the default settings."""
-    from minisky import DEFAULT_SETTINGS_FILE, MiniSky, MiniSkySettings
+def _load_config(path: Path | None) -> MiniSkyConfig | None:
+    if path is None:
+        return None
 
-    settings = MiniSkySettings.from_file(DEFAULT_SETTINGS_FILE)
-    runtime = MiniSky(settings, scenario)
-    return runtime
+    selected = path.expanduser()
+    try:
+        return MiniSkyConfig.from_path(selected)
+    except FileNotFoundError as exc:
+        raise typer.BadParameter(
+            f"config file not found: {selected}",
+            param_hint="--config",
+        ) from exc
+    except (tomllib.TOMLDecodeError, ValidationError) as exc:
+        raise typer.BadParameter(
+            f"invalid config file {selected}: {exc}",
+            param_hint="--config",
+        ) from exc
 
 
-async def _run_scenario(scenario: str, speed: int) -> None:
+def _new_runtime(config_path: Path | None, scenario: str | None = None) -> MiniSky:
+    """Construct a runtime from explicit or default configuration."""
+    from minisky import MiniSky
+
+    return MiniSky(config=_load_config(config_path), scenario=scenario)
+
+
+async def _run_scenario(scenario: str, speed: int, config_path: Path | None) -> None:
     """Initialise the simulator with a scenario and run it to completion."""
-    async with _new_runtime(scenario) as runtime:
+    async with _new_runtime(config_path, scenario) as runtime:
         await runtime.plugins.load_configured()
         runtime.runner.speed = speed
         await runtime.run()
@@ -47,9 +74,10 @@ async def _run_scenario(scenario: str, speed: int) -> None:
 def run_cmd(
     scenario: Annotated[str, typer.Option(help="Scenario (.scn) file to run.")],
     speed: Annotated[int, typer.Option(help="Simulation speed multiplier.")] = 1,
+    config: _ConfigOption = None,
 ) -> None:
     """Run a scenario file without interaction."""
-    asyncio.run(_run_scenario(scenario, speed))
+    asyncio.run(_run_scenario(scenario, speed, config))
 
 
 @app.command("server")
@@ -61,16 +89,34 @@ def server_cmd(
         os.environ.get("MINISKY_PORT", "8000")
     ),
     reload: Annotated[bool, typer.Option(help="Enable uvicorn auto-reload.")] = False,
+    config: _ConfigOption = None,
 ) -> None:
     """Start the REST and WebSocket API server."""
     import uvicorn
 
+    # NOTE(abraham): we want config to be explicit.
+    if reload and config is not None:
+        raise typer.BadParameter(
+            "--config cannot be combined with --reload yet",
+            param_hint="--config",
+        )
+
+    if reload:
+        uvicorn.run(
+            "minisky.server:create_app",
+            factory=True,
+            host=host,
+            port=port,
+            reload=True,
+        )
+        return
+
+    from minisky.server import create_app
+
     uvicorn.run(
-        "minisky.server:create_app",
-        factory=True,
+        create_app(_new_runtime(config)),
         host=host,
         port=port,
-        reload=reload,
     )
 
 

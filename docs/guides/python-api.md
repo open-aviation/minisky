@@ -6,10 +6,9 @@ step its simulation, and read aircraft state directly from NumPy arrays.
 ## Minimal example
 
 ```python
-from minisky import DEFAULT_SETTINGS_FILE, MiniSky, MiniSkySettings
+from minisky import MiniSky
 
-settings = MiniSkySettings.from_file(DEFAULT_SETTINGS_FILE)
-with MiniSky(settings) as runtime:
+with MiniSky() as runtime:
     runtime.simulation.reset()
     runtime.traffic.cre(
         "KL315", lat=52.0, lon=4.0, hdg=45, alt=5000, spd=250
@@ -24,6 +23,21 @@ with MiniSky(settings) as runtime:
             f"lat={runtime.traffic.lat}  lon={runtime.traffic.lon}"
         )
 ```
+
+
+## Loading a config file
+
+Python applications choose their own config path rather than relying on the CLI convention:
+
+```python
+from minisky import MiniSkyConfig
+
+config = MiniSkyConfig.from_path("experiment.toml")
+with MiniSky(config=config) as runtime:
+    runtime.simulation.step()
+```
+
+See [Configuration](configuration.md) for the default user config location used by `minisky run` and `minisky server`.
 
 ## Runtime ownership
 
@@ -43,7 +57,7 @@ runtime.streaming   # per-runtime snapshot fan-out
 Pass a scenario to the constructor to queue it immediately:
 
 ```python
-with MiniSky(settings, scenario="scenarios/kl204.scn") as runtime:
+with MiniSky(scenario="scenarios/kl204.scn") as runtime:
     runtime.simulation.step()
 ```
 
@@ -130,7 +144,7 @@ To run a scenario with scaled wall-clock pacing:
 import asyncio
 
 async def main() -> None:
-    async with MiniSky(settings, scenario="scenarios/kl204.scn") as runtime:
+    async with MiniSky(scenario="scenarios/kl204.scn") as runtime:
         await runtime.plugins.load_configured()
         runtime.runner.speed = 10
         await runtime.run()

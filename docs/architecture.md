@@ -23,12 +23,11 @@ Constructing `MiniSky` creates an independent object graph:
 ```python
 import asyncio
 
-from minisky import DEFAULT_SETTINGS_FILE, MiniSky, MiniSkySettings
+from minisky import MiniSky
 
 
 async def main() -> None:
-    settings = MiniSkySettings.from_file(DEFAULT_SETTINGS_FILE)
-    async with MiniSky(settings) as runtime:
+    async with MiniSky() as runtime:
         await runtime.plugins.load_configured()
         runtime.simulation.step()
 
@@ -119,7 +118,7 @@ subsystems that act on it each timestep:
   LNAV/VNAV logic following a [`Route`][minisky.traffic.route.Route] of waypoints.
 - **Conflict detection** (`traffic/asas/detection.py`) — pairwise state-based detection
   within a lookahead time against a protected zone (default 5 NM / 1000 ft, configurable
-  in `settings.toml`). Candidate pairs are pre-selected with a KD-tree on projected
+  in the [config file](guides/configuration.md)). Candidate pairs are pre-selected with a KD-tree on projected
   positions plus a vertical reachability filter, so cost scales with local traffic
   density rather than N².
 - **Conflict resolution** (`traffic/asas/mvp.py`) — Modified Voltage Potential resolution

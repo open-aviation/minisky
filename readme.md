@@ -99,10 +99,9 @@ Note that commands are case-insensitive.
 Use the simulator in your Python code:
 
 ```python
-from minisky import DEFAULT_SETTINGS_FILE, MiniSky, MiniSkySettings
+from minisky import MiniSky
 
-settings = MiniSkySettings.from_file(DEFAULT_SETTINGS_FILE)
-with MiniSky(settings) as runtime:
+with MiniSky() as runtime:
     runtime.traffic.cre(
         "KL315", lat=52.0, lon=4.0, hdg=45, alt=5000, spd=250
     )
@@ -115,6 +114,8 @@ with MiniSky(settings) as runtime:
 ```
 
 ## Documentation
+
+MiniSky runs with built-in defaults. The [configuration guide](docs/guides/configuration.md) explains the optional user config file, overrides, and plugin tables.
 
 The documentation lives in `docs/` and is built with Zensical; the API reference
 is generated from the docstrings with mkdocstrings.
