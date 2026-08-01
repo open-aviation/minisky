@@ -48,8 +48,8 @@ known-first-party = [
     "minisky",
     "minisky_example",
     "minisky_example_customautopilot",
+    "minisky_multicopter",
     "minisky_tangram",
-    "example_plugins",
     "tests",
 ]
 
@@ -57,6 +57,7 @@ known-first-party = [
 include = [
     "packages/minisky/minisky",
     "packages/minisky-example*/src",
+    "packages/minisky-multicopter/src",
     "packages/minisky-tangram/src",
     "packages/tangram-minisky/src",
     "tests",
@@ -70,6 +71,7 @@ extraPaths = [
     "packages/minisky",
     "packages/minisky-example/src",
     "packages/minisky-example-customautopilot/src",
+    "packages/minisky-multicopter/src",
     "packages/minisky-tangram/src",
     "packages/tangram-minisky/src",
 ]

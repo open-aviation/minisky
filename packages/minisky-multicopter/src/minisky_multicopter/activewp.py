@@ -19,14 +19,15 @@ from typing import Any
 
 import numpy as np
 
+from minisky import plugin as plugin_api
 from minisky.traffic.activewpdata import ActiveWaypoint
-
-from .entity import get_multicopter
+from minisky_multicopter.entity import get_multicopter
 
 #: Waypoint capture radius for multicopters [m].
 CAPTURE_RADIUS = 10.0
 
 
+@plugin_api.replacement
 class MulticopterActiveWaypoint(ActiveWaypoint):
     """Active-waypoint data with a fixed capture radius for multicopters."""
 

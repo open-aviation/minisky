@@ -5,7 +5,7 @@ command, which is exactly what the decoupled multicopter kinematics
 consumes, so no guidance rewrite is needed. What the stock FMS cannot
 express is added here — the ``HOVER`` primitive, rerouted ``HDG`` semantics
 (nose only), and fly-over route defaults. The fixed waypoint capture radius
-lives in :class:`~example_plugins.multicopter.activewp.MulticopterActiveWaypoint`.
+lives in :class:`~minisky_multicopter.activewp.MulticopterActiveWaypoint`.
 
 ``HOVER`` is deliberately composable rather than a scripted manoeuvre: it
 brakes to a stop and holds position, optionally at a commanded altitude, and
@@ -22,10 +22,10 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
+from minisky import plugin as plugin_api
 from minisky.stack.argparser import Hdg
 from minisky.traffic.autopilot import Autopilot
-
-from .entity import MULTICOPTER_TYPES, get_multicopter
+from minisky_multicopter.entity import MULTICOPTER_TYPES, get_multicopter
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -40,6 +40,7 @@ GS_HOVER = 0.1
 ALT_CAPTURE = 0.5
 
 
+@plugin_api.replacement
 class MulticopterAutopilot(Autopilot):
     """Autopilot with a multicopter hover primitive.
 
@@ -113,7 +114,9 @@ class MulticopterAutopilot(Autopilot):
             & (traf.gs < GS_HOVER)
             & (np.abs(traf.alt - traf.selalt) < ALT_CAPTURE)
         )
-        self.hovertimer = np.where(holding, self.hovertimer - self.simulation.simdt, self.hovertimer)
+        self.hovertimer = np.where(
+            holding, self.hovertimer - self.simulation.simdt, self.hovertimer
+        )
         expired = holding & (self.hovertimer <= 0.0)
 
         # Restore the saved route state; expiry also re-engages LNAV/VNAV.
@@ -150,19 +153,17 @@ class MulticopterAutopilot(Autopilot):
     ) -> tuple[bool, str]:
         """Hold position, optionally for a fixed time at a given altitude.
 
-        Suspends LNAV/VNAV, commands zero ground speed, and holds the given
-        altitude (the current one when omitted) — with an altitude the
-        aircraft moves there vertically, at a fixed position. With a
-        duration, the route resumes once position and altitude have been
-        held that long; without one, the aircraft hovers until LNAV is
-        re-engaged. Repeating the command while hovering updates the hold
-        time and altitude, and a plain ALT command changes the hover
-        altitude as well.
+        Backs the ``HOVER`` stack command declared on the Multicopter
+        entity, which delegates here at call time so the command survives
+        the autopilot instance being swapped on reset.
 
-        Arguments:
-        - idx: Aircraft callsign
-        - duration: Hold time [s] (optional, omit to hover indefinitely)
-        - alt: Hover altitude [ft or FL] (optional, default: hold current)
+        Args:
+            idx: Aircraft index.
+            duration: Hold time [s]; None holds indefinitely.
+            alt: Hover altitude [m]; None holds the current altitude.
+
+        Returns:
+            tuple: (success flag, confirmation message).
         """
         callsign = self.traffic.callsign[idx]
         mc = get_multicopter(self.traffic)

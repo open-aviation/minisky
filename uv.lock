@@ -21,6 +21,7 @@ members = [
     "minisky",
     "minisky-example",
     "minisky-example-customautopilot",
+    "minisky-multicopter",
     "minisky-tangram",
     "tangram-minisky",
 ]
@@ -1315,6 +1316,22 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [{ name = "minisky", editable = "packages/minisky" }]
+
+[[package]]
+name = "minisky-multicopter"
+version = "0.1.0"
+source = { editable = "packages/minisky-multicopter" }
+dependencies = [
+    { name = "minisky" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
+    { name = "numpy", version = "2.5.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "minisky", editable = "packages/minisky" },
+    { name = "numpy", specifier = ">=2.2.2" },
+]
 
 [[package]]
 name = "minisky-tangram"

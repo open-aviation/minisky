@@ -15,8 +15,9 @@ from minisky.traffic.kinematics import Kinematics
 class TaggedKinematics(Kinematics):
     """Trivial Kinematics subclass used to exercise SELECTIMPL KINEMATICS.
 
-    Defining it registers it as the 'TAGGEDKINEMATICS' implementation; it
-    only becomes active when explicitly selected.
+    Registered runtime-locally in the test (implementations no longer
+    auto-register on subclass definition); it only becomes active when
+    explicitly selected.
     """
 
     def update(self) -> None:
@@ -48,15 +49,21 @@ class TestKinematicsEntity:
     ) -> None:
         runtime.traffic.cre("KL001", "A320", lat=52.0, lon=4.0, hdg=90, alt=3000, spd=150)
 
-        ok, msg = runtime.replaceables.select("KINEMATICS", "TAGGEDKINEMATICS")
-        assert ok, msg
-        assert isinstance(runtime.traffic.kinematics, TaggedKinematics)
-        # per-aircraft arrays carry over to the new instance
-        assert len(runtime.traffic.kinematics.ax) == 1
+        prepared = runtime.replaceables.prepare(TaggedKinematics)
+        runtime.replaceables.validate((prepared,))
+        runtime.replaceables.install((prepared,))
+        try:
+            ok, msg = runtime.replaceables.select("KINEMATICS", "TAGGEDKINEMATICS")
+            assert ok, msg
+            assert isinstance(runtime.traffic.kinematics, TaggedKinematics)
+            # per-aircraft arrays carry over to the new instance
+            assert len(runtime.traffic.kinematics.ax) == 1
 
-        sim.step()
-        assert getattr(runtime.traffic.kinematics, "tag", None) == "tagged"
+            sim.step()
+            assert getattr(runtime.traffic.kinematics, "tag", None) == "tagged"
 
-        # reset restores the default implementation
-        runtime.simulation.reset()
-        assert type(runtime.traffic.kinematics) is Kinematics
+            # reset restores the default implementation
+            runtime.simulation.reset()
+            assert type(runtime.traffic.kinematics) is Kinematics
+        finally:
+            runtime.replaceables.remove((prepared,))

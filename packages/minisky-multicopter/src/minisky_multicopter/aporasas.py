@@ -14,11 +14,12 @@ from __future__ import annotations
 
 import numpy as np
 
+from minisky import plugin as plugin_api
 from minisky.traffic.aporasas import APorASAS
+from minisky_multicopter.entity import get_multicopter
 
-from .entity import get_multicopter
 
-
+@plugin_api.replacement
 class MulticopterAPorASAS(APorASAS):
     """Skip the track-to-heading coupling for multicopter rows."""
 

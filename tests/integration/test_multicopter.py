@@ -1,9 +1,10 @@
 """Integration tests for the MULTICOPTER plugin (Phase 2).
 
-Driven through the stack, like test_stack.py. The plugin swaps replaceable
-implementations on load and re-selects them from its reset hook, so these
-tests run on their own runtime instead of the shared session runtime — the
-other integration tests keep the core implementations.
+Driven through the stack, like test_stack.py. The plugin registers
+replaceable implementations on load and selects them from its hooks (first
+step after load, and after every reset), so these tests run on their own
+runtime instead of the shared session runtime — the other integration tests
+keep the core implementations.
 
 The default simulation timestep is 1 s; yaw rates are lowered where a slew
 must be observable across steps.
@@ -11,26 +12,27 @@ must be observable across steps.
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Callable, Iterator
 
 import pytest
 
-from example_plugins.multicopter.autopilot import MulticopterAutopilot
 from minisky import MiniSky
-from minisky.core.settings import DEFAULT_SETTINGS_FILE, MiniSkySettings
+from minisky.core.config import MiniSkyConfig
 from minisky.simulation import Simulation
 from minisky.tools.aero import ft
+from minisky_multicopter.autopilot import MulticopterAutopilot
 from tests._types import RunCommand, StepUntil
 
 
 @pytest.fixture(scope="module")
 def mcruntime() -> Iterator[MiniSky]:
     """Module-wide MiniSky runtime with the MULTICOPTER plugin loaded."""
-    instance = MiniSky(MiniSkySettings.from_file(DEFAULT_SETTINGS_FILE))
-    ok, message = instance.plugins.load("MULTICOPTER")
+    instance = MiniSky(MiniSkyConfig())
+    ok, message = asyncio.run(instance.plugins.load("MULTICOPTER"))
     assert ok, message
     yield instance
-    instance.close()
+    asyncio.run(instance.aclose())
 
 
 @pytest.fixture
@@ -39,6 +41,13 @@ def mcsim(mcruntime: MiniSky) -> Simulation:
     mcruntime.simulation.reset()
     mcruntime.console.read_output_buffer()  # drain "Simulation reset" echo
     return mcruntime.simulation
+
+
+class TestPluginDiscovery:
+    def test_plugin_listed_from_entry_point(self, mcruntime: MiniSky) -> None:
+        ok, text = mcruntime.plugins.listing()
+        assert ok
+        assert "MULTICOPTER" in text
 
 
 @pytest.fixture

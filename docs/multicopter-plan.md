@@ -40,14 +40,16 @@ The exploration that produced this plan found MiniSky closer to multicopter-read
 - **Zero speed already passes the performance clamp.** Rotor envelopes have *negative* `vmin`
   (e.g. M600: −18 m/s), and `OpenAP.limits()` clamps rotor TAS directly against `[vmin, vmax]`,
   so `SPD D1 0` survives. Fixed-wing aircraft are clamped to stall speed and cannot do this.
-- **The replaceable pattern.** Every first-level `TrafficArrays` subclass auto-registers for
-  `SELECTIMPL` (`minisky/core/trafficarrays.py`), and `_replace_instance_on_traf()` hot-swaps the
-  instance on `traf`, carrying per-aircraft arrays over and rebinding stack commands. `Autopilot`,
-  `OpenAP`, `APorASAS`, `ConflictDetection`, `ConflictResolution` are all swappable today.
-  `example_plugins/customautopilot.py` demonstrates the pattern.
-- **Plugin machinery.** Timed `preupdate`/`update`/`reset` hooks, `plugin.Entity` +
-  `settrafarrays()` for per-aircraft state that grows/shrinks with the fleet, and
-  `@stack.command` for new commands.
+- **The replaceable pattern.** `ReplaceableManager` (`minisky/core/trafficarrays.py`) owns a
+  curated set of replaceable bases per runtime (registered in `MiniSky.__init__`) and hot-swaps
+  the instance on `traf` via `SELECTIMPL`, carrying per-aircraft arrays over and dispatching
+  stack commands through the current instance. Plugins register implementations runtime-locally
+  with `@plugin.replacement` + `context.finish(replacements=...)`;
+  `packages/minisky-example-customautopilot` demonstrates the pattern.
+- **Plugin machinery.** Plugins are packages exposing a `Plugin` declaration through the
+  `minisky.plugins` entry-point group. Timed `preupdate`/`update`/`reset` hooks via
+  `@plugin.hook`, `plugin.Entity` + `settrafarrays()` for per-aircraft state that grows/shrinks
+  with the fleet, and `@plugin.command` for new commands.
 
 ## What blocks the two manoeuvring behaviours
 
@@ -95,7 +97,8 @@ class Kinematics(TrafficArrays):
 - Instantiated as `self.kinematics = Kinematics()` inside `Traffic.__init__`'s
   `settrafarrays()` block; `Traffic.update()` calls `self.kinematics.update()` in place of the
   three method calls.
-- Because it is a first-level `TrafficArrays` subclass it **auto-registers** as replaceable —
+- Registered as a replaceable base in the runtime's `ReplaceableManager` (`minisky/runtime.py`,
+  together with `APorASAS` and `ActiveWaypoint`, which Phase 2 also swaps) —
   `SELECTIMPL KINEMATICS MULTICOPTERKINEMATICS` then hot-swaps mid-simulation exactly like the
   custom-autopilot example, with no further core support needed.
 - Keep thin delegating properties on `Traffic` only if anything external reads `traf.ax` etc.
@@ -118,34 +121,41 @@ reset (mirror the existing `tests/integration/test_plugin.py` replaceable test).
       `settrafarrays()` block; `Traffic.update()` calls `self.kinematics.update()`
 - [x] Grep external readers of the moved arrays: only `perfoap.py` reads `ax`
       (`streaming.py` does not); pointed it at `traf.kinematics.ax` (no property needed)
-- [x] Verify `SELECTIMPL KINEMATICS` lists the base implementation
-- [x] Test: register a trivial subclass, select it, verify it takes effect and reverts on reset
-      (`tests/integration/test_kinematics.py`)
+- [x] Register `Kinematics` (plus `APorASAS` and `ActiveWaypoint` for Phase 2) as replaceable
+      bases in `MiniSky.__init__`; verify `SELECTIMPL KINEMATICS` lists the base implementation
+- [x] Test: install a trivial subclass runtime-locally, select it, verify it takes effect and
+      reverts on reset (`tests/integration/test_kinematics.py`)
 - [x] `uv run pytest`, `uv run ruff check .`, `uv run pyright` all green
 
 ## Phase 2 — the `multicopter` plugin: membership + kinematics
 
-New package `example_plugins/multicopter/` (plugin name `MULTICOPTER`), no core changes. One
-module per class, so each piece stays small and readable:
+New workspace package `packages/minisky-multicopter/` (plugin ID `multicopter`), no core changes
+beyond the Phase 1 base registration. One module per class, so each piece stays small and
+readable:
 
 ```
-example_plugins/multicopter/
-├── plugin.py       # init_plugin(): plugin config, SELECTIMPL swaps on load, reset handling
-├── entity.py       # MULTICOPTER_TYPES + Multicopter Entity (ismulticopter, selhdg, yawrate)
-│                   # and its stack commands: MCOPT, YAW, YAWRATE
-├── kinematics.py   # MulticopterKinematics(Kinematics)
-├── aporasas.py     # MulticopterAPorASAS(APorASAS)
-├── autopilot.py    # MulticopterAutopilot(Autopilot): HOVER, fly-over route defaults
-├── activewp.py     # MulticopterActiveWaypoint(ActiveWaypoint): fixed capture radius
-├── perf.py         # MulticopterPerf(OpenAP) + BATT              (Phase 3)
-└── data/           # generated perf maps + vendored PyThrust data (Phase 3)
+packages/minisky-multicopter/
+├── pyproject.toml           # workspace member; minisky.plugins entry point "multicopter"
+└── src/minisky_multicopter/
+    ├── __init__.py     # Plugin declaration: build() mounts the entity, registers replacements
+    ├── entity.py       # MULTICOPTER_TYPES + Multicopter Entity (ismulticopter, selhdg, yawrate),
+    │                   # its stack commands (MCOPT, YAW, YAWRATE, HOVER) and the selection hooks
+    ├── kinematics.py   # MulticopterKinematics(Kinematics)
+    ├── aporasas.py     # MulticopterAPorASAS(APorASAS)
+    ├── autopilot.py    # MulticopterAutopilot(Autopilot): hover primitive, fly-over defaults
+    ├── activewp.py     # MulticopterActiveWaypoint(ActiveWaypoint): fixed capture radius
+    ├── perf.py         # MulticopterPerf(OpenAP) + BATT              (Phase 3)
+    └── data/           # generated perf maps + vendored PyThrust data (Phase 3)
 ```
 
-Loader notes: plugin discovery scans `**/*.py` under `plugin_path` recursively and skips
-`_`-prefixed files, so `__init__.py` cannot be the entry point — `plugin.py` is the one module
-defining `init_plugin()`; the sibling modules are parsed but not registered (no `init_plugin`).
-The folder is imported as a package (`example_plugins.multicopter.plugin`), so `plugin.py`
-imports the class modules with relative imports (`from .kinematics import ...`).
+Loader notes: the plugin manager discovers installed packages through the `minisky.plugins`
+entry-point group without importing them; `__init__.py` exports the `Plugin` declaration and
+imports the class modules. Replacements are registered runtime-locally when the plugin loads
+(`@plugin.replacement` classes passed to `context.finish(replacements=...)`) and removed again
+on shutdown. Selection is *not* automatic on load: the entity's `preupdate` hook selects the
+four implementations on the first step after loading (via `traffic.select_implementation`), and
+its `reset` hook re-selects them after every reset, which reverts all replaceables to their core
+defaults.
 
 ### Membership
 
@@ -161,8 +171,8 @@ Selection must **not** be `traf.perf.lifttype == LIFT_ROTOR` — that would swee
 
 ### `MulticopterKinematics(Kinematics)`
 
-Selected with `SELECTIMPL KINEMATICS MULTICOPTERKINEMATICS` (the plugin issues this on load /
-documents it). Calls `super().update()` for the whole fleet, then re-integrates the multicopter
+Selected with `SELECTIMPL KINEMATICS MULTICOPTERKINEMATICS` (the plugin's hooks keep this
+selected). Calls `super().update()` for the whole fleet, then re-integrates the multicopter
 rows (mask `m`):
 
 ```python
@@ -226,9 +236,9 @@ A thin subclass (`SELECTIMPL AUTOPILOT MULTICOPTERAUTOPILOT`) covers what the st
   `ActiveWaypoint.reached()` recomputes `turndist` every step — clamping it from the autopilot
   update would be overwritten before it is ever used.
 
-With this, the plugin issues four swaps on load — `KINEMATICS`, `APORASAS`, `AUTOPILOT`,
-`ACTIVEWAYPOINT` — each subclass calling `super()` and adjusting only the masked multicopter
-rows.
+With this, the plugin registers and keeps selected four swaps — `KINEMATICS`, `APORASAS`,
+`AUTOPILOT`, `ACTIVEWAYPOINT` — each subclass calling `super()` and adjusting only the masked
+multicopter rows.
 
 **Acceptance (integration tests, driven through the stack like `test_stack.py`):**
 
@@ -245,11 +255,12 @@ rows.
 
 ### Phase 2 checklist
 
-- [x] `example_plugins/multicopter/` package skeleton with `plugin.py` (`init_plugin()`,
-      plugin name `MULTICOPTER`)
+- [x] `packages/minisky-multicopter/` workspace package with a `minisky.plugins` entry point
+      (`multicopter = "minisky_multicopter:plugin"`) and the `Plugin` declaration in
+      `__init__.py`
 - [x] `entity.py`: `MULTICOPTER_TYPES` set + `Entity` with `ismulticopter`, `selhdg`,
       `yawrate` arrays, auto-set from typecode in `create()`; stack commands `MCOPT`,
-      `YAW`, `YAWRATE`
+      `YAW`, `YAWRATE`, `HOVER` (declared with `@plugin.command`)
 - [x] `kinematics.py`: `MulticopterKinematics(Kinematics)` — yaw-rate-limited heading,
       track-driven velocity vector, single `update_pos()` pass
 - [x] `aporasas.py`: `MulticopterAPorASAS(APorASAS)` — skip trk→hdg coupling for
@@ -258,8 +269,9 @@ rows.
       (the planned `DELIVER` was dropped as too use-case specific), `HDG`-yaws-the-nose,
       fly-over route defaults; `activewp.py`: `MulticopterActiveWaypoint` fixed capture
       radius
-- [x] Plugin issues the four `SELECTIMPL` swaps on load; defaults restored on reset
-      (re-selected by the plugin's reset hook)
+- [x] Plugin registers the four replacements on load; the entity's `preupdate` hook selects
+      them on the first step, and its `reset` hook re-selects after every reset (which
+      reverts all replaceables to the core defaults)
 - [x] Integration tests: hover-hold, yaw at gs = 0, strafe (fixed nose, moving track),
       leg-to-leg course capture, `HOVER` (timed, at altitude, composed with `ALT`/`LNAV`),
       fixed-wing regression guard
@@ -293,9 +305,9 @@ Pipeline, following the existing regen conventions (navdb parquet, `minisky comm
    {prop, motor, cell, series/parallel, n_rotors, mass}), and emits one small artifact per type:
    a grid `(airspeed, thrust) → (power_w, current_a, feasible)` (~30 KB float32 npz/parquet)
    plus the battery curves.
-2. Artifacts are **checked in** inside the plugin package (`example_plugins/multicopter/data/`).
+2. Artifacts are **checked in** inside the plugin package (`packages/minisky-multicopter/src/minisky_multicopter/data/`).
    The handful of vendored source CSV/JSONs (~1 MB) live under
-   `example_plugins/multicopter/data/pythrust/` together with PyThrust's LICENSE and an
+   `packages/minisky-multicopter/src/minisky_multicopter/data/pythrust/` together with PyThrust's LICENSE and an
    attribution note (the prop tables are repackaged APC published performance data).
 3. Runtime: `MulticopterPerf` loads the artifacts at plugin load and evaluates with vectorised
    `np.interp`/`RegularGridInterpolator`. Zero per-step Python loops, zero new dependencies.
@@ -325,12 +337,12 @@ for the map interpolation against a few hand-computed points from the source CSV
 ### Phase 3 checklist
 
 - [ ] Vendor the needed prop CSVs + motor JSONs under
-      `example_plugins/multicopter/data/pythrust/` with PyThrust's LICENSE and an
+      `packages/minisky-multicopter/src/minisky_multicopter/data/pythrust/` with PyThrust's LICENSE and an
       attribution note
 - [ ] Per-typecode config: `{prop, motor, cell, series/parallel, n_rotors, mass, CdS}`
 - [ ] `scripts/gen_multicopter_perf.py` (numpy-only, no pythrust import) emitting per-type
       `(airspeed, thrust) → (power, current, feasible)` maps + battery curves
-- [ ] Check in the generated artifacts (`example_plugins/multicopter/data/*.npz`)
+- [ ] Check in the generated artifacts (`packages/minisky-multicopter/src/minisky_multicopter/data/*.npz`)
 - [ ] `perf.py`: `MulticopterPerf(OpenAP)` — required-thrust model, vectorised map
       interpolation, per-aircraft SoC integration, envelope feedback in `limits()`;
       stack command `BATT`

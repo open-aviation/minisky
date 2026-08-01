@@ -14,12 +14,13 @@ from __future__ import annotations
 
 import numpy as np
 
+from minisky import plugin as plugin_api
 from minisky.tools.aero import ft
 from minisky.traffic.kinematics import Kinematics
+from minisky_multicopter.entity import get_multicopter
 
-from .entity import get_multicopter
 
-
+@plugin_api.replacement
 class MulticopterKinematics(Kinematics):
     """Yaw-rate-limited, track-driven integration for multicopter rows.
 

@@ -1,4 +1,4 @@
-"""Electric performance for multicopters.
+"""Electric performance for multicopters (Phase 3 skeleton).
 
 Fills the ``# TODO: implement thrust computation for rotor aircraft`` gap in
 the core :class:`OpenAP` model for multicopter rows: required thrust from
@@ -8,12 +8,14 @@ battery state of charge that is integrated each step and feeds back into the
 flight envelope as the pack voltage sags.
 
 Fixed-wing rows keep the ``super()`` behaviour untouched. Selected with
-``SELECTIMPL OPENAP MULTICOPTERPERF``.
+``SELECTIMPL OPENAP MULTICOPTERPERF`` once registered (it joins the plugin's
+replacements when Phase 3 lands).
 
 The maps are generated offline by ``scripts/gen_multicopter_perf.py`` from
 propeller, motor and battery data vendored under ``data/pythrust/``, and
-checked in under ``data/``. PyThrust itself is *not* a runtime dependency:
-only its data is used, and only through ``np.interp``-style lookups.
+checked in under this package's ``data/``. PyThrust itself is *not* a
+runtime dependency: only its data is used, and only through
+``np.interp``-style lookups.
 
 Fidelity caveat: the APC propeller coefficients are axial-flow, so
 forward-flight power for a translating multicopter is approximate. Hover
