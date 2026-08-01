@@ -21,8 +21,9 @@ Interactive OpenAPI docs are served at `/docs`.
 
 from __future__ import annotations
 
+import asyncio
 import os
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from io import StringIO
 from typing import Annotated, Any, cast
 
@@ -58,11 +59,25 @@ async def lifespan(app: FastAPI):
     """Run the app-owned simulator for the lifetime of the API server."""
     runtime = cast(MiniSky, app.state.runtime)
     await runtime.plugins.load_configured()
-    runtime.start()
+    runner_task = asyncio.create_task(runtime.run())
     try:
         yield
     finally:
-        await runtime.aclose()
+        errors: list[Exception] = []
+        runner_task.cancel()
+        with suppress(asyncio.CancelledError):
+            try:
+                await runner_task
+            except Exception as exc:
+                errors.append(exc)
+        try:
+            await runtime.aclose()
+        except Exception as exc:
+            errors.append(exc)
+        if len(errors) == 1:
+            raise errors[0]
+        if errors:
+            raise ExceptionGroup("MiniSky server shutdown failed", errors)
 
 
 def create_app(runtime: MiniSky | None = None) -> FastAPI:

@@ -36,7 +36,7 @@ runtime.runner      # optional async real-time loop
 runtime.console     # buffered text output
 runtime.navigation  # waypoints, airports, and airways
 runtime.commands    # command registry, queue, and scenario state
-runtime.plugins     # plugin records, hooks, timers, and state
+runtime.plugins     # plugin declarations, hooks, and lifespans
 runtime.streaming   # per-runtime snapshot fan-out
 ```
 
@@ -47,9 +47,9 @@ with MiniSky(settings, scenario="scenarios/kl204.scn") as runtime:
     runtime.simulation.step()
 ```
 
-Use `with MiniSky(...)` for manually stepped synchronous work. Use
-`async with MiniSky(...)` when running `await runtime.run()` so asynchronous
-runner cleanup is awaited.
+Use `with MiniSky(...)` for manually stepped synchronous work without active plugin lifespans. Use `async with MiniSky(...)` when you load plugins or run asynchronously so plugin lifespans are closed correctly.
+
+`await runtime.run()` runs in the current task. If your application creates a background task for it, your application owns that task and must cancel or await it before closing the runtime.
 
 ## Creating and commanding aircraft
 
