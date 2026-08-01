@@ -31,7 +31,7 @@ from minisky.plugin.plugin_decorators import (
 from minisky.streaming import Snapshot, build_snapshot
 
 if TYPE_CHECKING:
-    from minisky.core.settings import MiniSkySettings
+    from minisky.core.config import MiniSkyConfig
     from minisky.core.varexplorer import VariableExplorer
     from minisky.runtime import MiniSky
     from minisky.simulation import ConsoleIO, Simulation
@@ -250,14 +250,14 @@ class PluginManager:
 
     def __init__(
         self,
-        settings: MiniSkySettings,
+        config: MiniSkyConfig,
         console: ConsoleIO,
         variables: VariableExplorer,
         get_runtime: Callable[[], MiniSky],
         get_simulation: Callable[[], Simulation],
         get_command_stack: Callable[[], CommandStack],
     ) -> None:
-        self.settings = settings
+        self.config = config
         self.console = console
         self.variables = variables
         self._get_runtime = get_runtime
@@ -377,7 +377,7 @@ class PluginManager:
             return False, f"Error loading {plugin.plugin_name}: {exc}"
 
     def _build(self, key: str, declaration: Plugin) -> PluginSpec:
-        raw = deepcopy(self.settings.plugins.get(key, {}))
+        raw = deepcopy(self.config.plugins.get(key, {}))
         if declaration.config_class is None:
             if raw:
                 raise PluginError(f"plugin {key} does not accept configuration")
@@ -535,7 +535,7 @@ class PluginManager:
     async def load_configured(self) -> tuple[str, ...]:
         """Load configured plugins in declaration order."""
         loaded: list[str] = []
-        for plugin_name in self.settings.plugins:
+        for plugin_name in self.config.plugins:
             ok, message = await self.load(plugin_name)
             self.console.echo(message)
             if ok:

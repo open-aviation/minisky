@@ -23,7 +23,7 @@ blocks on the network, and so commands are still received while the
 simulation is paused (plugin update hooks only fire in the OP state; the
 command stack itself is processed in every state).
 
-Settings (optional, under `[plugins.tangram]` in `settings.toml`):
+Config (optional, under `[plugins.tangram]` in the MiniSky user config file):
 
 - `redis_url`: Redis connection URL (default `redis://127.0.0.1:6379`).
 - `channel`: channel/topic name (default `minisky`).
@@ -58,7 +58,7 @@ from minisky.tools.aero import fpm, ft, kts
 
 
 # --8<-- [start:configuration]
-class TangramSettings(BaseModel):
+class TangramConfig(BaseModel):
     """Validated `[plugins.tangram]` configuration."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -66,6 +66,7 @@ class TangramSettings(BaseModel):
     redis_url: str = "redis://127.0.0.1:6379"
     channel: str = "minisky"
     max_hz: float = 5.0
+
 
 # --8<-- [end:configuration]
 
@@ -402,7 +403,7 @@ class TangramBridge:
 
 
 # --8<-- [start:lifespan]
-def build(context: plugin_api.PluginContext[TangramSettings]) -> plugin_api.PluginSpec:
+def build(context: plugin_api.PluginContext[TangramConfig]) -> plugin_api.PluginSpec:
     bridge = context.mount(
         TangramBridge(
             redis_url=context.config.redis_url,
@@ -426,5 +427,5 @@ def build(context: plugin_api.PluginContext[TangramSettings]) -> plugin_api.Plug
     return context.finish(lifespan=lifespan)
 
 
-plugin = plugin_api.Plugin(build=build, config_class=TangramSettings)
+plugin = plugin_api.Plugin(build=build, config_class=TangramConfig)
 # --8<-- [end:lifespan]

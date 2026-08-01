@@ -29,10 +29,9 @@ reach a bare-minimum simulator that is easy to read, embed, and extend.
 3. Import `minisky` and step the simulation from your own code.
 
     ```python
-    from minisky import DEFAULT_SETTINGS_FILE, MiniSky, MiniSkySettings
+    from minisky import MiniSky
 
-    settings = MiniSkySettings.from_file(DEFAULT_SETTINGS_FILE)
-    with MiniSky(settings) as runtime:
+    with MiniSky() as runtime:
         runtime.traffic.cre(
             "KL315", lat=52.0, lon=4.0, hdg=45, alt=5000, spd=250
         )
@@ -50,10 +49,11 @@ reach a bare-minimum simulator that is easy to read, embed, and extend.
 | Command stack | [`minisky.stack`](api/stack.md) | Text-command interpreter shared by scenario files, the console, and the REST API |
 | Plugins | [`minisky.plugin`](api/plugin.md) | Discover and load user plugins with per-aircraft data and stack commands |
 | Tools | [`minisky.tools`](api/tools.md) | Aeronautics conversions (ISA atmosphere, CAS/TAS/Mach) and geodesy |
-| Core | [`minisky.core`](api/core.md) | Settings, per-aircraft array bookkeeping (`TrafficArrays`) |
+| Core | [`minisky.core`](api/core.md) | Configuration and per-aircraft array bookkeeping (`TrafficArrays`) |
 
 ## Where to start
 
 1. [Getting started](getting-started.md) — install and run your first simulation.
-2. [Architecture](architecture.md) — how the pieces fit together.
-3. [Stack commands](reference/commands.md) — every command the simulator understands.
+2. [Configuration](guides/configuration.md) — override defaults or enable plugins when needed.
+3. [Architecture](architecture.md) — how the pieces fit together.
+4. [Stack commands](reference/commands.md) — every command the simulator understands.

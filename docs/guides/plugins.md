@@ -29,16 +29,17 @@ By default, the first mounted component is also available through MiniSky's vari
 
 ## Accept configuration
 
-When your plugin accepts settings, define a Pydantic-compatible model and pass it as `config_class`. You can then read the validated settings from `context.config`:
+When your plugin accepts config, define a Pydantic-compatible model and pass it as `config_class`. You can then read the validated config from `context.config`:
 
 ```python
 --8<-- "packages/minisky-tangram/src/minisky_tangram/__init__.py:configuration"
 ```
 
-Users place the settings under the plugin ID:
+Users place the config under the plugin ID in their [MiniSky config file](configuration.md):
 
 ```toml
---8<-- "packages/minisky/settings.toml:configured-plugin"
+[plugins.example]
+interval = 2.0
 ```
 
 A table under `[plugins.<id>]` both configures the plugin and loads it during normal startup. An empty table is enough for a plugin that uses only default values.
@@ -125,10 +126,10 @@ You can also select it from Python with `runtime.replaceables.select(...)`. Keep
 To load every plugin configured under `[plugins.<id>]`, call the plugin manager before you start the runner:
 
 ```python
-from minisky import MiniSky, MiniSkySettings
+from minisky import MiniSky, MiniSkyConfig
 
-settings = MiniSkySettings.from_file("packages/minisky/settings.toml")
-async with MiniSky(settings) as runtime:
+config = MiniSkyConfig.from_path("experiment.toml")
+async with MiniSky(config=config) as runtime:
     loaded = await runtime.plugins.load_configured()
     print(f"Loaded: {', '.join(loaded)}")
     await runtime.run()

@@ -1,9 +1,9 @@
-from minisky import DEFAULT_SETTINGS_FILE, MiniSky, MiniSkySettings
+from minisky import MiniSky, MiniSkyConfig
 
 
 def command_docs() -> str:
-    settings = MiniSkySettings.from_file(DEFAULT_SETTINGS_FILE)
-    with MiniSky(settings) as runtime:
+    config = MiniSkyConfig()
+    with MiniSky(config) as runtime:
         primary = {}
         synonyms: dict[str, list[str]] = {}
         for name, command in sorted(runtime.commands.cmddict.items()):

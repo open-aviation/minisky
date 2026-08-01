@@ -15,6 +15,12 @@ cd minisky
 uv sync
 ```
 
+## Configuration
+
+MiniSky runs with the defaults defined by [`MiniSkyConfig`][minisky.MiniSkyConfig]. You only need a `config.toml` when you want to override a value or load a plugin automatically.
+
+See [Configuration](guides/configuration.md) for the platform-specific default path and `--config` overrides.
+
 ## Your first simulation
 
 Run one of the bundled scenarios to completion:
@@ -60,10 +66,9 @@ See the [command-line interface](guides/cli.md), [REST API](guides/rest-api.md),
 ## From Python
 
 ```python
-from minisky import DEFAULT_SETTINGS_FILE, MiniSky, MiniSkySettings
+from minisky import MiniSky
 
-settings = MiniSkySettings.from_file(DEFAULT_SETTINGS_FILE)
-with MiniSky(settings) as runtime:
+with MiniSky() as runtime:
     runtime.simulation.reset()
     runtime.traffic.cre(
         "KL315", lat=52.0, lon=4.0, hdg=45, alt=5000, spd=250
@@ -82,25 +87,6 @@ with MiniSky(settings) as runtime:
 
 See the [Python library guide](guides/python-api.md) for details on runtime
 ownership and stepping the simulation yourself.
-
-## Configuration
-
-Runtime settings live in `packages/minisky/settings.toml`, including
-conflict-detection values and plugin configuration. A `[plugins.<id>]` table
-enables that plugin during `await runtime.plugins.load_configured()`:
-
-```toml
-asas_dtlookahead = 300
-asas_pzr = 5
-asas_pzh = 1000
-asas_marh = 1.05
-asas_marv = 1.05
-
-[plugins.tangram]
-redis_url = "redis://127.0.0.1:6379"
-channel = "minisky"
-max_hz = 5
-```
 
 ## Running the tests
 

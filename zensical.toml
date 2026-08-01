@@ -10,6 +10,7 @@ nav = [
   { "Architecture" = "architecture.md" },
   { "Upstream decisions" = "upstream.md" },
   { "Guides" = [
+    { "Configuration" = "guides/configuration.md" },
     { "Command-line interface" = "guides/cli.md" },
     { "Running scenarios" = "guides/running-scenarios.md" },
     { "REST API server" = "guides/rest-api.md" },

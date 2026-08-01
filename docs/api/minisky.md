@@ -1,7 +1,7 @@
 # `minisky`
 
-The top-level package exposes the explicit runtime owner, validated settings,
-default settings path, and simulation-state constants.
+The top-level package exposes the explicit runtime owner, validated configuration,
+default user config path helpers, and simulation-state constants.
 
 ## Runtime
 
@@ -11,6 +11,6 @@ default settings path, and simulation-state constants.
 
 ::: minisky.SimulationState
 
-## Settings
+## Configuration
 
-::: minisky.MiniSkySettings
+::: minisky.MiniSkyConfig

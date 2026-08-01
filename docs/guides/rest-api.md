@@ -12,7 +12,7 @@ uv run minisky server                      # production-style local server
 uv run minisky server --reload             # development mode with auto-reload
 ```
 
-FastAPI serves interactive OpenAPI docs at `http://localhost:8000/docs`.
+FastAPI serves interactive OpenAPI docs at `http://localhost:8000/docs`. The server uses built-in defaults unless the [default config file](configuration.md) exists; pass `--config FILE` to choose another file explicitly.
 
 ## Endpoints
 

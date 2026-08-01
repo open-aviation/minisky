@@ -32,7 +32,7 @@ again, only this package needs touching.
 - `from:<channel>:command` — `{command: "OP"}` stack commands from the browser
 
 `<channel>` defaults to `minisky` and is configurable on both sides
-(`plugins.tangram.channel` in MiniSky's `settings.toml`, `channel` in tangram's
+(`plugins.tangram.channel` in MiniSky's user config file, `channel` in tangram's
 `tangram.toml` under `[plugins.tangram_minisky]`).
 
 ## Build and run
@@ -62,7 +62,7 @@ uv run tangram serve --config tangram.toml
 ```
 
 The complete setup and temporary local-checkout overrides are documented in
-[Streaming to a tangram map](../../docs/guides/tangram.md).
+[Streaming to a tangram map](../../docs/guides/tangram.md). MiniSky config locations and optional file creation are covered in [Configuration](../../docs/guides/configuration.md).
 
 ## Run the simulator side
 
@@ -70,8 +70,8 @@ In the MiniSky repo:
 
 ```bash
 just sync
-# settings.toml: add [plugins.tangram] with redis_url pointing at the same
-# Redis instance tangram uses
+# Add [plugins.tangram] to the MiniSky user config file with redis_url
+# pointing at the same Redis instance tangram uses.
 minisky server        # or: minisky run --scenario scenarios/kl204.scn
 ```
 

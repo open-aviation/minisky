@@ -16,7 +16,9 @@ def validate_plugin_id(value: object) -> str:
         raise ValueError(f"reserved plugin id: {value!r}")
     return value
 
+
 _PUBLIC_NAME = re.compile(r"^[A-Z][A-Z0-9_]*$")
+
 
 def normalize_public_name(value: str) -> str:
     """Normalize a command or replacement name."""

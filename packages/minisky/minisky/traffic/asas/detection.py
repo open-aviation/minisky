@@ -25,7 +25,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from scipy.spatial import KDTree
 
-from minisky.core.settings import MiniSkySettings
+from minisky.core.config import MiniSkyConfig
 from minisky.core.trafficarrays import TrafficArrays
 from minisky.stack.argparser import Time, Txt
 from minisky.tools.aero import ft, nm
@@ -97,21 +97,21 @@ class ConflictDetection(TrafficArrays):
     """
 
     def __init__(
-        self, settings: MiniSkySettings, traffic: Traffic, stack_command: Callable[..., None]
+        self, config: MiniSkyConfig, traffic: Traffic, stack_command: Callable[..., None]
     ) -> None:
         super().__init__()
-        self.settings = settings
+        self.config = config
         self.traffic = traffic
         self.stack_command = stack_command
         ## Default values
         # [m] Horizontal separation minimum for detection
-        self.rpz_def = self.settings.asas_pzr * nm
+        self.rpz_def = self.config.asas_pzr * nm
         self.global_rpz = True
         # [m] Vertical separation minimum for detection
-        self.hpz_def = self.settings.asas_pzh * ft
+        self.hpz_def = self.config.asas_pzh * ft
         self.global_hpz = True
         # [s] lookahead time
-        self.dtlookahead_def = self.settings.asas_dtlookahead
+        self.dtlookahead_def = self.config.asas_dtlookahead
         self.global_dtlook = True
         self.dtnolook_def = 0.0
         self.global_dtnolook = True
@@ -148,7 +148,7 @@ class ConflictDetection(TrafficArrays):
 
     def new_implementation(self, implementation: Callable[..., TrafficArrays]) -> TrafficArrays:
         """Construct a replacement with this runtime's traffic and command stack."""
-        return implementation(self.settings, self.traffic, self.stack_command)
+        return implementation(self.config, self.traffic, self.stack_command)
 
     def clearconfdb(self) -> None:
         """Clear the conflict database.
@@ -192,15 +192,15 @@ class ConflictDetection(TrafficArrays):
 
         Called on simulation reset: clears the conflict database and the
         historic conflict/LoS lists, and restores the default separation
-        minima and lookahead times from the simulation settings.
+        minima and lookahead times from the simulation config.
         """
         super().reset()
         self.clearconfdb()
         self.confpairs_all.clear()
         self.lospairs_all.clear()
-        self.rpz_def = self.settings.asas_pzr * nm
-        self.hpz_def = self.settings.asas_pzh * ft
-        self.dtlookahead_def = self.settings.asas_dtlookahead
+        self.rpz_def = self.config.asas_pzr * nm
+        self.hpz_def = self.config.asas_pzh * ft
+        self.dtlookahead_def = self.config.asas_dtlookahead
         self.dtnolook_def = 0.0
         self.global_rpz = self.global_hpz = True
         self.global_dtlook = self.global_dtnolook = True

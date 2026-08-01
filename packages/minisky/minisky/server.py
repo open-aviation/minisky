@@ -42,7 +42,7 @@ from fastapi import (
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
-from minisky import DEFAULT_SETTINGS_FILE, MiniSky, MiniSkySettings
+from minisky import MiniSky
 from minisky.tools import aero
 
 
@@ -83,8 +83,7 @@ async def lifespan(app: FastAPI):
 def create_app(runtime: MiniSky | None = None) -> FastAPI:
     """Create a FastAPI application owning a simulator runtime."""
     if runtime is None:
-        settings = MiniSkySettings.from_file(DEFAULT_SETTINGS_FILE)
-        runtime = MiniSky(settings)
+        runtime = MiniSky()
 
     app = FastAPI(lifespan=lifespan)
     app.state.runtime = runtime

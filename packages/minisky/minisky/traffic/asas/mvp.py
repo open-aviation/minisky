@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-from minisky.core.settings import MiniSkySettings
+from minisky.core.config import MiniSkyConfig
 from minisky.stack.argparser import Txt
 from minisky.traffic.asas import ConflictResolution
 
@@ -53,11 +53,11 @@ class MVP(ConflictResolution):
 
     def __init__(
         self,
-        settings: MiniSkySettings,
+        config: MiniSkyConfig,
         traffic: Traffic,
         select_implementation: Callable[[str, str], tuple[bool, str]],
     ) -> None:
-        super().__init__(settings, traffic, select_implementation)
+        super().__init__(config, traffic, select_implementation)
         # [-] switch to limit resolution to the horizontal direction
         self.swresohoriz = True
         # [-] switch to use only speed resolutions (works with swresohoriz = True)

@@ -12,15 +12,21 @@ from collections.abc import Callable, Iterator
 import pytest
 
 from minisky import MiniSky
-from minisky.core.settings import DEFAULT_SETTINGS_FILE, MiniSkySettings
+from minisky.core.config import MiniSkyConfig
 from minisky.simulation import Simulation
 from tests._types import RunCommand, StepUntil
 
 
 @pytest.fixture(scope="session")
-def runtime() -> Iterator[MiniSky]:
+def config() -> MiniSkyConfig:
+    """Immutable default runtime configuration shared by tests."""
+    return MiniSkyConfig()
+
+
+@pytest.fixture(scope="session")
+def runtime(config: MiniSkyConfig) -> Iterator[MiniSky]:
     """Session-wide explicit MiniSky runtime."""
-    instance = MiniSky(MiniSkySettings.from_file(DEFAULT_SETTINGS_FILE))
+    instance = MiniSky(config)
     yield instance
     instance.close()
 

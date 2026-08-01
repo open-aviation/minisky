@@ -56,7 +56,7 @@ just sync
 ```
 
 
-In `settings.toml`:
+Create the optional [MiniSky config file](configuration.md), then add this plugin table:
 
 ```toml
 [plugins.tangram]
@@ -195,7 +195,7 @@ Work upstream-to-downstream:
    tangram container) is squatting ports 2346/2347: `lsof -i :2346 -i :2347`.
 3. **Channel joins succeed but the widget says "Simulator offline"** — no
    snapshot or heartbeat arrived for 5 seconds. Almost always a Redis URL
-   mismatch: `tangram.toml`'s `redis_url` and `settings.toml`'s
+   mismatch: `tangram.toml`'s `redis_url` and the MiniSky user config file's
    `plugins.tangram.redis_url` must point at the *same* Redis instance (mind
    host-vs-container addressing: a dockerised tangram reaches a compose
    Redis at `redis://redis:6379`, a host process at `redis://127.0.0.1:6379`).

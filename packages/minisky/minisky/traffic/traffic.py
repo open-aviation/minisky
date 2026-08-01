@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING, overload
 
 import numpy as np
 
-from minisky.core.settings import MiniSkySettings
+from minisky.core.config import MiniSkyConfig
 from minisky.core.trafficarrays import TrafficArrays
 from minisky.tools import geo
 from minisky.tools.aero import (
@@ -133,7 +133,7 @@ class Traffic(TrafficArrays):
 
     def __init__(
         self,
-        settings: MiniSkySettings,
+        config: MiniSkyConfig,
         python_random: Random,
         numpy_random: np.random.RandomState,
         areas: AreaFilter,
@@ -145,7 +145,7 @@ class Traffic(TrafficArrays):
         select_implementation: Callable[[str, str], tuple[bool, str]],
     ) -> None:
         super().__init__()
-        self.settings = settings
+        self.config = config
         self.python_random = python_random
         self.numpy_random = numpy_random
         self.areas = areas
@@ -215,8 +215,8 @@ class Traffic(TrafficArrays):
             self.swvnavspd = np.array([], dtype=bool)
 
             # Flight Models
-            self.cd = ConflictDetection(settings, self, stack_command)
-            self.cr = ConflictResolution(settings, self, select_implementation)
+            self.cd = ConflictDetection(config, self, stack_command)
+            self.cr = ConflictResolution(config, self, select_implementation)
             self.ap = Autopilot(self, get_simulation)
             self.aporasas = APorASAS(self)
             self.noise = SurveillanceUncertainty(self, get_simulation)
@@ -535,7 +535,7 @@ class Traffic(TrafficArrays):
         and speed are computed such that, relative to the target aircraft,
         separation is lost after the given time with the given distance at
         the closest point of approach. The protected-zone radius and height
-        from the settings (asas_pzr, asas_pzh) are taken into account.
+        from the config (asas_pzr, asas_pzh) are taken into account.
 
         Args:
             callsign: Callsign of the new (intruder) aircraft.
@@ -560,8 +560,8 @@ class Traffic(TrafficArrays):
         tasref = self.tas[targetidx]  # m/s
         vsref = self.vs[targetidx]  # m/s
         cpa = dcpa * nm
-        pzr = self.settings.asas_pzr * nm
-        pzh = self.settings.asas_pzh * ft
+        pzr = self.config.asas_pzr * nm
+        pzh = self.config.asas_pzh * ft
         trk = trkref + np.radians(dpsi)
 
         if dH is None:
