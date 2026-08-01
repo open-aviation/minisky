@@ -85,8 +85,9 @@ ownership and stepping the simulation yourself.
 
 ## Configuration
 
-Runtime settings live in `packages/minisky/settings.toml`, e.g. conflict-detection
-lookahead time and protected-zone sizes, plus the plugin startup list and configuration:
+Runtime settings live in `packages/minisky/settings.toml`, including
+conflict-detection values and plugin configuration. A `[plugins.<id>]` table
+enables that plugin during `await runtime.plugins.load_configured()`:
 
 ```toml
 asas_dtlookahead = 300
@@ -95,9 +96,10 @@ asas_pzh = 1000
 asas_marh = 1.05
 asas_marv = 1.05
 
-enabled_plugins = []
-
-[plugins]
+[plugins.tangram]
+redis_url = "redis://127.0.0.1:6379"
+channel = "minisky"
+max_hz = 5
 ```
 
 ## Running the tests

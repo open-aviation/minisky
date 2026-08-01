@@ -9,14 +9,17 @@ import numpy as np
 from minisky import plugin as plugin_api
 
 
+# --8<-- [start:declaration]
 def build(context: plugin_api.PluginContext[object]) -> plugin_api.PluginSpec:
     context.mount(Example(context.python_random))
     return context.finish()
 
 
 plugin = plugin_api.Plugin(build=build)
+# --8<-- [end:declaration]
 
 
+# --8<-- [start:entity]
 class Example(plugin_api.Entity):
     """Track passenger count for every aircraft in the owning runtime."""
 
@@ -47,3 +50,6 @@ class Example(plugin_api.Entity):
             return True, f"Aircraft {callsign} has {int(self.npassengers[index])} passengers"
         self.npassengers[index] = count
         return True, f"Set {callsign} passengers to {count}"
+
+
+# --8<-- [end:entity]

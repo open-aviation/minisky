@@ -1,20 +1,34 @@
 # `minisky.plugin`
 
-Runtime-owned plugin discovery, loading, hooks, per-aircraft entities,
-and command declarations. See the [plugin guide](../guides/plugins.md).
+Runtime-local plugin declarations, loading, hooks, entities, replacements, and
+lifespan capabilities. See the [plugin guide](../guides/plugins.md).
 
-## Plugin management
-
-::: minisky.plugin.plugin.PluginManager
-
-## Plugin records
+## Declarations
 
 ::: minisky.plugin.plugin.Plugin
+
+::: minisky.plugin.plugin.PluginContext
+
+::: minisky.plugin.plugin.PluginSpec
+
+## Runtime capabilities
+
+::: minisky.plugin.plugin.PluginRuntime
+
+::: minisky.plugin.plugin.PluginStatus
+
+## Management
+
+::: minisky.plugin.plugin.PluginManager
 
 ## Entity
 
 ::: minisky.plugin.entity.Entity
 
-## Stack command declarations
+## Decorators
 
 ::: minisky.plugin.plugin_decorators.command
+
+::: minisky.plugin.plugin_decorators.hook
+
+::: minisky.plugin.plugin_decorators.replacement

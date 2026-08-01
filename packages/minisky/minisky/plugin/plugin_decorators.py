@@ -1,24 +1,21 @@
-"""Decorators for plugin commands and simulation hooks.
+"""Decorators for plugin commands, hooks, and replacements.
 
 The decorators store metadata only. Typed plugins mount an instance with
 [PluginContext][minisky.plugin.plugin.PluginContext] before MiniSky binds its
 declarations to that runtime.
 """
-# TODO(abraham): delete the legacy module scanner along with `init_plugin(runtime)`
 
 from __future__ import annotations
 
 import inspect
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
-from types import ModuleType
 from typing import TYPE_CHECKING, Any, Literal, TypeVar, overload
 
 from minisky.identifiers import normalize_public_name
 
 if TYPE_CHECKING:
     from minisky.core.trafficarrays import TrafficArrays
-    from minisky.stack import CommandStack, PreparedCommand
 
 #
 # commands
@@ -36,8 +33,6 @@ class CommandDeclaration:
     arguments: str = ""
     name: str = ""
     aliases: tuple[str, ...] = ()
-    brief: str = ""
-    help: str = ""
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "name", normalize_public_name(self.name) if self.name else "")
@@ -65,8 +60,6 @@ class BoundCommand:
 
     @property
     def brief(self) -> str:
-        if self.declaration.brief:
-            return self.declaration.brief
         parameters: list[str] = []
         for parameter in inspect.signature(self.callback).parameters.values():
             name = parameter.name
@@ -80,7 +73,7 @@ class BoundCommand:
 
     @property
     def help(self) -> str:
-        return self.declaration.help or inspect.cleandoc(inspect.getdoc(self.callback) or "")
+        return inspect.cleandoc(inspect.getdoc(self.callback) or "")
 
 
 @overload
@@ -93,8 +86,6 @@ def command(
     arguments: str = "",
     name: str = "",
     aliases: tuple[str, ...] = (),
-    brief: str = "",
-    help: str = "",
 ) -> Callable[[CommandTarget], CommandTarget]: ...
 
 
@@ -105,21 +96,19 @@ def command(
     arguments: str = "",
     name: str = "",
     aliases: tuple[str, ...] = (),
-    brief: str = "",
-    help: str = "",
 ) -> CommandTarget | Callable[[CommandTarget], CommandTarget]:
     """Declare an instance method as a stack command.
 
     The method name becomes the command name unless `name` is provided. Its
     docstring becomes command help and its signature becomes the brief usage
-    text unless those values are passed explicitly for compatibility.
+    text.
     """
 
     def decorate(target: CommandTarget) -> CommandTarget:
         actual = _underlying_function(target)
         if _COMMAND in vars(actual):
             raise TypeError("a plugin command may be declared only once")
-        setattr(actual, _COMMAND, CommandDeclaration(arguments, name, aliases, brief, help))
+        setattr(actual, _COMMAND, CommandDeclaration(arguments, name, aliases))
         return target
 
     return decorate(func) if func is not None else decorate
@@ -277,76 +266,8 @@ def declared_replacement(implementation: type[Any]) -> ReplacementDeclaration:
 
 
 #
-# legacy commands
+# internals
 #
-
-
-def prepare_declared_commands(
-    command_stack: CommandStack, module: ModuleType
-) -> tuple[PreparedCommand, ...]:
-    """Construct declarations from a legacy plugin module."""
-    commands: list[PreparedCommand] = []
-    for value in vars(module).values():
-        callback = _underlying_function(value)
-        declaration = getattr(callback, _COMMAND, None)
-        if not isinstance(declaration, CommandDeclaration):
-            continue
-        bound = BoundCommand(callback, declaration)
-        commands.append(
-            command_stack.prepare_command(
-                callback,
-                name=bound.name,
-                aliases=bound.aliases,
-                arguments=declaration.arguments,
-                brief=bound.brief,
-                help=bound.help,
-            )
-        )
-    return tuple(commands)
-
-
-def register_declared_commands(command_stack: CommandStack, module: ModuleType) -> None:
-    """Register command declarations from a legacy plugin module."""
-    commands = prepare_declared_commands(command_stack, module)
-    command_stack.validate_commands(commands)
-    command_stack.install_commands(commands)
-
-
-def prepare_commands(
-    command_stack: CommandStack,
-    newcommands: dict[str, list[Any] | tuple[Any, ...]],
-    syndict: dict[str, list[str]] | None = None,
-) -> tuple[PreparedCommand, ...]:
-    """Construct commands from the original plugin return format."""
-    synonyms = syndict or {}
-    commands: list[PreparedCommand] = []
-    for name, values in newcommands.items():
-        function = values[0]
-        arguments = values[1] if len(values) > 1 else ""
-        brief = values[2] if len(values) > 2 else ""
-        help_text = values[3] if len(values) > 3 else ""
-        commands.append(
-            command_stack.prepare_command(
-                function,
-                name=name,
-                arguments=arguments,
-                brief=brief,
-                help=help_text,
-                aliases=tuple(synonyms.get(name, ())),
-            )
-        )
-    return tuple(commands)
-
-
-def append_commands(
-    command_stack: CommandStack,
-    newcommands: dict[str, list[Any] | tuple[Any, ...]],
-    syndict: dict[str, list[str]] | None = None,
-) -> None:
-    """Append commands from the original plugin return format."""
-    commands = prepare_commands(command_stack, newcommands, syndict)
-    command_stack.validate_commands(commands)
-    command_stack.install_commands(commands)
 
 
 def _bound_method(component: object, name: str, kind: str) -> Callable[..., Any]:

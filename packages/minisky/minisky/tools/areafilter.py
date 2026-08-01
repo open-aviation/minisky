@@ -50,7 +50,7 @@ from minisky.tools.geo import kwikdist
 
 
 class AreaFilter:
-    """Named geometric shapes and spatial index for one MiniSky runtime."""
+    """Named geometric shapes and spatial index for a MiniSky runtime."""
 
     def __init__(self) -> None:
         # Dictionary of all basic shapes (The shape classes defined in this file) by name
@@ -265,7 +265,6 @@ class AreaFilter:
         """
         ids = self.areatree.nearest((lat0, lon0, lat1, lon1), k)
         return [self.areas_by_id[area_id] for area_id in ids if area_id in self.areas_by_id]
-
 
 
 class Shape:

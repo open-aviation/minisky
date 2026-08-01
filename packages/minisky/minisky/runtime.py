@@ -102,11 +102,6 @@ class MiniSky:
     def _stop_runner(self) -> None:
         self.runner.stop()
 
-    # TODO(abraham): load configured plugins during async entry and make this private
-    def load_plugins(self) -> None:
-        """Load plugins enabled in this runtime's settings."""
-        self.plugins.load_enabled()
-
     async def run(self) -> None:
         """Run the simulation until its runner stops."""
         if self._closed:
@@ -128,19 +123,6 @@ class MiniSky:
         self._run_task = asyncio.create_task(self.run())
         return self._run_task
 
-    def _close_resources(self) -> list[Exception]:
-        if self._closed:
-            return []
-
-        errors: list[Exception] = []
-        for cleanup in (self.runner.shutdown, self.streaming.close, self.plugins.shutdown):
-            try:
-                cleanup()
-            except Exception as exc:
-                errors.append(exc)
-        self._closed = True
-        return errors
-
     @staticmethod
     def _raise_errors(message: str, errors: list[Exception]) -> None:
         if len(errors) == 1:
@@ -148,16 +130,25 @@ class MiniSky:
         if errors:
             raise ExceptionGroup(message, errors)
 
-    # TODO(abraham): remove sync close when teardown has an async ownership path
     def close(self) -> None:
-        """Release synchronous resources and request runner-task cancellation."""
-        errors = self._close_resources()
+        """Close a runtime without active plugin lifespans."""
+        if self._closed:
+            return
+        if self.plugins.requires_async_close:
+            raise RuntimeError("active plugins require await runtime.aclose()")
+
+        errors: list[Exception] = []
+        for cleanup in (self.runner.shutdown, self.streaming.close, self.plugins.close):
+            try:
+                cleanup()
+            except Exception as exc:
+                errors.append(exc)
+
         task = self._run_task
         try:
             current = asyncio.current_task()
         except RuntimeError:
             current = None
-
         if task is not None and task is not current:
             if task.done():
                 self._run_task = None
@@ -168,14 +159,18 @@ class MiniSky:
                 except Exception as exc:
                     errors.append(exc)
             else:
-                # only aclose() can await cancellation of an asyncio task
                 task.cancel()
 
+        self._closed = True
         self._raise_errors("MiniSky cleanup failed", errors)
 
     async def aclose(self) -> None:
-        """Stop the runner task and release all runtime-owned resources."""
-        errors = self._close_resources()
+        """Stop the runner and close plugin lifespans and synchronous resources."""
+        if self._closed:
+            return
+        errors: list[Exception] = []
+        self.runner.shutdown()
+
         task = self._run_task
         if task is not None and task is not asyncio.current_task():
             if not task.done():
@@ -189,6 +184,16 @@ class MiniSky:
             finally:
                 self._run_task = None
 
+        try:
+            await self.plugins.aclose()
+        except Exception as exc:
+            errors.append(exc)
+        try:
+            self.streaming.close()
+        except Exception as exc:
+            errors.append(exc)
+
+        self._closed = True
         self._raise_errors("MiniSky shutdown failed", errors)
 
     def __enter__(self) -> MiniSky:

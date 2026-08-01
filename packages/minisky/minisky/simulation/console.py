@@ -1,40 +1,42 @@
-"""Console I/O for the MiniSky simulation.
-
-Defines `ConsoleIO`, the text output channel of the simulator. Stack
-commands and simulation state changes report back through its `echo`
-method, which prints to stdout and stores the message in a buffer that remote
-clients (such as the HTTP API served by `minisky server`) can read asynchronously.
-Each `MiniSky` runtime owns one instance as [`runtime.console`][minisky.simulation.console.ConsoleIO].
-"""
+"""Console I/O for a MiniSky runtime."""
 
 from __future__ import annotations
 
 import asyncio
 import io
 import sys
+import traceback
 from collections.abc import Callable
 
 from colorama import Fore, Style
 
+ConsoleCallback = Callable[[str], None]
+
+
+class ConsoleSubscription:
+    """Owned console callback registration."""
+
+    def __init__(self, console: ConsoleIO, token: int) -> None:
+        self._console = console
+        self._token = token
+        self._closed = False
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        self._console._unsubscribe(self._token)
+
+    def __enter__(self) -> ConsoleSubscription:
+        return self
+
+    def __exit__(self, *_args: object) -> None:
+        self.close()
+
 
 class ConsoleIO:
-    """Class within sim task which sends/receives data to/from GUI task.
+    """Text output and subscriptions owned by a runtime."""
 
-    Acts as the runtime's screen/console object ([`runtime.console`][minisky.simulation.console.ConsoleIO]). Output
-    produced with `echo` is printed to stdout and kept in an in-memory
-    buffer; an `asyncio.Event` is set on every echo so that awaiting
-    consumers (e.g. the HTTP API's `/stack` endpoint) know new output is
-    available and can collect it with `read_output_buffer`.
-
-    Attributes:
-        siminfo_rate: Update rate of simulation info messages [Hz].
-        acupdate_rate: Update rate of aircraft update messages [Hz].
-        prevtime: Simulation time of the previous info update [s].
-        samplecount: Number of simulation samples counted while operating.
-        prevcount: Sample count at the previous info update.
-        output_buffer: `StringIO` buffer holding the latest echoed text.
-        event: `asyncio.Event` set whenever new output has been echoed.
-    """
 
     # Prefix for the stdout copy of echoed text, aligned with uvicorn's
     # "INFO:     " column. Only the terminal print gets it; the output
@@ -54,9 +56,10 @@ class ConsoleIO:
         self.prevtime: float = 0.0
         self.samplecount: int = 0
         self.prevcount: int = 0
-
-        self.output_buffer: io.StringIO = io.StringIO()
-        self.event: asyncio.Event = asyncio.Event()
+        self.output_buffer = io.StringIO()
+        self.event = asyncio.Event()
+        self._subscribers: dict[int, ConsoleCallback] = {}
+        self._next_subscription = 0
 
     def update(self) -> None:
         """Count one simulation sample while the simulation is operating.
@@ -75,17 +78,8 @@ class ConsoleIO:
         self.prevtime = 0.0
 
     def echo(self, text: str = "", flag: int = 0) -> None:
-        """Print a message and store it in the output buffer.
-
-        The previous buffer contents are discarded, the text is written both
-        to stdout (each line prefixed with `prefix`) and to the buffer
-        (verbatim), and the output event is set to wake up any consumer
-        awaiting new output.
-
-        Args:
-            text: Message text to output.
-            flag: Message flag (accepted for interface compatibility, unused).
-        """
+        """Print, buffer, and publish a console message."""
+        del flag
         self.output_buffer.truncate(0)
         self.output_buffer.seek(0)
         prefix = self.prefix
@@ -99,24 +93,37 @@ class ConsoleIO:
         print(text, file=self.output_buffer, end="")
         self.event.set()
 
+        for token, callback in tuple(self._subscribers.items()):
+            try:
+                callback(text)
+            except Exception as exc:
+                self._subscribers.pop(token, None)
+                traceback.print_exception(exc)
+
+    def subscribe(self, callback: ConsoleCallback) -> ConsoleSubscription:
+        """Subscribe to future console messages."""
+        token = self._next_subscription
+        self._next_subscription += 1
+        self._subscribers[token] = callback
+        return ConsoleSubscription(self, token)
+
+    def _unsubscribe(self, token: int) -> None:
+        self._subscribers.pop(token, None)
+
     def getviewctr(self) -> tuple[float, float]:
-        """Return the current view center (lat, lon). Stub for non-GUI mode."""
+        """Return the current view center. Stub for non-GUI mode."""
         return 0.0, 0.0
 
     def addnavwpt(self, name: str, lat: float, lon: float) -> None:
-        """Add a nav waypoint marker to the display. Stub for non-GUI mode."""
+        """Add a waypoint marker. Stub for non-GUI mode."""
         pass
 
     def removenavwpt(self, name: str) -> None:
-        """Remove a nav waypoint marker from the display. Stub for non-GUI mode."""
+        """Remove a waypoint marker. Stub for non-GUI mode."""
         pass
 
     def read_output_buffer(self) -> str:
-        """Return the buffered console output and clear the buffer.
-
-        Returns:
-            str: All text echoed since the last read (empty string if none).
-        """
+        """Return and clear buffered console output."""
         text = self.output_buffer.getvalue()
         self.output_buffer.truncate(0)
         self.output_buffer.seek(0)

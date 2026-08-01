@@ -8,7 +8,7 @@ commands) from a tangram sidebar widget.
 
 Nothing is added to the tangram source tree. Tangram discovers plugins
 through Python entry points, so its side of the integration is a package you
-`pip install` into whatever environment runs `tangram serve`, plus one line
+`pip install` into whatever environment runs `tangram serve`, plus a line
 of configuration. Both halves of the integration live in this repository:
 
 ```
@@ -59,13 +59,10 @@ just sync
 In `settings.toml`:
 
 ```toml
-enabled_plugins = ["TANGRAM"]
-
-# [plugins.tangram] is optional; uncomment it to override the defaults.
-# [plugins.tangram]
-# redis_url = "redis://127.0.0.1:6379"
-# channel = "minisky"
-# max_hz = 5
+[plugins.tangram]
+redis_url = "redis://127.0.0.1:6379"
+channel = "minisky"
+max_hz = 5
 ```
 
 Start MiniSky (any front — the bridge works the same in all of them):
@@ -223,7 +220,7 @@ happens in the MiniSky plugin, keeping `minisky.streaming` consumer-agnostic.
   sees the simulator and its state changes.
 - `to:<channel>:console`: `{"lines": [...]}` — everything echoed to the
   MiniSky console (the bridge tees the console, it does not consume it).
-- `from:<channel>:command`: `{"command": "..."}` — one stack command,
+- `from:<channel>:command`: `{"command": "..."}` — a stack command,
   executed on the next simulation step (works while paused, so `OP` can
   un-pause). Bare strings are also accepted for redis-cli convenience.
 

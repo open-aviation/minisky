@@ -38,7 +38,7 @@ def _new_runtime(scenario: str | None = None) -> MiniSky:
 async def _run_scenario(scenario: str, speed: int) -> None:
     """Initialise the simulator with a scenario and run it to completion."""
     async with _new_runtime(scenario) as runtime:
-        runtime.load_plugins()
+        await runtime.plugins.load_configured()
         runtime.runner.speed = speed
         await runtime.run()
 

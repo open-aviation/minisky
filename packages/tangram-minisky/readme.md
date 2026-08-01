@@ -70,8 +70,8 @@ In the MiniSky repo:
 
 ```bash
 just sync
-# settings.toml: enabled_plugins = ["TANGRAM"], and (optionally) a [plugins.tangram] table
-# with redis_url pointing at the same Redis instance tangram uses
+# settings.toml: add [plugins.tangram] with redis_url pointing at the same
+# Redis instance tangram uses
 minisky server        # or: minisky run --scenario scenarios/kl204.scn
 ```
 
