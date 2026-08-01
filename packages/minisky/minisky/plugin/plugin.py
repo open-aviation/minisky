@@ -60,6 +60,12 @@ class PluginStatus:
     scenname: str
 
 
+class _PluginRuntimeState(Enum):
+    STARTING = auto()
+    PUBLISHED = auto()
+    REVOKED = auto()
+
+
 class PluginRuntime:
     """Restricted runtime capabilities available during a plugin lifespan."""
 
@@ -78,40 +84,46 @@ class PluginRuntime:
         self._subscribe_console = subscribe_console
         self._stack_command = stack_command
         self._subscriptions: list[ConsoleSubscription] = []
-        self._active = True
+        self._state = _PluginRuntimeState.STARTING
 
     def status(self) -> PluginStatus:
-        self._ensure_active()
+        self._raise_if_revoked()
         return self._status()
 
     def snapshot(self) -> Snapshot:
-        self._ensure_active()
+        self._raise_if_revoked()
         return self._snapshot()
 
     def echo(self, text: str) -> None:
-        self._ensure_active()
+        self._raise_if_revoked()
         self._echo(text)
 
     def stack_command(self, command: str) -> None:
-        self._ensure_active()
+        self._raise_if_revoked()
+        if self._state is not _PluginRuntimeState.PUBLISHED:
+            raise RuntimeError("plugin runtime is not published")
         self._stack_command(command)
 
     def subscribe_console(self, callback: Callable[[str], None]) -> ConsoleSubscription:
-        self._ensure_active()
+        self._raise_if_revoked()
         subscription = self._subscribe_console(callback)
         self._subscriptions.append(subscription)
         return subscription
 
-    def revoke(self) -> None:
-        if not self._active:
+    def _activate(self) -> None:
+        self._raise_if_revoked()
+        self._state = _PluginRuntimeState.PUBLISHED
+
+    def _revoke(self) -> None:
+        if self._state is _PluginRuntimeState.REVOKED:
             return
-        self._active = False
+        self._state = _PluginRuntimeState.REVOKED
         for subscription in reversed(self._subscriptions):
             subscription.close()
         self._subscriptions.clear()
 
-    def _ensure_active(self) -> None:
-        if not self._active:
+    def _raise_if_revoked(self) -> None:
+        if self._state is _PluginRuntimeState.REVOKED:
             raise RuntimeError("plugin runtime is revoked")
 
 
@@ -349,6 +361,9 @@ class PluginManager:
             lifespan = spec.lifespan(plugin_runtime)
             await lifespan.__aenter__()
             entered = True
+            for entity in prepared.entities:
+                entity._prepare(self.runtime.traffic)
+            plugin_runtime._activate()
             self._publish(key, prepared)
 
             plugin.loaded = True
@@ -365,7 +380,7 @@ class PluginManager:
             if prepared is not None:
                 prepared.abort()
             if plugin_runtime is not None:
-                plugin_runtime.revoke()
+                plugin_runtime._revoke()
             if entered and lifespan is not None:
                 try:
                     await lifespan.__aexit__(type(exc), exc, exc.__traceback__)
@@ -453,15 +468,6 @@ class PluginManager:
         entities = tuple(
             component for component in spec.components if isinstance(component, Entity)
         )
-        prepared_entities: list[Entity] = []
-        try:
-            for entity in entities:
-                entity._prepare(self.runtime.traffic)
-                prepared_entities.append(entity)
-        except BaseException:
-            for entity in reversed(prepared_entities):
-                entity._abort()
-            raise
 
         return _PreparedPlugin(
             spec,
@@ -533,7 +539,7 @@ class PluginManager:
             raise
 
     async def load_configured(self) -> tuple[str, ...]:
-        """Load configured plugins in declaration order."""
+        """Attempt every configured plugin and return those loaded successfully."""
         loaded: list[str] = []
         for plugin_name in self.config.plugins:
             ok, message = await self.load(plugin_name)
@@ -614,13 +620,13 @@ class PluginManager:
             self._state = _ManagerState.CLOSING
             errors: list[Exception] = []
             for plugin in reversed(tuple(self.loaded_plugins.values())):
+                if plugin.runtime is not None:
+                    plugin.runtime._revoke()
                 try:
                     self._remove(plugin)
                 except Exception as exc:
                     errors.append(exc)
 
-                if plugin.runtime is not None:
-                    plugin.runtime.revoke()
                 if plugin.lifespan is not None:
                     try:
                         await plugin.lifespan.__aexit__(None, None, None)

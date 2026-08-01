@@ -130,8 +130,8 @@ class MiniSky:
         """Close synchronous resources when no plugin lifespan is active."""
         if self._closed:
             return
-        if self.plugins.requires_async_close:
-            raise RuntimeError("active plugins require await runtime.aclose()")
+        if self.commands.command_pending or self.plugins.requires_async_close:
+            raise RuntimeError("active asynchronous work requires await runtime.aclose()")
 
         errors: list[Exception] = []
         for cleanup in (self.runner.shutdown, self.streaming.close, self.plugins.close):
@@ -150,6 +150,10 @@ class MiniSky:
         errors: list[Exception] = []
         self.runner.shutdown()
 
+        try:
+            await self.commands.aclose()
+        except Exception as exc:
+            errors.append(exc)
         try:
             await self.plugins.aclose()
         except Exception as exc:

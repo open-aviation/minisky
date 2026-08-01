@@ -17,8 +17,8 @@ class Entity(TrafficArrays):
     inside `with self.settrafarrays():`. MiniSky sizes and attaches the entity
     when the plugin loads, then retires it during shutdown.
 
-    `traffic` is available only while the plugin is active. Do not use it in
-    `__init__`.
+    `traffic` is available during initial backfill and while the plugin is active.
+    Do not use it in `__init__`.
     """
 
     def __init__(self) -> None:
@@ -29,10 +29,11 @@ class Entity(TrafficArrays):
 
     @property
     def traffic(self) -> Traffic:
-        """Return the owning traffic object while the plugin is active."""
-        if self._traffic is None:
+        """Return traffic during initial backfill and while active."""
+        traffic = self._traffic if self._traffic is not None else self._prepared_traffic
+        if traffic is None:
             raise RuntimeError("plugin entity is detached")
-        return self._traffic
+        return traffic
 
     @property
     def ownerless(self) -> bool:
@@ -47,15 +48,14 @@ class Entity(TrafficArrays):
         """Size arrays for existing traffic without exposing live traffic."""
         if not self.ownerless:
             raise RuntimeError("plugin entity must be fresh and detached")
+        self._prepared_traffic = traffic
         try:
             if traffic.ntraf:
-                # NOTE(abraham): custom create() may initialize private arrays,
-                # but traffic remains unavailable until publication.
                 self.create(traffic.ntraf)
         except BaseException:
+            self._prepared_traffic = None
             TrafficArrays.reset(self)
             raise
-        self._prepared_traffic = traffic
 
     def _publish(self) -> None:
         traffic = self._prepared_traffic

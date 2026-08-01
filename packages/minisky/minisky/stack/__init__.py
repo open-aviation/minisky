@@ -320,6 +320,8 @@ class CommandStack:
         self.argument_parser = argparser.ArgumentParser(traffic, navigation, console)
         self._get_simulation = get_simulation
         self._get_runner = get_runner
+        # TODO(abraham): package bundled scenarios inside minisky and resolve
+        # them with importlib.resources for wheel installs.
         self.scenario_root = scenario_root or Path(__file__).parent.parent.parent
         self.cmddict: dict[str, Command] = {}
         self._queue_lock = Lock()
@@ -587,6 +589,16 @@ class CommandStack:
         pending = self._pending_command
         if pending is not None and not pending.task.done():
             await asyncio.wait((pending.task,))
+
+    async def aclose(self) -> None:
+        """Cancel and await the stack-owned asynchronous command."""
+        pending, self._pending_command = self._pending_command, None
+        if pending is None:
+            return
+        if not pending.task.done():
+            pending.task.cancel()
+        with suppress(asyncio.CancelledError, Exception):
+            await pending.task
 
     def readscn(self, scn: str | Path | StringIO) -> Iterator[tuple[float, str]]:
         """Read a scenario file and yield its timestamped commands.

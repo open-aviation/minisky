@@ -211,6 +211,7 @@ class TangramBridge:
 
     def __init__(
         self,
+        # we assume the redis url has no password and is safe to log
         redis_url: str,
         channel: str,
         max_hz: float,
@@ -264,6 +265,8 @@ class TangramBridge:
     def stop(self) -> None:
         """Stop Redis I/O and release runtime callbacks."""
         self._stop.set()
+        # TODO(abraham): use finite redis timeouts, close client/pubsub resources,
+        # and retain ownership when the thread does not stop
         if self._thread is not None:
             self._thread.join(timeout=2.0)
             self._thread = None

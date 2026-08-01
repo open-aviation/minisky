@@ -38,7 +38,10 @@ def bridge(
         max_hz=1000,
         redis_factory=lambda url: fakeredis.FakeRedis(server=redis_server),
     )
+    # TODO(abraham): load tangram through PluginManager when thread shutdown
+    # ownership is hardened.
     plugin_runtime = runtime.plugins._plugin_runtime()
+    plugin_runtime._activate()
     plugin_runtime.subscribe_console(bridge.capture_console)
     ok, msg = bridge.start(plugin_runtime)
     assert ok, msg
@@ -46,7 +49,7 @@ def bridge(
     # subscription is live would be silently lost (pub/sub has no replay).
     assert bridge.ready.wait(timeout=5.0), "bridge did not subscribe in time"
     yield bridge
-    plugin_runtime.revoke()
+    plugin_runtime._revoke()
     bridge.stop()
 
 
