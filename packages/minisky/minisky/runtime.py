@@ -47,7 +47,6 @@ class MiniSky:
         )
         self.replaceables = ReplaceableManager(
             self.traffic,
-            lambda: self.commands.cmddict,
             bases=(Autopilot, ConflictDetection, ConflictResolution, OpenAP),
             core=(MVP,),
         )

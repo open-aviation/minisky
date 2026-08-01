@@ -56,6 +56,7 @@ class CommandResult(NamedTuple):
     success: bool
     echotext: str
 
+
 class Command:
     """Stack command object.
 
@@ -79,12 +80,11 @@ class Command:
 
     def __init__(
         self,
-        func,
-        parent: Command | None = None,
+        func: Callable[..., Any],
         name: str = "",
         *,
         argument_parser: argparser.ArgumentParser,
-        **kwargs,
+        **kwargs: Any,
     ) -> None:
         self.argument_parser = argument_parser
         self.name = name
@@ -95,7 +95,6 @@ class Command:
         self.valid = True
         self.arguments = self._get_arguments(kwargs.get("arguments", ""))
         self.params = []
-        self.parent = parent
         self.callback = func
 
     def __call__(self, argstring: str) -> CommandResult | Awaitable[CommandResult]:
@@ -148,10 +147,6 @@ class Command:
             return f"<Stack Command {self.name}, callback={self.callback}>"
         return f"<Stack Command {self.name} (invalid), callback=unbound method {self.callback}"
 
-    def notimplemented(self, *args, **kwargs) -> None:
-        """Placeholder callback for commands without an implementation."""
-        pass
-
     @property
     def callback(self):
         """Callback pointing to the actual function that implements this
@@ -162,7 +157,8 @@ class Command:
     @callback.setter
     def callback(self, function):
         self._callback = function
-        self._callback_source = function.func if isinstance(function, partial) else function
+        source = function.func if isinstance(function, partial) else function
+        self._callback_source = inspect.unwrap(source)
         try:
             # eval_str resolves stringified hints (from __future__ import annotations)
             # to the actual objects, so Annotated aliases are recognised either way
@@ -338,6 +334,8 @@ class CommandStack:
     def runner(self) -> Runner:
         return self._get_runner()
 
+    # TODO(abraham): derive stack parsers from Annotated[...] metadata and remove
+    # the arguments DSL.
     def prepare_command(
         self,
         func: Callable[..., Any],
@@ -350,6 +348,7 @@ class CommandStack:
     ) -> PreparedCommand:
         """Construct and parse a command without registering it."""
         callback = func.__func__ if isinstance(func, (staticmethod, classmethod)) else func
+        callback = self.replaceables.bind_callback(callback)
         command_name = (name or callback.__name__).upper()
         alias_names = tuple(alias.upper() for alias in aliases)
         names = (command_name, *alias_names)
@@ -390,58 +389,6 @@ class CommandStack:
                 if self.cmddict.get(name) is prepared.command:
                     del self.cmddict[name]
 
-    # TODO(abraham): route core command batches through prepare/validate too.
-    # keep the old reimplementation escape hatch until plugin migration is done.
-    def addcommand(
-        self,
-        func: Callable,
-        parent: Command | None = None,
-        name: str = "",
-        command_type: type[Command] = Command,
-        **kwargs: Any,
-    ) -> None:
-        """Add `func` as a stack command in this runtime.
-
-        Creates a command object for the given function and registers it and
-        its aliases in this command stack's `cmddict`. When a command with the
-        same name already exists, the existing command object is kept.
-
-        Args:
-            func: Function, static method, or class method implementing the
-                command.
-            parent: Optional parent command when this is a subcommand.
-            name: Command name. Defaults to the function name in upper case.
-            command_type: Command class used to wrap the callback.
-            **kwargs: Command options: `arguments` (an argument type
-                specification such as `callsign,alt,[vspd]`), `brief`, `help`,
-                and `aliases`.
-        """
-        func = func.__func__ if isinstance(func, (staticmethod, classmethod)) else func
-        name = (name or func.__name__).upper()
-
-        cmdobj = self.cmddict.get(name)
-        if not cmdobj:
-            cmdobj = command_type(
-                func,
-                parent,
-                name,
-                argument_parser=self.argument_parser,
-                **kwargs,
-            )
-            self.cmddict[name] = cmdobj
-            for alias in cmdobj.aliases:
-                self.cmddict[alias] = cmdobj
-        else:
-            if cmdobj.callback is func:
-                return
-            print(f"Attempt to reimplement {name} from {cmdobj.callback} to {func}")
-            if not isinstance(cmdobj, command_type):
-                raise TypeError(
-                    f"Error reimplementing {name}: "
-                    f"A {type(cmdobj).__name__} cannot be "
-                    f"reimplemented as a {command_type.__name__}"
-                )
-
     def _reset_state(self) -> None:
         """Reset the runtime-owned command queue and scenario state."""
         # Stack data
@@ -475,22 +422,21 @@ class CommandStack:
             yield current
 
     def init(self) -> None:
-        """Initialise BlueSky base stack commands."""
-
-        cmddict, synonyms = commands.get_commands(self)
-
-        # register command
-        for name, values in cmddict.items():
-            function, arguments, brief, help_text = values
-
-            self.addcommand(
-                function,
+        """Prepare, validate, and install the base stack commands."""
+        catalog = commands.get_commands(self)
+        prepared = tuple(
+            self.prepare_command(
+                definition.callback,
                 name=name,
-                arguments=arguments,
-                brief=brief,
-                help=help_text,
-                aliases=synonyms.get(name, []),
+                aliases=catalog.aliases.get(name, ()),
+                arguments=definition.arguments,
+                brief=definition.brief,
+                help=definition.help,
             )
+            for name, definition in catalog.definitions.items()
+        )
+        self.validate_commands(prepared)
+        self.install_commands(prepared)
 
     def delete_element(self, *arg: Any) -> Any:
         """DEL: Delete an element (aircraft, wind field, area shape, or group).

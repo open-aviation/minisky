@@ -22,18 +22,16 @@ in the simulation grows and shrinks in lockstep.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Mapping
+import inspect
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
+from functools import wraps
 from types import MappingProxyType
-from typing import TYPE_CHECKING
+from typing import Any
 
 import numpy as np
 
 from minisky.identifiers import normalize_public_name
-
-if TYPE_CHECKING:
-    from minisky.stack import Command
-
 
 defaults = MappingProxyType({"float": 0.0, "int": 0, "uint": 0, "bool": False, "S": "", "str": ""})
 
@@ -47,20 +45,70 @@ class PreparedReplacement:
     implementation: type[TrafficArrays]
 
 
+@dataclass(slots=True)
+class _ComponentSlot:
+    """Stable access to a replaceable component attached to the traffic tree."""
+
+    traffic: TrafficArrays
+    attribute: str
+    base: type[TrafficArrays]
+
+    @property
+    def current(self) -> TrafficArrays:
+        component = getattr(self.traffic, self.attribute)
+        if not isinstance(component, self.base):
+            raise RuntimeError(f"replaceable slot {self.attribute} has an invalid component")
+        return component
+
+    def bind(self, callback: Callable[..., Any]) -> Callable[..., Any]:
+        method_name = callback.__name__
+
+        @wraps(callback)
+        def dispatch(*args: Any, **kwargs: Any) -> Any:
+            method = getattr(self.current, method_name)
+            return method(*args, **kwargs)
+
+        return dispatch
+
+    def replace(self, implementation: type[TrafficArrays]) -> None:
+        previous = self.current
+        replacement = previous.new_implementation(implementation)
+        if not isinstance(replacement, self.base):
+            raise TypeError(
+                f"replacement {type(replacement).__name__} must inherit {self.base.__name__}"
+            )
+
+        ntraf = int(getattr(self.traffic, "ntraf", 0))
+        if ntraf:
+            replacement.create(ntraf)
+            replacement.create_children(ntraf)
+        if previous._parent is not None:
+            replacement.reparent(previous._parent)
+
+        for name in previous._ArrVars:
+            if hasattr(replacement, name):
+                setattr(replacement, name, getattr(previous, name))
+        for name in previous._LstVars:
+            if hasattr(replacement, name):
+                setattr(replacement, name, getattr(previous, name))
+
+        setattr(self.traffic, self.attribute, replacement)
+        previous.detach()
+
+
 class ReplaceableManager:
     """Own replacement implementations visible to a runtime."""
 
     def __init__(
         self,
         traffic: TrafficArrays,
-        get_command_registry: Callable[[], Mapping[str, Command]],
         *,
         bases: Iterable[type[TrafficArrays]],
         core: Iterable[type[TrafficArrays]] = (),
     ) -> None:
         self.traffic = traffic
-        self._get_command_registry = get_command_registry
         self._bases = {base.__name__.upper(): base for base in bases}
+        self._slots = {base: self._find_slot(base) for base in self._bases.values()}
         self._implementations: dict[type[TrafficArrays], dict[str, type[TrafficArrays]]] = {
             base: {base.__name__.upper(): base} for base in self._bases.values()
         }
@@ -68,11 +116,24 @@ class ReplaceableManager:
             prepared = self.prepare(implementation)
             self._implementations[prepared.base][prepared.name] = implementation
 
-    def _instance(self, base: type[TrafficArrays]) -> TrafficArrays | None:
-        return next(
-            (value for value in self.traffic.__dict__.values() if isinstance(value, base)),
-            None,
-        )
+    # TODO(abraham): declare replaceable slots during Traffic construction
+    # instead of scanning attributes.
+    def _find_slot(self, base: type[TrafficArrays]) -> _ComponentSlot:
+        matches = [name for name, value in self.traffic.__dict__.items() if isinstance(value, base)]
+        if len(matches) != 1:
+            raise ValueError(
+                f"expected exactly one {base.__name__} component, found {len(matches)}"
+            )
+        return _ComponentSlot(self.traffic, matches[0], base)
+
+    def bind_callback(self, callback: Callable[..., Any]) -> Callable[..., Any]:
+        """Return a callback that follows replacement selection when needed."""
+        if not inspect.ismethod(callback):
+            return callback
+        for slot in self._slots.values():
+            if callback.__self__ is slot.current:
+                return slot.bind(callback)
+        return callback
 
     def prepare(
         self,
@@ -108,14 +169,11 @@ class ReplaceableManager:
             self._implementations[replacement.base][replacement.name] = replacement.implementation
 
     def remove(self, replacements: tuple[PreparedReplacement, ...]) -> None:
-        registry = self._get_command_registry()
         for replacement in reversed(replacements):
-            current = self._instance(replacement.base)
-            if current is not None and type(current) is replacement.implementation:
+            slot = self._slots[replacement.base]
+            if type(slot.current) is replacement.implementation:
                 # NOTE(abraham): replacements are synchronous strategies.
-                _replace_instance_on_traf(
-                    replacement.base, replacement.base, self.traffic, registry
-                )
+                slot.replace(replacement.base)
             implementations = self._implementations[replacement.base]
             if implementations.get(replacement.name) is replacement.implementation:
                 del implementations[replacement.name]
@@ -128,8 +186,8 @@ class ReplaceableManager:
         if base is None:
             return False, f"Replaceable {basename} not found."
         implementations = self._implementations[base]
-        current_instance = self._instance(base)
-        current = type(current_instance) if current_instance is not None else base
+        slot = self._slots[base]
+        current = type(slot.current)
         if not implname:
             return True, (
                 f"Current implementation for {basename}: {current.__name__}\n"
@@ -141,65 +199,13 @@ class ReplaceableManager:
         if implementation is None:
             return False, f"Implementation {implname} not found for {basename}."
         if current is not implementation:
-            replaced = _replace_instance_on_traf(
-                base, implementation, self.traffic, self._get_command_registry()
-            )
-            if not replaced:
-                return False, f"No {basename} instance exists on this traffic tree."
+            slot.replace(implementation)
         return True, f"Selected {implname} for {basename}"
 
     def reset(self) -> None:
-        registry = self._get_command_registry()
-        for base in self._bases.values():
-            current = self._instance(base)
-            if current is not None and type(current) is not base:
-                _replace_instance_on_traf(base, base, self.traffic, registry)
-
-
-def _replace_instance_on_traf(
-    base: type[TrafficArrays],
-    impl: type[TrafficArrays],
-    traffic: TrafficArrays,
-    cmddict: Mapping[str, Command],
-) -> bool:
-    """Replace an attached implementation while preserving shared state."""
-    for attr_name, attr_value in traffic.__dict__.items():
-        if isinstance(attr_value, base):
-            new_instance = attr_value.new_implementation(impl)
-            ntraf = int(getattr(traffic, "ntraf", 0))
-            if ntraf:
-                new_instance.create(ntraf)
-                new_instance.create_children(ntraf)
-            if attr_value._parent is not None:
-                new_instance.reparent(attr_value._parent)
-
-            for arr_var in attr_value._ArrVars:
-                if hasattr(new_instance, arr_var):
-                    setattr(new_instance, arr_var, getattr(attr_value, arr_var))
-            for lst_var in attr_value._LstVars:
-                if hasattr(new_instance, lst_var):
-                    setattr(new_instance, lst_var, getattr(attr_value, lst_var))
-
-            setattr(traffic, attr_name, new_instance)
-            attr_value.detach()
-            _rebind_stack_commands(attr_value, new_instance, cmddict)
-            return True
-    return False
-
-
-# TODO(abraham): replace callback rebinding with stable component slots.
-def _rebind_stack_commands(
-    old_instance: TrafficArrays,
-    new_instance: TrafficArrays,
-    cmddict: Mapping[str, Command],
-) -> None:
-    """Rebind stack commands that still target the replaced instance."""
-    import inspect
-
-    for command in set(cmddict.values()):
-        callback = command.callback
-        if inspect.ismethod(callback) and callback.__self__ is old_instance:
-            command.callback = getattr(new_instance, callback.__func__.__name__, callback)
+        for base, slot in self._slots.items():
+            if type(slot.current) is not base:
+                slot.replace(base)
 
 
 class RegisterElementParameters:

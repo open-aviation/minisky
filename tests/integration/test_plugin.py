@@ -36,7 +36,8 @@ class TestDiscovery:
 
     def test_discovery_does_not_import(self, runtime: MiniSky) -> None:
         record = runtime.plugins.plugins["EXAMPLE"]
-        assert (record.loaded, record.spec) == (False, None)
+        assert not record.loaded
+        assert record.spec is None
 
     def test_listing(self, runtime: MiniSky) -> None:
         ok, text = runtime.plugins.listing()
@@ -46,7 +47,8 @@ class TestDiscovery:
     @pytest.mark.anyio
     async def test_unknown_plugin_load_fails(self, runtime: MiniSky) -> None:
         ok, message = await runtime.plugins.load("NOSUCHPLUGIN")
-        assert (ok, "not found" in message.lower()) == (False, True)
+        assert not ok
+        assert "not found" in message.lower()
 
     def test_discovery_emits_no_deprecation_warning(self, runtime: MiniSky) -> None:
         with warnings.catch_warnings():
@@ -127,7 +129,8 @@ async def test_example_commands_and_entity_are_runtime_owned() -> None:
         ok, message = await runtime.plugins.load("EXAMPLE")
         assert ok, message
         record = runtime.plugins.plugins["EXAMPLE"]
-        assert (record.loaded, tuple(runtime.plugins.loaded_plugins)) == (True, ("EXAMPLE",))
+        assert record.loaded
+        assert tuple(runtime.plugins.loaded_plugins) == ("EXAMPLE",)
 
         run_command(runtime, "CRE KL001,A320,52,4,90,FL100,250")
         assert "150" in run_command(runtime, "PASSENGERS KL001 150")
@@ -147,17 +150,15 @@ async def test_example_entity_sizes_existing_traffic_and_retires() -> None:
     assert ok, message
     record = runtime.plugins.plugins["EXAMPLE"]
     entity = record.entities[0]
-    assert (record.entities, record.spec, EntityValue.from_entity(entity)) == (
-        (entity,),
-        plugin_api.PluginSpec((entity,), entity),
-        EntityValue(
-            runtime.traffic,
-            None,
-            runtime.traffic,
-            False,
-            False,
-            (("npassengers", 1),),
-        ),
+    assert record.entities == (entity,)
+    assert record.spec == plugin_api.PluginSpec((entity,), entity)
+    assert EntityValue.from_entity(entity) == EntityValue(
+        runtime.traffic,
+        None,
+        runtime.traffic,
+        False,
+        False,
+        (("npassengers", 1),),
     )
 
     await runtime.aclose()
@@ -195,13 +196,8 @@ async def test_typed_declaration_builds_validated_runtime_state(
         ok, message = await runtime.plugins.load("TYPED")
         assert ok, message
         state = State(7, runtime.python_random)
-        assert (
-            runtime.variables.varlist["typed"],
-            runtime.plugins.plugins["TYPED"].spec,
-        ) == (
-            (state, ["value", "random"]),
-            plugin_api.PluginSpec((state,), state),
-        )
+        assert runtime.variables.varlist["typed"] == (state, ["value", "random"])
+        assert runtime.plugins.plugins["TYPED"].spec == plugin_api.PluginSpec((state,), state)
     finally:
         await runtime.aclose()
 
@@ -233,20 +229,17 @@ async def test_mount_binds_command_to_exact_instance_and_infers_text(
         ok, message = await runtime.plugins.load("MOUNTED")
         assert ok, message
         command = runtime.commands.cmddict["RECORD"]
-        assert (
-            runtime.plugins.plugins["MOUNTED"].commands,
-            CommandValue.from_command(command),
-        ) == (
-            (PreparedCommand(command, ("RECORD",)),),
-            CommandValue(
-                component.record,
-                "RECORD",
-                (),
-                "RECORD value",
-                "Record an integer.",
-                (("int", False),),
-                "Component",
-            ),
+        assert runtime.plugins.plugins["MOUNTED"].commands == (
+            PreparedCommand(command, ("RECORD",)),
+        )
+        assert CommandValue.from_command(command) == CommandValue(
+            component.record,
+            "RECORD",
+            (),
+            "RECORD value",
+            "Record an integer.",
+            (("int", False),),
+            "Component",
         )
 
         runtime.commands.stack("RECORD 7")
@@ -322,18 +315,12 @@ async def test_failing_hook_is_disabled_without_disabling_plugin(
         assert ok, message
         runtime.plugins.update()
         runtime.plugins.update()
-        assert (
-            calls,
-            runtime.plugins.plugins["HOOKS"].hooks,
-            tuple(runtime.plugins.loaded_plugins),
-        ) == (
-            {"broken": 1, "healthy": 2},
-            (
-                _Hook(component.update, "update", 0.0, "update", False, enabled=False),
-                _Hook(component.healthy, "update", 0.0, "healthy", False),
-            ),
-            ("HOOKS",),
+        assert calls == {"broken": 1, "healthy": 2}
+        assert runtime.plugins.plugins["HOOKS"].hooks == (
+            _Hook(component.update, "update", 0.0, "update", False, enabled=False),
+            _Hook(component.healthy, "update", 0.0, "healthy", False),
         )
+        assert tuple(runtime.plugins.loaded_plugins) == ("HOOKS",)
     finally:
         await runtime.aclose()
 
@@ -348,6 +335,7 @@ async def test_replacement_visibility_is_runtime_local_and_removed_on_shutdown()
         assert runtime_a.replaceables.select("AUTOPILOT", "CUSTOMAUTOPILOT")[0] is False
         assert runtime_b.replaceables.select("AUTOPILOT", "CUSTOMAUTOPILOT")[0] is False
 
+        alt_callback = runtime_a.commands.cmddict["ALT"].callback
         ok, message = await runtime_a.plugins.load("CUSTOMAUTOPILOT")
         assert ok, message
         assert runtime_a.plugins.plugins["CUSTOMAUTOPILOT"].replacements == (
@@ -358,10 +346,9 @@ async def test_replacement_visibility_is_runtime_local_and_removed_on_shutdown()
         assert runtime_b.replaceables.select("AUTOPILOT", "CUSTOMAUTOPILOT")[0] is False
 
         await runtime_a.plugins.aclose()
-        assert (
-            type(runtime_a.traffic.ap),
-            runtime_a.replaceables.select("AUTOPILOT", "CUSTOMAUTOPILOT")[0],
-        ) == (Autopilot, False)
+        assert type(runtime_a.traffic.ap) is Autopilot
+        assert runtime_a.replaceables.select("AUTOPILOT", "CUSTOMAUTOPILOT")[0] is False
+        assert runtime_a.commands.cmddict["ALT"].callback is alt_callback
     finally:
         await runtime_a.aclose()
         await runtime_b.aclose()
@@ -375,8 +362,13 @@ async def test_replacement_arrays_size_existing_traffic(
     class ArrayAutopilot(Autopilot):
         def __init__(self, traffic: Traffic, get_simulation: Callable[[], Simulation]) -> None:
             super().__init__(traffic, get_simulation)
+            self.alt_commands = 0
             with self.settrafarrays():
                 self.plugin_value = np.array([])
+
+        def selaltcmd(self, idx: int | np.ndarray, alt: float, vspd: float | None = None):
+            self.alt_commands += 1
+            return super().selaltcmd(idx, alt, vspd)
 
     def build(context: plugin_api.PluginContext[object]) -> plugin_api.PluginSpec:
         return context.finish(replacements=(ArrayAutopilot,))
@@ -391,9 +383,15 @@ async def test_replacement_arrays_size_existing_traffic(
             PreparedReplacement(Autopilot, "ARRAYAUTOPILOT", ArrayAutopilot),
         )
 
+        alt_callback = runtime.commands.cmddict["ALT"].callback
         assert runtime.replaceables.select("AUTOPILOT", "ARRAYAUTOPILOT")[0] is True
         selected = cast(ArrayAutopilot, runtime.traffic.ap)
-        assert (type(selected), selected.plugin_value.tolist()) == (ArrayAutopilot, [0.0])
+        runtime.commands.stack("ALT KL001 FL100")
+        runtime.simulation.step()
+        assert type(selected) is ArrayAutopilot
+        assert selected.plugin_value.tolist() == [0.0]
+        assert selected.alt_commands == 1
+        assert runtime.commands.cmddict["ALT"].callback is alt_callback
     finally:
         await runtime.aclose()
 
@@ -430,7 +428,8 @@ async def test_lifespan_wraps_publication_and_runtime_is_revoked(
     runtime = MiniSky(MiniSkySettings())
     ok, message = await runtime.plugins.load("LIFECYCLE")
     assert ok, message
-    assert (events, "LIFECYCLE" in runtime.commands.cmddict) == ([("enter", False)], True)
+    assert events == [("enter", False)]
+    assert "LIFECYCLE" in runtime.commands.cmddict
 
     await runtime.aclose()
     assert events == [("enter", False), ("exit", False)]
