@@ -16,10 +16,7 @@ from pydantic import BaseModel
 
 from minisky import MiniSky, MiniSkyConfig
 from minisky import plugin as plugin_api
-from minisky.core.trafficarrays import PreparedReplacement
-from minisky.plugin.plugin import _Hook
 from minisky.simulation import Simulation
-from minisky.stack import Command, PreparedCommand
 from minisky.traffic import Traffic
 from minisky.traffic.autopilot import Autopilot
 
@@ -30,14 +27,20 @@ def anyio_backend() -> str:
 
 
 class TestDiscovery:
-    def test_discovers_installed_plugins(self, runtime: MiniSky) -> None:
-        runtime.plugins.discover()
-        assert {"CUSTOMAUTOPILOT", "EXAMPLE", "TANGRAM"} <= runtime.plugins.plugins.keys()
+    def test_discovery_does_not_import(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        class LazyEntryPoint:
+            name = "lazy"
 
-    def test_discovery_does_not_import(self, runtime: MiniSky) -> None:
-        record = runtime.plugins.plugins["EXAMPLE"]
-        assert not record.loaded
-        assert record.spec is None
+            def load(self) -> object:
+                pytest.fail("discovery imported the plugin")
+
+        module = importlib.import_module("minisky.plugin.plugin")
+        monkeypatch.setattr(module.metadata, "entry_points", lambda *, group: (LazyEntryPoint(),))
+        runtime = MiniSky(MiniSkyConfig())
+        try:
+            assert "LAZY" in runtime.plugins.plugins
+        finally:
+            runtime.close()
 
     def test_listing(self, runtime: MiniSky) -> None:
         ok, text = runtime.plugins.listing()
@@ -61,7 +64,6 @@ class TestDiscovery:
 class FakeEntryPoint:
     name: str
     declaration: object
-    module: str = "unused"
 
     def load(self) -> object:
         return self.declaration
@@ -70,50 +72,6 @@ class FakeEntryPoint:
 def install(monkeypatch: pytest.MonkeyPatch, *entries: FakeEntryPoint) -> None:
     module = importlib.import_module("minisky.plugin.plugin")
     monkeypatch.setattr(module.metadata, "entry_points", lambda *, group: entries)
-
-
-@dataclass(frozen=True, slots=True)
-class CommandValue:
-    callback: object
-    name: str
-    aliases: tuple[str, ...]
-    brief: str
-    help: str
-    arguments: tuple[tuple[str, bool], ...]
-    impl: str
-
-    @classmethod
-    def from_command(cls, command: Command) -> CommandValue:
-        return cls(
-            command.callback,
-            command.name,
-            command.aliases,
-            command.brief,
-            command.help,
-            command.arguments,
-            command.impl,
-        )
-
-
-@dataclass(frozen=True, slots=True)
-class EntityValue:
-    traffic: object | None
-    prepared_traffic: object | None
-    parent: object | None
-    ownerless: bool
-    retired: bool
-    arrays: tuple[tuple[str, int], ...]
-
-    @classmethod
-    def from_entity(cls, entity: plugin_api.Entity) -> EntityValue:
-        return cls(
-            entity._traffic,
-            entity._prepared_traffic,
-            entity._parent,
-            entity.ownerless,
-            entity._retired,
-            tuple((name, len(getattr(entity, name))) for name in entity._ArrVars),
-        )
 
 
 def run_command(runtime: MiniSky, command: str) -> str:
@@ -144,32 +102,67 @@ async def test_example_commands_and_entity_are_runtime_owned() -> None:
 
 @pytest.mark.anyio
 async def test_example_entity_sizes_existing_traffic_and_retires() -> None:
+    from minisky_example import Example
+
     runtime = MiniSky(MiniSkyConfig())
     runtime.traffic.cre("KL001", "A320", lat=52.0, lon=4.0, hdg=90, alt=3000, spd=150)
     ok, message = await runtime.plugins.load("EXAMPLE")
     assert ok, message
     record = runtime.plugins.plugins["EXAMPLE"]
-    entity = record.entities[0]
+    entity = cast(Example, record.entities[0])
     assert record.entities == (entity,)
-    assert record.spec == plugin_api.PluginSpec((entity,), entity)
-    assert EntityValue.from_entity(entity) == EntityValue(
-        runtime.traffic,
-        None,
-        runtime.traffic,
-        False,
-        False,
-        (("npassengers", 1),),
-    )
+    assert len(entity.npassengers) == 1
+    assert entity._traffic is runtime.traffic
 
     await runtime.aclose()
-    assert EntityValue.from_entity(entity) == EntityValue(
-        None,
-        None,
-        None,
-        False,
-        True,
-        (("npassengers", 1),),
-    )
+    assert entity._retired
+    assert entity._traffic is None
+
+
+@pytest.mark.anyio
+async def test_entity_backfill_follows_lifespan_startup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    entered = asyncio.Event()
+    release = asyncio.Event()
+
+    class Callsigns(plugin_api.Entity):
+        def __init__(self) -> None:
+            super().__init__()
+            with self.settrafarrays():
+                self.names = np.array([], dtype=object)
+
+        def create(self, n: int = 1) -> None:
+            super().create(n)
+            self.names[-n:] = self.traffic.callsign[-n:]
+
+    entity = Callsigns()
+
+    @asynccontextmanager
+    async def lifespan(_runtime: plugin_api.PluginRuntime) -> AsyncGenerator[None]:
+        entered.set()
+        await release.wait()
+        yield
+
+    def build(context: plugin_api.PluginContext[object]) -> plugin_api.PluginSpec:
+        context.mount(entity)
+        return context.finish(lifespan=lifespan)
+
+    install(monkeypatch, FakeEntryPoint("callsigns", plugin_api.Plugin(build=build)))
+    runtime = MiniSky(MiniSkyConfig())
+    load_task = asyncio.create_task(runtime.plugins.load("CALLSIGNS"))
+    try:
+        await entered.wait()
+        runtime.traffic.cre("KL001", alt=3000.0, spd=150.0)
+        release.set()
+        ok, message = await load_task
+        assert ok, message
+        assert entity.names.tolist() == ["KL001"]
+    finally:
+        release.set()
+        if not load_task.done():
+            await load_task
+        await runtime.aclose()
 
 
 @pytest.mark.anyio
@@ -229,18 +222,9 @@ async def test_mount_binds_command_to_exact_instance_and_infers_text(
         ok, message = await runtime.plugins.load("MOUNTED")
         assert ok, message
         command = runtime.commands.cmddict["RECORD"]
-        assert runtime.plugins.plugins["MOUNTED"].commands == (
-            PreparedCommand(command, ("RECORD",)),
-        )
-        assert CommandValue.from_command(command) == CommandValue(
-            component.record,
-            "RECORD",
-            (),
-            "RECORD value",
-            "Record an integer.",
-            (("int", False),),
-            "Component",
-        )
+        assert command.callback.__self__ is component
+        assert command.brief == "RECORD value"
+        assert command.help == "Record an integer."
 
         runtime.commands.stack("RECORD 7")
         runtime.simulation.step()
@@ -272,11 +256,6 @@ async def test_multiple_hook_declarations_keep_independent_timing(
     try:
         ok, message = await runtime.plugins.load("HOOKS")
         assert ok, message
-        assert runtime.plugins.plugins["HOOKS"].hooks == (
-            _Hook(component.pulse, "update", 2.0, "after", True),
-            _Hook(component.pulse, "preupdate", 0.0, "before", True),
-        )
-
         runtime.plugins.preupdate()
         runtime.plugins.update()
         runtime.plugins.preupdate()
@@ -316,10 +295,6 @@ async def test_failing_hook_is_disabled_without_disabling_plugin(
         runtime.plugins.update()
         runtime.plugins.update()
         assert calls == {"broken": 1, "healthy": 2}
-        assert runtime.plugins.plugins["HOOKS"].hooks == (
-            _Hook(component.update, "update", 0.0, "update", False, enabled=False),
-            _Hook(component.healthy, "update", 0.0, "healthy", False),
-        )
         assert tuple(runtime.plugins.loaded_plugins) == ("HOOKS",)
     finally:
         await runtime.aclose()
@@ -338,9 +313,6 @@ async def test_replacement_visibility_is_runtime_local_and_removed_on_shutdown()
         alt_callback = runtime_a.commands.cmddict["ALT"].callback
         ok, message = await runtime_a.plugins.load("CUSTOMAUTOPILOT")
         assert ok, message
-        assert runtime_a.plugins.plugins["CUSTOMAUTOPILOT"].replacements == (
-            PreparedReplacement(Autopilot, "CUSTOMAUTOPILOT", CustomAutoPilot),
-        )
         assert runtime_a.replaceables.select("AUTOPILOT", "CUSTOMAUTOPILOT")[0] is True
         assert type(runtime_a.traffic.ap) is CustomAutoPilot
         assert runtime_b.replaceables.select("AUTOPILOT", "CUSTOMAUTOPILOT")[0] is False
@@ -379,10 +351,6 @@ async def test_replacement_arrays_size_existing_traffic(
         runtime.traffic.cre("KL001", alt=3000.0, spd=150.0)
         ok, message = await runtime.plugins.load("ARRAYS")
         assert ok, message
-        assert runtime.plugins.plugins["ARRAYS"].replacements == (
-            PreparedReplacement(Autopilot, "ARRAYAUTOPILOT", ArrayAutopilot),
-        )
-
         alt_callback = runtime.commands.cmddict["ALT"].callback
         assert runtime.replaceables.select("AUTOPILOT", "ARRAYAUTOPILOT")[0] is True
         selected = cast(ArrayAutopilot, runtime.traffic.ap)
@@ -413,6 +381,8 @@ async def test_lifespan_wraps_publication_and_runtime_is_revoked(
         nonlocal capability
         capability = runtime_api
         events.append(("enter", "LIFECYCLE" in runtime.commands.cmddict))
+        with pytest.raises(RuntimeError, match="not published"):
+            runtime_api.stack_command("LIFECYCLE")
         try:
             yield
         finally:
@@ -430,10 +400,161 @@ async def test_lifespan_wraps_publication_and_runtime_is_revoked(
     assert ok, message
     assert events == [("enter", False)]
     assert "LIFECYCLE" in runtime.commands.cmddict
+    assert capability is not None
+    capability.stack_command("LIFECYCLE")
+    assert runtime.simulation.step()
 
     await runtime.aclose()
     assert events == [("enter", False), ("exit", False)]
+
+
+@pytest.mark.anyio
+async def test_shutdown_cancels_pending_command_before_lifespan_exit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[str] = []
+
+    class Component:
+        @plugin_api.command(name="BLOCK")
+        async def block(self) -> None:
+            events.append("command started")
+            try:
+                await asyncio.Event().wait()
+            finally:
+                events.append("command cancelled")
+
+    @asynccontextmanager
+    async def lifespan(_runtime: plugin_api.PluginRuntime) -> AsyncGenerator[None]:
+        try:
+            yield
+        finally:
+            events.append("lifespan exited")
+
+    def build(context: plugin_api.PluginContext[object]) -> plugin_api.PluginSpec:
+        context.mount(Component(), expose=False)
+        return context.finish(lifespan=lifespan)
+
+    install(monkeypatch, FakeEntryPoint("blocked", plugin_api.Plugin(build=build)))
+    runtime = MiniSky(MiniSkyConfig())
+    ok, message = await runtime.plugins.load("BLOCKED")
+    assert ok, message
+    runtime.commands.stack("BLOCK")
+    assert not runtime.simulation.step()
+    await asyncio.sleep(0)
+
+    await runtime.aclose()
+
+    assert events == ["command started", "command cancelled", "lifespan exited"]
+    assert not runtime.commands.command_pending
+
+
+@pytest.mark.anyio
+async def test_failed_lifespan_startup_is_atomic(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    capability: plugin_api.PluginRuntime | None = None
+    console_messages: list[str] = []
+
+    class Component:
+        @plugin_api.command(name="FAILEDSTART")
+        def command(self) -> None:
+            pass
+
+    @asynccontextmanager
+    async def lifespan(runtime_api: plugin_api.PluginRuntime) -> AsyncGenerator[None]:
+        nonlocal capability
+        capability = runtime_api
+        runtime_api.subscribe_console(console_messages.append)
+        raise RuntimeError("startup failed")
+        yield
+
+    def build(context: plugin_api.PluginContext[object]) -> plugin_api.PluginSpec:
+        context.mount(Component())
+        return context.finish(lifespan=lifespan)
+
+    install(monkeypatch, FakeEntryPoint("failedstart", plugin_api.Plugin(build=build)))
+    runtime = MiniSky(MiniSkyConfig())
+    ok, message = await runtime.plugins.load("FAILEDSTART")
+
+    assert not ok
+    assert "startup failed" in message
+    assert "FAILEDSTART" not in runtime.commands.cmddict
+    assert "failedstart" not in runtime.variables.varlist
+    assert not runtime.plugins.plugins["FAILEDSTART"].loaded
+    assert "FAILEDSTART" not in runtime.plugins.loaded_plugins
     assert capability is not None
+    with pytest.raises(RuntimeError, match="revoked"):
+        capability.status()
+
+    runtime.console.echo("after failed startup")
+    assert console_messages == []
+    await runtime.aclose()
+
+
+@pytest.mark.anyio
+async def test_load_configured_continues_after_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def build(context: plugin_api.PluginContext[object]) -> plugin_api.PluginSpec:
+        return context.finish()
+
+    install(
+        monkeypatch,
+        FakeEntryPoint("first", plugin_api.Plugin(build=build)),
+        FakeEntryPoint("broken", object()),
+        FakeEntryPoint("last", plugin_api.Plugin(build=build)),
+    )
+    runtime = MiniSky(MiniSkyConfig(plugins={"first": {}, "broken": {}, "last": {}}))
+    try:
+        loaded = await runtime.plugins.load_configured()
+        assert loaded == ("FIRST", "LAST")
+        assert tuple(runtime.plugins.loaded_plugins) == ("FIRST", "LAST")
+        assert not runtime.plugins.plugins["BROKEN"].loaded
+    finally:
+        await runtime.aclose()
+
+
+@pytest.mark.anyio
+async def test_shutdown_is_reverse_order_and_aggregates_failures(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[str] = []
+
+    def declaration(name: str) -> plugin_api.Plugin:
+        @asynccontextmanager
+        async def lifespan(runtime_api: plugin_api.PluginRuntime) -> AsyncGenerator[None]:
+            events.append(f"enter {name}")
+            try:
+                yield
+            finally:
+                with pytest.raises(RuntimeError, match="revoked"):
+                    runtime_api.status()
+                events.append(f"exit {name}")
+                raise RuntimeError(f"{name} shutdown failed")
+
+        def build(context: plugin_api.PluginContext[object]) -> plugin_api.PluginSpec:
+            return context.finish(lifespan=lifespan)
+
+        return plugin_api.Plugin(build=build)
+
+    install(
+        monkeypatch,
+        FakeEntryPoint("first", declaration("first")),
+        FakeEntryPoint("second", declaration("second")),
+    )
+    runtime = MiniSky(MiniSkyConfig())
+    assert (await runtime.plugins.load("FIRST"))[0]
+    assert (await runtime.plugins.load("SECOND"))[0]
+
+    with pytest.raises(ExceptionGroup) as exc_info:
+        await runtime.aclose()
+
+    assert events == ["enter first", "enter second", "exit second", "exit first"]
+    assert [str(error) for error in exc_info.value.exceptions] == [
+        "second shutdown failed",
+        "first shutdown failed",
+    ]
+    assert runtime.plugins.loaded_plugins == {}
 
 
 @pytest.mark.anyio

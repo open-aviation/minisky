@@ -89,9 +89,8 @@ def create_app(runtime: MiniSky | None = None) -> FastAPI:
     app.state.runtime = runtime
     app.include_router(create_router())
 
-    # Static files live at the repository root (../static relative to this
-    # package), which resolves correctly for both a source checkout and an
-    # editable install.
+    # TODO(abraham): package static assets inside minisky and resolve them
+    # with importlib.resources for wheel installs
     static_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static")
     os.makedirs(static_dir, exist_ok=True)
     app.mount("/static", StaticFiles(directory=static_dir), name="static")

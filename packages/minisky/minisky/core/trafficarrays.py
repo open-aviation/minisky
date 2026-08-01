@@ -242,9 +242,9 @@ class TrafficArrays:
     that all registered per-aircraft arrays in the simulation keep the same
     length as the number of aircraft.
 
-    Replaceable implementations are discovered from the Python subclass
-    hierarchy by `ReplaceableManager`; selection state belongs to an
-    individual runtime rather than to this class.
+    Replaceable implementations are registered explicitly with
+    `ReplaceableManager`; selection state belongs to an individual runtime
+    rather than to this class.
 
     Attributes:
         _parent: Parent node of this object in the tree.

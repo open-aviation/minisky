@@ -12,7 +12,7 @@ Your package should expose a [`Plugin`][minisky.plugin.Plugin] value through the
 --8<-- "packages/minisky-example/pyproject.toml:entry-point"
 ```
 
-The entry-point name is the plugin ID. Use a short lowercase ID such as `example`, `customautopilot`, or `tangram`.
+The entry-point name is the plugin ID. Use lowercase letters, digits, and underscores, such as `example`, `custom_autopilot`, or `tangram`.
 
 ## Build your plugin
 
@@ -98,12 +98,12 @@ Tangram uses its lifespan to start and stop the Redis bridge:
 --8<-- "packages/minisky-tangram/src/minisky_tangram/__init__.py:lifespan"
 ```
 
-The lifespan receives a [`PluginRuntime`][minisky.plugin.PluginRuntime] with the small set of runtime operations intended for plugins: read status or a snapshot, write to the console, subscribe to console messages, and submit a stack command.
+The lifespan receives a [`PluginRuntime`][minisky.plugin.PluginRuntime] with the small set of runtime operations intended for plugins: read status or a snapshot, write to the console, subscribe to console messages, and submit a stack command after startup completes.
 
 Put cleanup in the lifespan's `finally` block so it runs when the MiniSky runtime closes. You do not need to close console subscriptions separately when they are created through `PluginRuntime`; MiniSky owns them and closes them during teardown.
 
 !!! note
-    Lifespan startup happens before your commands, hooks, entities, and replacements are available. Start external resources there, but do not depend on your own registrations yet.
+    Lifespan startup happens before your commands, hooks, entities, and replacements are available. Start external resources there, but do not depend on your own registrations or submit stack commands until startup completes.
 
 ## Add a replaceable implementation
 
@@ -123,7 +123,7 @@ You can also select it from Python with `runtime.replaceables.select(...)`. Keep
 
 ## Load and manage plugins
 
-To load every plugin configured under `[plugins.<id>]`, call the plugin manager before you start the runner:
+To attempt every plugin configured under `[plugins.<id>]`, call the plugin manager before you start the runner. A failed plugin is reported to the console without preventing later configured plugins from loading:
 
 ```python
 from minisky import MiniSky, MiniSkyConfig

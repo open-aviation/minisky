@@ -74,4 +74,4 @@ Remove the table when you do not want that plugin loaded. An empty table is enou
 [plugins.example]
 ```
 
-Plugin config is validated by the plugin's `config_class`. Unknown fields or invalid values stop that plugin from loading.
+Plugin config is validated by the plugin's `config_class`.

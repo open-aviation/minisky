@@ -81,8 +81,8 @@ Classes that hold per-aircraft data derive from it and register their arrays:
 
 ```python
 class Example(Entity):
-    def __init__(self, traffic):
-        super().__init__(traffic)
+    def __init__(self):
+        super().__init__()
         with self.settrafarrays():
             self.npassengers = np.array([])
 ```
