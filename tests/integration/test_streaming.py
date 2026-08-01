@@ -45,7 +45,10 @@ def test_snapshot_structure_and_units(
     # FL100 == 10000 ft == 3048 m, altitude stays SI (metres) on the wire here.
     assert ac["alt"][0] == pytest.approx(3048.0, abs=1.0)
     # Conflict counters are present and zero for a single aircraft.
-    assert (ac["nconf_cur"], ac["nconf_tot"], ac["nlos_cur"], ac["nlos_tot"]) == (0, 0, 0, 0)
+    assert ac["nconf_cur"] == 0
+    assert ac["nconf_tot"] == 0
+    assert ac["nlos_cur"] == 0
+    assert ac["nlos_tot"] == 0
     assert ac["inconf"] == [False]
 
 

@@ -53,27 +53,40 @@ shown by the HELP command.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from functools import partial
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, NamedTuple, TypeAlias
 
 if TYPE_CHECKING:
     from minisky.stack import CommandStack
 
 
-def get_commands(command_stack: CommandStack) -> tuple:
+class CommandDefinition(NamedTuple):
+    callback: Callable[..., Any]
+    arguments: str
+    brief: str
+    help: str
+
+
+CommandDefinitions: TypeAlias = dict[str, CommandDefinition]
+CommandAliases: TypeAlias = dict[str, tuple[str, ...]]
+
+
+class CommandCatalog(NamedTuple):
+    definitions: CommandDefinitions
+    aliases: CommandAliases
+
+
+def get_commands(command_stack: CommandStack) -> CommandCatalog:
     """Assemble the base command and synonym dictionaries of the simulator.
 
     Binds callbacks to the objects owned by the provided runtime command stack.
-
-    Returns:
-        tuple: (cmddict, synonyms). cmddict maps a command name to a list
-        of [function, argument type string, brief usage text, help text];
-        synonyms maps a command name to a list of alias names.
     """
     from minisky import tools
     from minisky.traffic import route
 
-    cmddict = {
+    # TODO(abraham): migrate core commands from this legacy table to typed declarations.
+    cmddict: dict[str, list[Any]] = {
         "ADDWPT": [
             partial(route.addwpt, command_stack.traffic),
             "callsign,wpt,[alt,spd,wpt,wpt]",
@@ -574,7 +587,7 @@ def get_commands(command_stack: CommandStack) -> tuple:
     }
 
     # Command synonym dictionary
-    synonyms = {
+    synonyms: dict[str, list[str]] = {
         "ASAS": ["CD", "CDMETHOD"],
         "POS": ["AWY", "AIRPORT", "RUNWAYS", "AIRWAY", "AIRWAYS"],
         "BANK": ["BANKLIM"],
@@ -594,4 +607,6 @@ def get_commands(command_stack: CommandStack) -> tuple:
         "PLUGINS": ["PLUGIN"],
     }
 
-    return cmddict, synonyms
+    definitions = {name: CommandDefinition(*values) for name, values in cmddict.items()}
+    aliases = {name: tuple(names) for name, names in synonyms.items()}
+    return CommandCatalog(definitions, aliases)
