@@ -135,8 +135,8 @@ class VariableExplorer:
                 for objname, objset in self.varlist.items():
                     if objset[1] is not None and name in objset[1]:
                         return Variable(objset[0], objname, name, index)
-        except Exception:
-            pass
+        except (AttributeError, IndexError, KeyError, TypeError, ValueError):
+            return None
         return None
 
 

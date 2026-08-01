@@ -14,5 +14,5 @@ open-source OpenAP aircraft performance library:
 The active performance model instance is [`runtime.traffic.perf`][minisky.traffic.performance.perfoap.OpenAP].
 """
 
-import minisky.traffic.performance.coeff
-import minisky.traffic.performance.phase
+from . import coeff as coeff
+from . import phase as phase

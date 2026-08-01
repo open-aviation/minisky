@@ -384,7 +384,7 @@ class PluginManager:
             if entered and lifespan is not None:
                 try:
                     await lifespan.__aexit__(type(exc), exc, exc.__traceback__)
-                except BaseException as cleanup_error:
+                except BaseException as cleanup_error:  # ruff: ignore[BLE001] lifespan cleanup is arbitrary
                     traceback.print_exception(cleanup_error)
             if not isinstance(exc, Exception):
                 raise
@@ -604,7 +604,7 @@ class PluginManager:
                         hook.callback(dt=elapsed)
                     else:
                         hook.callback()
-                except Exception as exc:
+                except Exception as exc:  # ruff: ignore[BLE001] plugin hooks are arbitrary
                     hook.enabled = False
                     traceback.print_exception(exc)
                     self.console.echo(
@@ -624,13 +624,13 @@ class PluginManager:
                     plugin.runtime._revoke()
                 try:
                     self._remove(plugin)
-                except Exception as exc:
+                except Exception as exc:  # ruff: ignore[BLE001] aggregate removal failures
                     errors.append(exc)
 
                 if plugin.lifespan is not None:
                     try:
                         await plugin.lifespan.__aexit__(None, None, None)
-                    except Exception as exc:
+                    except Exception as exc:  # ruff: ignore[BLE001] plugin lifespan is arbitrary
                         errors.append(exc)
                 self._clear(plugin)
 
@@ -656,7 +656,7 @@ class PluginManager:
         for cleanup in cleanups:
             try:
                 cleanup()
-            except Exception as exc:
+            except Exception as exc:  # ruff: ignore[BLE001] aggregate cleanup failures
                 errors.append(exc)
         if errors:
             raise ExceptionGroup(f"Plugin {plugin.plugin_name} removal failed", errors)

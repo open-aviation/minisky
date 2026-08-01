@@ -5,7 +5,6 @@ txt2tim returns seconds.
 """
 
 import pytest
-
 from minisky.tools import convert as cv
 
 FT = 0.3048

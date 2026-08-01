@@ -38,7 +38,7 @@ from typing import TYPE_CHECKING, Any, NamedTuple
 
 import numpy as np
 
-from minisky.plugin.plugin_decorators import command
+from minisky.plugin.plugin_decorators import command as command
 from minisky.stack import argparser, commands
 from minisky.stack.argparser import ArgumentError, Parameter, String, Time, Txt, getnextarg
 
@@ -514,7 +514,7 @@ class CommandStack:
                 header = "" if not argstring else exc.args[0] if exc.args else "Argument error."
                 self.console.echo(f"{header}\nUsage:\n{cmdobj.brieftext()}")
                 continue
-            except Exception as exc:
+            except Exception as exc:  # ruff: ignore[BLE001] commands are arbitrary callbacks
                 self._echo_command_exception(cmdu, argstring, exc)
                 continue
 
@@ -549,7 +549,7 @@ class CommandStack:
             result = pending.task.result()
         except asyncio.CancelledError:
             return True
-        except Exception as exc:
+        except Exception as exc:  # ruff: ignore[BLE001] commands are arbitrary callbacks
             self._echo_command_exception(pending.name, pending.argstring, exc)
         else:
             self._echo_command_result(pending.command, pending.argstring, result)

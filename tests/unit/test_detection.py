@@ -17,7 +17,6 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
-
 from minisky.tools import geo
 from minisky.tools.aero import ft, nm
 from minisky.traffic.asas.detection import ConflictDetection

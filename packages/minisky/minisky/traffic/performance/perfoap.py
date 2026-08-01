@@ -168,7 +168,7 @@ class OpenAP(TrafficArrays):
 
             # populate fuel flow model
             es = self.coeff.acs_fixwing[actype]["engines"]
-            e = es[list(es.keys())[0]]
+            e = es[next(iter(es.keys()))]
             coeff_a, coeff_b, coeff_c = thrust.compute_eng_ff_coeff(
                 e["ff_idl"], e["ff_app"], e["ff_co"], e["ff_to"]
             )
@@ -537,11 +537,13 @@ class OpenAP(TrafficArrays):
         """
         return (
             True,
-            f"Flight phase: {ph.readable_phase(self.phase[acid])}\n"
-            f"Thrust: {self.thrust[acid] / 1000:.0f} kN\n"
-            f"Drag: {self.drag[acid] / 1000:.0f} kN\n"
-            f"Fuel flow: {self.fuelflow[acid]:.2f} kg/s\n"
-            f"Speed envelope: [{self.vmin[acid] / kts:.0f}, {self.vmax[acid] / kts:.0f}] kts\n"
-            f"Vertical speed envelope: [{self.vsmin[acid] / fpm:.0f}, {self.vsmax[acid] / fpm:.0f}] fpm\n"
-            f"Ceiling: {self.hmax[acid] / ft:.0f} ft",
+            (
+                f"Flight phase: {ph.readable_phase(self.phase[acid])}\n"
+                f"Thrust: {self.thrust[acid] / 1000:.0f} kN\n"
+                f"Drag: {self.drag[acid] / 1000:.0f} kN\n"
+                f"Fuel flow: {self.fuelflow[acid]:.2f} kg/s\n"
+                f"Speed envelope: [{self.vmin[acid] / kts:.0f}, {self.vmax[acid] / kts:.0f}] kts\n"
+                f"Vertical speed envelope: [{self.vsmin[acid] / fpm:.0f}, {self.vsmax[acid] / fpm:.0f}] fpm\n"
+                f"Ceiling: {self.hmax[acid] / ft:.0f} ft"
+            ),
         )

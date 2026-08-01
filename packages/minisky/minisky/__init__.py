@@ -23,9 +23,9 @@ __all__ = (
     "BS_CMDERR",
     "BS_FUNERR",
     "BS_OK",
-    "default_user_config_dir",
-    "default_user_config_toml_path",
     "MiniSky",
     "MiniSkyConfig",
     "SimulationState",
+    "default_user_config_dir",
+    "default_user_config_toml_path",
 )

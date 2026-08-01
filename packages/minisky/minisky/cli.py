@@ -145,7 +145,7 @@ def console_cmd(
             os.system("clear")
             continue
 
-        if cmd.startswith("/load ") or cmd.startswith("load "):
+        if cmd.startswith(("/load ", "load ")):
             file_path = cmd.split(" ", maxsplit=1)[1]
 
             if os.path.isfile(file_path):

@@ -330,8 +330,7 @@ class MVP(ConflictResolution):
             # Because ADSB is ON, this is done for each aircraft separately
             if idx1 > -1 and idx2 > -1:
                 dv_mvp, tsolV = self.MVP(ownship, intruder, conf, qdr, dist, tcpa, tLOS, idx1, idx2)
-                if tsolV < timesolveV[idx1]:
-                    timesolveV[idx1] = tsolV
+                timesolveV[idx1] = min(timesolveV[idx1], tsolV)
 
                 # Use priority rules if activated
                 if self.swprio:

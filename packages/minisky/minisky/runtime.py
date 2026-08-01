@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from random import Random
+from typing import Self
 
 import numpy as np
 
@@ -137,7 +138,7 @@ class MiniSky:
         for cleanup in (self.runner.shutdown, self.streaming.close, self.plugins.close):
             try:
                 cleanup()
-            except Exception as exc:
+            except Exception as exc:  # ruff: ignore[BLE001] aggregate resource failures
                 errors.append(exc)
 
         self._closed = True
@@ -152,21 +153,21 @@ class MiniSky:
 
         try:
             await self.commands.aclose()
-        except Exception as exc:
+        except Exception as exc:  # ruff: ignore[BLE001] aggregate resource failures
             errors.append(exc)
         try:
             await self.plugins.aclose()
-        except Exception as exc:
+        except Exception as exc:  # ruff: ignore[BLE001] aggregate resource failures
             errors.append(exc)
         try:
             self.streaming.close()
-        except Exception as exc:
+        except Exception as exc:  # ruff: ignore[BLE001] aggregate resource failures
             errors.append(exc)
 
         self._closed = True
         self._raise_errors("MiniSky shutdown failed", errors)
 
-    def __enter__(self) -> MiniSky:
+    def __enter__(self) -> Self:
         """Enter a synchronous runtime lifecycle context."""
         return self
 
@@ -174,7 +175,7 @@ class MiniSky:
         """Close the runtime when leaving a synchronous context."""
         self.close()
 
-    async def __aenter__(self) -> MiniSky:
+    async def __aenter__(self) -> Self:
         """Enter an asynchronous runtime lifecycle context."""
         return self
 

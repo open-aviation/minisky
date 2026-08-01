@@ -49,12 +49,11 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from typing import Any, TypedDict, cast
 
-from pydantic import BaseModel, ConfigDict
-
 from minisky import plugin as plugin_api
 from minisky.simulation import SimulationState
 from minisky.streaming import Snapshot
 from minisky.tools.aero import fpm, ft, kts
+from pydantic import BaseModel, ConfigDict
 
 
 # --8<-- [start:configuration]

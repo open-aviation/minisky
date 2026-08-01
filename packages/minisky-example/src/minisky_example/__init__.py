@@ -5,7 +5,6 @@ from __future__ import annotations
 from random import Random
 
 import numpy as np
-
 from minisky import plugin as plugin_api
 
 

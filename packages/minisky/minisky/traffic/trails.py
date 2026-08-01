@@ -102,8 +102,6 @@ class Trails(TrafficArrays):
 
         self.clearnew()
 
-        return
-
     def new_implementation(self, implementation: Callable[..., TrafficArrays]) -> TrafficArrays:
         """Construct a replacement with this runtime's traffic and simulation."""
         return implementation(self.traffic, self._get_simulation)
@@ -215,7 +213,6 @@ class Trails(TrafficArrays):
         self.bgacid = self.bgacid + self.acid
 
         self.clearfg()  # Clear foreground trails
-        return
 
     def clearnew(self) -> None:
         """Clear the pipeline of new line segments used for the QtGL GUI."""
@@ -233,7 +230,6 @@ class Trails(TrafficArrays):
         self.lon1 = np.array([])
         self.time = np.array([])
         self.col = np.array([])
-        return
 
     def clearbg(self) -> None:  # Background
         """Clear the background trail segment buffers."""
@@ -243,7 +239,6 @@ class Trails(TrafficArrays):
         self.bglon1 = np.array([])
         self.bgtime = np.array([])
         self.bgacid = []
-        return
 
     def clear(self) -> None:
         """Clear all trail data: foreground, background and new-line buffers."""
@@ -252,7 +247,6 @@ class Trails(TrafficArrays):
         self.clearfg()
         self.clearbg()
         self.clearnew()
-        return
 
     def setTrails(self, *args: Any) -> bool | tuple[bool, str]:
         """Switch trails on/off, or change the trail color of an aircraft.
@@ -307,7 +301,6 @@ class Trails(TrafficArrays):
             idx: Aircraft index.
         """
         self.accolor[idx] = self.colorList[color]
-        return
 
     def reset(self) -> None:
         """Clear all trail data and switch trails off upon simulation reset."""

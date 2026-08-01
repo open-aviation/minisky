@@ -62,7 +62,7 @@ class TestDefwpt:
     def test_defwpt_delete_via_wptype_del(self, runtime: MiniSky, sim: Simulation) -> None:
         navdb = runtime.navigation
         navdb.defwpt("TSTWPT3", 52.0, 4.0)
-        ok, msg = navdb.defwpt("TSTWPT3", 52.0, 4.0, "DEL")
+        ok, _msg = navdb.defwpt("TSTWPT3", 52.0, 4.0, "DEL")
         assert ok
         assert "TSTWPT3" not in navdb.wpid
 

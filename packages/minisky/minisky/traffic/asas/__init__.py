@@ -16,8 +16,8 @@ The active instances are [`runtime.traffic.cd`][minisky.traffic.asas.detection.C
 # isort: off
 # Import order matters: MVP subclasses ConflictResolution, so resolution must
 # be importable before mvp to avoid a partially-initialised circular import.
-from .detection import ConflictDetection
-from .resolution import ConflictResolution
-from .mvp import MVP
+from .detection import ConflictDetection as ConflictDetection
+from .resolution import ConflictResolution as ConflictResolution
+from .mvp import MVP as MVP
 
 # isort: on

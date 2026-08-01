@@ -12,13 +12,12 @@ from typing import cast
 
 import numpy as np
 import pytest
-from pydantic import BaseModel
-
 from minisky import MiniSky, MiniSkyConfig
 from minisky import plugin as plugin_api
 from minisky.simulation import Simulation
 from minisky.traffic import Traffic
 from minisky.traffic.autopilot import Autopilot
+from pydantic import BaseModel
 
 
 @pytest.fixture

@@ -57,7 +57,7 @@ class _ComponentSlot:
     def current(self) -> TrafficArrays:
         component = getattr(self.traffic, self.attribute)
         if not isinstance(component, self.base):
-            raise RuntimeError(f"replaceable slot {self.attribute} has an invalid component")
+            raise TypeError(f"replaceable slot {self.attribute} has an invalid component")
         return component
 
     def bind(self, callback: Callable[..., Any]) -> Callable[..., Any]:
@@ -225,7 +225,6 @@ class RegisterElementParameters:
 
     def __enter__(self) -> None:
         """No-op: the attribute snapshot is already taken in __init__."""
-        pass
 
     def __exit__(self, exc_type, exc_value, tb) -> None:
         """Register all attributes created inside the with-block as traffic arrays."""
