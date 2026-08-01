@@ -12,7 +12,11 @@ Selected with ``SELECTIMPL APORASAS MULTICOPTERAPORASAS``.
 
 from __future__ import annotations
 
+import numpy as np
+
 from minisky.traffic.aporasas import APorASAS
+
+from .entity import get_multicopter
 
 
 class MulticopterAPorASAS(APorASAS):
@@ -24,8 +28,14 @@ class MulticopterAPorASAS(APorASAS):
         Runs the base selection for the whole fleet and afterwards
         overwrites ``self.hdg`` on the multicopter rows with the commanded
         body heading, leaving ``self.trk`` (which the kinematics now flies)
-        untouched.
+        untouched. Where no body heading was ever commanded the nose follows
+        the track — without the wind-drift correction, since a multicopter
+        does not need to point its nose into the relative wind.
         """
         super().update()
-        # TODO: self.hdg[m] = commanded body heading, falling back to
-        # self.trk[m] where no body heading was ever commanded.
+        mc = get_multicopter(self.traffic)
+        if mc is None or not mc.ismulticopter.any():
+            return
+
+        m = mc.ismulticopter
+        self.hdg[m] = np.where(mc.swselhdg[m], mc.selhdg[m], self.trk[m]) % 360.0

@@ -1,6 +1,6 @@
 # Multicopter support plan
 
-Status: **proposal** — nothing in this document is implemented yet.
+Status: **in progress** — Phases 1 and 2 are implemented on this branch.
 
 ## Goal
 
@@ -135,7 +135,8 @@ example_plugins/multicopter/
 │                   # and its stack commands: MCOPT, YAW, YAWRATE
 ├── kinematics.py   # MulticopterKinematics(Kinematics)
 ├── aporasas.py     # MulticopterAPorASAS(APorASAS)
-├── autopilot.py    # MulticopterAutopilot(Autopilot): HOVER, DELIVER, capture-radius clamp
+├── autopilot.py    # MulticopterAutopilot(Autopilot): HOVER, fly-over route defaults
+├── activewp.py     # MulticopterActiveWaypoint(ActiveWaypoint): fixed capture radius
 ├── perf.py         # MulticopterPerf(OpenAP) + BATT              (Phase 3)
 └── data/           # generated perf maps + vendored PyThrust data (Phase 3)
 ```
@@ -207,21 +208,27 @@ activates for `FLYTURN` waypoints, which multicopters won't use.
 
 A thin subclass (`SELECTIMPL AUTOPILOT MULTICOPTERAUTOPILOT`) covers what the stock FMS cannot:
 
-- **Mission primitives** the FMS has no concept of:
-  - `HOVER acid [time]` — suspend LNAV, hold position (commanded gs = 0), auto-resume the route
-    after the optional duration. The conditional-command machinery (ATALT/ATDIST) cannot express
-    "hold for 90 s".
-  - `DELIVER acid alt [time]` — at the current position: vertical descent to `alt`, dwell, climb
-    back, continue the route. Implemented as a small per-aircraft state machine on top of
-    `super().update()`.
-- **Low-speed guards**: `calcturn()` and the turn-distance/deceleration formulas are bank- and
-  speed-based; clamp `actwp.turndist` for multicopter rows to a fixed capture radius (~5–10 m)
-  so waypoint switching stays sane at creeping speeds and at hover on top of a waypoint.
-- **Route defaults**: set fly-over + capture radius automatically for `ismulticopter` aircraft
-  when waypoints are added, so scenario authors need no extra commands.
+- **A hover primitive** the FMS has no concept of — deliberately *composable*, not a scripted
+  manoeuvre (a "delivery" is written in the scenario from `HOVER` + `ALT` + `LNAV`):
+  - `HOVER acid [time] [alt]` — suspend LNAV/VNAV, hold position (commanded gs = 0), optionally
+    at a commanded altitude (moved to vertically, at a fixed position). With a `time` the route
+    auto-resumes once position and altitude have been held that long (the conditional-command
+    machinery cannot express "hold for 90 s"); without one the aircraft hovers until LNAV is
+    re-engaged. Repeating `HOVER` while hovering updates the hold; a plain `ALT` changes the
+    hover altitude too.
+- **`HDG` semantics**: for multicopter rows `HDG` becomes an alias of `YAW` — it rotates the
+  nose only and leaves LNAV engaged.
+- **Route defaults**: fly-over waypoints automatically for multicopter aircraft, so scenario
+  authors need no extra commands.
+- **Low-speed capture (in `MulticopterActiveWaypoint`)**: `calcturn()` and the turn-distance
+  formulas are bank- and speed-based and degenerate at multicopter speeds; multicopter rows use
+  a fixed capture radius (10 m) instead. This must live in an `ActiveWaypoint` subclass, because
+  `ActiveWaypoint.reached()` recomputes `turndist` every step — clamping it from the autopilot
+  update would be overwritten before it is ever used.
 
-With this, the plugin issues three swaps on load — `KINEMATICS`, `APORASAS`, `AUTOPILOT` — each
-subclass calling `super()` and adjusting only the masked multicopter rows.
+With this, the plugin issues four swaps on load — `KINEMATICS`, `APORASAS`, `AUTOPILOT`,
+`ACTIVEWAYPOINT` — each subclass calling `super()` and adjusting only the masked multicopter
+rows.
 
 **Acceptance (integration tests, driven through the stack like `test_stack.py`):**
 
@@ -230,28 +237,33 @@ subclass calling `super()` and adjusting only the masked multicopter rows.
 - In cruise, `YAW D1 0` while flying track 090 → `trk` stays 090, `hdg` goes to 0.
 - Waypoint passage: course changes leg-to-leg with no overshoot arc.
 - `HOVER D1 90` mid-route → position frozen for 90 s of sim time, then the route resumes.
-- `DELIVER D1 50 30` → vertical descent to 50 ft, 30 s dwell, climb back, route resumes;
-  lat/lon unchanged throughout.
+- `HOVER D1 30 100` mid-route → vertical descent to 100 ft at a fixed position, 30 s hold,
+  route resumes at the hover altitude; a delivery profile composes from `HOVER`, `ALT` and
+  `LNAV ON` with lat/lon unchanged throughout.
 - A fixed-wing aircraft in the same simulation behaves byte-identically to `main` (regression
   guard for the fleet-wide hooks).
 
 ### Phase 2 checklist
 
-- [ ] `example_plugins/multicopter/` package skeleton with `plugin.py` (`init_plugin()`,
+- [x] `example_plugins/multicopter/` package skeleton with `plugin.py` (`init_plugin()`,
       plugin name `MULTICOPTER`)
-- [ ] `entity.py`: `MULTICOPTER_TYPES` set + `Entity` with `ismulticopter`, `selhdg`,
+- [x] `entity.py`: `MULTICOPTER_TYPES` set + `Entity` with `ismulticopter`, `selhdg`,
       `yawrate` arrays, auto-set from typecode in `create()`; stack commands `MCOPT`,
       `YAW`, `YAWRATE`
-- [ ] `kinematics.py`: `MulticopterKinematics(Kinematics)` — yaw-rate-limited heading,
+- [x] `kinematics.py`: `MulticopterKinematics(Kinematics)` — yaw-rate-limited heading,
       track-driven velocity vector, single `update_pos()` pass
-- [ ] `aporasas.py`: `MulticopterAPorASAS(APorASAS)` — skip trk→hdg coupling for
+- [x] `aporasas.py`: `MulticopterAPorASAS(APorASAS)` — skip trk→hdg coupling for
       multicopter rows
-- [ ] `autopilot.py`: `MulticopterAutopilot(Autopilot)` — `HOVER`, `DELIVER`,
-      capture-radius clamp, fly-over route defaults
-- [ ] Plugin issues the three `SELECTIMPL` swaps on load; defaults restored on reset
-- [ ] Integration tests: hover-hold, yaw at gs = 0, strafe (fixed nose, moving track),
-      leg-to-leg course capture, `HOVER`, `DELIVER`, fixed-wing regression guard
-- [ ] `uv run pytest`, `uv run ruff check .`, `uv run pyright` all green
+- [x] `autopilot.py`: `MulticopterAutopilot(Autopilot)` — composable `HOVER [time] [alt]`
+      (the planned `DELIVER` was dropped as too use-case specific), `HDG`-yaws-the-nose,
+      fly-over route defaults; `activewp.py`: `MulticopterActiveWaypoint` fixed capture
+      radius
+- [x] Plugin issues the four `SELECTIMPL` swaps on load; defaults restored on reset
+      (re-selected by the plugin's reset hook)
+- [x] Integration tests: hover-hold, yaw at gs = 0, strafe (fixed nose, moving track),
+      leg-to-leg course capture, `HOVER` (timed, at altitude, composed with `ALT`/`LNAV`),
+      fixed-wing regression guard
+- [x] `uv run pytest`, `uv run ruff check .`, `uv run pyright` all green
 
 ## Phase 3 — `MulticopterPerf`: electric performance from PyThrust *data*
 
@@ -335,7 +347,7 @@ for the map interpolation against a few hand-computed points from the source CSV
 - Example scenario `scenarios/multicopter_delivery.scn`: create, fly a route, hover at a
   delivery point, yaw for "camera", return; exercises everything above.
 - Regenerate `docs/reference/commands.md` (`uv run minisky commands docs`) after adding the
-  stack commands (`MCOPT`, `YAW`, `YAWRATE`, `HOVER`, `DELIVER`, `BATT`).
+  stack commands (`MCOPT`, `YAW`, `YAWRATE`, `HOVER`, `BATT`).
 - `ruff`, `pyright`, full test suite green at every phase boundary.
 
 ### Phase 4 checklist
@@ -365,7 +377,9 @@ complete; phase 1 is intentionally the only one touching `minisky/`.
 | Name | **multicopter** (not drone/rotorcraft) | Names the lift/control type actually modelled; scope excludes helicopters (EC35) |
 | Where behaviour lives | Plugin + replaceable subclasses | Matches "minimal core, hack from outside"; hot-swappable via `SELECTIMPL`; reverts on reset |
 | Kinematics override mechanism | New first-level `Kinematics` entity (Phase 1) | `Traffic` itself can't be hot-swapped (root object); post-hoc plugin-hook correction would double-integrate state |
-| Custom autopilot | Thin `MulticopterAutopilot` for mission primitives (HOVER/DELIVER), capture-radius clamp and fly-over defaults only | LNAV's track output already suits decoupled kinematics; no guidance rewrite needed |
+| Custom autopilot | Thin `MulticopterAutopilot` for the hover primitive, HDG semantics and fly-over defaults only | LNAV's track output already suits decoupled kinematics; no guidance rewrite needed |
+| Mission primitive | One composable `HOVER acid [time] [alt]`; no `DELIVER` | Delivery choreography belongs in scenarios (`HOVER` + `ALT` + `LNAV ON`); keeps the primitive abstract |
+| Capture radius | `MulticopterActiveWaypoint` subclass (fourth swap) | `ActiveWaypoint.reached()` recomputes `turndist` every step, so clamping it from the autopilot is overwritten before use |
 | Membership predicate | Plugin-owned typecode set + `ismulticopter` array | `LIFT_ROTOR` includes helicopters |
 | PyThrust | Data only, vendored with attribution; self-contained gen script; nothing at runtime | Prop CSVs already tabulate thrust & power; keeps dependency tree untouched (Apache 2.0 permits) |
 | Perf evaluation | Precomputed per-type maps, vectorised interp | Keeps the numpy discipline; fleet-size independent; regen convention already exists in repo |

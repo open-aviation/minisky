@@ -29,6 +29,20 @@ MULTICOPTER_TYPES = frozenset(
 DEFAULT_YAWRATE = 90.0
 
 
+def get_multicopter(traffic: Traffic) -> Multicopter | None:
+    """Return the Multicopter entity attached to a traffic tree, if any.
+
+    The entity is created by ``init_plugin()`` as a child node of ``traffic``.
+    The replaceable subclasses use this lookup so that, when one of them is
+    selected without the plugin loaded, they degrade to base behaviour
+    instead of crashing.
+    """
+    return next(
+        (child for child in traffic._children if isinstance(child, Multicopter)),
+        None,
+    )
+
+
 class Multicopter(plugin.Entity):
     """Per-aircraft multicopter state.
 
@@ -59,8 +73,12 @@ class Multicopter(plugin.Entity):
             n: Number of aircraft that were appended to the traffic arrays.
         """
         super().create(n)
-        # TODO: set ismulticopter from self.traffic.typecode[-n:], seed
-        # selhdg from the current heading, swselhdg False, yawrate default.
+        self.ismulticopter[-n:] = [
+            typecode.upper() in MULTICOPTER_TYPES for typecode in self.traffic.typecode[-n:]
+        ]
+        self.selhdg[-n:] = self.traffic.hdg[-n:]
+        self.swselhdg[-n:] = False
+        self.yawrate[-n:] = DEFAULT_YAWRATE
 
     def mask(self) -> np.ndarray:
         """Return the boolean row mask of aircraft flown as multicopters."""
@@ -74,8 +92,19 @@ class Multicopter(plugin.Entity):
         - flag: ON to fly it as a multicopter, OFF for normal fixed-wing
           kinematics (optional, omit to query)
         """
-        # TODO: report or set self.ismulticopter[idx]
-        return False, "MCOPT: not implemented yet"
+        callsign = self.traffic.callsign[idx]
+        if flag is None:
+            return True, f"MCOPT {callsign}: {'ON' if self.ismulticopter[idx] else 'OFF'}"
+
+        self.ismulticopter[idx] = flag
+        # Multicopters fly point-to-point: newly added waypoints default to
+        # fly-over (restored to fly-by when switched back off).
+        self.traffic.ap.route[idx].swflyby = not flag
+        if flag:
+            # Start with the nose unconstrained, following the track.
+            self.selhdg[idx] = self.traffic.hdg[idx]
+            self.swselhdg[idx] = False
+        return True, f"MCOPT {callsign}: {'ON' if flag else 'OFF'}"
 
     def yaw(self, idx: int, hdg: float) -> tuple[bool, str]:
         """Command the body heading (nose direction) of a multicopter.
@@ -87,8 +116,13 @@ class Multicopter(plugin.Entity):
         - idx: Aircraft callsign
         - hdg: Commanded body heading [deg]
         """
-        # TODO: set self.selhdg[idx] / self.swselhdg[idx]
-        return False, "YAW: not implemented yet"
+        if not self.ismulticopter[idx]:
+            callsign = self.traffic.callsign[idx]
+            return False, f"YAW: {callsign} is not a multicopter (use MCOPT {callsign} ON)"
+
+        self.selhdg[idx] = hdg % 360.0
+        self.swselhdg[idx] = True
+        return True, f"YAW {self.traffic.callsign[idx]}: nose to {hdg % 360.0:.0f} deg"
 
     def setyawrate(self, idx: int, yawrate: float | None = None) -> tuple[bool, str]:
         """Set or report the maximum yaw rate of a multicopter.
@@ -97,5 +131,11 @@ class Multicopter(plugin.Entity):
         - idx: Aircraft callsign
         - yawrate: Maximum yaw rate [deg/s] (optional, omit to query)
         """
-        # TODO: report or set self.yawrate[idx]
-        return False, "YAWRATE: not implemented yet"
+        callsign = self.traffic.callsign[idx]
+        if yawrate is None:
+            return True, f"YAWRATE {callsign}: {self.yawrate[idx]:.0f} deg/s"
+        if yawrate <= 0.0:
+            return False, "YAWRATE: yaw rate must be positive"
+
+        self.yawrate[idx] = yawrate
+        return True, f"YAWRATE {callsign}: {yawrate:.0f} deg/s"

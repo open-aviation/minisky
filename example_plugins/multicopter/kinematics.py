@@ -12,7 +12,12 @@ rows keep the base-class behaviour untouched.
 
 from __future__ import annotations
 
+import numpy as np
+
+from minisky.tools.aero import ft
 from minisky.traffic.kinematics import Kinematics
+
+from .entity import get_multicopter
 
 
 class MulticopterKinematics(Kinematics):
@@ -31,9 +36,27 @@ class MulticopterKinematics(Kinematics):
         the heading of multicopter rows at their yaw rate instead of the
         bank-angle turn rate (which explodes as TAS approaches zero).
         """
+        traf = self.traffic
+        mc = get_multicopter(traf)
+        if mc is None or not mc.ismulticopter.any():
+            super().update_airspeed()
+            return
+
+        m = mc.ismulticopter
+        hdg0 = traf.hdg[m]  # fancy indexing copies: heading before this step
         super().update_airspeed()
-        # TODO: slew traf.hdg[m] towards the commanded body heading,
-        # clipped to yawrate * simdt.
+
+        # Yaw at a fixed rate towards the desired body heading, from the
+        # pre-update heading (the base class snapped it, because its
+        # bank-angle turn rate goes to infinity at tas -> 0).
+        simdt = self._get_simulation().simdt
+        delhdg = (traf.aporasas.hdg[m] - hdg0 + 180.0) % 360.0 - 180.0
+        maxdel = mc.yawrate[m] * simdt
+        turning = np.abs(delhdg) > maxdel
+        traf.hdg[m] = (
+            np.where(turning, hdg0 + np.sign(delhdg) * maxdel, traf.aporasas.hdg[m]) % 360.0
+        )
+        self.swhdgsel[m] = turning
 
     def update_groundspeed(self) -> None:
         """Compute ground speed and track from the velocity vector.
@@ -41,8 +64,32 @@ class MulticopterKinematics(Kinematics):
         Runs the base implementation for the whole fleet, then rebuilds the
         ground-speed components of multicopter rows from the *commanded
         track* (``traf.aporasas.trk``) plus wind, and derives ``gs``/``trk``
-        from them.
+        from them: thrust is redirected without rotating the body, and
+        course changes have no turn radius.
         """
+        traf = self.traffic
         super().update_groundspeed()
-        # TODO: recompute traf.gsnorth/gseast/gs/trk for the multicopter
-        # rows from aporasas.trk instead of traf.hdg.
+        mc = get_multicopter(traf)
+        if mc is None or not mc.ismulticopter.any():
+            return
+
+        # Note: the base class already accumulated traf.work from its
+        # heading-driven gs; without wind the magnitudes are identical, and
+        # with wind the difference is negligible for the energy bookkeeping.
+        m = mc.ismulticopter
+        trkcmd = np.radians(traf.aporasas.trk)
+        airborne = traf.alt > 50.0 * ft  # windnorth/east are zero without wind
+        traf.gsnorth[m] = (traf.tas * np.cos(trkcmd) + traf.windnorth * airborne)[m]
+        traf.gseast[m] = (traf.tas * np.sin(trkcmd) + traf.windeast * airborne)[m]
+        # In the no-wind branch the base class aliases traf.gs to traf.tas
+        # and traf.trk to traf.hdg (plain assignment of the same ndarray), so
+        # writing them in place would corrupt tas and hdg. Rebuild instead.
+        gs = np.hypot(traf.gsnorth, traf.gseast)
+        traf.gs = np.where(m, gs, traf.gs)
+        # The track angle is undefined at hover; hold the commanded track.
+        trk = np.where(
+            gs > 0.01,
+            np.degrees(np.arctan2(traf.gseast, traf.gsnorth)) % 360.0,
+            traf.aporasas.trk % 360.0,
+        )
+        traf.trk = np.where(m, trk, traf.trk)

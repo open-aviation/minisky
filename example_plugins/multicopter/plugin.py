@@ -8,41 +8,42 @@ strafe — change course without rotating the nose).
 Everything is implemented as replaceable subclasses of core entities, which
 the plugin selects on load:
 
-- ``KINEMATICS`` -> :class:`MulticopterKinematics` — yaw-rate-limited
+- ``KINEMATICS``      -> :class:`MulticopterKinematics` — yaw-rate-limited
   heading, track-driven velocity vector.
-- ``APORASAS``   -> :class:`MulticopterAPorASAS` — no track-to-heading
+- ``APORASAS``        -> :class:`MulticopterAPorASAS` — no track-to-heading
   coupling for multicopter rows.
-- ``AUTOPILOT``  -> :class:`MulticopterAutopilot` — HOVER/DELIVER mission
-  primitives and a fixed waypoint capture radius.
-- ``OPENAP``     -> :class:`MulticopterPerf` — electric performance: power
-  from a propeller/motor map, battery state of charge, sagging envelope.
+- ``AUTOPILOT``       -> :class:`MulticopterAutopilot` — HOVER primitive,
+  HDG-yaws-the-nose semantics, fly-over route defaults.
+- ``ACTIVEWAYPOINT``  -> :class:`MulticopterActiveWaypoint` — fixed waypoint
+  capture radius (the bank-angle turn distance degenerates at hover speeds).
 
 Fixed-wing aircraft in the same simulation are untouched: every override
 calls ``super()`` and adjusts only the multicopter rows. Helicopters are out
 of scope — membership is a typecode set, not ``LIFT_ROTOR``.
 
-Stack commands: MCOPT, YAW, YAWRATE, HOVER, DELIVER, BATT.
+Stack commands: MCOPT, YAW, YAWRATE, HOVER.
 """
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from .activewp import MulticopterActiveWaypoint
 from .aporasas import MulticopterAPorASAS
 from .autopilot import MulticopterAutopilot
 from .entity import Multicopter
 from .kinematics import MulticopterKinematics
-from .perf import MulticopterPerf
 
 if TYPE_CHECKING:
     from minisky import MiniSky
+    from minisky.traffic import Traffic
 
 #: Replaceable base -> multicopter implementation, selected on load and reset.
 IMPLEMENTATIONS = (
     ("KINEMATICS", MulticopterKinematics),
     ("APORASAS", MulticopterAPorASAS),
     ("AUTOPILOT", MulticopterAutopilot),
-    ("OPENAP", MulticopterPerf),
+    ("ACTIVEWAYPOINT", MulticopterActiveWaypoint),
 )
 
 
@@ -60,11 +61,7 @@ def init_plugin(runtime: MiniSky) -> tuple[dict[str, Any], dict[str, list[Any]]]
     """
     mc = Multicopter(runtime.traffic)
     _select_implementations(runtime)
-
-    # The instances just selected onto traf; commands bind to these
-    ap = runtime.traffic.ap
-    perf = runtime.traffic.perf
-    if not isinstance(ap, MulticopterAutopilot) or not isinstance(perf, MulticopterPerf):
+    if not isinstance(runtime.traffic.ap, MulticopterAutopilot):
         raise RuntimeError("MULTICOPTER: could not select the multicopter implementations")
 
     config = {
@@ -72,7 +69,7 @@ def init_plugin(runtime: MiniSky) -> tuple[dict[str, Any], dict[str, list[Any]]]
         "reset": lambda: _select_implementations(runtime),
         "state": mc,
     }
-    return config, _stack_functions(mc, ap, perf)
+    return config, _stack_functions(runtime.traffic, mc)
 
 
 def _select_implementations(runtime: MiniSky) -> None:
@@ -87,17 +84,30 @@ def _select_implementations(runtime: MiniSky) -> None:
         runtime.replaceables.select(basename, impl.__name__)
 
 
-def _stack_functions(
-    mc: Multicopter, ap: MulticopterAutopilot, perf: MulticopterPerf
-) -> dict[str, list[Any]]:
+def _stack_functions(traffic: Traffic, mc: Multicopter) -> dict[str, list[Any]]:
     """Build the plugin's stack-command table.
 
-    Bound to the freshly selected instances; a later SELECTIMPL swap rebinds
-    them to the new instance. Argument specifications are given explicitly,
-    so they override the plain Python annotations on the callbacks.
+    HOVER is a free function that looks up ``traffic.ap`` at call time
+    rather than a bound method: a reset replaces the autopilot instance
+    twice (revert to base, then the reset hook reselects), and the command
+    rebinding cannot follow methods that only exist on the subclass across
+    that double swap. The entity commands bind to ``mc`` directly, which
+    lives for the whole plugin lifetime.
+
+    Argument specifications are given explicitly, so they override the plain
+    Python annotations on the callbacks.
     """
+
+    def hover(
+        idx: int, duration: float | None = None, alt: float | None = None
+    ) -> tuple[bool, str]:
+        ap = traffic.ap
+        if not isinstance(ap, MulticopterAutopilot):
+            return False, "HOVER: SELECTIMPL AUTOPILOT MULTICOPTERAUTOPILOT first"
+        return ap.hover(idx, duration, alt)
+
     return {
-        "MCOPT": [mc.mcopt, "callsign,[onoff]", "MCOPT callsign,[onoff]", mc.mcopt.__doc__],
+        "MCOPT": [mc.mcopt, "callsign,[onoff]", "MCOPT callsign,[ON/OFF]", mc.mcopt.__doc__],
         "YAW": [mc.yaw, "callsign,hdg", "YAW callsign,hdg", mc.yaw.__doc__],
         "YAWRATE": [
             mc.setyawrate,
@@ -105,12 +115,10 @@ def _stack_functions(
             "YAWRATE callsign,[rate]",
             mc.setyawrate.__doc__,
         ],
-        "HOVER": [ap.hover, "callsign,[time]", "HOVER callsign,[time]", ap.hover.__doc__],
-        "DELIVER": [
-            ap.deliver,
-            "callsign,alt,[time]",
-            "DELIVER callsign,alt,[time]",
-            ap.deliver.__doc__,
+        "HOVER": [
+            hover,
+            "callsign,[time,alt]",
+            "HOVER callsign,[time,alt]",
+            MulticopterAutopilot.hover.__doc__,
         ],
-        "BATT": [perf.batt, "callsign", "BATT callsign", perf.batt.__doc__],
     }
