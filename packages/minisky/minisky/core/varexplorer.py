@@ -23,7 +23,7 @@ from minisky.core import TrafficArrays
 
 
 class VariableExplorer:
-    """Searchable simulation data sources owned by one MiniSky runtime."""
+    """Searchable simulation data sources owned by a MiniSky runtime."""
 
     def __init__(self) -> None:
         # The variable lists and their corresponding sources

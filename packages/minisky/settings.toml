@@ -4,13 +4,10 @@ asas_pzh = 1000 # ASAS vertical PZ margin [ft]
 asas_marh = 1.05 # ASAS protected zone factors - horizontal
 asas_marv = 1.05 # ASAS protected zone factors - vertical
 
-# Plugin settings
-enabled_plugins = ["TANGRAM"] # Plugins to load at startup
-
-# Tangram bridge plugin (enabled_plugins = ["TANGRAM"], installed by `just sync`).
-# You can uncomment this table to override its defaults. Plugin configuration
-# belongs under [plugins.<name>].
-# [plugins.tangram]
-# redis_url = "redis://127.0.0.1:6379" # Redis used by the tangram deployment
-# channel = "minisky"                  # publishes to:<channel>:*, listens on from:<channel>:*
-# max_hz = 5                           # wall-clock cap on snapshot publish rate
+# A plugin table both enables the plugin at startup and supplies its config.
+# --8<-- [start:configured-plugin]
+[plugins.tangram]
+redis_url = "redis://127.0.0.1:6379" # Redis used by the tangram deployment
+channel = "minisky"                  # publishes to:<channel>:*, listens on from:<channel>:*
+max_hz = 5                           # wall-clock cap on snapshot publish rate
+# --8<-- [end:configured-plugin]

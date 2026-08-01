@@ -1,7 +1,7 @@
 # Architecture
 
 MiniSky keeps BlueSky's core simulation model but removes the GUI, networking,
-and node management. The mutabl state is owned by one [`MiniSky`][minisky.MiniSky] runtime.
+and node management. The mutabl state is owned by a [`MiniSky`][minisky.MiniSky] runtime.
 
 ## Runtime ownership
 
@@ -21,12 +21,19 @@ Constructing `MiniSky` creates an independent object graph:
 | `runtime.streaming` | `StreamHub` | Rate-capped snapshot fan-out |
 
 ```python
+import asyncio
+
 from minisky import DEFAULT_SETTINGS_FILE, MiniSky, MiniSkySettings
 
-settings = MiniSkySettings.from_file(DEFAULT_SETTINGS_FILE)
-with MiniSky(settings) as runtime:
-    runtime.load_plugins()
-    runtime.simulation.step()
+
+async def main() -> None:
+    settings = MiniSkySettings.from_file(DEFAULT_SETTINGS_FILE)
+    async with MiniSky(settings) as runtime:
+        await runtime.plugins.load_configured()
+        runtime.simulation.step()
+
+
+asyncio.run(main())
 ```
 
 ## The simulation loop

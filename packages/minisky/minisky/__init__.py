@@ -1,6 +1,6 @@
 """MiniSky air traffic simulator.
 
-[`MiniSky`][minisky.runtime.MiniSky] is the explicit ownership root for one
+[`MiniSky`][minisky.runtime.MiniSky] is the explicit ownership root for a
 simulator runtime. Construct it with validated [`MiniSkySettings`][] and access
 simulation components through that instance.
 """

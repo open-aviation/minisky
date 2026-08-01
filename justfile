@@ -1,6 +1,3 @@
-minisky_dir := "packages/minisky"
-plugin_dir := "packages/tangram-minisky"
-
 sync:
     pnpm install
     pnpm build
@@ -8,12 +5,12 @@ sync:
 
 fmt:
     uv run ruff check packages tests --fix
-    uv run ruff format packages/minisky-example*/src packages/minisky-tangram/src {{minisky_dir}}/example_plugins/legacy {{plugin_dir}}
+    uv run ruff format packages tests
     pnpm lint:fix
 
 check:
     uv run ruff check packages tests
-    uv run ruff format packages/minisky-example*/src packages/minisky-tangram/src {{minisky_dir}}/example_plugins/legacy {{plugin_dir}} --check
+    uv run ruff format packages tests --check
     uv run pyright
     pnpm check
 

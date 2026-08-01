@@ -3,7 +3,7 @@
 Defines the `Simulation` class, the central clock and state machine of
 the simulator. It advances simulation time, processes the command stack,
 triggers plugin pre-/post-update hooks, and updates all aircraft in the
-traffic object once per timestep. Each `MiniSky` runtime owns one instance.
+traffic object once per timestep. Each `MiniSky` runtime owns an instance.
 """
 
 from __future__ import annotations

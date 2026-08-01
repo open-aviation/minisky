@@ -434,7 +434,7 @@ class MVP(ConflictResolution):
         """Modified Voltage Potential (MVP) resolution method.
 
         Computes the velocity change that displaces the predicted closest
-        point of approach (CPA) of one conflict pair to the edge of the
+        point of approach (CPA) of a conflict pair to the edge of the
         resolution zone (protected zone scaled by `resofach`/`resofacv`).
         Horizontally, the intrusion at CPA is divided by the time to CPA to
         obtain the required speed change along the CPA displacement

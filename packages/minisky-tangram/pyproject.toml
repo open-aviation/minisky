@@ -18,4 +18,4 @@ packages = ["src/minisky_tangram"]
 minisky = { workspace = true }
 
 [project.entry-points."minisky.plugins"]
-tangram = "minisky_tangram:init_plugin"
+tangram = "minisky_tangram:plugin"

@@ -8,7 +8,7 @@ every time someone diffs against upstream.
 
 When evaluating a new upstream change, check here first. If a rejected change
 becomes relevant later (e.g. upstream lands a follow-up with actual new
-behaviour), add a new entry rather than editing the old one.
+behaviour), add a new entry rather than editing the existing entry.
 
 ## Rejected
 

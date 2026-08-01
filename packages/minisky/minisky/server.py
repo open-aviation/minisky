@@ -57,7 +57,7 @@ Runtime = Annotated[MiniSky, Depends(_get_runtime)]
 async def lifespan(app: FastAPI):
     """Run the app-owned simulator for the lifetime of the API server."""
     runtime = cast(MiniSky, app.state.runtime)
-    runtime.load_plugins()
+    await runtime.plugins.load_configured()
     runtime.start()
     try:
         yield
@@ -195,7 +195,7 @@ def commands(runtime: Runtime) -> dict[str, str]:
 async def stream(websocket: WebSocket) -> None:
     """Push a full simulation snapshot once per simulation step in SI units.
 
-    Emits one JSON message per published tick, rate-capped by
+    Emits a JSON message per published tick, rate-capped by
     [`STREAM_MAX_HZ`][minisky.streaming.STREAM_MAX_HZ], containing `siminfo`
     and `acdata` as built by [`build_snapshot`][minisky.streaming.build_snapshot].
     The most recent snapshot is sent immediately on connect so a new client is
@@ -252,13 +252,13 @@ def list_plugins(runtime: Runtime) -> Any:
     return runtime.plugins.manage("LIST")
 
 
-def load_plugin(name: str, runtime: Runtime) -> Any:
+async def load_plugin(name: str, runtime: Runtime) -> Any:
     """Load a plugin by name."""
-    return runtime.plugins.manage("LOAD", name)
+    return await runtime.plugins.load(name)
 
 
 def create_router() -> APIRouter:
-    """Create the API router for one FastAPI application."""
+    """Create the API router for a FastAPI application."""
     router = APIRouter()
     router.add_api_route("/", root, methods=["GET"])
     router.add_api_route("/all", all, methods=["GET"])

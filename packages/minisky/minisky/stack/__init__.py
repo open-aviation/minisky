@@ -12,7 +12,7 @@ the argument parsers that convert argument text into typed values. The base
 command set is defined in `minisky.stack.commands` and registered by
 [`CommandStack.init`][minisky.stack.CommandStack.init].
 
-Each `CommandStack` owns one runtime's command registry, pending command
+Each `CommandStack` owns a runtime's command registry, pending command
 queue, scenario buffer, and sender state.
 
 This module also implements scenario handling: [`CommandStack.ic`][minisky.stack.CommandStack.ic] loads a scenario file,
@@ -283,11 +283,11 @@ class _PendingCommand:
 
 
 class CommandStack:
-    """Command registry, queue, and scenario state for one runtime.
+    """Command registry, queue, and scenario state for a runtime.
 
     Holds the available command objects, the queue of pending command lines,
     and the commands and timestamps loaded from a scenario file. Each
-    `MiniSky` runtime owns one instance, so command and
+    `MiniSky` runtime owns an instance, so command and
     scenario state is not shared between runtimes.
 
     Attributes:
@@ -348,7 +348,7 @@ class CommandStack:
         brief: str = "",
         help: str = "",
     ) -> PreparedCommand:
-        """Construct and parse one command without registering it."""
+        """Construct and parse a command without registering it."""
         callback = func.__func__ if isinstance(func, (staticmethod, classmethod)) else func
         command_name = (name or callback.__name__).upper()
         alias_names = tuple(alias.upper() for alias in aliases)

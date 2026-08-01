@@ -23,8 +23,8 @@ MIN_UPDATE_INTERVAL = 0.0001
 class Runner:
     """Asyncio loop that drives the simulation at a configurable speed.
 
-    Each loop iteration performs one call to `self.simulation.step()` (which
-    advances simulation time by one `simdt`) and then sleeps so that steps
+    Each loop iteration performs a call to `self.simulation.step()` (which
+    advances simulation time by `simdt`) and then sleeps so that steps
     occur every `1 / speed` wall-clock seconds. During a fast-forward jump
     (see `forward`) the sleep is shortened to the minimum interval so
     the target simulation time is reached as fast as possible.
@@ -36,7 +36,7 @@ class Runner:
         allow_shutdown: If False, `stop` is ignored and the loop keeps
             running (used when the simulator should idle without a scenario).
         speed: Simulation speed factor relative to real time; the loop targets
-            one simulation step every `1 / speed` wall-clock seconds.
+            a simulation step every `1 / speed` wall-clock seconds.
         jump: Remaining fast-forward request [s of simulation time]; 0 when
             no jump is active.
         jump_to: Target simulation time of the active fast-forward jump [s].
@@ -76,7 +76,7 @@ class Runner:
     def setspeed(self, mult: float) -> tuple[bool, str]:
         """Set the simulation speed multiplier (stack DTMULT command).
 
-        The loop targets one simulation step every `1 / speed` wall-clock
+        The loop targets a simulation step every `1 / speed` wall-clock
         seconds, so a larger multiplier makes simulated time advance faster
         relative to the wall clock. This is the wall-clock-pacing equivalent of
         BlueSky's `DTMULT`.

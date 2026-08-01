@@ -11,11 +11,15 @@ from redis.client import PubSub
 
 from minisky import MiniSky
 from minisky.simulation import Simulation, SimulationState
-from minisky.streaming import build_snapshot
 from minisky_tangram import TangramBridge
 
 Observer = tuple[fakeredis.FakeRedis, PubSub]
 StepUntil = Callable[[Callable[[], bool]], int]
+
+
+@pytest.fixture
+def anyio_backend() -> str:
+    return "asyncio"
 
 
 @pytest.fixture
@@ -27,27 +31,22 @@ def redis_server() -> fakeredis.FakeServer:
 def bridge(
     runtime: MiniSky, sim: Simulation, redis_server: fakeredis.FakeServer
 ) -> Iterator[TangramBridge]:
+    del sim
     bridge = TangramBridge(
         "redis://fake",
         "minisky",
         max_hz=1000,
-        snapshot_builder=lambda: build_snapshot(
-            runtime.simulation, runtime.traffic, runtime.runner, runtime.commands
-        ),
-        console=runtime.console,
-        simulation=runtime.simulation,
-        runner=runtime.runner,
-        traffic=runtime.traffic,
-        get_scenname=runtime.commands.get_scenname,
-        stack_command=runtime.commands.stack,
         redis_factory=lambda url: fakeredis.FakeRedis(server=redis_server),
     )
-    ok, msg = bridge.start()
+    plugin_runtime = runtime.plugins._plugin_runtime()
+    plugin_runtime.subscribe_console(bridge.capture_console)
+    ok, msg = bridge.start(plugin_runtime)
     assert ok, msg
     # The I/O thread subscribes asynchronously; commands published before the
     # subscription is live would be silently lost (pub/sub has no replay).
     assert bridge.ready.wait(timeout=5.0), "bridge did not subscribe in time"
     yield bridge
+    plugin_runtime.revoke()
     bridge.stop()
 
 
@@ -66,7 +65,7 @@ def wait_for(
     pred: Callable[[dict[str, Any]], bool] = lambda payload: True,
     timeout: float = 5.0,
 ) -> dict[str, Any]:
-    """Read pattern messages until one on the given topic satisfies pred."""
+    """Read pattern messages until a message on the given topic satisfies pred."""
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         message = pubsub.get_message(timeout=0.05)

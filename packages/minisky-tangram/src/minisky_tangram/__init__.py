@@ -44,22 +44,20 @@ import queue
 import threading
 import time
 from collections import deque
-from collections.abc import Callable
+from collections.abc import AsyncGenerator, Callable
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any, TypedDict, cast
+from typing import Any, TypedDict, cast
 
 from pydantic import BaseModel, ConfigDict
 
+from minisky import plugin as plugin_api
 from minisky.simulation import SimulationState
-from minisky.streaming import Snapshot, build_snapshot
+from minisky.streaming import Snapshot
 from minisky.tools.aero import fpm, ft, kts
 
-if TYPE_CHECKING:
-    from minisky import MiniSky
-    from minisky.simulation import ConsoleIO, Runner, Simulation
-    from minisky.traffic import Traffic
 
-
+# --8<-- [start:configuration]
 class TangramSettings(BaseModel):
     """Validated `[plugins.tangram]` configuration."""
 
@@ -68,6 +66,8 @@ class TangramSettings(BaseModel):
     redis_url: str = "redis://127.0.0.1:6379"
     channel: str = "minisky"
     max_hz: float = 5.0
+
+# --8<-- [end:configuration]
 
 
 # How often the background thread republishes state while the simulation is
@@ -206,65 +206,41 @@ def extract_command(payload: str | bytes) -> str | None:
 
 
 class TangramBridge:
-    """Owns the Redis connection and shuttles data between it and the sim.
-
-    The simulation thread only ever touches thread-safe queues/deques: the
-    `update` hook enqueues converted snapshots, and a tee on `scr.echo`
-    enqueues console lines. A daemon thread does all Redis I/O: draining
-    those queues, republishing a heartbeat while the sim is not advancing,
-    and listening for browser commands on `from:<channel>:*`.
-    """
+    """Own Redis I/O and bridge it to a plugin runtime."""
 
     def __init__(
         self,
         redis_url: str,
         channel: str,
         max_hz: float,
-        snapshot_builder: Callable[[], Snapshot],
-        console: ConsoleIO,
-        simulation: Simulation,
-        runner: Runner,
-        traffic: Traffic,
-        get_scenname: Callable[[], str],
-        stack_command: Callable[[str], None],
         redis_factory: Callable[[str], Any] | None = None,
     ) -> None:
         self.redis_url = redis_url
         self.channel = channel
         self.min_interval = 1.0 / max_hz if max_hz > 0 else 0.0
-        self.snapshot_builder = snapshot_builder
-        self.console = console
-        self.simulation = simulation
-        self.runner = runner
-        self.traffic = traffic
-        self.get_scenname = get_scenname
-        self.stack_command = stack_command
         self.redis_factory = redis_factory
 
         self.connected = False
         self.published = 0
         self.last_error = ""
 
+        self._snapshot_builder: Callable[[], Snapshot] | None = None
+        self._status_builder: Callable[[], plugin_api.PluginStatus] | None = None
+        self._stack_command: Callable[[str], None] | None = None
         self._last_build = 0.0
         self._last_payload: TangramPayload | None = None
         self._snapshots: queue.Queue[TangramPayload] = queue.Queue(maxsize=4)
         self._console: deque[str] = deque(maxlen=200)
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
-        self._original_echo: Callable[[str, int], None] | None = None
         self.ready = threading.Event()
-        """Set once the command subscription is live (commands published
-        before this are lost -- Redis pub/sub has no replay)."""
 
-    # -- simulation-thread side -------------------------------------------
-
-    def start(self) -> tuple[bool, str]:
-        """Install the console tee and start the Redis I/O thread."""
+    def start(self, runtime: plugin_api.PluginRuntime) -> tuple[bool, str]:
+        """Bind runtime capabilities and start the Redis thread."""
         try:
             if self.redis_factory is None:
                 import redis
 
-                # cast: from_url's untyped **kwargs would leak Unknown under strict mode.
                 self.redis_factory = cast(
                     "Callable[[str], Any]",
                     redis.Redis.from_url,  # pyright: ignore[reportUnknownMemberType]
@@ -275,28 +251,30 @@ class TangramBridge:
                 "MiniSky repository root"
             )
 
-        self._tee_console()
+        self._snapshot_builder = runtime.snapshot
+        self._status_builder = runtime.status
+        self._stack_command = runtime.stack_command
+        self._stop.clear()
+        self.ready.clear()
         self._thread = threading.Thread(target=self._run, name="tangram-bridge", daemon=True)
         self._thread.start()
         return True, f"Tangram bridge publishing to to:{self.channel}:* at {self.redis_url}"
 
     def stop(self) -> None:
-        """Stop Redis I/O and restore the runtime console."""
+        """Stop Redis I/O and release runtime callbacks."""
         self._stop.set()
         if self._thread is not None:
             self._thread.join(timeout=2.0)
             self._thread = None
-        if self._original_echo is not None:
-            self.console.echo = self._original_echo  # type: ignore[method-assign]
-            self._original_echo = None
+        self.connected = False
+        self.ready.clear()
+        self._snapshot_builder = None
+        self._status_builder = None
+        self._stack_command = None
 
+    @plugin_api.command(name="TANGRAM")
     def status(self) -> tuple[bool, str]:
-        """Return the current Redis bridge status for the TANGRAM command.
-
-        Returns:
-            A `(True, message)` tuple reporting connection state, Redis URL,
-            channel, publication count, and the most recent transport error.
-        """
+        """Show the status of the tangram Redis bridge."""
         status = "connected" if self.connected else "disconnected"
         text = (
             f"Tangram bridge: {status} to {self.redis_url}\n"
@@ -306,66 +284,57 @@ class TangramBridge:
             text += f"\nLast error: {self.last_error}"
         return True, text
 
+    @plugin_api.hook("update")
     def tick(self) -> None:
-        """Update hook: build and enqueue a snapshot (rate-capped). Runs in OP."""
+        """Build and enqueue a rate-capped snapshot while operating."""
+        snapshot_builder = self._snapshot_builder
+        if snapshot_builder is None:
+            return
         now = time.monotonic()
         if now - self._last_build < self.min_interval:
             return
         self._last_build = now
-        self._enqueue(convert_snapshot(self.snapshot_builder()))
+        self._enqueue(convert_snapshot(snapshot_builder()))
 
+    @plugin_api.hook("reset")
     def reset(self) -> None:
-        """Reset hook: push an empty payload so the frontend clears the map."""
+        """Push an empty payload so the frontend clears the map."""
+        snapshot_builder = self._snapshot_builder
+        if snapshot_builder is None:
+            return
         self._last_payload = None
-        self._enqueue(convert_snapshot(self.snapshot_builder()))
+        self._enqueue(convert_snapshot(snapshot_builder()))
+
+    def capture_console(self, text: str) -> None:
+        if text:
+            self._console.extend(text.splitlines())
 
     def _enqueue(self, payload: TangramPayload) -> None:
         self._last_payload = payload
         try:
             self._snapshots.put_nowait(payload)
         except queue.Full:
-            # Drop the oldest snapshot; each payload is a full state anyway.
             try:
                 self._snapshots.get_nowait()
                 self._snapshots.put_nowait(payload)
             except (queue.Empty, queue.Full):
                 pass
 
-    def _tee_console(self) -> None:
-        """Also capture everything echoed to the console, without consuming it."""
-        if self._original_echo is not None:
-            return
-        self._original_echo = self.console.echo
-
-        def echo(text: str = "", flag: int = 0) -> None:
-            assert self._original_echo is not None
-            self._original_echo(text, flag)
-            if text:
-                self._console.extend(text.splitlines())
-
-        self.console.echo = echo  # type: ignore[method-assign]
-
-    # -- Redis-thread side -------------------------------------------------
-
     def _siminfo_heartbeat(self) -> TangramPayload:
-        """Refresh the cheap scalar fields of the last payload.
-
-        Only reads scalar attributes of the injected runtime components (safe
-        enough from a second thread); the aircraft list and conflict counters are reused
-        from the last snapshot built on the simulation thread.
-        """
+        status_builder = self._status_builder
+        if status_builder is None:
+            raise RuntimeError("Tangram bridge is stopped")
+        status = status_builder()
         last = self._last_payload
-        sim = self.simulation
-        state = int(sim.state)
         siminfo: TangramSimInfo = {
-            "simt": float(sim.simt),
-            "simdt": float(sim.simdt),
-            "simutc": sim.utc.isoformat(),
-            "speed": float(self.runner.speed),
-            "ntraf": int(self.traffic.ntraf),
-            "state": state,
-            "state_name": _state_name(state),
-            "scenname": self.get_scenname(),
+            "simt": status.simt,
+            "simdt": status.simdt,
+            "simutc": status.simutc.isoformat(),
+            "speed": status.speed,
+            "ntraf": status.ntraf,
+            "state": status.state,
+            "state_name": _state_name(status.state),
+            "scenname": status.scenname,
             "nconf_cur": last["siminfo"]["nconf_cur"] if last is not None else 0,
             "nlos_cur": last["siminfo"]["nlos_cur"] if last is not None else 0,
         }
@@ -397,9 +366,10 @@ class TangramBridge:
                         if isinstance(topic, bytes):
                             topic = topic.decode("utf-8", errors="replace")
                         if topic == command_topic:
-                            cmd = extract_command(message.get("data", ""))
-                            if cmd:
-                                self.stack_command(cmd)
+                            command = extract_command(message.get("data", ""))
+                            stack_command = self._stack_command
+                            if command and stack_command is not None:
+                                stack_command(command)
 
                     published = False
                     while True:
@@ -414,8 +384,6 @@ class TangramBridge:
                     if published:
                         last_publish = time.monotonic()
                     elif time.monotonic() - last_publish > HEARTBEAT_SECS:
-                        # Publish even before the first snapshot (INIT state, no
-                        # traffic yet) so the frontend sees the simulator at all.
                         client.publish(data_topic, json.dumps(self._siminfo_heartbeat()))
                         self.published += 1
                         last_publish = time.monotonic()
@@ -425,64 +393,38 @@ class TangramBridge:
                         while self._console:
                             lines.append(self._console.popleft())
                         client.publish(console_topic, json.dumps({"lines": lines}))
-            except Exception as e:  # noqa: BLE001 - reconnect on any Redis failure
+            except Exception as exc:  # noqa: BLE001 - reconnect after transport failure
                 self.connected = False
                 self.ready.clear()
-                self.last_error = str(e)
+                self.last_error = str(exc)
                 if self._stop.wait(timeout=2.0):
                     return
 
 
-def init_plugin(
-    runtime: MiniSky,
-) -> tuple[dict[str, Any], dict[str, list[Any]]]:
-    """Create the bridge and register its simulation hooks for one runtime.
-
-    The returned state, lifecycle callbacks, shutdown callback, and TANGRAM
-    command are all bound to the supplied runtime. Loading the plugin in a
-    second runtime therefore creates an independent Redis bridge.
-
-    Args:
-        runtime: MiniSky runtime loading the plugin.
-
-    Returns:
-        A `(config, stack_functions)` tuple consumed by the runtime-owned
-        plugin manager.
-    """
-    cfg = TangramSettings.model_validate(runtime.settings.plugins.get("tangram", {}))
-    bridge = TangramBridge(
-        redis_url=cfg.redis_url,
-        channel=cfg.channel,
-        max_hz=cfg.max_hz,
-        snapshot_builder=lambda: build_snapshot(
-            runtime.simulation, runtime.traffic, runtime.runner, runtime.commands
-        ),
-        console=runtime.console,
-        simulation=runtime.simulation,
-        runner=runtime.runner,
-        traffic=runtime.traffic,
-        get_scenname=runtime.commands.get_scenname,
-        stack_command=runtime.commands.stack,
+# --8<-- [start:lifespan]
+def build(context: plugin_api.PluginContext[TangramSettings]) -> plugin_api.PluginSpec:
+    bridge = context.mount(
+        TangramBridge(
+            redis_url=context.config.redis_url,
+            channel=context.config.channel,
+            max_hz=context.config.max_hz,
+        )
     )
-    success, message = bridge.start()
-    runtime.console.echo(message)
-    if not success:
-        raise RuntimeError(message)
 
-    config = {
-        "plugin_name": "TANGRAM",
-        "update_interval": 0.0,
-        "update": bridge.tick,
-        "reset": bridge.reset,
-        "shutdown": bridge.stop,
-        "state": bridge,
-    }
-    stack_functions = {
-        "TANGRAM": [
-            bridge.status,
-            "",
-            "TANGRAM",
-            "Show the status of the tangram Redis bridge.",
-        ]
-    }
-    return config, stack_functions
+    @asynccontextmanager
+    async def lifespan(runtime: plugin_api.PluginRuntime) -> AsyncGenerator[None]:
+        runtime.subscribe_console(bridge.capture_console)
+        success, message = bridge.start(runtime)
+        runtime.echo(message)
+        if not success:
+            raise RuntimeError(message)
+        try:
+            yield
+        finally:
+            bridge.stop()
+
+    return context.finish(lifespan=lifespan)
+
+
+plugin = plugin_api.Plugin(build=build, config_class=TangramSettings)
+# --8<-- [end:lifespan]

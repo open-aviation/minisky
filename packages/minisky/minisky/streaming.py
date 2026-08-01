@@ -1,6 +1,6 @@
 """Per-tick streaming of simulation state.
 
-Provides a small, transport-agnostic mechanism to push a full snapshot of one
+Provides a small, transport-agnostic mechanism to push a full snapshot of a
 simulation runtime once per timestep. [`build_snapshot`][] receives the runtime
 explicitly and returns a plain, JSON-serialisable dict in **SI units**;
 [`StreamHub`][] fans that snapshot out to any number of awaiting consumers

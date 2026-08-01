@@ -1,6 +1,6 @@
 # Python library
 
-MiniSky can be embedded in your own Python code. Construct one explicit runtime,
+MiniSky can be embedded in your own Python code. Construct an explicit runtime,
 step its simulation, and read aircraft state directly from NumPy arrays.
 
 ## Minimal example
@@ -131,7 +131,7 @@ import asyncio
 
 async def main() -> None:
     async with MiniSky(settings, scenario="scenarios/kl204.scn") as runtime:
-        runtime.load_plugins()
+        await runtime.plugins.load_configured()
         runtime.runner.speed = 10
         await runtime.run()
 

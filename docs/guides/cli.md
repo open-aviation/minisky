@@ -1,6 +1,6 @@
 # Command-line interface
 
-MiniSky installs one top-level command, `minisky`, with subcommands for running
+MiniSky installs a top-level command, `minisky`, with subcommands for running
 scenarios, serving the API, using the console, and streaming snapshots.
 
 ```bash

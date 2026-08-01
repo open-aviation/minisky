@@ -17,5 +17,7 @@ packages = ["src/minisky_example"]
 [tool.uv.sources]
 minisky = { workspace = true }
 
+# --8<-- [start:entry-point]
 [project.entry-points."minisky.plugins"]
 example = "minisky_example:plugin"
+# --8<-- [end:entry-point]

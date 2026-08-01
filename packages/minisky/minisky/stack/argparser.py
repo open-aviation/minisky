@@ -412,7 +412,7 @@ class PandirArg(Parser):
 
 
 class ArgumentParser:
-    """Own argument parser instances and reference data for one command stack.
+    """Own argument parser instances and reference data for a command stack.
 
     The traffic, navigation database, and console references are explicit,
     while the parser registry and reference data are isolated from other
