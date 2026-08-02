@@ -7,7 +7,7 @@ from os import PathLike
 from pathlib import Path
 from typing import Annotated, Any, TypeAlias
 
-import annotated_types
+from annotated_types import Ge, Gt, Le
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.functional_validators import BeforeValidator
 
@@ -16,16 +16,24 @@ from minisky.identifiers import validate_plugin_id
 PluginId: TypeAlias = Annotated[str, BeforeValidator(validate_plugin_id)]
 
 
+class ServerConfig(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    host: str = "0.0.0.0"
+    port: Annotated[int, Ge(0), Le(65535)] = 8000
+
+
 class MiniSkyConfig(BaseModel):
     """Validated configuration for a MiniSky runtime."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    asas_dtlookahead: Annotated[float, Field(), annotated_types.Ge(0)] = 300.0
-    asas_pzr: Annotated[float, Field(), annotated_types.Gt(0)] = 5.0
-    asas_pzh: Annotated[float, Field(), annotated_types.Gt(0)] = 1000.0
-    asas_marh: Annotated[float, Field(), annotated_types.Gt(0)] = 1.05
-    asas_marv: Annotated[float, Field(), annotated_types.Gt(0)] = 1.05
+    asas_dtlookahead: Annotated[float, Ge(0)] = 300.0
+    asas_pzr: Annotated[float, Gt(0)] = 5.0
+    asas_pzh: Annotated[float, Gt(0)] = 1000.0
+    asas_marh: Annotated[float, Gt(0)] = 1.05
+    asas_marv: Annotated[float, Gt(0)] = 1.05
+    server: ServerConfig = Field(default_factory=ServerConfig)
     plugins: dict[PluginId, dict[str, Any]] = Field(default_factory=dict)
 
     @classmethod

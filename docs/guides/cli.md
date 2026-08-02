@@ -12,7 +12,7 @@ uv run minisky --help
 | Command | Purpose |
 | --- | --- |
 | `minisky run --scenario FILE [--speed N] [--config FILE]` | Run a scenario file without interaction. |
-| `minisky server [--host HOST] [--port PORT] [--reload] [--config FILE]` | Start the REST and WebSocket API server. |
+| `minisky server [--host HOST] [--port PORT] [--reload] [--config FILE]` | Start the REST and WebSocket API server; CLI bind options override `[server]` config. |
 | `minisky console [--server URL] [--port PORT]` | Open an interactive console against a running server. |
 | `minisky stream [--url URL] [--raw]` | Print snapshots from the `/stream` WebSocket. |
 
