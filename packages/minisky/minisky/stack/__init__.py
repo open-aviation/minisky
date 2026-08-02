@@ -34,11 +34,11 @@ from functools import partial
 from io import StringIO
 from pathlib import Path
 from threading import Lock
-from typing import TYPE_CHECKING, Any, NamedTuple
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-from minisky.plugin.plugin_decorators import command as command
+from minisky.result import Err, Ok, Result
 from minisky.stack import argparser, commands
 from minisky.stack.argparser import ArgumentError, Parameter, String, Time, Txt, getnextarg
 
@@ -50,11 +50,6 @@ if TYPE_CHECKING:
     from minisky.tools.areafilter import AreaFilter
     from minisky.tools.navdata import Navdatabase
     from minisky.traffic import Traffic
-
-
-class CommandResult(NamedTuple):
-    success: bool
-    echotext: str
 
 
 class Command:
@@ -97,7 +92,7 @@ class Command:
         self.params = []
         self.callback = func
 
-    def __call__(self, argstring: str) -> CommandResult | Awaitable[CommandResult]:
+    def __call__(self, argstring: str) -> Result[str, str] | Awaitable[Result[str, str]]:
         """Parse arguments and execute the callback."""
         args: list[Any] = []
         param = None
@@ -128,19 +123,22 @@ class Command:
         return self._result(result)
 
     @staticmethod
-    async def _await_result(result: Awaitable[Any]) -> CommandResult:
+    async def _await_result(result: Awaitable[Any]) -> Result[str, str]:
         return Command._result(await result)
 
     @staticmethod
-    def _result(result: Any) -> CommandResult:
+    def _result(result: Any) -> Result[str, str]:
+        if isinstance(result, (Ok, Err)):
+            return result
         if result is None:
-            return CommandResult(True, "")
+            return Ok("")
         if isinstance(result, (tuple, list)):
             if len(result) > 1:
-                return CommandResult(bool(result[0]), str(result[1]))
+                text = str(result[1])
+                return Ok(text) if bool(result[0]) else Err(text)
             if len(result) == 1:
                 result = result[0]
-        return CommandResult(bool(result), "")
+        return Ok("") if bool(result) else Err("")
 
     def __repr__(self) -> str:
         if self.valid:
@@ -272,7 +270,7 @@ class PreparedCommand:
 
 @dataclass(slots=True)
 class _PendingCommand:
-    task: asyncio.Future[CommandResult]
+    task: asyncio.Future[Result[str, str]]
     name: str
     argstring: str
     command: Command
@@ -562,14 +560,16 @@ class CommandStack:
             self.cmdstack[0:0] = commands
 
     def _echo_command_result(
-        self, command_obj: Command, argstring: str, result: CommandResult
+        self, command_obj: Command, argstring: str, result: Result[str, str]
     ) -> None:
-        success, text = result
-        if not success:
-            if not argstring:
-                text = text or command_obj.brieftext()
-            else:
-                text = f"Error: {text or command_obj.brieftext()}"
+        match result:
+            case Ok(text):
+                pass
+            case Err(text):
+                if not argstring:
+                    text = text or command_obj.brieftext()
+                else:
+                    text = f"Error: {text or command_obj.brieftext()}"
         if text:
             self.console.echo(text)
 
@@ -658,7 +658,7 @@ class CommandStack:
                 if not (len(line.strip()) > 0 and line.strip()[0] == "#"):
                     self.console.echo(f"Skipping invalid scenario line: {line.strip()}")
 
-    def ic(self, scn: str) -> tuple[bool, str]:
+    def ic(self, scn: str) -> Result[str, str]:
         """IC: Load a scenario file.
 
         Resets the simulation, reads the scenario file, and buffers its
@@ -667,16 +667,13 @@ class CommandStack:
 
         Args:
             scn: The filename of the scenario, relative to the project root.
-
-        Returns:
-            tuple: (success (bool), message (str)).
         """
 
         self.simulation.reset()
 
         scn_path = self.scenario_root / scn
         if not scn_path.exists():
-            return False, f"IC: File not found: {scn_path}"
+            return Err(f"IC: File not found: {scn_path}")
 
         lines = self.readscn(scn_path)
 
@@ -685,9 +682,9 @@ class CommandStack:
             self.scencmd.append(cmd)
         self.scenname = scn_path.stem
 
-        return True, f"scenario {scn_path} loaded."
+        return Ok(f"scenario {scn_path} loaded.")
 
-    def ic_StringIO(self, scn: StringIO, scn_name: str | None = None) -> tuple[bool, str]:
+    def ic_StringIO(self, scn: StringIO, scn_name: str | None = None) -> Result[str, str]:
         """IC: Load a scenario from a StringIO object.
 
         Resets the simulation, reads scenario lines from the StringIO object,
@@ -696,9 +693,6 @@ class CommandStack:
         Args:
             scn: StringIO object containing scenario lines.
             scn_name: The name of the scenario (optional).
-
-        Returns:
-            tuple: (success (bool), message (str)).
         """
 
         # reset sim always
@@ -711,19 +705,16 @@ class CommandStack:
             self.scencmd.append(cmd)
         self.scenname = scn_name or ""
 
-        return True, f"scenario {scn_name} loaded."
+        return Ok(f"scenario {scn_name} loaded.")
 
-    def scenario(self, name: String) -> tuple[bool, str]:
+    def scenario(self, name: String) -> Result[str, str]:
         """SCENARIO: Set the scenario name for the current simulation.
 
         Args:
             name: The name to give the scenario.
-
-        Returns:
-            tuple: (True, confirmation message).
         """
         self.scenname = name
-        return True, "Starting scenario " + name
+        return Ok("Starting scenario " + name)
 
     def schedule(self, time: Time, cmdline: String) -> bool:
         """SCHEDULE: Schedule a stack command at a specific simulation time.
@@ -765,7 +756,7 @@ class CommandStack:
         self.scencmd.insert(idx, cmdline)
         return True
 
-    def showhelp(self, cmd: Txt = "", subcmd: Txt = "") -> tuple[bool, str]:
+    def showhelp(self, cmd: Txt = "", subcmd: Txt = "") -> Result[str, str]:
         """HELP: Display general help text or help text for a specific command,
         or dump command reference in file when command is >filename.
 
@@ -774,15 +765,12 @@ class CommandStack:
                 tab-delimited command reference for all commands to a file
                 in the docs directory.
             subcmd: Optional subcommand to display help for.
-
-        Returns:
-            tuple: (success (bool), help text or status message (str)).
         """
 
         # Check if help is asked for a specific command
         cmdobj = self.cmddict.get(cmd or "HELP")
         if cmdobj:
-            return True, cmdobj.helptext(subcmd)
+            return Ok(cmdobj.helptext(subcmd))
 
         # Write command reference to tab-delimited text file
         if cmd[0] == ">":
@@ -807,9 +795,9 @@ class CommandStack:
                 # Header of first table
                 f.write("Command\tDescription\tUsage\tArgument types\tFunction\tSynonyms\n")
                 f.write("\n".join(table))
-            return True, "Writing command reference in " + fname
+            return Ok("Writing command reference in " + fname)
 
-        return False, "HELP: Unknown command: " + cmd
+        return Err("HELP: Unknown command: " + cmd)
 
     def checkscen(self) -> None:
         """Check if commands from the scenario buffer need to be stacked.

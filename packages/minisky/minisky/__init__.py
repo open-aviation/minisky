@@ -10,6 +10,7 @@ from minisky.core.config import (
     default_user_config_dir,
     default_user_config_toml_path,
 )
+from minisky.result import Err, Ok, Result, UnwrapError
 from minisky.runtime import MiniSky
 from minisky.simulation import SimulationState
 
@@ -23,9 +24,13 @@ __all__ = (
     "BS_CMDERR",
     "BS_FUNERR",
     "BS_OK",
+    "Err",
     "MiniSky",
     "MiniSkyConfig",
+    "Ok",
+    "Result",
     "SimulationState",
+    "UnwrapError",
     "default_user_config_dir",
     "default_user_config_toml_path",
 )

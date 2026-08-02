@@ -72,15 +72,17 @@ class TestResolutionCommands:
         output = run_cmd("RESO")
         assert "Current CR method: OFF" in output
 
-    def test_rmethh_returns_success_tuple(self, runtime: MiniSky, run_cmd: RunCommand) -> None:
+    def test_rmethh_returns_ok_result(self, runtime: MiniSky, run_cmd: RunCommand) -> None:
         run_cmd("RESO MVP")
         result = runtime.traffic.cr.setresometh("SPD")
-        assert result == (True, "Horizontal resolution method set to SPD")
+        assert result.is_ok()
+        assert result.unwrap() == "Horizontal resolution method set to SPD"
 
-    def test_rmethv_returns_success_tuple(self, runtime: MiniSky, run_cmd: RunCommand) -> None:
+    def test_rmethv_returns_ok_result(self, runtime: MiniSky, run_cmd: RunCommand) -> None:
         run_cmd("RESO MVP")
         result = runtime.traffic.cr.setresometv("ON")
-        assert result == (True, "Vertical resolution method set to ON")
+        assert result.is_ok()
+        assert result.unwrap() == "Vertical resolution method set to ON"
 
     def test_rmethh_via_stack(self, runtime: MiniSky, run_cmd: RunCommand) -> None:
         run_cmd("RESO MVP")
@@ -103,9 +105,8 @@ class TestResolutionCommands:
 
     def test_resooff_report_mentions_resooff(self, runtime: MiniSky, sim: Simulation) -> None:
         result = runtime.traffic.cr.setresooff()
-        assert isinstance(result, tuple)
-        success, message = result
-        assert success
+        assert result.is_ok()
+        message = result.unwrap()
         assert "RESOOFF" in message
         assert "NORESO" not in message
 
@@ -123,9 +124,9 @@ class TestDetectionCommands:
 
     def test_sethpz_status_uses_default(self, runtime: MiniSky, run_cmd: RunCommand) -> None:
         run_cmd("CRE KL204,B744,52,4,45,FL250,350")
-        success, message = runtime.traffic.cd.sethpz()
-        assert success
-        assert f"{runtime.traffic.cd.hpz_def / FT:.2f} ft" in message
+        result = runtime.traffic.cd.sethpz()
+        assert result.is_ok()
+        assert f"{runtime.traffic.cd.hpz_def / FT:.2f} ft" in result.unwrap()
 
     def test_hpz_default_consistent_after_reset(self, runtime: MiniSky, sim: Simulation) -> None:
         # reset() must restore the same default as __init__

@@ -17,6 +17,8 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
+from minisky.result import Err, Ok, Result
+
 if TYPE_CHECKING:
     from minisky.core.trafficarrays import ReplaceableManager
     from minisky.plugin import PluginManager
@@ -218,7 +220,7 @@ class Simulation:
         self.plugins.reset()
         self.console.echo("Simulation reset")
 
-    def realtime(self, flag: bool | None = None) -> tuple[bool, str]:
+    def realtime(self, flag: bool | None = None) -> Result[str, str]:
         """Get or set realtime mode (stack REALTIME command).
 
         In realtime mode the timestep may be varied to keep the simulation
@@ -227,15 +229,11 @@ class Simulation:
         Args:
             flag: `True`/`False` to enable or disable realtime mode, or
                 `None` to only report the current setting.
-
-        Returns:
-            Tuple of (success flag, message stating whether realtime mode is
-            on or off).
         """
         if flag is not None:
             self.rtmode = flag
 
-        return True, "Realtime mode is o" + ("n" if self.rtmode else "ff")
+        return Ok("Realtime mode is o" + ("n" if self.rtmode else "ff"))
 
     def event(self, eventname: bytes, eventdata: Any, sender_rte: Any) -> bool:
         """Handle events coming from the network.
@@ -274,7 +272,7 @@ class Simulation:
 
         return event_processed
 
-    def setutc(self, *args: str) -> tuple[bool, str]:
+    def setutc(self, *args: str) -> Result[str, str]:
         """Set the simulated UTC clock time (stack UTC/DATE command).
 
         Usage: UTC [RUN | REAL | UTC | HH:MM:SS[.ff] | day month year [HH:MM:SS[.ff]]]
@@ -291,10 +289,6 @@ class Simulation:
 
         Args:
             *args: Zero, one, three, or four arguments as described above.
-
-        Returns:
-            Tuple of (success flag, message with the resulting simulation UTC
-            time, or an error message when parsing failed).
         """
         if not args:
             pass  # avoid error message, just give time
@@ -317,14 +311,14 @@ class Simulation:
                         args[0], "%H:%M:%S.%f" if "." in args[0] else "%H:%M:%S"
                     ).replace(tzinfo=datetime.UTC)
                 except ValueError:
-                    return False, "Input time invalid"
+                    return Err("Input time invalid")
 
         elif len(args) == 3:
             day, month, year = args
             try:
                 self.utc = datetime.datetime(int(year), int(month), int(day), tzinfo=datetime.UTC)
             except ValueError:
-                return False, "Input date invalid."
+                return Err("Input date invalid.")
         elif len(args) == 4:
             day, month, year, timestring = args
             try:
@@ -333,11 +327,11 @@ class Simulation:
                     ("%Y,%m,%d,%H:%M:%S.%f" if "." in timestring else "%Y,%m,%d,%H:%M:%S"),
                 ).replace(tzinfo=datetime.UTC)
             except ValueError:
-                return False, "Input date invalid."
+                return Err("Input date invalid.")
         else:
-            return False, "Syntax error"
+            return Err("Syntax error")
 
-        return True, "Simulation UTC " + str(self.utc)
+        return Ok("Simulation UTC " + str(self.utc))
 
     def setseed(self, value: int) -> None:
         """Set the random seed for this simulation (stack SEED command).

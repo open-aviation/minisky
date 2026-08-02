@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from minisky.result import Err, Ok, Result
+
 from .convert import txt2lat, txt2lon
 
 if TYPE_CHECKING:
@@ -23,7 +25,7 @@ def txt2pos(
     reflon: float,
     navigation: Navdatabase,
     traffic: Traffic,
-) -> tuple[bool, Position | str]:
+) -> Result[Position, str]:
     """Parse a position text into a Position object.
 
     Args:
@@ -31,14 +33,11 @@ def txt2pos(
             (e.g. "EHAM/RW06"), or aircraft callsign.
         reflat: Reference latitude [deg], used to resolve ambiguous names.
         reflon: Reference longitude [deg], used to resolve ambiguous names.
-
-    Returns:
-        tuple: (True, Position) on success, or (False, error message).
     """
     pos = Position(name.upper().strip(), reflat, reflon, navigation, traffic)
     if not pos.error:
-        return True, pos
-    return False, name + " not found in database"
+        return Ok(pos)
+    return Err(name + " not found in database")
 
 
 def islat(txt: str) -> bool:

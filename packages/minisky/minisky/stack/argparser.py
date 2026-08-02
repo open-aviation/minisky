@@ -23,6 +23,7 @@ from collections.abc import Callable
 from types import SimpleNamespace, UnionType
 from typing import TYPE_CHECKING, Annotated, Any, Union, get_args, get_origin
 
+from minisky.result import Err, Ok
 from minisky.tools.convert import (
     txt2alt,
     txt2bool,
@@ -261,7 +262,11 @@ class CallsignArg(Parser):
         callsign = arg.upper()
         traffic = self.argument_parser.traffic
         if callsign in traffic.groups:
-            idx = traffic.groups.listgroup(callsign)
+            match traffic.groups.listgroup(callsign):
+                case Ok(group):
+                    idx = group
+                case Err(error):
+                    raise ArgumentError(error)
         else:
             idx = traffic.idx(callsign)
             if idx < 0:

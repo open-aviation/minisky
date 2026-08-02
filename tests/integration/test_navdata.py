@@ -14,9 +14,9 @@ class TestDefwpt:
     def test_defwpt_adds_waypoint(self, runtime: MiniSky, sim: Simulation) -> None:
         navdb = runtime.navigation
         n = len(navdb.wpid)
-        ok, msg = navdb.defwpt("TSTWPT1", 52.0, 4.0, "FIX")
-        assert ok
-        assert "TSTWPT1" in msg
+        result = navdb.defwpt("TSTWPT1", 52.0, 4.0, "FIX")
+        assert result.is_ok()
+        assert "TSTWPT1" in result.unwrap()
         assert len(navdb.wpid) == n + 1
         assert len(navdb.wplat) == n + 1
         assert len(navdb.wplon) == n + 1
@@ -32,8 +32,8 @@ class TestDefwpt:
         navdb.defwpt("TSTWPTA", 52.0, 4.0, "FIX")
         navdb.defwpt("TSTWPTB", 10.0, 20.0, "FIX")
 
-        ok, _ = navdb.delwpt("TSTWPTA")
-        assert ok
+        result = navdb.delwpt("TSTWPTA")
+        assert result.is_ok()
         assert "TSTWPTA" not in navdb.wpid
         assert len(navdb.wpid) == n + 1
         assert len(navdb.wplat) == n + 1
@@ -51,9 +51,9 @@ class TestDefwpt:
         navdb.defwpt("TSTWPT2", 52.0, 4.0)
 
         # TODO(abraham): there may be an inherited bug in the following line, ignoring for now
-        ok, msg = navdb.defwpt("TSTWPT2", 0.0, "delete")  # type: ignore
-        assert ok
-        assert "deleted" in msg
+        result = navdb.defwpt("TSTWPT2", 0.0, "delete")  # type: ignore
+        assert result.is_ok()
+        assert "deleted" in result.unwrap()
         assert "TSTWPT2" not in navdb.wpid
         assert len(navdb.wpid) == n
         assert len(navdb.wplat) == n
@@ -62,8 +62,8 @@ class TestDefwpt:
     def test_defwpt_delete_via_wptype_del(self, runtime: MiniSky, sim: Simulation) -> None:
         navdb = runtime.navigation
         navdb.defwpt("TSTWPT3", 52.0, 4.0)
-        ok, _msg = navdb.defwpt("TSTWPT3", 52.0, 4.0, "DEL")
-        assert ok
+        result = navdb.defwpt("TSTWPT3", 52.0, 4.0, "DEL")
+        assert result.is_ok()
         assert "TSTWPT3" not in navdb.wpid
 
     def test_delwpt_accepts_lowercase_name(self, runtime: MiniSky, sim: Simulation) -> None:
@@ -71,6 +71,6 @@ class TestDefwpt:
         # searched wpid with the raw name, raising ValueError for lowercase input
         navdb = runtime.navigation
         navdb.defwpt("TSTWPT4", 52.0, 4.0, "FIX")
-        ok, _ = navdb.delwpt("tstwpt4")
-        assert ok
+        result = navdb.delwpt("tstwpt4")
+        assert result.is_ok()
         assert "TSTWPT4" not in navdb.wpid

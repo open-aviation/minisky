@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 
 from minisky.core import TrafficArrays
+from minisky.result import Err, Ok, Result
 
 if TYPE_CHECKING:
     from minisky.simulation import Simulation
@@ -248,7 +249,7 @@ class Trails(TrafficArrays):
         self.clearbg()
         self.clearnew()
 
-    def setTrails(self, *args: Any) -> bool | tuple[bool, str]:
+    def setTrails(self, *args: Any) -> Result[str, str]:
         """Switch trails on/off, or change the trail color of an aircraft.
 
         Implements the TRAIL stack command:
@@ -260,16 +261,13 @@ class Trails(TrafficArrays):
             *args: Either a bool (on/off) optionally followed by the
                 segment time resolution [s], or an aircraft index followed
                 by a color name (BLUE/RED/YELLOW).
-
-        Returns:
-            bool or tuple: True on success, or (success flag, message).
         """
         if len(args) == 0:
             msg = "TRAIL ON/OFF, [dt] / TRAIL acid color\n"
 
             msg = msg + "TRAILS ARE ON" if self.active else msg + "TRAILS ARE OFF"
 
-            return True, msg
+            return Ok(msg)
 
         # Switch on/off
         elif type(args[0]) == bool:
@@ -284,13 +282,10 @@ class Trails(TrafficArrays):
         else:
             # Change trail color
             if len(args) < 2 or args[1] not in ["BLUE", "RED", "YELLOW"]:
-                return (
-                    False,
-                    "Set aircraft trail color with: TRAIL acid BLUE/RED/YELLOW",
-                )
+                return Err("Set aircraft trail color with: TRAIL acid BLUE/RED/YELLOW")
             self.changeTrailColor(args[1], args[0])
 
-        return True
+        return Ok("")
 
     def changeTrailColor(self, color: str, idx: int) -> None:
         """Change the trail color of one aircraft.

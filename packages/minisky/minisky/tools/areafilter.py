@@ -17,6 +17,8 @@ from weakref import WeakValueDictionary
 import numpy as np
 from matplotlib.path import Path
 
+from minisky.result import Err, Ok, Result
+
 try:
     from rtree.index import Index  # type: ignore[assignment]
 except (ImportError, OSError):
@@ -94,7 +96,7 @@ class AreaFilter:
         coordinates: tuple[float, ...] | list[float],
         top: float = 1e9,
         bottom: float = -1e9,
-    ) -> tuple[bool, str]:
+    ) -> Result[str, str]:
         """Define a new area, or list/inspect existing areas.
 
         Args:
@@ -105,20 +107,17 @@ class AreaFilter:
                 about the existing area with the given name is returned.
             top: Top altitude bound [m] (default: effectively unbounded).
             bottom: Bottom altitude bound [m] (default: effectively unbounded).
-
-        Returns:
-            tuple: (success (bool), message (str)).
         """
         if areaname == "LIST":
             if not self.basic_shapes:
-                return True, "No shapes are currently defined."
+                return Ok("No shapes are currently defined.")
             else:
-                return True, "Currently defined shapes:\n" + ", ".join(self.basic_shapes)
+                return Ok("Currently defined shapes:\n" + ", ".join(self.basic_shapes))
         if not coordinates:
             if areaname in self.basic_shapes:
-                return True, str(self.basic_shapes[areaname])
+                return Ok(str(self.basic_shapes[areaname]))
             else:
-                return False, f"Unknown shape: {areaname}"
+                return Err(f"Unknown shape: {areaname}")
 
         old_shape = self.basic_shapes.get(areaname)
         if old_shape is not None:
@@ -133,12 +132,12 @@ class AreaFilter:
         elif areatype == "LINE":
             shape = Line(self, areaname, coordinates)
         else:
-            return False, f"Unknown shape type: {areatype}"
+            return Err(f"Unknown shape type: {areatype}")
 
         self.basic_shapes[areaname] = shape
-        return True, f"Created {areatype} {areaname}"
+        return Ok(f"Created {areatype} {areaname}")
 
-    def define_box_area(self, name: str, *coords: float) -> tuple[bool, str]:
+    def define_box_area(self, name: str, *coords: float) -> Result[str, str]:
         """BOX: Define a box-shaped area.
 
         Args:
@@ -148,7 +147,7 @@ class AreaFilter:
         """
         return self.define_area(name, "BOX", coords[:4], *coords[4:])
 
-    def define_circle_area(self, name: str, *coords: float) -> tuple[bool, str]:
+    def define_circle_area(self, name: str, *coords: float) -> Result[str, str]:
         """CIRCLE: Define a circle-shaped area.
 
         Args:
@@ -158,7 +157,7 @@ class AreaFilter:
         """
         return self.define_area(name, "CIRCLE", coords[:3], *coords[3:])
 
-    def define_line_area(self, name: str, *coords: float) -> tuple[bool, str]:
+    def define_line_area(self, name: str, *coords: float) -> Result[str, str]:
         """LINE: Draw a line between two positions on the radar screen.
 
         Args:
@@ -167,7 +166,7 @@ class AreaFilter:
         """
         return self.define_area(name, "LINE", coords)
 
-    def define_poly_area(self, name: str, *coords: float) -> tuple[bool, str]:
+    def define_poly_area(self, name: str, *coords: float) -> Result[str, str]:
         """POLY: Define a polygon-shaped area.
 
         Args:
@@ -178,7 +177,7 @@ class AreaFilter:
 
     def define_polyalt_area(
         self, name: str, top: float, bottom: float, *coords: float
-    ) -> tuple[bool, str]:
+    ) -> Result[str, str]:
         """POLYALT: Define a polygon-shaped area in 3D, between two altitudes.
 
         Args:
@@ -189,7 +188,7 @@ class AreaFilter:
         """
         return self.define_area(name, "POLYALT", coords, top, bottom)
 
-    def define_polyline_area(self, name: str, *coords: float) -> tuple[bool, str]:
+    def define_polyline_area(self, name: str, *coords: float) -> Result[str, str]:
         """POLYLINE: Draw a multi-segment line on the radar screen.
 
         Args:
@@ -228,20 +227,17 @@ class AreaFilter:
         self.areatree = Index()
         self.max_area_id = 0
 
-    def deleteArea(self, name: str) -> tuple[bool, str]:
+    def deleteArea(self, name: str) -> Result[str, str]:
         """Delete a previously defined area by name.
 
         Args:
             name: Name of the area shape to remove.
-
-        Returns:
-            tuple: (success (bool), message (str)).
         """
         shape = self.basic_shapes.pop(name, None)
         if shape is not None:
             self._unregister(shape)
-            return True, f"Area {name} deleted."
-        return False, f"No area found with name {name}."
+            return Ok(f"Area {name} deleted.")
+        return Err(f"No area found with name {name}.")
 
     def get_intersecting(self, lat0: float, lon0: float, lat1: float, lon1: float) -> list[Shape]:
         """Return all shapes that intersect with a specified rectangular area.
