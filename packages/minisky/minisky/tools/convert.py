@@ -9,6 +9,7 @@ the SI units used internally by the simulator (m, m/s, s, deg).
 """
 
 from time import gmtime, strftime
+from typing import NamedTuple
 
 import numpy as np
 
@@ -220,15 +221,21 @@ def txt2tas(txt: str, h: float) -> float:
     return acspd
 
 
-def col2rgb(txt: str) -> tuple[int, int, int]:
+class RGB(NamedTuple):
+    red: int
+    """Red channel [0-255]."""
+    green: int
+    """Green channel [0-255]."""
+    blue: int
+    """Blue channel [0-255]."""
+
+
+def col2rgb(txt: str) -> RGB:
     """Convert named color to R,G,B values (integer per component, 0-255).
 
     Args:
         txt: Colour name (e.g. "red", "amber"); unknown names default
             to white.
-
-    Returns:
-        tuple: (R, G, B) integer components in the range 0-255.
     """
     cols = {
         "black": (0, 0, 0),
@@ -246,7 +253,7 @@ def col2rgb(txt: str) -> tuple[int, int, int]:
     except KeyError:
         rgb = cols["white"]  # default
 
-    return rgb
+    return RGB(*rgb)
 
 
 def degto180(angle: float | np.ndarray) -> float | np.ndarray:
@@ -385,16 +392,22 @@ def latlon2txt(lat: float, lon: float) -> str:
     return lat2txt(lat) + "  " + lon2txt(lon)
 
 
-def float2degminsec(x: float) -> tuple[int, float, float]:
+class DegreesMinutesSeconds(NamedTuple):
+    degrees: int
+    """Whole degrees [deg]."""
+    minutes: float
+    """Whole arcminutes [arcmin]."""
+    seconds: float
+    """Whole arcseconds [arcsec]."""
+
+
+def float2degminsec(x: float) -> DegreesMinutesSeconds:
     """Split a positive angle in degrees into whole degrees, minutes, and seconds.
 
     Args:
         x: Angle [deg] (positive).
-
-    Returns:
-        tuple: (degrees, minutes, seconds) of the angle.
     """
     deg = int(x)
     minutes = int(x * 60.0) - deg * 60.0
     sec = int(x * 3600.0) - deg * 3600.0 - minutes * 60.0
-    return deg, minutes, sec
+    return DegreesMinutesSeconds(deg, minutes, sec)

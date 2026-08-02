@@ -20,7 +20,7 @@ aviation units (NM, ft).
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 import numpy as np
 from scipy.spatial import KDTree
@@ -38,10 +38,34 @@ if TYPE_CHECKING:
 RE = 6371000.0
 
 
-def _noconflicts(ntraf: int) -> tuple:
+# TODO(abraham): model callsign pairs as a named ConflictPair record.
+class ConflictDetectionResult(NamedTuple):
+    confpairs: list[tuple[str, str]]
+    """Conflicting callsign pairs, in both directions."""
+    lospairs: list[tuple[str, str]]
+    """Callsign pairs in loss of separation."""
+    inconf: np.ndarray
+    """Per-aircraft in-conflict flags [-]."""
+    tcpamax: np.ndarray
+    """Per-aircraft maximum time to closest point of approach [s]."""
+    qdr: np.ndarray
+    """Bearing from ownship to intruder per conflict [deg]."""
+    dist: np.ndarray
+    """Current horizontal distance per conflict [m]."""
+    dcpa: np.ndarray
+    """Horizontal distance at closest point of approach per conflict [m]."""
+    tcpa: np.ndarray
+    """Time to closest point of approach per conflict [s]."""
+    tLOS: np.ndarray
+    """Time until loss of separation per conflict [s]."""
+    dalt: np.ndarray
+    """Current altitude difference per conflict [m]."""
+
+
+def _noconflicts(ntraf: int) -> ConflictDetectionResult:
     """Detection result for a timestep without any conflicts or LoS."""
     empty = np.array([])
-    return (
+    return ConflictDetectionResult(
         [],
         [],
         np.zeros(ntraf, dtype=bool),
@@ -358,18 +382,18 @@ class ConflictDetection(TrafficArrays):
         if not self.activate:
             return
 
-        (
-            self.confpairs,
-            self.lospairs,
-            self.inconf,
-            self.tcpamax,
-            self.qdr,
-            self.dist,
-            self.dcpa,
-            self.tcpa,
-            self.tLOS,
-            self.dalt,
-        ) = self.detect(ownship, intruder, self.rpz, self.hpz, self.dtlookahead)
+        result = self.detect(ownship, intruder, self.rpz, self.hpz, self.dtlookahead)
+        # TODO(abraham): consider storing the entire result
+        self.confpairs = result.confpairs
+        self.lospairs = result.lospairs
+        self.inconf = result.inconf
+        self.tcpamax = result.tcpamax
+        self.qdr = result.qdr
+        self.dist = result.dist
+        self.dcpa = result.dcpa
+        self.tcpa = result.tcpa
+        self.tLOS = result.tLOS
+        self.dalt = result.dalt
 
         # confpairs has conflicts observed from both sides (a, b) and (b, a)
         # confpairs_unique keeps only one of these
@@ -383,6 +407,12 @@ class ConflictDetection(TrafficArrays):
         self.confpairs_unique = confpairs_unique
         self.lospairs_unique = lospairs_unique
 
+    class VerticalInterval(NamedTuple):
+        entry: np.ndarray
+        """Vertical conflict entry time [s]."""
+        exit: np.ndarray
+        """Vertical conflict exit time [s]."""
+
     def detect(
         self,
         ownship: Any,
@@ -390,7 +420,7 @@ class ConflictDetection(TrafficArrays):
         rpz: np.ndarray,
         hpz: np.ndarray,
         dtlookahead: np.ndarray,
-    ) -> tuple:
+    ) -> ConflictDetectionResult:
         """Conflict detection between ownship (traf) and intruder (traf/adsb).
 
         State-based detection with spatial candidate pruning: a KD-tree on
@@ -416,19 +446,6 @@ class ConflictDetection(TrafficArrays):
             rpz (ndarray): Per-aircraft horizontal separation minimum [m].
             hpz (ndarray): Per-aircraft vertical separation minimum [m].
             dtlookahead (ndarray): Per-aircraft lookahead time [s].
-
-        Returns:
-            tuple: The detection results:
-                - confpairs (list): Conflicting callsign pairs, both directions.
-                - lospairs (list): Callsign pairs in loss of separation.
-                - inconf (ndarray): Per-aircraft in-conflict flag [-].
-                - tcpamax (ndarray): Per-aircraft maximum tCPA [s].
-                - qdr (ndarray): Bearing ownship to intruder per conflict [deg].
-                - dist (ndarray): Current horizontal distance per conflict [m].
-                - dcpa (ndarray): Horizontal distance at CPA per conflict [m].
-                - tcpa (ndarray): Time to CPA per conflict [s].
-                - tinconf (ndarray): Time to start of LoS per conflict [s].
-                - dalt (ndarray): Current altitude difference per conflict [m].
         """
         ntraf = ownship.ntraf
         if ntraf < 2:
@@ -522,12 +539,14 @@ class ConflictDetection(TrafficArrays):
         # flags a conflict). The horizontal geometry is fully symmetric.
         dvs = intruder.vs[jj] - ownship.vs[ii]
 
-        def vertical_interval(da: np.ndarray, dw: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        def vertical_interval(da: np.ndarray, dw: np.ndarray) -> ConflictDetection.VerticalInterval:
             """Vertical crossing interval of the disk (-hpz, +hpz)."""
             dw = np.where(np.abs(dw) < 1e-6, 1e-6, dw)  # prevent division by zero
             tcrosshi = (da + hpz) / -dw
             tcrosslo = (da - hpz) / -dw
-            return np.minimum(tcrosshi, tcrosslo), np.maximum(tcrosshi, tcrosslo)
+            return self.VerticalInterval(
+                np.minimum(tcrosshi, tcrosslo), np.maximum(tcrosshi, tcrosslo)
+            )
 
         tinver_ij, toutver_ij = vertical_interval(dalt, dvs)
         tinver_ji, toutver_ji = vertical_interval(-dalt, -dvs)
@@ -591,7 +610,7 @@ class ConflictDetection(TrafficArrays):
             for i, j in zip(ilos[losorder], jlos[losorder], strict=False)
         ]
 
-        return (
+        return ConflictDetectionResult(
             confpairs,
             lospairs,
             inconf,

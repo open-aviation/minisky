@@ -10,7 +10,7 @@ Available as [`runtime.traffic.actwp`][minisky.traffic.activewpdata.ActiveWaypoi
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 import numpy as np
 
@@ -248,6 +248,13 @@ class ActiveWaypoint(TrafficArrays):
         # Return indices for which condition is True/1.0 for a/c where we have reached waypoint
         return swreached
 
+    # TODO(abraham): maybe make this Generic over float/np/any array?
+    class TurnGeometry(NamedTuple):
+        distance: Any
+        """Turn-initiation distance [m]."""
+        radius: Any
+        """Turn radius [m]."""
+
     # Calculate turn distance for array or scalar
     def calcturn(
         self,
@@ -258,7 +265,7 @@ class ActiveWaypoint(TrafficArrays):
         turnrad: Any = -999.0,
         turnhdgr: Any = -999.0,
         flyturn: Any = False,
-    ) -> tuple:
+    ) -> TurnGeometry:
         """Calculate the turn-initiation distance and turn radius.
 
         Works on scalars as well as numpy arrays. The turn radius follows,
@@ -277,9 +284,6 @@ class ActiveWaypoint(TrafficArrays):
             turnhdgr: Specified turn heading rate [deg/s]
                 (<0 = not specified).
             flyturn: Fly-turn switch (use the specified turn parameters).
-
-        Returns:
-            tuple: (turn distance [m], turn radius [m]).
         """
 
         # Tas is also used ti
@@ -304,4 +308,4 @@ class ActiveWaypoint(TrafficArrays):
         turndist = np.abs(
             turnrad * np.tan(np.radians(0.5 * np.abs(degto180(wpqdr % 360.0 - next_wpqdr % 360.0))))
         )
-        return turndist, turnrad
+        return self.TurnGeometry(turndist, turnrad)

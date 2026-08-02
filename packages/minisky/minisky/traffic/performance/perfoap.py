@@ -10,7 +10,7 @@ internal quantities are in SI units.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 import numpy as np
 
@@ -344,13 +344,21 @@ class OpenAP(TrafficArrays):
             self.bank,
         )
 
+    class PerformanceLimits(NamedTuple):
+        tas: np.ndarray
+        """Allowed true airspeed [m/s]."""
+        vertical_speed: np.ndarray
+        """Allowed vertical speed [m/s]."""
+        altitude: np.ndarray
+        """Allowed altitude [m]."""
+
     def limits(
         self,
         intent_v_tas: np.ndarray,
         intent_vs: np.ndarray,
         intent_h: np.ndarray,
         ax: np.ndarray,
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    ) -> PerformanceLimits:
         """apply limits on indent speed, vertical speed, and altitude (called in pilot module)
 
         Clips the intended state to the aircraft flight envelope: altitude to
@@ -365,10 +373,6 @@ class OpenAP(TrafficArrays):
             intent_vs (float or 1D-array): intent vertical speed [m/s]
             intent_h (float or 1D-array): intent altitude [m]
             ax (float or 1D-array): acceleration [m/s^2]
-
-        Returns:
-            floats or 1D-arrays: Allowed TAS [m/s], Allowed vertical
-                rate [m/s], Allowed altitude [m]
         """
         allow_h = np.where(intent_h > self.hmax, self.hmax, intent_h)
 
@@ -405,9 +409,20 @@ class OpenAP(TrafficArrays):
         allow_vs[ir] = np.where((intent_vs[ir] < self.vsmin[ir]), self.vsmin[ir], intent_vs[ir])
         allow_vs[ir] = np.where((intent_vs[ir] > self.vsmax[ir]), self.vsmax[ir], allow_vs[ir])
 
-        return allow_v_tas, allow_vs, allow_h
+        return self.PerformanceLimits(allow_v_tas, allow_vs, allow_h)
 
-    def currentlimits(self, id: Any = None) -> tuple:
+    # TODO(abraham): maybe make this Generic over float/np/any array?
+    class CurrentPerformanceLimits(NamedTuple):
+        minimum_tas: float | np.ndarray
+        """Minimum true airspeed [m/s]."""
+        maximum_tas: float | np.ndarray
+        """Maximum true airspeed [m/s]."""
+        minimum_vertical_speed: float | np.ndarray
+        """Minimum vertical speed [m/s]."""
+        maximum_vertical_speed: float | np.ndarray
+        """Maximum vertical speed [m/s]."""
+
+    def currentlimits(self, id: Any = None) -> CurrentPerformanceLimits:
         """Get current kinematic performance envelop.
 
         Converts the phase-dependent CAS limits to TAS at the current
@@ -416,10 +431,6 @@ class OpenAP(TrafficArrays):
 
         Args:
             id (int or 1D-array): Aircraft ID(s). Defualt to None (all aircraft).
-
-        Returns:
-            floats or 1D-arrays: Min TAS [m/s], Max TAS [m/s],
-                Min VS [m/s], Max VS [m/s]
         """
         vtasmin = aero.vcas2tas(self.vmin, self.traffic.alt)
 
@@ -429,11 +440,18 @@ class OpenAP(TrafficArrays):
         )
 
         if id is not None:
-            return vtasmin[id], vtasmax[id], self.vsmin[id], self.vsmax[id]
-        else:
-            return vtasmin, vtasmax, self.vsmin, self.vsmax
+            return self.CurrentPerformanceLimits(
+                vtasmin[id], vtasmax[id], self.vsmin[id], self.vsmax[id]
+            )
+        return self.CurrentPerformanceLimits(vtasmin, vtasmax, self.vsmin, self.vsmax)
 
-    def _construct_v_limits(self, mask: Any = True) -> tuple[np.ndarray, np.ndarray]:
+    class SpeedLimits(NamedTuple):
+        minimum: np.ndarray
+        """Minimum calibrated airspeed [m/s]."""
+        maximum: np.ndarray
+        """Maximum calibrated airspeed [m/s]."""
+
+    def _construct_v_limits(self, mask: Any = True) -> SpeedLimits:
         """Compute speed limist base on aircraft model and flight phases
 
         For fixed-wing aircraft the applicable minimum and maximum calibrated
@@ -443,9 +461,6 @@ class OpenAP(TrafficArrays):
         Args:
             mask: Indices (boolean) for aircraft to construct speed limits for.
                   When no indices are passed, all aircraft are updated.
-
-        Returns:
-            2D-array: vmin, vmax (CAS limits per aircraft [m/s])
         """
         n = len(self.actype)
         vmin = np.zeros(n)
@@ -491,8 +506,8 @@ class OpenAP(TrafficArrays):
         vmax[ir] = vmaxr
 
         if isinstance(mask, bool):
-            return vmin, vmax
-        return vmin[mask], vmax[mask]
+            return self.SpeedLimits(vmin, vmax)
+        return self.SpeedLimits(vmin[mask], vmax[mask])
 
     def calc_axmax(self) -> np.ndarray:
         """Compute the maximum longitudinal acceleration per aircraft.

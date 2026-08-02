@@ -16,7 +16,7 @@ arrays via getnextwp()/getnextturnwp().
 from __future__ import annotations
 
 import math
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NamedTuple
 
 import numpy as np
 
@@ -390,7 +390,46 @@ class Route:
             trnidx,
         ]
 
-    def getnextwp(self) -> tuple:
+    # TODO(abraham): split this large transition record into constraints, turn,
+    # and next-leg records
+    # TODO(abraham): replace -999.0 sentinels with explicit optional/validity state (see issue #40)
+    class WaypointTransition(NamedTuple):
+        latitude: float
+        """Active waypoint latitude [deg]."""
+        longitude: float
+        """Active waypoint longitude [deg]."""
+        altitude: float
+        """Altitude constraint [m]."""
+        speed: float
+        """Speed constraint, calibrated airspeed [m/s] or Mach number [-]."""
+        distance_to_altitude: float
+        """Distance to the next altitude constraint [m]."""
+        next_altitude: float
+        """Next altitude constraint [m]."""
+        distance_to_rta: float
+        """Distance to the next required time of arrival [m]."""
+        next_rta: float
+        """Next required time of arrival [s]."""
+        lnav_enabled: bool
+        """Whether lateral navigation remains enabled."""
+        fly_by: bool
+        """Whether the waypoint uses fly-by switching."""
+        fly_turn: bool
+        """Whether the waypoint uses an explicit turn."""
+        turn_radius: float
+        """Turn radius [m]."""
+        turn_speed: float
+        """Turn calibrated airspeed [m/s]."""
+        turn_heading_rate: float
+        """Turn heading rate [deg/s]."""
+        next_leg_latitude: float
+        """Next-leg endpoint latitude [deg], or -999.0 when there is no next leg."""
+        next_leg_longitude: float
+        """Next-leg endpoint longitude [deg], or -999.0 when there is no next leg."""
+        last_waypoint: bool
+        """Whether this is the final waypoint."""
+
+    def getnextwp(self) -> WaypointTransition:
         """Activate the next waypoint in the route and return its data.
 
         Called by the autopilot when the active waypoint has been passed.
@@ -399,16 +438,6 @@ class Route:
         a runway used for landing, a fixed runway heading is commanded and
         deceleration plus deletion of the aircraft are scheduled via the
         stack.
-
-        Returns:
-            tuple: (lat [deg], lon [deg], altitude constraint [m], speed
-            constraint (CAS [m/s] or Mach), distance to next altitude
-            constraint [m], next altitude constraint [m], distance to next
-            RTA [m], next RTA [s], lnavon switch, fly-by switch, fly-turn
-            switch, turn radius, turn speed (CAS), turn heading rate
-            [deg/s], next-leg endpoint lat [deg], next-leg endpoint lon
-            [deg] (-999.0 pair when there is no next leg), last-waypoint
-            switch).
         """
 
         n_wpt = len(self.wpname)
@@ -451,7 +480,7 @@ class Route:
 
             swlastwp = self.iactwp == n_wpt - 1
 
-            return (
+            return self.WaypointTransition(
                 self.wplat[self.iactwp],
                 self.wplon[self.iactwp],
                 self.wpalt[self.iactwp],
@@ -504,7 +533,7 @@ class Route:
 
         # print ("getnextwp:",self.wpname[self.iactwp],"   torta = ",self.wptorta[self.iactwp])
 
-        return (
+        return self.WaypointTransition(
             self.wplat[self.iactwp],
             self.wplon[self.iactwp],
             self.wpalt[self.iactwp],
