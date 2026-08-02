@@ -13,7 +13,6 @@ import pytest
 from minisky import MiniSky
 from minisky.core.config import MiniSkyConfig
 from minisky.simulation import Simulation
-
 from tests._types import RunCommand, StepUntil
 
 

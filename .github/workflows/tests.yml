@@ -50,12 +50,12 @@ jobs:
 
       - name: Check code quality
         run: |
-          uv run ruff check packages tests
-          uv run ruff format packages tests --check
+          uv run ruff check packages
+          uv run ruff format packages --check
           uv run pyright
 
       - name: Run unit and integration tests
         run: uv run pytest
 
       - name: Run API smoke tests
-        run: uv run pytest -m api tests/test_api.py
+        run: uv run pytest -m api packages/minisky/tests/test_api.py

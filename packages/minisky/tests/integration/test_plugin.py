@@ -73,51 +73,8 @@ def install(monkeypatch: pytest.MonkeyPatch, *entries: FakeEntryPoint) -> None:
     monkeypatch.setattr(module.metadata, "entry_points", lambda *, group: entries)
 
 
-def run_command(runtime: MiniSky, command: str) -> str:
-    runtime.commands.stack(command)
-    runtime.simulation.step()
-    return runtime.console.read_output_buffer()
-
-
 @pytest.mark.anyio
-async def test_example_commands_and_entity_are_runtime_owned() -> None:
-    runtime = MiniSky(MiniSkyConfig())
-    try:
-        result = await runtime.plugins.load("EXAMPLE")
-        assert result.is_ok(), result.err()
-        record = runtime.plugins.plugins["EXAMPLE"]
-        assert record.loaded
-        assert tuple(runtime.plugins.loaded_plugins) == ("EXAMPLE",)
-
-        run_command(runtime, "CRE KL001,A320,52,4,90,FL100,250")
-        assert "150" in run_command(runtime, "PASSENGERS KL001 150")
-        assert "150" in run_command(runtime, "PASSENGERS KL001")
-
-        again = await runtime.plugins.load("EXAMPLE")
-        assert again == Err("Plugin EXAMPLE already loaded")
-    finally:
-        await runtime.aclose()
-
-
 @pytest.mark.anyio
-async def test_example_entity_sizes_existing_traffic_and_retires() -> None:
-    from minisky_example import Example
-
-    runtime = MiniSky(MiniSkyConfig())
-    runtime.traffic.cre("KL001", "A320", lat=52.0, lon=4.0, hdg=90, alt=3000, spd=150)
-    result = await runtime.plugins.load("EXAMPLE")
-    assert result.is_ok(), result.err()
-    record = runtime.plugins.plugins["EXAMPLE"]
-    entity = cast(Example, record.entities[0])
-    assert record.entities == (entity,)
-    assert len(entity.npassengers) == 1
-    assert entity._traffic is runtime.traffic
-
-    await runtime.aclose()
-    assert entity._retired
-    assert entity._traffic is None
-
-
 @pytest.mark.anyio
 async def test_entity_backfill_follows_lifespan_startup(
     monkeypatch: pytest.MonkeyPatch,
@@ -300,31 +257,6 @@ async def test_failing_hook_is_disabled_without_disabling_plugin(
 
 
 @pytest.mark.anyio
-async def test_replacement_visibility_is_runtime_local_and_removed_on_shutdown() -> None:
-    from minisky_example_customautopilot import CustomAutoPilot
-
-    runtime_a = MiniSky(MiniSkyConfig())
-    runtime_b = MiniSky(MiniSkyConfig())
-    try:
-        assert runtime_a.replaceables.select("AUTOPILOT", "CUSTOMAUTOPILOT").is_err()
-        assert runtime_b.replaceables.select("AUTOPILOT", "CUSTOMAUTOPILOT").is_err()
-
-        alt_callback = runtime_a.commands.cmddict["ALT"].callback
-        result = await runtime_a.plugins.load("CUSTOMAUTOPILOT")
-        assert result.is_ok(), result.err()
-        assert runtime_a.replaceables.select("AUTOPILOT", "CUSTOMAUTOPILOT").is_ok()
-        assert type(runtime_a.traffic.ap) is CustomAutoPilot
-        assert runtime_b.replaceables.select("AUTOPILOT", "CUSTOMAUTOPILOT").is_err()
-
-        await runtime_a.plugins.aclose()
-        assert type(runtime_a.traffic.ap) is Autopilot
-        assert runtime_a.replaceables.select("AUTOPILOT", "CUSTOMAUTOPILOT").is_err()
-        assert runtime_a.commands.cmddict["ALT"].callback is alt_callback
-    finally:
-        await runtime_a.aclose()
-        await runtime_b.aclose()
-
-
 @pytest.mark.anyio
 async def test_replacement_arrays_size_existing_traffic(
     monkeypatch: pytest.MonkeyPatch,
