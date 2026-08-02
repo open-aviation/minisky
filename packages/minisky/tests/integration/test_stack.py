@@ -7,7 +7,6 @@ from io import StringIO
 from pathlib import Path
 
 import pytest
-
 from minisky import MiniSky
 from minisky.simulation import Simulation
 from tests._types import RunCommand
@@ -158,10 +157,10 @@ class TestHelp:
         # HELP >filename writes the reference to ./docs/<filename>
         monkeypatch.chdir(tmp_path)
         (tmp_path / "docs").mkdir()
-        success, msg = runtime.commands.showhelp(">ref.txt")
-        assert success
+        result = runtime.commands.showhelp(">ref.txt")
+        assert result.is_ok(), result.err()
         ref = tmp_path / "docs" / "ref.txt"
-        assert ref.exists(), msg
+        assert ref.exists(), result.ok()
         content = ref.read_text()
         assert content.startswith("Command\tDescription\tUsage")
         assert "\nCRE\t" in content
@@ -223,9 +222,9 @@ class TestArgumentSpecs:
                 continue
             seen.add(id(cmd))
             for annot, _isopt in cmd.arguments:
-                assert annot == annot.strip() and annot, (
-                    f"{cmd.name}: whitespace/empty annotation token {annot!r}"
-                )
+                message = f"{cmd.name}: whitespace/empty annotation token {annot!r}"
+                assert annot == annot.strip(), message
+                assert annot, message
                 if annot in placeholders:
                     continue
                 if all(argparsers.get(part) is None for part in annot.split("/")):

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-
 from minisky import MiniSky
 from tests._types import RunCommand, StepUntil
 

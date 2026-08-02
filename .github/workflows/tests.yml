@@ -1,15 +1,23 @@
-name: tests
+name: ci
 
 on:
-  pull_request:
   push:
-    branches: [main, refactor]
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  pytest:
+  test-python:
+    name: test python
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v7
 
       - name: Install pnpm
         uses: pnpm/action-setup@v6
@@ -20,22 +28,34 @@ jobs:
           node-version: 24
           cache: pnpm
 
-      - name: Build frontend plugin
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      # NOTE(abraham): we must build the frontend assets otherwise tangram_minisky would fail
+      # with missing frontend assets.
+      # we should document this and potentially split up the action into repo-with-frontend
+      # just like tangram
+      - name: Check and build frontend plugin
         run: |
-          pnpm install --frozen-lockfile
           pnpm check
           pnpm build
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
 
       - name: Install Python dependencies
-        run: uv sync --locked --all-packages
+        run: uv sync --all-groups --all-packages
+
+      - name: Check code quality
+        run: |
+          uv run ruff check packages
+          uv run ruff format packages --check
+          uv run pyright
 
       - name: Run unit and integration tests
         run: uv run pytest
 
       - name: Run API smoke tests
-        run: uv run pytest -m api tests/test_api.py
+        run: uv run pytest -m api packages/minisky/tests/test_api.py

@@ -28,6 +28,7 @@ from minisky.plugin.plugin_decorators import (
     declared_hooks,
     declared_replacement,
 )
+from minisky.result import Err, Ok, Result
 from minisky.streaming import Snapshot, build_snapshot
 
 if TYPE_CHECKING:
@@ -40,7 +41,7 @@ if TYPE_CHECKING:
 
 ConfigT = TypeVar("ConfigT")
 ComponentT = TypeVar("ComponentT")
-CommandReply = tuple[bool, str]
+CommandReply = Result[str, str]
 
 
 class PluginError(RuntimeError):
@@ -328,19 +329,19 @@ class PluginManager:
             if existing is None or not existing.loaded:
                 self.plugins.pop(plugin_name, None)
 
-    async def load(self, name: str) -> CommandReply:
+    async def load(self, name: str) -> Result[str, str]:
         """Load a discovered plugin by name."""
         async with self._lock:
             if self._state is not _ManagerState.OPEN:
-                return False, "Plugin manager is closed"
+                return Err("Plugin manager is closed")
             plugin = self.plugins.get(name.upper())
             if plugin is None:
-                return False, f"Error loading plugin: plugin {name} not found."
+                return Err(f"Error loading plugin: plugin {name} not found.")
             if plugin.loaded:
-                return False, f"Plugin {plugin.plugin_name} already loaded"
+                return Err(f"Plugin {plugin.plugin_name} already loaded")
             return await self._load(plugin)
 
-    async def _load(self, plugin: _PluginRecord) -> CommandReply:
+    async def _load(self, plugin: _PluginRecord) -> Result[str, str]:
         prepared: _PreparedPlugin | None = None
         plugin_runtime: PluginRuntime | None = None
         lifespan: AbstractAsyncContextManager[None] | None = None
@@ -375,7 +376,7 @@ class PluginManager:
             plugin.lifespan = lifespan
             plugin.runtime = plugin_runtime
             self.loaded_plugins[plugin.plugin_name] = plugin
-            return True, f"Successfully loaded plugin {plugin.plugin_name}"
+            return Ok(f"Successfully loaded plugin {plugin.plugin_name}")
         except BaseException as exc:
             if prepared is not None:
                 prepared.abort()
@@ -384,12 +385,12 @@ class PluginManager:
             if entered and lifespan is not None:
                 try:
                     await lifespan.__aexit__(type(exc), exc, exc.__traceback__)
-                except BaseException as cleanup_error:
+                except BaseException as cleanup_error:  # ruff: ignore[BLE001] lifespan cleanup is arbitrary
                     traceback.print_exception(cleanup_error)
             if not isinstance(exc, Exception):
                 raise
             traceback.print_exception(exc)
-            return False, f"Error loading {plugin.plugin_name}: {exc}"
+            return Err(f"Error loading {plugin.plugin_name}: {exc}")
 
     def _build(self, key: str, declaration: Plugin) -> PluginSpec:
         raw = deepcopy(self.config.plugins.get(key, {}))
@@ -421,7 +422,7 @@ class PluginManager:
                         aliases=bound.aliases,
                         arguments=bound.declaration.arguments,
                         brief=bound.brief,
-                        help=bound.help,
+                        help_text=bound.help,
                     )
                     overlap = command_names.intersection(prepared.names)
                     if overlap:
@@ -542,13 +543,15 @@ class PluginManager:
         """Attempt every configured plugin and return those loaded successfully."""
         loaded: list[str] = []
         for plugin_name in self.config.plugins:
-            ok, message = await self.load(plugin_name)
-            self.console.echo(message)
-            if ok:
-                loaded.append(plugin_name.upper())
+            match await self.load(plugin_name):
+                case Ok(message):
+                    self.console.echo(message)
+                    loaded.append(plugin_name.upper())
+                case Err(message):
+                    self.console.echo(message)
         return tuple(loaded)
 
-    def listing(self) -> CommandReply:
+    def listing(self) -> Result[str, str]:
         running = set(self.loaded_plugins)
         available = set(self.plugins) - running
         text = f"\nLoaded plugins: {', '.join(sorted(running)) if running else '(none)'}"
@@ -556,7 +559,7 @@ class PluginManager:
             text += f"\nAvailable plugins: {', '.join(sorted(available))}"
         else:
             text += "\nNo additional plugins available."
-        return True, text
+        return Ok(text)
 
     def manage(
         self, command: str = "LIST", plugin_name: str = ""
@@ -567,11 +570,11 @@ class PluginManager:
             return self.listing()
         if operation == "LOAD":
             if not plugin_name.strip():
-                return False, "plugin name is required"
+                return Err("plugin name is required")
             return self.load(plugin_name)
         if not plugin_name:
             return self.load(command)
-        return False, f"Unknown command: {command}"
+        return Err(f"Unknown command: {command}")
 
     def preupdate(self) -> None:
         self._run_hooks("preupdate")
@@ -604,7 +607,7 @@ class PluginManager:
                         hook.callback(dt=elapsed)
                     else:
                         hook.callback()
-                except Exception as exc:
+                except Exception as exc:  # ruff: ignore[BLE001] plugin hooks are arbitrary
                     hook.enabled = False
                     traceback.print_exception(exc)
                     self.console.echo(
@@ -624,13 +627,13 @@ class PluginManager:
                     plugin.runtime._revoke()
                 try:
                     self._remove(plugin)
-                except Exception as exc:
+                except Exception as exc:  # ruff: ignore[BLE001] aggregate removal failures
                     errors.append(exc)
 
                 if plugin.lifespan is not None:
                     try:
                         await plugin.lifespan.__aexit__(None, None, None)
-                    except Exception as exc:
+                    except Exception as exc:  # ruff: ignore[BLE001] plugin lifespan is arbitrary
                         errors.append(exc)
                 self._clear(plugin)
 
@@ -656,7 +659,7 @@ class PluginManager:
         for cleanup in cleanups:
             try:
                 cleanup()
-            except Exception as exc:
+            except Exception as exc:  # ruff: ignore[BLE001] aggregate cleanup failures
                 errors.append(exc)
         if errors:
             raise ExceptionGroup(f"Plugin {plugin.plugin_name} removal failed", errors)

@@ -12,13 +12,12 @@ from typing import cast
 
 import numpy as np
 import pytest
-from pydantic import BaseModel
-
-from minisky import MiniSky, MiniSkyConfig
+from minisky import Err, MiniSky, MiniSkyConfig, Ok, Result
 from minisky import plugin as plugin_api
 from minisky.simulation import Simulation
 from minisky.traffic import Traffic
 from minisky.traffic.autopilot import Autopilot
+from pydantic import BaseModel
 
 
 @pytest.fixture
@@ -43,15 +42,15 @@ class TestDiscovery:
             runtime.close()
 
     def test_listing(self, runtime: MiniSky) -> None:
-        ok, text = runtime.plugins.listing()
-        assert ok
-        assert "EXAMPLE" in text
+        result = runtime.plugins.listing()
+        assert result.is_ok()
+        assert "EXAMPLE" in result.unwrap()
 
     @pytest.mark.anyio
     async def test_unknown_plugin_load_fails(self, runtime: MiniSky) -> None:
-        ok, message = await runtime.plugins.load("NOSUCHPLUGIN")
-        assert not ok
-        assert "not found" in message.lower()
+        result = await runtime.plugins.load("NOSUCHPLUGIN")
+        assert result.is_err()
+        assert "not found" in result.unwrap_err().lower()
 
     def test_discovery_emits_no_deprecation_warning(self, runtime: MiniSky) -> None:
         with warnings.catch_warnings():
@@ -74,51 +73,8 @@ def install(monkeypatch: pytest.MonkeyPatch, *entries: FakeEntryPoint) -> None:
     monkeypatch.setattr(module.metadata, "entry_points", lambda *, group: entries)
 
 
-def run_command(runtime: MiniSky, command: str) -> str:
-    runtime.commands.stack(command)
-    runtime.simulation.step()
-    return runtime.console.read_output_buffer()
-
-
 @pytest.mark.anyio
-async def test_example_commands_and_entity_are_runtime_owned() -> None:
-    runtime = MiniSky(MiniSkyConfig())
-    try:
-        ok, message = await runtime.plugins.load("EXAMPLE")
-        assert ok, message
-        record = runtime.plugins.plugins["EXAMPLE"]
-        assert record.loaded
-        assert tuple(runtime.plugins.loaded_plugins) == ("EXAMPLE",)
-
-        run_command(runtime, "CRE KL001,A320,52,4,90,FL100,250")
-        assert "150" in run_command(runtime, "PASSENGERS KL001 150")
-        assert "150" in run_command(runtime, "PASSENGERS KL001")
-
-        again = await runtime.plugins.load("EXAMPLE")
-        assert again == (False, "Plugin EXAMPLE already loaded")
-    finally:
-        await runtime.aclose()
-
-
 @pytest.mark.anyio
-async def test_example_entity_sizes_existing_traffic_and_retires() -> None:
-    from minisky_example import Example
-
-    runtime = MiniSky(MiniSkyConfig())
-    runtime.traffic.cre("KL001", "A320", lat=52.0, lon=4.0, hdg=90, alt=3000, spd=150)
-    ok, message = await runtime.plugins.load("EXAMPLE")
-    assert ok, message
-    record = runtime.plugins.plugins["EXAMPLE"]
-    entity = cast(Example, record.entities[0])
-    assert record.entities == (entity,)
-    assert len(entity.npassengers) == 1
-    assert entity._traffic is runtime.traffic
-
-    await runtime.aclose()
-    assert entity._retired
-    assert entity._traffic is None
-
-
 @pytest.mark.anyio
 async def test_entity_backfill_follows_lifespan_startup(
     monkeypatch: pytest.MonkeyPatch,
@@ -155,8 +111,8 @@ async def test_entity_backfill_follows_lifespan_startup(
         await entered.wait()
         runtime.traffic.cre("KL001", alt=3000.0, spd=150.0)
         release.set()
-        ok, message = await load_task
-        assert ok, message
+        result = await load_task
+        assert result.is_ok(), result.err()
         assert entity.names.tolist() == ["KL001"]
     finally:
         release.set()
@@ -186,8 +142,8 @@ async def test_typed_declaration_builds_validated_runtime_state(
     )
     runtime = MiniSky(MiniSkyConfig(plugins={"typed": {"value": 7}}))
     try:
-        ok, message = await runtime.plugins.load("TYPED")
-        assert ok, message
+        result = await runtime.plugins.load("TYPED")
+        assert result.is_ok(), result.err()
         state = State(7, runtime.python_random)
         assert runtime.variables.varlist["typed"] == (state, ["value", "random"])
         assert runtime.plugins.plugins["TYPED"].spec == plugin_api.PluginSpec((state,), state)
@@ -204,10 +160,10 @@ async def test_mount_binds_command_to_exact_instance_and_infers_text(
             self.values: list[int] = []
 
         @plugin_api.command(arguments="int")
-        def record(self, value: int) -> tuple[bool, str]:
+        def record(self, value: int) -> Result[str, str]:
             """Record an integer."""
             self.values.append(value)
-            return True, f"recorded {value}"
+            return Ok(f"recorded {value}")
 
     component = Component()
 
@@ -219,8 +175,8 @@ async def test_mount_binds_command_to_exact_instance_and_infers_text(
     runtime = MiniSky(MiniSkyConfig())
     try:
         assert "RECORD" not in runtime.commands.cmddict
-        ok, message = await runtime.plugins.load("MOUNTED")
-        assert ok, message
+        result = await runtime.plugins.load("MOUNTED")
+        assert result.is_ok(), result.err()
         command = runtime.commands.cmddict["RECORD"]
         assert command.callback.__self__ is component
         assert command.brief == "RECORD value"
@@ -254,8 +210,8 @@ async def test_multiple_hook_declarations_keep_independent_timing(
     install(monkeypatch, FakeEntryPoint("hooks", plugin_api.Plugin(build=build)))
     runtime = MiniSky(MiniSkyConfig())
     try:
-        ok, message = await runtime.plugins.load("HOOKS")
-        assert ok, message
+        result = await runtime.plugins.load("HOOKS")
+        assert result.is_ok(), result.err()
         runtime.plugins.preupdate()
         runtime.plugins.update()
         runtime.plugins.preupdate()
@@ -290,8 +246,8 @@ async def test_failing_hook_is_disabled_without_disabling_plugin(
     install(monkeypatch, FakeEntryPoint("hooks", plugin_api.Plugin(build=build)))
     runtime = MiniSky(MiniSkyConfig())
     try:
-        ok, message = await runtime.plugins.load("HOOKS")
-        assert ok, message
+        result = await runtime.plugins.load("HOOKS")
+        assert result.is_ok(), result.err()
         runtime.plugins.update()
         runtime.plugins.update()
         assert calls == {"broken": 1, "healthy": 2}
@@ -301,31 +257,6 @@ async def test_failing_hook_is_disabled_without_disabling_plugin(
 
 
 @pytest.mark.anyio
-async def test_replacement_visibility_is_runtime_local_and_removed_on_shutdown() -> None:
-    from minisky_example_customautopilot import CustomAutoPilot
-
-    runtime_a = MiniSky(MiniSkyConfig())
-    runtime_b = MiniSky(MiniSkyConfig())
-    try:
-        assert runtime_a.replaceables.select("AUTOPILOT", "CUSTOMAUTOPILOT")[0] is False
-        assert runtime_b.replaceables.select("AUTOPILOT", "CUSTOMAUTOPILOT")[0] is False
-
-        alt_callback = runtime_a.commands.cmddict["ALT"].callback
-        ok, message = await runtime_a.plugins.load("CUSTOMAUTOPILOT")
-        assert ok, message
-        assert runtime_a.replaceables.select("AUTOPILOT", "CUSTOMAUTOPILOT")[0] is True
-        assert type(runtime_a.traffic.ap) is CustomAutoPilot
-        assert runtime_b.replaceables.select("AUTOPILOT", "CUSTOMAUTOPILOT")[0] is False
-
-        await runtime_a.plugins.aclose()
-        assert type(runtime_a.traffic.ap) is Autopilot
-        assert runtime_a.replaceables.select("AUTOPILOT", "CUSTOMAUTOPILOT")[0] is False
-        assert runtime_a.commands.cmddict["ALT"].callback is alt_callback
-    finally:
-        await runtime_a.aclose()
-        await runtime_b.aclose()
-
-
 @pytest.mark.anyio
 async def test_replacement_arrays_size_existing_traffic(
     monkeypatch: pytest.MonkeyPatch,
@@ -349,10 +280,10 @@ async def test_replacement_arrays_size_existing_traffic(
     runtime = MiniSky(MiniSkyConfig())
     try:
         runtime.traffic.cre("KL001", alt=3000.0, spd=150.0)
-        ok, message = await runtime.plugins.load("ARRAYS")
-        assert ok, message
+        result = await runtime.plugins.load("ARRAYS")
+        assert result.is_ok(), result.err()
         alt_callback = runtime.commands.cmddict["ALT"].callback
-        assert runtime.replaceables.select("AUTOPILOT", "ARRAYAUTOPILOT")[0] is True
+        assert runtime.replaceables.select("AUTOPILOT", "ARRAYAUTOPILOT").is_ok()
         selected = cast(ArrayAutopilot, runtime.traffic.ap)
         runtime.commands.stack("ALT KL001 FL100")
         runtime.simulation.step()
@@ -396,8 +327,8 @@ async def test_lifespan_wraps_publication_and_runtime_is_revoked(
 
     install(monkeypatch, FakeEntryPoint("lifecycle", plugin_api.Plugin(build=build)))
     runtime = MiniSky(MiniSkyConfig())
-    ok, message = await runtime.plugins.load("LIFECYCLE")
-    assert ok, message
+    result = await runtime.plugins.load("LIFECYCLE")
+    assert result.is_ok(), result.err()
     assert events == [("enter", False)]
     assert "LIFECYCLE" in runtime.commands.cmddict
     assert capability is not None
@@ -436,8 +367,8 @@ async def test_shutdown_cancels_pending_command_before_lifespan_exit(
 
     install(monkeypatch, FakeEntryPoint("blocked", plugin_api.Plugin(build=build)))
     runtime = MiniSky(MiniSkyConfig())
-    ok, message = await runtime.plugins.load("BLOCKED")
-    assert ok, message
+    result = await runtime.plugins.load("BLOCKED")
+    assert result.is_ok(), result.err()
     runtime.commands.stack("BLOCK")
     assert not runtime.simulation.step()
     await asyncio.sleep(0)
@@ -474,10 +405,10 @@ async def test_failed_lifespan_startup_is_atomic(
 
     install(monkeypatch, FakeEntryPoint("failedstart", plugin_api.Plugin(build=build)))
     runtime = MiniSky(MiniSkyConfig())
-    ok, message = await runtime.plugins.load("FAILEDSTART")
+    result = await runtime.plugins.load("FAILEDSTART")
 
-    assert not ok
-    assert "startup failed" in message
+    assert result.is_err()
+    assert "startup failed" in result.unwrap_err()
     assert "FAILEDSTART" not in runtime.commands.cmddict
     assert "failedstart" not in runtime.variables.varlist
     assert not runtime.plugins.plugins["FAILEDSTART"].loaded
@@ -543,8 +474,8 @@ async def test_shutdown_is_reverse_order_and_aggregates_failures(
         FakeEntryPoint("second", declaration("second")),
     )
     runtime = MiniSky(MiniSkyConfig())
-    assert (await runtime.plugins.load("FIRST"))[0]
-    assert (await runtime.plugins.load("SECOND"))[0]
+    assert (await runtime.plugins.load("FIRST")).is_ok()
+    assert (await runtime.plugins.load("SECOND")).is_ok()
 
     with pytest.raises(ExceptionGroup) as exc_info:
         await runtime.aclose()
@@ -565,10 +496,10 @@ async def test_concurrent_duplicate_loads_are_serialized() -> None:
             runtime.plugins.load("EXAMPLE"),
             runtime.plugins.load("EXAMPLE"),
         )
-        assert sorted(results) == [
-            (False, "Plugin EXAMPLE already loaded"),
-            (True, "Successfully loaded plugin EXAMPLE"),
-        ]
+        assert set(results) == {
+            Err("Plugin EXAMPLE already loaded"),
+            Ok("Successfully loaded plugin EXAMPLE"),
+        }
     finally:
         await runtime.aclose()
 

@@ -49,12 +49,12 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from typing import Any, TypedDict, cast
 
-from pydantic import BaseModel, ConfigDict
-
 from minisky import plugin as plugin_api
+from minisky.result import Err, Ok, Result
 from minisky.simulation import SimulationState
 from minisky.streaming import Snapshot
 from minisky.tools.aero import fpm, ft, kts
+from pydantic import BaseModel, ConfigDict
 
 
 # --8<-- [start:configuration]
@@ -237,7 +237,7 @@ class TangramBridge:
         self._thread: threading.Thread | None = None
         self.ready = threading.Event()
 
-    def start(self, runtime: plugin_api.PluginRuntime) -> tuple[bool, str]:
+    def start(self, runtime: plugin_api.PluginRuntime) -> Result[str, str]:
         """Bind runtime capabilities and start the Redis thread."""
         try:
             if self.redis_factory is None:
@@ -248,7 +248,7 @@ class TangramBridge:
                     redis.Redis.from_url,  # pyright: ignore[reportUnknownMemberType]
                 )
         except ImportError:
-            return False, (
+            return Err(
                 "TANGRAM plugin needs the redis package; run `just sync` from the "
                 "MiniSky repository root"
             )
@@ -260,7 +260,7 @@ class TangramBridge:
         self.ready.clear()
         self._thread = threading.Thread(target=self._run, name="tangram-bridge", daemon=True)
         self._thread.start()
-        return True, f"Tangram bridge publishing to to:{self.channel}:* at {self.redis_url}"
+        return Ok(f"Tangram bridge publishing to to:{self.channel}:* at {self.redis_url}")
 
     def stop(self) -> None:
         """Stop Redis I/O and release runtime callbacks."""
@@ -277,7 +277,7 @@ class TangramBridge:
         self._stack_command = None
 
     @plugin_api.command(name="TANGRAM")
-    def status(self) -> tuple[bool, str]:
+    def status(self) -> Result[str, str]:
         """Show the status of the tangram Redis bridge."""
         status = "connected" if self.connected else "disconnected"
         text = (
@@ -286,7 +286,7 @@ class TangramBridge:
         )
         if self.last_error:
             text += f"\nLast error: {self.last_error}"
-        return True, text
+        return Ok(text)
 
     @plugin_api.hook("update")
     def tick(self) -> None:
@@ -418,10 +418,12 @@ def build(context: plugin_api.PluginContext[TangramConfig]) -> plugin_api.Plugin
     @asynccontextmanager
     async def lifespan(runtime: plugin_api.PluginRuntime) -> AsyncGenerator[None]:
         runtime.subscribe_console(bridge.capture_console)
-        success, message = bridge.start(runtime)
-        runtime.echo(message)
-        if not success:
-            raise RuntimeError(message)
+        match bridge.start(runtime):
+            case Ok(message):
+                runtime.echo(message)
+            case Err(message):
+                runtime.echo(message)
+                raise RuntimeError(message)
         try:
             yield
         finally:

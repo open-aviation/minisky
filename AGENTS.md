@@ -23,7 +23,7 @@ minisky console                                            # interactive console
 ```
 
 The FastAPI app lives in `packages/minisky/minisky/server.py`; `minisky server` is the CLI entry point
-(`MINISKY_HOST`/`MINISKY_PORT` env vars, default `0.0.0.0:8000`).
+(default `0.0.0.0:8000`; configure `[server]` in TOML or override with `--host` and `--port`).
 
 ## Architecture
 

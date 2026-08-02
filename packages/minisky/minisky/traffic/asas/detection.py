@@ -20,13 +20,14 @@ aviation units (NM, ft).
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 import numpy as np
 from scipy.spatial import KDTree
 
 from minisky.core.config import MiniSkyConfig
 from minisky.core.trafficarrays import TrafficArrays
+from minisky.result import Ok, Result
 from minisky.stack.argparser import Time, Txt
 from minisky.tools.aero import ft, nm
 
@@ -37,10 +38,34 @@ if TYPE_CHECKING:
 RE = 6371000.0
 
 
-def _noconflicts(ntraf: int) -> tuple:
+# TODO(abraham): model callsign pairs as a named ConflictPair record.
+class ConflictDetectionResult(NamedTuple):
+    confpairs: list[tuple[str, str]]
+    """Conflicting callsign pairs, in both directions."""
+    lospairs: list[tuple[str, str]]
+    """Callsign pairs in loss of separation."""
+    inconf: np.ndarray
+    """Per-aircraft in-conflict flags [-]."""
+    tcpamax: np.ndarray
+    """Per-aircraft maximum time to closest point of approach [s]."""
+    qdr: np.ndarray
+    """Bearing from ownship to intruder per conflict [deg]."""
+    dist: np.ndarray
+    """Current horizontal distance per conflict [m]."""
+    dcpa: np.ndarray
+    """Horizontal distance at closest point of approach per conflict [m]."""
+    tcpa: np.ndarray
+    """Time to closest point of approach per conflict [s]."""
+    tLOS: np.ndarray
+    """Time until loss of separation per conflict [s]."""
+    dalt: np.ndarray
+    """Current altitude difference per conflict [m]."""
+
+
+def _noconflicts(ntraf: int) -> ConflictDetectionResult:
     """Detection result for a timestep without any conflicts or LoS."""
     empty = np.array([])
-    return (
+    return ConflictDetectionResult(
         [],
         [],
         np.zeros(ntraf, dtype=bool),
@@ -205,16 +230,13 @@ class ConflictDetection(TrafficArrays):
         self.global_rpz = self.global_hpz = True
         self.global_dtlook = self.global_dtnolook = True
 
-    def switch(self, name: Txt = "ON") -> tuple | None:
+    def switch(self, name: Txt = "ON") -> Result[str, str]:
         """Turn Conflict Detection (CD) ON / OFF.
 
         Switching off also clears the current conflict database.
 
         Args:
             name (str): Either "ON" or "OFF".
-
-        Returns:
-            tuple: (success (bool), message (str)) for the command stack.
 
         Raises:
             AssertionError: If `name` is not "ON" or "OFF".
@@ -224,13 +246,12 @@ class ConflictDetection(TrafficArrays):
         if name == "OFF":
             self.clearconfdb()
             self.activate = False
-            return True, "Conflict Detection turned off."
+            return Ok("Conflict Detection turned off.")
 
-        if name == "ON":
-            self.activate = True
-            return True, "Conflict Detection is on."
+        self.activate = True
+        return Ok("Conflict Detection is on.")
 
-    def setrpz(self, radius: float = -1.0, *acidx: int) -> tuple:
+    def setrpz(self, radius: float = -1.0, *acidx: int) -> Result[str, str]:
         """Set the horizontal separation distance (i.e., the radius of the
         protected zone) in nautical miles.
 
@@ -244,20 +265,16 @@ class ConflictDetection(TrafficArrays):
             *acidx: Aircraft index/indices or group. When not provided, the
                 default PZ radius is changed. Otherwise the PZ radius for the
                 passed aircraft is changed.
-
-        Returns:
-            tuple: (success (bool), message (str)) for the command stack.
         """
         if radius < 0.0:
-            return (
-                True,
-                f"ZONER [radius(nm), acid(s)/ac group]\nCurrent default PZ radius: {self.rpz_def / nm:.2f} NM",
+            return Ok(
+                f"ZONER [radius(nm), acid(s)/ac group]\nCurrent default PZ radius: {self.rpz_def / nm:.2f} NM"
             )
         if len(acidx) > 0:
             idx: Any = acidx[0] if isinstance(acidx[0], np.ndarray) else acidx
             self.rpz[idx] = radius * nm
             self.global_rpz = False
-            return True, f"Setting PZ radius to {radius} NM for {len(idx)} aircraft"
+            return Ok(f"Setting PZ radius to {radius} NM for {len(idx)} aircraft")
         oldradius = self.rpz_def
         self.rpz_def = radius * nm
         if self.global_rpz:
@@ -265,9 +282,9 @@ class ConflictDetection(TrafficArrays):
         # Adjust factors for reso zone if those were set with an absolute value
         if not self.traffic.cr.resorrelative:
             self.stack_command(f"RSZONER {self.traffic.cr.resofach * oldradius / nm}")
-        return True, f"Setting default PZ radius to {radius} NM"
+        return Ok(f"Setting default PZ radius to {radius} NM")
 
-    def sethpz(self, height: float = -1.0, *acidx: int) -> tuple:
+    def sethpz(self, height: float = -1.0, *acidx: int) -> Result[str, str]:
         """Set the vertical separation distance (i.e., half of the protected
         zone height) in feet.
 
@@ -281,20 +298,16 @@ class ConflictDetection(TrafficArrays):
             *acidx: Aircraft index/indices or group. When not provided, the
                 default PZ height is changed. Otherwise the PZ height for the
                 passed aircraft is changed.
-
-        Returns:
-            tuple: (success (bool), message (str)) for the command stack.
         """
         if height < 0.0:
-            return (
-                True,
-                f"ZONEDH [height (ft), acid(s)/ac group]\nCurrent default PZ height: {self.hpz_def / ft:.2f} ft",
+            return Ok(
+                f"ZONEDH [height (ft), acid(s)/ac group]\nCurrent default PZ height: {self.hpz_def / ft:.2f} ft"
             )
         if len(acidx) > 0:
             idx: Any = acidx[0] if isinstance(acidx[0], np.ndarray) else acidx
             self.hpz[idx] = height * ft
             self.global_hpz = False
-            return True, f"Setting PZ height to {height} ft for {len(idx)} aircraft"
+            return Ok(f"Setting PZ height to {height} ft for {len(idx)} aircraft")
         oldhpz = self.hpz_def
         self.hpz_def = height * ft
         if self.global_hpz:
@@ -302,9 +315,9 @@ class ConflictDetection(TrafficArrays):
         # Adjust factors for reso zone if those were set with an absolute value
         if not self.traffic.cr.resodhrelative:
             self.stack_command(f"RSZONEDH {self.traffic.cr.resofacv * oldhpz / ft}")
-        return True, f"Setting default PZ height to {height} ft"
+        return Ok(f"Setting default PZ height to {height} ft")
 
-    def setdtlook(self, time: Time = -1.0, *acidx: int) -> tuple:
+    def setdtlook(self, time: Time = -1.0, *acidx: int) -> Result[str, str]:
         """Set the lookahead time (in [hh:mm:]sec) for conflict detection.
 
         Implements the DTLOOK stack command.
@@ -315,23 +328,20 @@ class ConflictDetection(TrafficArrays):
             *acidx: Aircraft index/indices or group. When not provided, the
                 default lookahead time is changed. Otherwise the lookahead
                 time for the passed aircraft is changed.
-
-        Returns:
-            tuple: (success (bool), message (str)) for the command stack.
         """
         if time < 0.0:
-            return True, f"DTLOOK[time]\nCurrent value: {self.dtlookahead_def: .1f} sec"
+            return Ok(f"DTLOOK[time]\nCurrent value: {self.dtlookahead_def: .1f} sec")
         if len(acidx) > 0:
             idx: Any = acidx[0] if isinstance(acidx[0], np.ndarray) else acidx
             self.dtlookahead[idx] = time
             self.global_dtlook = False
-            return True, f"Setting CD lookahead to {time} sec for {len(idx)} aircraft"
+            return Ok(f"Setting CD lookahead to {time} sec for {len(idx)} aircraft")
         self.dtlookahead_def = time
         if self.global_dtlook:
             self.dtlookahead[:] = time
-        return True, f"Setting default CD lookahead to {time} sec"
+        return Ok(f"Setting default CD lookahead to {time} sec")
 
-    def setdtnolook(self, time: Time = -1.0, *acidx: int) -> tuple:
+    def setdtnolook(self, time: Time = -1.0, *acidx: int) -> Result[str, str]:
         """Set the interval (in [hh:mm:]sec) in which conflict detection
         is skipped after a conflict resolution.
 
@@ -343,21 +353,18 @@ class ConflictDetection(TrafficArrays):
             *acidx: Aircraft index/indices or group. When not provided, the
                 default interval is changed. Otherwise the interval for the
                 passed aircraft is changed.
-
-        Returns:
-            tuple: (success (bool), message (str)) for the command stack.
         """
         if time < 0.0:
-            return True, f"DTNOLOOK[time]\nCurrent value: {self.dtnolook_def: .1f} sec"
+            return Ok(f"DTNOLOOK[time]\nCurrent value: {self.dtnolook_def: .1f} sec")
         if len(acidx) > 0:
             idx: Any = acidx[0] if isinstance(acidx[0], np.ndarray) else acidx
             self.dtnolook[idx] = time
             self.global_dtnolook = False
-            return True, f"Setting CD no-look to {time} sec for {len(idx)} aircraft"
+            return Ok(f"Setting CD no-look to {time} sec for {len(idx)} aircraft")
         self.dtnolook_def = time
         if self.global_dtnolook:
             self.dtnolook[:] = time
-        return True, f"Setting default CD no-look to {time} sec"
+        return Ok(f"Setting default CD no-look to {time} sec")
 
     def update(self, ownship: Any, intruder: Any) -> None:
         """Perform an update step of the Conflict Detection implementation.
@@ -375,18 +382,18 @@ class ConflictDetection(TrafficArrays):
         if not self.activate:
             return
 
-        (
-            self.confpairs,
-            self.lospairs,
-            self.inconf,
-            self.tcpamax,
-            self.qdr,
-            self.dist,
-            self.dcpa,
-            self.tcpa,
-            self.tLOS,
-            self.dalt,
-        ) = self.detect(ownship, intruder, self.rpz, self.hpz, self.dtlookahead)
+        result = self.detect(ownship, intruder, self.rpz, self.hpz, self.dtlookahead)
+        # TODO(abraham): consider storing the entire result
+        self.confpairs = result.confpairs
+        self.lospairs = result.lospairs
+        self.inconf = result.inconf
+        self.tcpamax = result.tcpamax
+        self.qdr = result.qdr
+        self.dist = result.dist
+        self.dcpa = result.dcpa
+        self.tcpa = result.tcpa
+        self.tLOS = result.tLOS
+        self.dalt = result.dalt
 
         # confpairs has conflicts observed from both sides (a, b) and (b, a)
         # confpairs_unique keeps only one of these
@@ -400,6 +407,12 @@ class ConflictDetection(TrafficArrays):
         self.confpairs_unique = confpairs_unique
         self.lospairs_unique = lospairs_unique
 
+    class VerticalInterval(NamedTuple):
+        entry: np.ndarray
+        """Vertical conflict entry time [s]."""
+        exit: np.ndarray
+        """Vertical conflict exit time [s]."""
+
     def detect(
         self,
         ownship: Any,
@@ -407,7 +420,7 @@ class ConflictDetection(TrafficArrays):
         rpz: np.ndarray,
         hpz: np.ndarray,
         dtlookahead: np.ndarray,
-    ) -> tuple:
+    ) -> ConflictDetectionResult:
         """Conflict detection between ownship (traf) and intruder (traf/adsb).
 
         State-based detection with spatial candidate pruning: a KD-tree on
@@ -433,19 +446,6 @@ class ConflictDetection(TrafficArrays):
             rpz (ndarray): Per-aircraft horizontal separation minimum [m].
             hpz (ndarray): Per-aircraft vertical separation minimum [m].
             dtlookahead (ndarray): Per-aircraft lookahead time [s].
-
-        Returns:
-            tuple: The detection results:
-                - confpairs (list): Conflicting callsign pairs, both directions.
-                - lospairs (list): Callsign pairs in loss of separation.
-                - inconf (ndarray): Per-aircraft in-conflict flag [-].
-                - tcpamax (ndarray): Per-aircraft maximum tCPA [s].
-                - qdr (ndarray): Bearing ownship to intruder per conflict [deg].
-                - dist (ndarray): Current horizontal distance per conflict [m].
-                - dcpa (ndarray): Horizontal distance at CPA per conflict [m].
-                - tcpa (ndarray): Time to CPA per conflict [s].
-                - tinconf (ndarray): Time to start of LoS per conflict [s].
-                - dalt (ndarray): Current altitude difference per conflict [m].
         """
         ntraf = ownship.ntraf
         if ntraf < 2:
@@ -539,12 +539,14 @@ class ConflictDetection(TrafficArrays):
         # flags a conflict). The horizontal geometry is fully symmetric.
         dvs = intruder.vs[jj] - ownship.vs[ii]
 
-        def vertical_interval(da: np.ndarray, dw: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        def vertical_interval(da: np.ndarray, dw: np.ndarray) -> ConflictDetection.VerticalInterval:
             """Vertical crossing interval of the disk (-hpz, +hpz)."""
             dw = np.where(np.abs(dw) < 1e-6, 1e-6, dw)  # prevent division by zero
             tcrosshi = (da + hpz) / -dw
             tcrosslo = (da - hpz) / -dw
-            return np.minimum(tcrosshi, tcrosslo), np.maximum(tcrosshi, tcrosslo)
+            return self.VerticalInterval(
+                np.minimum(tcrosshi, tcrosslo), np.maximum(tcrosshi, tcrosslo)
+            )
 
         tinver_ij, toutver_ij = vertical_interval(dalt, dvs)
         tinver_ji, toutver_ji = vertical_interval(-dalt, -dvs)
@@ -608,7 +610,7 @@ class ConflictDetection(TrafficArrays):
             for i, j in zip(ilos[losorder], jlos[losorder], strict=False)
         ]
 
-        return (
+        return ConflictDetectionResult(
             confpairs,
             lospairs,
             inconf,

@@ -16,16 +16,18 @@ arrays via getnextwp()/getnextturnwp().
 from __future__ import annotations
 
 import math
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NamedTuple
 
 import numpy as np
+
+from minisky.result import Err, Ok, Result
 
 # from minisky.core import Replaceable
 from minisky.stack.argparser import Alt, Spd, Time, Wpt
 from minisky.tools import geo
 from minisky.tools.aero import casormach2tas, ft, g0, kts, mach2cas, nm
 from minisky.tools.convert import degto180, txt2alt, txt2spd
-from minisky.tools.position import Position, txt2pos
+from minisky.tools.position import txt2pos
 
 if TYPE_CHECKING:
     from minisky.traffic import Traffic
@@ -388,7 +390,46 @@ class Route:
             trnidx,
         ]
 
-    def getnextwp(self) -> tuple:
+    # TODO(abraham): split this large transition record into constraints, turn,
+    # and next-leg records
+    # TODO(abraham): replace -999.0 sentinels with explicit optional/validity state (see issue #40)
+    class WaypointTransition(NamedTuple):
+        latitude: float
+        """Active waypoint latitude [deg]."""
+        longitude: float
+        """Active waypoint longitude [deg]."""
+        altitude: float
+        """Altitude constraint [m]."""
+        speed: float
+        """Speed constraint, calibrated airspeed [m/s] or Mach number [-]."""
+        distance_to_altitude: float
+        """Distance to the next altitude constraint [m]."""
+        next_altitude: float
+        """Next altitude constraint [m]."""
+        distance_to_rta: float
+        """Distance to the next required time of arrival [m]."""
+        next_rta: float
+        """Next required time of arrival [s]."""
+        lnav_enabled: bool
+        """Whether lateral navigation remains enabled."""
+        fly_by: bool
+        """Whether the waypoint uses fly-by switching."""
+        fly_turn: bool
+        """Whether the waypoint uses an explicit turn."""
+        turn_radius: float
+        """Turn radius [m]."""
+        turn_speed: float
+        """Turn calibrated airspeed [m/s]."""
+        turn_heading_rate: float
+        """Turn heading rate [deg/s]."""
+        next_leg_latitude: float
+        """Next-leg endpoint latitude [deg], or -999.0 when there is no next leg."""
+        next_leg_longitude: float
+        """Next-leg endpoint longitude [deg], or -999.0 when there is no next leg."""
+        last_waypoint: bool
+        """Whether this is the final waypoint."""
+
+    def getnextwp(self) -> WaypointTransition:
         """Activate the next waypoint in the route and return its data.
 
         Called by the autopilot when the active waypoint has been passed.
@@ -397,16 +438,6 @@ class Route:
         a runway used for landing, a fixed runway heading is commanded and
         deceleration plus deletion of the aircraft are scheduled via the
         stack.
-
-        Returns:
-            tuple: (lat [deg], lon [deg], altitude constraint [m], speed
-            constraint (CAS [m/s] or Mach), distance to next altitude
-            constraint [m], next altitude constraint [m], distance to next
-            RTA [m], next RTA [s], lnavon switch, fly-by switch, fly-turn
-            switch, turn radius, turn speed (CAS), turn heading rate
-            [deg/s], next-leg endpoint lat [deg], next-leg endpoint lon
-            [deg] (-999.0 pair when there is no next leg), last-waypoint
-            switch).
         """
 
         n_wpt = len(self.wpname)
@@ -449,7 +480,7 @@ class Route:
 
             swlastwp = self.iactwp == n_wpt - 1
 
-            return (
+            return self.WaypointTransition(
                 self.wplat[self.iactwp],
                 self.wplon[self.iactwp],
                 self.wpalt[self.iactwp],
@@ -502,7 +533,7 @@ class Route:
 
         # print ("getnextwp:",self.wpname[self.iactwp],"   torta = ",self.wptorta[self.iactwp])
 
-        return (
+        return self.WaypointTransition(
             self.wplat[self.iactwp],
             self.wplon[self.iactwp],
             self.wpalt[self.iactwp],
@@ -532,7 +563,6 @@ class Route:
             self.traffic.stack_command(cmdline)
             # debug
             # stack.stack("ECHO "+self.acid+" AT "+self.wpname[self.iactwp]+" command issued:"+cmdline)
-        return
 
     def insertcalcwp(self, i: int, name: str) -> None:
         """Insert an empty calculated waypoint (T/C, T/D) at location i."""
@@ -599,7 +629,7 @@ class Route:
         # Calculate lateral leg data
         # LNAV: Calculate leg distances and directions
 
-        for i in range(0, n_wpt - 1):
+        for i in range(n_wpt - 1):
             qdr, dist = geo.qdrdist(
                 self.wplat[i], self.wplon[i], self.wplat[i + 1], self.wplon[i + 1]
             )
@@ -613,7 +643,7 @@ class Route:
         qdr, dist = geo.qdrdist(
             self.traffic.lat[iac], self.traffic.lon[iac], self.wplat[0], self.wplon[0]
         )
-        self.wpdirto = [qdr] + self.wpdirfrom[0:-1]  # [deg] Direction to waypoints
+        self.wpdirto = [qdr, *self.wpdirfrom[0:-1]]  # [deg] Direction to waypoints
 
         # Continue flying in the saem direction
         if n_wpt > 1:
@@ -757,7 +787,7 @@ class Route:
         """
         # get qdr for next leg
         if -1 < self.iactwp < len(self.wpname) - 1:
-            nextqdr, dist = geo.qdrdist(
+            nextqdr, _dist = geo.qdrdist(
                 self.wplat[self.iactwp],
                 self.wplon[self.iactwp],
                 self.wplat[self.iactwp + 1],
@@ -858,7 +888,9 @@ def change_wpt_mode(traffic: Traffic, acidx: int, mode=None, value=None) -> bool
             return True
 
 
-def addwpt(traffic: Traffic, ac: str | int, *args) -> bool | tuple:  # args: all arguments of addwpt
+def addwpt(
+    traffic: Traffic, ac: str | int, *args
+) -> Result[str, str]:  # args: all arguments of addwpt
     """Add a waypoint to the route of an aircraft.
 
     Implements the ADDWPT stack command:
@@ -881,9 +913,6 @@ def addwpt(traffic: Traffic, ac: str | int, *args) -> bool | tuple:  # args: all
     Args:
         ac: Aircraft callsign or index.
         *args: Remaining ADDWPT arguments as described above.
-
-    Returns:
-        bool or tuple: True on success, or (success flag, message).
     """
 
     # First get the appropriate ac route
@@ -904,17 +933,17 @@ def addwpt(traffic: Traffic, ac: str | int, *args) -> bool | tuple:  # args: all
         if swwpmode == "FLYBY":
             acrte.swflyby = True
             acrte.swflyturn = False
-            return True
+            return Ok("")
 
         elif swwpmode == "FLYOVER":
             acrte.swflyby = False
             acrte.swflyturn = False
-            return True
+            return Ok("")
 
         elif swwpmode == "FLYTURN":
             acrte.swflyby = False
             acrte.swflyturn = True
-            return True
+            return Ok("")
 
     elif len(args) == 2:
         swwpmode = args[0].replace("-", "")
@@ -925,14 +954,14 @@ def addwpt(traffic: Traffic, ac: str | int, *args) -> bool | tuple:  # args: all
                     acrte.turnrad = -999
                 else:
                     acrte.turnrad = float(args[1] / ft * nm)  # arg was originally parsed as wpalt
-            except Exception:
-                return False, "Error in processing value of turn radius"
+            except (TypeError, ValueError):
+                return Err("Error in processing value of turn radius")
 
             # Switch flyturn automatically when this is set
             acrte.swflyby = False
             acrte.swflyturn = True
 
-            return True
+            return Ok("")
 
         elif swwpmode == "TURNSPD" or swwpmode == "TURNSPEED":
             try:
@@ -942,8 +971,8 @@ def addwpt(traffic: Traffic, ac: str | int, *args) -> bool | tuple:  # args: all
                     acrte.turnspd = (
                         args[1] * kts / ft
                     )  # [m/s] Arg was wpalt Keep it as IAS/CAS orig in kts, now in m/s
-            except Exception:
-                return False, "Error in processing value of turn speed"
+            except (TypeError, ValueError):
+                return Err("Error in processing value of turn speed")
 
             # Switch flyturn automatically when this is set
             acrte.swflyby = False
@@ -955,14 +984,14 @@ def addwpt(traffic: Traffic, ac: str | int, *args) -> bool | tuple:  # args: all
                     acrte.turnhdgr = -999
                 else:
                     acrte.turnhdgr = args[1] / ft  # [deg/s] turn rate
-            except Exception:
-                return False, "Error in processing value of turn heading rate"
+            except (TypeError, ValueError):
+                return Err("Error in processing value of turn heading rate")
 
             # Switch flyturn automatically when this is set
             acrte.swflyby = False
             acrte.swflyturn = True
 
-            return True
+            return Ok("")
 
     # Convert to positions
     name = args[0].upper().strip()
@@ -996,36 +1025,35 @@ def addwpt(traffic: Traffic, ac: str | int, *args) -> bool | tuple:  # args: all
     # Normal waypoint (no take-off waypoint => see else)
     if not takeoffwpt:
         # Get waypoint position
-        success, posobj = txt2pos(name, reflat, reflon, traffic.navigation, traffic)
-        if success:
-            assert isinstance(posobj, Position)
-            lat = posobj.lat
-            lon = posobj.lon
+        match txt2pos(name, reflat, reflon, traffic.navigation, traffic):
+            case Ok(posobj):
+                lat = posobj.lat
+                lon = posobj.lon
 
-            if posobj.type == "nav" or posobj.type == "apt":
-                wptype = Route.wpnav
+                if posobj.type == "nav" or posobj.type == "apt":
+                    wptype = Route.wpnav
 
-            elif posobj.type == "rwy":
-                wptype = Route.runway
+                elif posobj.type == "rwy":
+                    wptype = Route.runway
 
-            else:  # treat as lat/lon
-                name = callsign
-                wptype = Route.wplatlon
+                else:  # treat as lat/lon
+                    name = callsign
+                    wptype = Route.wplatlon
 
-            if len(args) > 1 and args[1]:
-                alt = args[1]
+                if len(args) > 1 and args[1]:
+                    alt = args[1]
 
-            if len(args) > 2 and args[2]:
-                spd = args[2]
+                if len(args) > 2 and args[2]:
+                    spd = args[2]
 
-            if len(args) > 3 and args[3]:
-                afterwp = args[3]
+                if len(args) > 3 and args[3]:
+                    afterwp = args[3]
 
-            if len(args) > 4 and args[4]:
-                beforewp = args[4]
+                if len(args) > 4 and args[4]:
+                    beforewp = args[4]
 
-        else:
-            return False, "Waypoint " + name + " not found."
+            case Err():
+                return Err("Waypoint " + name + " not found.")
 
     # Take off waypoint: positioned 20% of the runway length after the runway
     else:
@@ -1058,7 +1086,7 @@ def addwpt(traffic: Traffic, ac: str | int, *args) -> bool | tuple:  # args: all
                 rwylon = traffic.lon[acidx]
                 rwyhdg = traffic.trk[acidx]
 
-        elif args[1].count("/") > 0 or len(args) > 2 and args[2]:  # we need apt,rwy
+        elif args[1].count("/") > 0 or (len(args) > 2 and args[2]):  # we need apt,rwy
             # Take care of both EHAM/RW06 as well as EHAM,RWY18L (so /&, and RW/RWY)
             if args[1].count("/") > 0:
                 aptid, rwyname = args[1].split("/")
@@ -1073,29 +1101,28 @@ def addwpt(traffic: Traffic, ac: str | int, *args) -> bool | tuple:  # args: all
             # Try to get it from the database
             try:
                 rwyhdg = traffic.navigation.rwythresholds[aptid][rwyid][2]
-            except Exception:
+            except (IndexError, KeyError, TypeError):
                 rwydir = rwyid.replace("L", "").replace("R", "").replace("C", "")
                 try:
                     rwyhdg = float(rwydir) * 10.0
                 except ValueError:
-                    return False, name + " not found."
+                    return Err(name + " not found.")
 
-            success, posobj = txt2pos(
+            match txt2pos(
                 aptid + "/RW" + rwyid,
                 reflat,
                 reflon,
                 traffic.navigation,
                 traffic,
-            )
-            if success:
-                assert isinstance(posobj, Position)
-                rwylat, rwylon = posobj.lat, posobj.lon
-            else:
-                rwylat = traffic.lat[acidx]
-                rwylon = traffic.lon[acidx]
+            ):
+                case Ok(posobj):
+                    rwylat, rwylon = posobj.lat, posobj.lon
+                case Err():
+                    rwylat = traffic.lat[acidx]
+                    rwylon = traffic.lon[acidx]
 
         else:
-            return False, "Use ADDWPT TAKEOFF,AIRPORTID,RWYNAME"
+            return Err("Use ADDWPT TAKEOFF,AIRPORTID,RWYNAME")
 
         # Create a waypoint 2 nm away from current point
         rwydist = 2.0  # [nm] use default distance away from threshold
@@ -1123,7 +1150,7 @@ def addwpt(traffic: Traffic, ac: str | int, *args) -> bool | tuple:  # args: all
 
     # Check for success by checking inserted location in flight plan >= 0
     if wpidx < 0:
-        return False, "Waypoint " + name + " not added."
+        return Err("Waypoint " + name + " not added.")
 
     # check for presence of orig/dest
     norig = int(traffic.ap.orig[acidx] != "")  # 1 if orig is present in route
@@ -1137,12 +1164,9 @@ def addwpt(traffic: Traffic, ac: str | int, *args) -> bool | tuple:  # args: all
         traffic.swlnav[acidx] = True
 
     if afterwp and acrte.wpname.count(afterwp) == 0:
-        return (
-            True,
-            "Waypoint " + afterwp + " not found\n" + "waypoint added at end of route",
-        )
+        return Ok("Waypoint " + afterwp + " not found\n" + "waypoint added at end of route")
     else:
-        return True
+        return Ok("")
 
 
 def addwpt_before(
@@ -1153,7 +1177,7 @@ def addwpt_before(
     waypoint,
     alt: Alt | None = None,
     spd: Spd | None = None,
-) -> bool | tuple:
+) -> Result[str, str]:
     """Add a waypoint to a route before an existing waypoint.
 
     Implements the BEFORE stack command:
@@ -1167,9 +1191,6 @@ def addwpt_before(
         waypoint: Waypoint name or lat/lon text of the new waypoint.
         alt: Optional altitude constraint [m].
         spd: Optional speed constraint, CAS [m/s] or Mach [-].
-
-    Returns:
-        bool or tuple: Result of addwpt().
     """
     return addwpt(traffic, acidx, waypoint, alt, spd, None, beforewp)
 
@@ -1182,7 +1203,7 @@ def addwpt_after(
     waypoint,
     alt: Alt | None = None,
     spd: Spd | None = None,
-) -> bool | tuple:
+) -> Result[str, str]:
     """Add a waypoint to a route after an existing waypoint.
 
     Implements the AFTER stack command:
@@ -1196,14 +1217,11 @@ def addwpt_after(
         waypoint: Waypoint name or lat/lon text of the new waypoint.
         alt: Optional altitude constraint [m].
         spd: Optional speed constraint, CAS [m/s] or Mach [-].
-
-    Returns:
-        bool or tuple: Result of addwpt().
     """
     return addwpt(traffic, acidx, waypoint, alt, spd, afterwp)
 
 
-def at_wpt(traffic: Traffic, acidx: int, atwp: Wpt, *args) -> bool | tuple:
+def at_wpt(traffic: Traffic, acidx: int, atwp: Wpt, *args) -> Result[str, str]:
     """Show, set or delete constraints and commands at a route waypoint.
 
     Implements the AT stack command:
@@ -1226,9 +1244,6 @@ def at_wpt(traffic: Traffic, acidx: int, atwp: Wpt, *args) -> bool | tuple:
         acidx: Aircraft index.
         atwp: Name of the waypoint in the route.
         *args: Remaining AT arguments as described above.
-
-    Returns:
-        bool or tuple: True on success, or (success flag, message).
     """
     acid = traffic.callsign[acidx]
     acrte = traffic.ap.route[acidx]
@@ -1264,11 +1279,11 @@ def at_wpt(traffic: Traffic, acidx: int, atwp: Wpt, *args) -> bool | tuple:
                     txt += "-----"
 
                 elif acrte.wpalt[wpidx] > 4500 * ft:
-                    fl = int(round(acrte.wpalt[wpidx] / (100.0 * ft)))
+                    fl = round(acrte.wpalt[wpidx] / (100.0 * ft))
                     txt += "FL" + str(fl)
 
                 else:
-                    txt += str(int(round(acrte.wpalt[wpidx] / ft)))
+                    txt += str(round(acrte.wpalt[wpidx] / ft))
 
                 if swspd:
                     txt += "/"
@@ -1278,7 +1293,7 @@ def at_wpt(traffic: Traffic, acidx: int, atwp: Wpt, *args) -> bool | tuple:
                 if acrte.wpspd[wpidx] < 0:
                     txt += "---"
                 else:
-                    txt += str(int(round(acrte.wpspd[wpidx] / kts)))
+                    txt += str(round(acrte.wpspd[wpidx] / kts))
 
             # Type
             if swalt and swspd:
@@ -1294,7 +1309,7 @@ def at_wpt(traffic: Traffic, acidx: int, atwp: Wpt, *args) -> bool | tuple:
                     for stackedtxt in acrte.wpstack[wpidx]:
                         txt = txt + stackedtxt + "\n"
 
-                return True, txt
+                return Ok(txt)
 
         elif args[0].count("/") == 1:
             # Set both alt & speed at this waypoint
@@ -1324,7 +1339,7 @@ def at_wpt(traffic: Traffic, acidx: int, atwp: Wpt, *args) -> bool | tuple:
                     success = False
 
             if not success:
-                return False, "Could not parse " + args[0] + " as alt / spd"
+                return Err("Could not parse " + args[0] + " as alt / spd")
 
             # If success: update flight plan and guidance
             acrte.calcfp()
@@ -1349,14 +1364,14 @@ def at_wpt(traffic: Traffic, acidx: int, atwp: Wpt, *args) -> bool | tuple:
                 try:
                     acrte.wpalt[wpidx] = txt2alt(args[1])
                 except ValueError as e:
-                    return False, e.args[0]
+                    return Err(e.args[0])
 
             # Edit waypoint speed constraint
             elif swspd:
                 try:
                     acrte.wpspd[wpidx] = txt2spd(args[1])
                 except ValueError as e:
-                    return False, e.args[0]
+                    return Err(e.args[0])
 
             # add stack command: args[1] is DO or STACK, args[2:] contains a command
             elif swat:
@@ -1382,11 +1397,8 @@ def at_wpt(traffic: Traffic, acidx: int, atwp: Wpt, *args) -> bool | tuple:
                         else:
                             # This command does not need an acid or it is already first argument
                             acrte.wpstack[wpidx].append(" ".join(args[1:]))
-                    except Exception:
-                        return (
-                            False,
-                            "Stacked command " + cmd + " unknown or syntax error",
-                        )
+                    except (AttributeError, IndexError, KeyError, TypeError):
+                        return Err("Stacked command " + cmd + " unknown or syntax error")
                 else:
                     # Command line starts with an aircraft id at the beginning of the command line, stack it
                     acrte.wpstack[wpidx].append(" ".join(args[1:]))
@@ -1408,7 +1420,7 @@ def at_wpt(traffic: Traffic, acidx: int, atwp: Wpt, *args) -> bool | tuple:
                     acrte.wpstack[wpidx] = []
 
             else:
-                return False, "No " + args[0] + " at ", atwp
+                return Err(f"No {args[0]} at {atwp}")
 
             # If success: update flight plan and guidance
             acrte.calcfp()
@@ -1416,9 +1428,9 @@ def at_wpt(traffic: Traffic, acidx: int, atwp: Wpt, *args) -> bool | tuple:
 
     # Waypoint not found in route
     else:
-        return False, atwp + " not found in route " + acid
+        return Err(atwp + " not found in route " + acid)
 
-    return True
+    return Ok("")
 
 
 def direct(traffic: Traffic, acidx: int, wpname: Wpt) -> bool:
@@ -1559,7 +1571,7 @@ def set_rta(
     return True
 
 
-def listrte(traffic: Traffic, acidx: int, ipagetxt: str = "0") -> tuple | None:
+def listrte(traffic: Traffic, acidx: int, ipagetxt: str = "0") -> Result[None, str]:
     """Show the route of an aircraft in the console, page by page.
 
     Implements the LISTRTE stack command: `LISTRTE acid, [pagenr]`.
@@ -1573,7 +1585,7 @@ def listrte(traffic: Traffic, acidx: int, ipagetxt: str = "0") -> tuple | None:
         ipagetxt: Page number as text (default "0").
 
     Returns:
-        tuple or None: (False, message) when the aircraft has no route.
+        Result: `Ok(None)` after listing the route, or `Err` when no route exists.
     """
     # First get the appropriate ac route
     ipage = int(ipagetxt)
@@ -1582,7 +1594,7 @@ def listrte(traffic: Traffic, acidx: int, ipagetxt: str = "0") -> tuple | None:
     n_wpt = len(acrte.wpname)
 
     if n_wpt <= 0:
-        return False, "Aircraft has no route."
+        return Err("Aircraft has no route.")
 
     for i in range(ipage * 7, ipage * 7 + 7):
         if 0 <= i < n_wpt:
@@ -1597,17 +1609,17 @@ def listrte(traffic: Traffic, acidx: int, ipagetxt: str = "0") -> tuple | None:
                 txt += "-----/"
 
             elif acrte.wpalt[i] > 4500 * ft:
-                fl = int(round(acrte.wpalt[i] / (100.0 * ft)))
+                fl = round(acrte.wpalt[i] / (100.0 * ft))
                 txt += "FL" + str(fl) + "/"
 
             else:
-                txt += str(int(round(acrte.wpalt[i] / ft))) + "/"
+                txt += str(round(acrte.wpalt[i] / ft)) + "/"
 
             # Speed
             if acrte.wpspd[i] < 0.0:
                 txt += "---"
             elif acrte.wpspd[i] > 2.0:
-                txt += str(int(round(acrte.wpspd[i] / kts)))
+                txt += str(round(acrte.wpspd[i] / kts))
             else:
                 txt += "M" + str(acrte.wpspd[i])
 
@@ -1626,8 +1638,10 @@ def listrte(traffic: Traffic, acidx: int, ipagetxt: str = "0") -> tuple | None:
             # Display message
             traffic.console.echo(txt)
 
+    return Ok(None)
 
-def delrte(traffic: Traffic, acidx: int | None = None) -> bool | tuple:
+
+def delrte(traffic: Traffic, acidx: int | None = None) -> Result[str, str]:
     """Delete the complete route (including origin/destination) of an
     aircraft.
 
@@ -1637,15 +1651,12 @@ def delrte(traffic: Traffic, acidx: int | None = None) -> bool | tuple:
 
     Args:
         acidx: Aircraft index; may be None when only one aircraft exists.
-
-    Returns:
-        bool or tuple: True on success, or (False, error message).
     """
     if acidx is None:
         if traffic.ntraf == 0:
-            return False, "No aircraft in simulation"
+            return Err("No aircraft in simulation")
         if traffic.ntraf > 1:
-            return False, "Specify callsign of aircraft to delete route of"
+            return Err("Specify callsign of aircraft to delete route of")
         acidx = 0
     # Simple re-initialize this route as empty
     acid = traffic.callsign[acidx]
@@ -1657,10 +1668,10 @@ def delrte(traffic: Traffic, acidx: int | None = None) -> bool | tuple:
     traffic.swvnav[acidx] = False
     traffic.swvnavspd[acidx] = False
 
-    return True
+    return Ok("")
 
 
-def delwpt(traffic: Traffic, acidx: int, wpname: Wpt) -> bool | tuple:
+def delwpt(traffic: Traffic, acidx: int, wpname: Wpt) -> Result[str, str]:
     """Delete a single waypoint from the route of an aircraft.
 
     Implements the DELWPT stack command: `DELWPT acid, wpname`. When the
@@ -1671,9 +1682,6 @@ def delwpt(traffic: Traffic, acidx: int, wpname: Wpt) -> bool | tuple:
     Args:
         acidx: Aircraft index.
         wpname: Name of the waypoint to delete.
-
-    Returns:
-        bool or tuple: True on success, or (False, error message).
     """
 
     # Look up waypoint
@@ -1683,7 +1691,7 @@ def delwpt(traffic: Traffic, acidx: int, wpname: Wpt) -> bool | tuple:
     try:
         wpidx = acrte.wpname.index(wpname.upper())
     except ValueError:
-        return False, "Waypoint " + wpname + " not found"
+        return Err("Waypoint " + wpname + " not found")
 
     # check if active way point is the one being deleted and that it is not the last wpt.
     # If active wpt is deleted then change path of aircraft
@@ -1717,4 +1725,4 @@ def delwpt(traffic: Traffic, acidx: int, wpname: Wpt) -> bool | tuple:
         traffic.swvnav[acidx] = False
         traffic.swvnavspd[acidx] = False
 
-    return True
+    return Ok("")

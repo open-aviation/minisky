@@ -9,7 +9,6 @@ from __future__ import annotations
 import json
 
 import pytest
-
 from minisky import MiniSky
 from minisky.simulation import Simulation, SimulationState
 from minisky.streaming import STREAM_MAX_HZ, StreamHub, build_snapshot
@@ -75,9 +74,9 @@ def test_dtmult_sets_runner_speed(runtime: MiniSky, sim: Simulation, run_cmd: Ru
 
 
 def test_dtmult_rejects_non_positive(runtime: MiniSky, sim: Simulation) -> None:
-    ok, msg = runtime.runner.setspeed(0)
-    assert ok is False
-    assert "positive" in msg.lower()
+    result = runtime.runner.setspeed(0)
+    assert result.is_err()
+    assert "positive" in result.unwrap_err().lower()
 
 
 def test_hub_skips_publish_without_subscribers(runtime: MiniSky) -> None:

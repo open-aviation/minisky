@@ -12,11 +12,12 @@ the DEL command.
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Self
 
 import numpy as np
 
 from minisky.core import TrafficArrays
+from minisky.result import Err, Ok, Result
 
 if TYPE_CHECKING:
     from minisky.tools.areafilter import AreaFilter
@@ -32,7 +33,7 @@ class GroupArray(np.ndarray):
     """
 
     # Similar to normal numpy arrays, but with the attribute of a groupname
-    def __new__(cls, *args, groupname: str = "", **kwargs) -> GroupArray:
+    def __new__(cls, *args, groupname: str = "", **kwargs) -> Self:
         ret = np.array(*args, **kwargs).view(cls)
         ret.groupname = groupname
         return ret
@@ -71,7 +72,7 @@ class TrafficGroups(TrafficArrays):
         # Check if a group with a name exists
         return groupname in self.groups or groupname == "*"
 
-    def group(self, groupname: str = "", *args: Any) -> tuple[bool, str]:
+    def group(self, groupname: str = "", *args: Any) -> Result[str, str]:
         """Add aircraft to a group, list its members, or list all groups.
 
         Implements the GROUP stack command. Without arguments the existing
@@ -83,21 +84,18 @@ class TrafficGroups(TrafficArrays):
         Args:
             groupname: Name of the group; empty to list all groups.
             *args: Aircraft indices, or a single area name.
-
-        Returns:
-            tuple: (success flag, message).
         """
         # Return list of groups if no groupname is given
         if not groupname:
             if not self.groups:
-                return True, "There are currently no traffic groups defined."
+                return Ok("There are currently no traffic groups defined.")
             else:
-                return True, "Defined traffic groups:\n" + ", ".join(self.groups)
+                return Ok("Defined traffic groups:\n" + ", ".join(self.groups))
         if len(self.groups) >= 64:
-            return False, "Maximum number of 64 groups reached"
+            return Err("Maximum number of 64 groups reached")
         if groupname not in self.groups:
             if not args:
-                return False, f"Group {groupname} doesn't exist"
+                return Err(f"Group {groupname} doesn't exist")
             # Get first unused group mask
             for i in range(64):
                 groupmask = 1 << i
@@ -107,8 +105,12 @@ class TrafficGroups(TrafficArrays):
                     break
 
         elif not args:
-            acnames = np.array(self.traffic.callsign)[self.listgroup(groupname)]
-            return True, "Aircraft in group {}:\n{}".format(groupname, ", ".join(acnames))
+            match self.listgroup(groupname):
+                case Ok(group):
+                    acnames = np.array(self.traffic.callsign)[group]
+                    return Ok("Aircraft in group {}:\n{}".format(groupname, ", ".join(acnames)))
+                case Err(error):
+                    return Err(error)
 
         # Add aircraft to group
         if self.areas.has_area(args[0]):
@@ -121,7 +123,7 @@ class TrafficGroups(TrafficArrays):
             idx = list(args)
             self.ingroup[idx] |= self.groups[groupname]
             acnames = np.array(self.traffic.callsign)[idx]
-        return True, "Aircraft added to group {}:\n{}".format(groupname, ", ".join(acnames))
+        return Ok("Aircraft added to group {}:\n{}".format(groupname, ", ".join(acnames)))
 
     def delgroup(self, grouparray: Any) -> None:
         """Delete a group, and all aircraft in that group.
@@ -141,7 +143,7 @@ class TrafficGroups(TrafficArrays):
         if grouparray.groupname != "*":
             self.allmasks ^= self.groups.pop(grouparray.groupname)
 
-    def ungroup(self, groupname: str, *args: Any) -> tuple[bool, str] | None:
+    def ungroup(self, groupname: str, *args: Any) -> Result[None, str]:
         """Remove members from a group by aircraft index.
 
         Implements the UNGROUP stack command.
@@ -151,15 +153,15 @@ class TrafficGroups(TrafficArrays):
             *args: Indices of the aircraft to remove from the group.
 
         Returns:
-            tuple or None: (False, error message) when the group does not
-            exist.
+            Result: `Ok(None)` after removal, or `Err` when the group is unknown.
         """
         groupmask = self.groups.get(groupname, None)
         if groupmask is None:
-            return False, f"Group {groupname} doesn't exist"
+            return Err(f"Group {groupname} doesn't exist")
         self.ingroup[list(args)] ^= groupmask
+        return Ok(None)
 
-    def listgroup(self, groupname: str) -> Any:
+    def listgroup(self, groupname: str) -> Result[GroupArray, str]:
         """Return the aircraft indices of all aircraft in a group.
 
         When "*" is passed as group name, all aircraft in the simulation
@@ -167,15 +169,10 @@ class TrafficGroups(TrafficArrays):
 
         Args:
             groupname: Name of the group, or "*" for all aircraft.
-
-        Returns:
-            GroupArray: Indices of the group members (with the group name
-            attached), or (False, error message) when the group does not
-            exist.
         """
         if groupname == "*":
-            return GroupArray(range(self.traffic.ntraf), groupname="*")
+            return Ok(GroupArray(range(self.traffic.ntraf), groupname="*"))
         groupmask = self.groups.get(groupname, None)
         if groupmask is None:
-            return False, f"Group {groupname} doesn't exist"
-        return GroupArray(np.where((self.ingroup & groupmask) > 0)[0], groupname=groupname)
+            return Err(f"Group {groupname} doesn't exist")
+        return Ok(GroupArray(np.where((self.ingroup & groupmask) > 0)[0], groupname=groupname))

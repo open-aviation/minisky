@@ -5,7 +5,6 @@ txt2tim returns seconds.
 """
 
 import pytest
-
 from minisky.tools import convert as cv
 
 FT = 0.3048
@@ -20,7 +19,7 @@ class TestAltitude:
         assert cv.txt2alt("2500") == pytest.approx(2500 * FT)
 
     def test_invalid_raises(self) -> None:
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match=r'Could not parse "NOTANALT" as altitude'):
             cv.txt2alt("NOTANALT")
 
 
@@ -64,13 +63,13 @@ class TestSpeed:
         assert cv.txt2spd(".8") == pytest.approx(0.8)
 
     def test_invalid_raises(self) -> None:
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match=r"Could not parse FAST as speed\."):
             cv.txt2spd("FAST")
 
 
 class TestAngles:
     @pytest.mark.parametrize(
-        "angle,expected",
+        ("angle", "expected"),
         [(190.0, -170.0), (-190.0, 170.0), (180.0, -180.0), (0.0, 0.0), (359.0, -1.0)],
     )
     def test_degto180_wraps(self, angle: float, expected: float) -> None:

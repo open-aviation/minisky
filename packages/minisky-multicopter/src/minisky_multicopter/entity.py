@@ -17,7 +17,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import numpy as np
-
 from minisky import plugin as plugin_api
 
 if TYPE_CHECKING:
@@ -105,9 +104,9 @@ class Multicopter(plugin_api.Entity):
         :data:`IMPLEMENTATIONS`; replaces the live instance immediately.
         """
         for basename, implname in IMPLEMENTATIONS:
-            ok, message = self.traffic.select_implementation(basename, implname)
-            if not ok:
-                raise RuntimeError(f"MULTICOPTER: {message}")
+            result = self.traffic.select_implementation(basename, implname)
+            if result.is_err():
+                raise RuntimeError(f"MULTICOPTER: {result.err()}")
         self._selected = True
 
     @plugin_api.hook("preupdate")

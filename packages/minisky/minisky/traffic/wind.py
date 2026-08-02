@@ -18,6 +18,7 @@ import numpy as np
 from scipy.interpolate import LinearNDInterpolator, interp1d
 
 from minisky.core.trafficarrays import TrafficArrays
+from minisky.result import Err, Ok, Result
 from minisky.stack.argparser import Alt, Lat, Lon
 from minisky.tools.aero import ft, kts
 
@@ -71,7 +72,6 @@ class Windfield:
 
         # Clear actual field
         self.clear()
-        return
 
     def clear(self) -> None:  # Clear actual field
         """Remove all wind vectors, leaving a windless (winddim 0) field."""
@@ -86,7 +86,6 @@ class Windfield:
         self.nvec = 0
         self.fe = None
         self.fn = None
-        return
 
     def addpointvne(
         self,
@@ -156,7 +155,7 @@ class Windfield:
                         bounds_error=False,
                         fill_value=0.0,
                     )
-                except Exception:
+                except Exception:  # ruff: ignore[BLE001] scipy interpolation may fail broadly
                     # Create vn, ve if RGI is not possible
                     vnaxis = fnorth(self.altaxis).T
                     veaxis = feast(self.altaxis).T
@@ -404,8 +403,6 @@ class Windfield:
             if self.winddim < 3 or len(self.iprof) == 0 or len(self.lat) == 0:
                 self.winddim = min(2, len(self.lat))  # Check for 0, 1D, 2D or 3D
 
-        return
-
 
 class Wind(TrafficArrays, Windfield):
     """Wind field with the stack-command interface of the simulation.
@@ -416,7 +413,7 @@ class Wind(TrafficArrays, Windfield):
     Available at runtime as [`runtime.traffic.wind`][minisky.traffic.wind.Wind].
     """
 
-    def add(self, lat: Lat, lon: Lon, *winddata: float) -> bool | tuple[bool, str]:
+    def add(self, lat: Lat, lon: Lon, *winddata: float) -> Result[str, str]:
         """Define a wind vector as part of the 2D or 3D wind field.
 
         Implements the WIND stack command.
@@ -447,7 +444,7 @@ class Wind(TrafficArrays, Windfield):
         # No altitude or just one: same wind for all altitudes at this position
         elif ndata == 2 or (ndata == 3 and winddata[0] is None):  # only one point, ignore altitude
             if winddata[-2] is None or winddata[-1] is None:
-                return False, "Wind direction and speed needed."
+                return Err("Wind direction and speed needed.")
 
             self.addpoint(lat, lon, winddata[-2], winddata[-1] * kts)
 
@@ -461,11 +458,11 @@ class Wind(TrafficArrays, Windfield):
             self.addpoint(lat, lon, dirarr, spdarr, altarr)
 
         else:  # Something is wrong
-            return False, "Winddata not recognized"
+            return Err("Winddata not recognized")
 
-        return True
+        return Ok("")
 
-    def get(self, lat: Lat, lon: Lon, alt: Alt | None = None) -> tuple[bool, str]:
+    def get(self, lat: Lat, lon: Lon, alt: Alt | None = None) -> Result[str, str]:
         """Get wind at a specified position (and optionally at altitude)
 
         Implements the GETWIND stack command. The result is reported as
@@ -475,15 +472,12 @@ class Wind(TrafficArrays, Windfield):
         - lat, lon: Horizontal position where wind should be determined [deg]
         - alt: Altitude at which wind should be determined [m]
           (stack input in ft)
-
-        Returns:
-            tuple: (True, text with wind direction [deg] and speed [kts]).
         """
         vn, ve = self.getdata(lat, lon, alt)
 
         wdir = (np.degrees(np.arctan2(ve, vn)) + 180.0) % 360.0
         wspd = np.sqrt(vn * vn + ve * ve)
 
-        txt = f"WIND AT {lat:.5f}, {lon:.5f}: {int(round(wdir)):03d}/{int(round(wspd / kts))}"
+        txt = f"WIND AT {lat:.5f}, {lon:.5f}: {round(wdir):03d}/{round(wspd / kts)}"
 
-        return True, txt
+        return Ok(txt)

@@ -40,9 +40,9 @@ class TestKinematicsEntity:
         assert runtime.traffic.lon[0] > lon0
 
     def test_selectimpl_lists_base_implementation(self, runtime: MiniSky, sim: Simulation) -> None:
-        ok, msg = runtime.replaceables.select("KINEMATICS")
-        assert ok
-        assert "KINEMATICS" in msg.upper()
+        result = runtime.replaceables.select("KINEMATICS")
+        assert result.is_ok(), result.err()
+        assert "KINEMATICS" in result.unwrap().upper()
 
     def test_select_subclass_takes_effect_and_reverts_on_reset(
         self, runtime: MiniSky, sim: Simulation
@@ -53,8 +53,8 @@ class TestKinematicsEntity:
         runtime.replaceables.validate((prepared,))
         runtime.replaceables.install((prepared,))
         try:
-            ok, msg = runtime.replaceables.select("KINEMATICS", "TAGGEDKINEMATICS")
-            assert ok, msg
+            result = runtime.replaceables.select("KINEMATICS", "TAGGEDKINEMATICS")
+            assert result.is_ok(), result.err()
             assert isinstance(runtime.traffic.kinematics, TaggedKinematics)
             # per-aircraft arrays carry over to the new instance
             assert len(runtime.traffic.kinematics.ax) == 1

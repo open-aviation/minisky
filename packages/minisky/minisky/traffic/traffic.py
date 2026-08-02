@@ -22,6 +22,7 @@ import numpy as np
 
 from minisky.core.config import MiniSkyConfig
 from minisky.core.trafficarrays import TrafficArrays
+from minisky.result import Err, Ok, Result
 from minisky.tools import geo
 from minisky.tools.aero import (
     DEFAULT_CASMACH_THRESHOLD,
@@ -138,7 +139,7 @@ class Traffic(TrafficArrays):
         get_simulation: Callable[[], Simulation],
         stack_command: Callable[..., None],
         get_command_registry: Callable[[], Mapping[str, object]],
-        select_implementation: Callable[[str, str], tuple[bool, str]],
+        select_implementation: Callable[[str, str], Result[str, str]],
     ) -> None:
         super().__init__()
         self.config = config
@@ -238,22 +239,21 @@ class Traffic(TrafficArrays):
         # Default bank angles per flight phase
         self.bphase = np.deg2rad(np.array([15, 35, 35, 35, 15, 45]))
 
-    def casmachthr(self, threshold: float | None = None) -> tuple[bool, str]:
+    def casmachthr(self, threshold: float | None = None) -> Result[str, str]:
         """Get or set this runtime's CAS/Mach interpretation threshold.
 
         Positive speed values below this threshold are interpreted as Mach
         numbers by CRE, MOVE, route, and autopilot speed conversions.
         """
         if threshold is None:
-            return (
-                True,
+            return Ok(
                 "CASMACHTHR: The current CAS/Mach threshold is "
                 f"{self.casmach_threshold} m/s "
-                f"({self.casmach_threshold / kts} kts)",
+                f"({self.casmach_threshold / kts} kts)"
             )
 
         self.casmach_threshold = threshold
-        return True, f"CASMACHTHR: Set CAS/Mach threshold to {threshold}"
+        return Ok(f"CASMACHTHR: Set CAS/Mach threshold to {threshold}")
 
     @property
     def command_registry(self) -> Mapping[str, object]:
@@ -303,7 +303,7 @@ class Traffic(TrafficArrays):
         hdg: float = 45.0,
         alt: float = 25000 * ft,
         spd: float = 300 * kts,
-    ) -> tuple[bool, str]:
+    ) -> Result[str, str]:
         """Create a single aircraft and add it to the traffic database.
 
         Implements the CRE stack command. After creation, any commands stored
@@ -320,13 +320,10 @@ class Traffic(TrafficArrays):
                 defaults to 25000 ft.
             spd: Initial speed: CAS [m/s] or Mach [-] (stack input in kts);
                 defaults to 300 kts.
-
-        Returns:
-            tuple: (success flag, confirmation or error message).
         """
 
         if callsign in self.callsign:
-            return False, f"aircraft {callsign} already exists"
+            return Err(f"aircraft {callsign} already exists")
 
         # covert to array with 1 element
         acid_ = np.array([callsign.upper()])
@@ -339,7 +336,7 @@ class Traffic(TrafficArrays):
 
         self.__create_aircraft(acid_, actype_, lat_, lon_, hdg_, alt_, spd_)
 
-        return True, f"Aircraft {callsign} created"
+        return Ok(f"Aircraft {callsign} created")
 
     def mcre(
         self,
@@ -351,7 +348,7 @@ class Traffic(TrafficArrays):
         actype: str = "A320",
         acalt: int | None = None,
         acspd: int | None = None,
-    ) -> tuple[bool, str]:
+    ) -> Result[str, str]:
         """Create multiple aircraft at random positions in a lat/lon box.
 
         Implements the MCRE stack command. Callsigns are generated randomly
@@ -368,9 +365,6 @@ class Traffic(TrafficArrays):
             actype: ICAO aircraft type designator for all aircraft.
             acalt: Optional fixed altitude [m]; random when None.
             acspd: Optional fixed speed, CAS [m/s] or Mach; random when None.
-
-        Returns:
-            tuple: (True, confirmation message).
         """
 
         # Generate random callsigns
@@ -398,7 +392,7 @@ class Traffic(TrafficArrays):
 
         self.__create_aircraft(np.array(callsign), actype_, aclat, aclon, achdg, acalt_, acspd_)
 
-        return True, f"{n} aircraft created"
+        return Ok(f"{n} aircraft created")
 
     def __create_aircraft(
         self,
@@ -710,7 +704,7 @@ class Traffic(TrafficArrays):
             except ValueError:
                 return -1
 
-    def setnoise(self, noise: bool | None = None) -> bool | tuple[bool, str]:
+    def setnoise(self, noise: bool | None = None) -> Result[str, str]:
         """Switch trajectory noise models on or off, or report their state.
 
         Implements the NOISE stack command. Controls both the turbulence
@@ -719,16 +713,13 @@ class Traffic(TrafficArrays):
         Args:
             noise: True/False to enable/disable noise; None to report the
                 current state.
-
-        Returns:
-            bool or tuple: True on set, or (True, status message) on query.
         """
         if noise is None:
-            return True, "Noise is currently " + ("on" if self.turbulence.active else "off")
+            return Ok("Noise is currently " + ("on" if self.turbulence.active else "off"))
 
         self.turbulence.setnoise(noise)
         self.noise.setnoise(noise)
-        return True
+        return Ok("")
 
     def engchange(self, acid: int, engid: str) -> None:
         """Change the engine type of an aircraft in the performance model.
@@ -738,7 +729,6 @@ class Traffic(TrafficArrays):
             engid: New engine type identifier.
         """
         self.perf.engchange(acid, engid)  # type: ignore[attr-defined]
-        return
 
     def move(
         self,
@@ -783,7 +773,7 @@ class Traffic(TrafficArrays):
             self.vs[idx] = vspd
             self.swvnav[idx] = False
 
-    def position(self, id_or_name: int | str) -> tuple[bool, str]:
+    def position(self, id_or_name: int | str) -> Result[str, str]:
         """Show information on an aircraft, airport, waypoint or navaid.
 
         Implements the POS stack command. Dispatches to
@@ -795,9 +785,6 @@ class Traffic(TrafficArrays):
         Args:
             id_or_name: Aircraft index (int) or the name of an aircraft,
                 airport, waypoint, navaid or airway (str).
-
-        Returns:
-            tuple: (success flag, multi-line information text).
         """
 
         if isinstance(id_or_name, int):
@@ -805,7 +792,7 @@ class Traffic(TrafficArrays):
         else:
             return self.position_by_name(id_or_name)
 
-    def position_aircraft(self, idx: int) -> tuple[bool, str]:
+    def position_aircraft(self, idx: int) -> Result[str, str]:
         """Generate a position report for a single aircraft.
 
         The report includes position, heading/track [deg], altitude [ft],
@@ -814,9 +801,6 @@ class Traffic(TrafficArrays):
 
         Args:
             idx: Aircraft index.
-
-        Returns:
-            tuple: (True, multi-line position report).
         """
 
         acid = self.callsign[idx]
@@ -863,9 +847,9 @@ class Traffic(TrafficArrays):
             if self.ap.dest[idx] != "":
                 info = info + " to " + self.ap.dest[idx]
 
-        return True, info
+        return Ok(info)
 
-    def position_by_name(self, name: str) -> tuple[bool, str]:
+    def position_by_name(self, name: str) -> Result[str, str]:
         """Look up a name and generate an information report for it.
 
         Searches, in order: airports, aircraft callsigns, waypoints/navaids,
@@ -875,9 +859,6 @@ class Traffic(TrafficArrays):
 
         Args:
             name: Name/identifier to look up (case-insensitive).
-
-        Returns:
-            tuple: (success flag, multi-line information text).
         """
         name = name.upper()
 
@@ -902,7 +883,7 @@ class Traffic(TrafficArrays):
             lines += (
                 f"{aptname} is a {airport_size} airport in {country_name} ({country_code}):\n"
                 f"Position: {latlon2txt(aptlat, aptlon)}\n"
-                f"Elevation: {int(round(aptelev / ft))} ft \n"
+                f"Elevation: {round(aptelev / ft)} ft \n"
             )
 
             if self.navigation.aptid[idx_airport] in self.navigation.rwythresholds:
@@ -910,7 +891,7 @@ class Traffic(TrafficArrays):
                 if runways:
                     lines += f"Runways: {', '.join(runways)}\n"
 
-            return True, lines
+            return Ok(lines)
 
         # try aircraft
         idx_ac = self.idx(name)
@@ -978,7 +959,7 @@ class Traffic(TrafficArrays):
 
                     lines += f"Connected to airways: {'-'.join(awset)}\n"
 
-                return True, lines
+                return Ok(lines)
 
             # Try airway id
             else:  # airway
@@ -988,36 +969,32 @@ class Traffic(TrafficArrays):
                     lines = ""
                     for segment in airway:
                         lines += f"Airway {awid}: {' - '.join(segment)}\n"
-                    return True, lines
+                    return Ok(lines)
 
         # nothing matched
-        return False, f"{name} not found as aircraft, airport, navaid, or waypoint"
+        return Err(f"{name} not found as aircraft, airport, navaid, or waypoint")
 
         # Show what we found on airport and navaid/waypoint
 
-    def settrans(self, alt: float = -999.0) -> bool | tuple[bool, str]:
+    def settrans(self, alt: float = -999.0) -> Result[str, str]:
         """Set or show the transition level.
 
         Args:
             alt: New transition level [m] (stack input in ft/FL). With the
                 default sentinel value the current level is reported instead.
-
-        Returns:
-            bool or tuple: True on set, (True, message) on query, or
-            (False, error message) for invalid values.
         """
         # in case a valid value is ginve set it
         if alt > -900.0:
             if alt > 0.0:
                 self.translvl = alt
-                return True
-            return False, "Transition level needs to be ft/FL and larger than zero"
+                return Ok("")
+            return Err("Transition level needs to be ft/FL and larger than zero")
 
         # In case no value is given, show it
-        tlvl = int(round(self.translvl / ft))
-        return True, f"Transition level = {tlvl}/FL{int(round(tlvl / 100.0))}"
+        tlvl = round(self.translvl / ft)
+        return Ok(f"Transition level = {tlvl}/FL{round(tlvl / 100.0)}")
 
-    def setbanklim(self, idx: int, bankangle: float | None = None) -> bool | tuple[bool, str]:
+    def setbanklim(self, idx: int, bankangle: float | None = None) -> Result[str, str]:
         """Set or show the bank angle limit for a given aircraft.
 
         Implements the BANK stack command. The limit is used by the autopilot
@@ -1027,19 +1004,15 @@ class Traffic(TrafficArrays):
             idx: Aircraft index.
             bankangle: New bank limit [deg]; when omitted, the current limit
                 is reported.
-
-        Returns:
-            bool or tuple: True on set, or (True, status message) on query.
         """
         if bankangle:
             self.ap.bankdef[idx] = np.radians(bankangle)  # [rad]
-            return True
-        return (
-            True,
-            f"Banklimit of {self.callsign[idx]} is {int(np.degrees(self.ap.bankdef[idx]))} deg",
+            return Ok("")
+        return Ok(
+            f"Banklimit of {self.callsign[idx]} is {int(np.degrees(self.ap.bankdef[idx]))} deg"
         )
 
-    def setthrottle(self, idx: int, throttle: str = "") -> bool | tuple[bool, str]:
+    def setthrottle(self, idx: int, throttle: str = "") -> Result[str, str]:
         """Set the throttle of an aircraft, or report the autothrottle state.
 
         Implements the THR stack command. "AUTO"/"OFF" re-engages the
@@ -1050,10 +1023,6 @@ class Traffic(TrafficArrays):
         Args:
             idx: Aircraft index.
             throttle: Throttle argument string; empty to query the state.
-
-        Returns:
-            bool or tuple: True on set, (True, status message) on query, or
-            (False, error message) for invalid input.
         """
 
         if throttle:
@@ -1077,26 +1046,23 @@ class Traffic(TrafficArrays):
                 try:
                     x = factor * float(throttle)
                 except ValueError:
-                    return False, "THR invalid argument " + throttle
+                    return Err("THR invalid argument " + throttle)
 
                 # Check whether value makes sense
                 if x < 0.0 or x > 1.0:
-                    return (
-                        False,
-                        "THR invalid value " + throttle + ". Needs to be [0.0 , 1.0]",
-                    )
+                    return Err("THR invalid value " + throttle + ". Needs to be [0.0 , 1.0]")
 
                 # Valid value, set throttle and disable autothrottle
                 self.swats[idx] = False
                 self.thr[idx] = x
 
-            return True
+            return Ok("")
 
         if self.swats[idx]:
-            return True, "ATS of " + self.callsign[idx] + " is ON"
-        return True, "ATS of " + self.callsign[idx] + " is OFF. THR is " + str(self.thr[idx])
+            return Ok("ATS of " + self.callsign[idx] + " is ON")
+        return Ok("ATS of " + self.callsign[idx] + " is OFF. THR is " + str(self.thr[idx]))
 
-    def crecmd(self, cmdline: str) -> tuple[bool, str]:
+    def crecmd(self, cmdline: str) -> Result[str, str]:
         """Add a command to the list issued for every newly created aircraft.
 
         Implements the CRECMD stack command. Each stored command line is
@@ -1106,9 +1072,6 @@ class Traffic(TrafficArrays):
         Args:
             cmdline: Command line (without callsign) to add to the list, or
                 ""/"?" to show the current list.
-
-        Returns:
-            tuple: (True, message).
         """
         # Help text need or info on current list?
         if cmdline == "" or cmdline == "?":
@@ -1119,29 +1082,23 @@ class Traffic(TrafficArrays):
                         allcmds = "[acid] " + txt
                     else:
                         allcmds += "; [acid] " + txt
-                return True, "CRECMD list: " + allcmds
+                return Ok("CRECMD list: " + allcmds)
             else:
-                return (
-                    True,
-                    "CRECMD will add a/c specific commands to an aircraft after creation",
-                )
+                return Ok("CRECMD will add a/c specific commands to an aircraft after creation")
         # Command to be added to list
         else:
             self.crecmdlist.append(cmdline)
-        return True, ""
+        return Ok("")
 
-    def clrcrecmd(self) -> tuple[bool, str]:
+    def clrcrecmd(self) -> Result[str, str]:
         """Clear the list of commands issued for newly created aircraft.
 
         Implements the CLRCRECMD stack command, removing all command lines
         previously added with CRECMD.
-
-        Returns:
-            tuple: (True, message).
         """
         ncrecmd = len(self.crecmdlist)
         if ncrecmd == 0:
-            return True, "CLRCRECMD deletes all commands on clears command"
+            return Ok("CLRCRECMD deletes all commands on clears command")
         else:
             self.crecmdlist = []
-            return True, f"All {ncrecmd} crecmd commands deleted."
+            return Ok(f"All {ncrecmd} crecmd commands deleted.")

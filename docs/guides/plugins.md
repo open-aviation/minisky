@@ -63,13 +63,17 @@ Use [`@plugin.command`][minisky.plugin.plugin_decorators.command] on an instance
 Use the `arguments` option when MiniSky's stack parser needs more information than the Python annotations provide:
 
 ```python
-@plugin_api.command(arguments="txt,[int]")
-def passengers(self, callsign: str, count: int = -1) -> tuple[bool, str]:
-    """Set or get the passenger count for an aircraft."""
-    ...
-```
+from minisky import Err, Ok, Result
 
-A command handler can return `(success, message)`. Returning `None` means the command completed successfully without a message.
+@plugin_api.command(arguments="txt,[int]")
+def passengers(self, callsign: str, count: int = -1) -> Result[str, str]:
+    """Set or get the passenger count for an aircraft."""
+    if count < 0:
+        return Ok("current passenger count")
+    if count > 500:
+        return Err("passenger count is too large")
+    return Ok("passenger count updated")
+```
 
 ## Add simulation hooks
 
@@ -138,17 +142,25 @@ async with MiniSky(config=config) as runtime:
 To load only one installed plugin, call `load()` with its plugin ID:
 
 ```python
-ok, message = await runtime.plugins.load("example")
-print(message)
+from minisky import Err, Ok
+
+match await runtime.plugins.load("example"):
+    case Ok(message):
+        print(message)
+    case Err(error):
+        # ... handle the error
 ```
 
-Plugin IDs are case-insensitive. `load()` returns a success flag and a message, so you can decide how your application should handle a missing, invalid, or already loaded plugin.
+Plugin IDs are case-insensitive. `load()` returns [`Result[str, str]`][minisky.result.Result]`.
 
 To inspect the plugins known to the runtime, use `listing()`:
 
 ```python
-ok, text = runtime.plugins.listing()
-print(text)
+match runtime.plugins.listing():
+    case Ok(text):
+        print(text)
+    case Err(error):
+        # ... handle the error
 ```
 
 While the simulator is running, you can manage plugins through the stack instead:

@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 
 from minisky.core import TrafficArrays
+from minisky.result import Err, Ok, Result
 
 if TYPE_CHECKING:
     from minisky.simulation import Simulation
@@ -101,8 +102,6 @@ class Trails(TrafficArrays):
             self.lasttim = np.array([])
 
         self.clearnew()
-
-        return
 
     def new_implementation(self, implementation: Callable[..., TrafficArrays]) -> TrafficArrays:
         """Construct a replacement with this runtime's traffic and simulation."""
@@ -215,7 +214,6 @@ class Trails(TrafficArrays):
         self.bgacid = self.bgacid + self.acid
 
         self.clearfg()  # Clear foreground trails
-        return
 
     def clearnew(self) -> None:
         """Clear the pipeline of new line segments used for the QtGL GUI."""
@@ -233,7 +231,6 @@ class Trails(TrafficArrays):
         self.lon1 = np.array([])
         self.time = np.array([])
         self.col = np.array([])
-        return
 
     def clearbg(self) -> None:  # Background
         """Clear the background trail segment buffers."""
@@ -243,7 +240,6 @@ class Trails(TrafficArrays):
         self.bglon1 = np.array([])
         self.bgtime = np.array([])
         self.bgacid = []
-        return
 
     def clear(self) -> None:
         """Clear all trail data: foreground, background and new-line buffers."""
@@ -252,9 +248,8 @@ class Trails(TrafficArrays):
         self.clearfg()
         self.clearbg()
         self.clearnew()
-        return
 
-    def setTrails(self, *args: Any) -> bool | tuple[bool, str]:
+    def setTrails(self, *args: Any) -> Result[str, str]:
         """Switch trails on/off, or change the trail color of an aircraft.
 
         Implements the TRAIL stack command:
@@ -266,16 +261,13 @@ class Trails(TrafficArrays):
             *args: Either a bool (on/off) optionally followed by the
                 segment time resolution [s], or an aircraft index followed
                 by a color name (BLUE/RED/YELLOW).
-
-        Returns:
-            bool or tuple: True on success, or (success flag, message).
         """
         if len(args) == 0:
             msg = "TRAIL ON/OFF, [dt] / TRAIL acid color\n"
 
             msg = msg + "TRAILS ARE ON" if self.active else msg + "TRAILS ARE OFF"
 
-            return True, msg
+            return Ok(msg)
 
         # Switch on/off
         elif type(args[0]) == bool:
@@ -290,13 +282,10 @@ class Trails(TrafficArrays):
         else:
             # Change trail color
             if len(args) < 2 or args[1] not in ["BLUE", "RED", "YELLOW"]:
-                return (
-                    False,
-                    "Set aircraft trail color with: TRAIL acid BLUE/RED/YELLOW",
-                )
+                return Err("Set aircraft trail color with: TRAIL acid BLUE/RED/YELLOW")
             self.changeTrailColor(args[1], args[0])
 
-        return True
+        return Ok("")
 
     def changeTrailColor(self, color: str, idx: int) -> None:
         """Change the trail color of one aircraft.
@@ -307,7 +296,6 @@ class Trails(TrafficArrays):
             idx: Aircraft index.
         """
         self.accolor[idx] = self.colorList[color]
-        return
 
     def reset(self) -> None:
         """Clear all trail data and switch trails off upon simulation reset."""

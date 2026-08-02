@@ -17,13 +17,14 @@ way) rules can assign the manoeuvre to only one aircraft of a pair.
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 import numpy as np
 
 from minisky.core.config import MiniSkyConfig
+from minisky.result import Err, Ok, Result
 from minisky.stack.argparser import Txt
-from minisky.traffic.asas import ConflictResolution
+from minisky.traffic.asas.resolution import ConflictResolution
 
 if TYPE_CHECKING:
     from minisky.traffic import Traffic
@@ -55,7 +56,7 @@ class MVP(ConflictResolution):
         self,
         config: MiniSkyConfig,
         traffic: Traffic,
-        select_implementation: Callable[[str, str], tuple[bool, str]],
+        select_implementation: Callable[[str, str], Result[str, str]],
     ) -> None:
         super().__init__(config, traffic, select_implementation)
         # [-] switch to limit resolution to the horizontal direction
@@ -67,7 +68,7 @@ class MVP(ConflictResolution):
         # [-] switch to limit resolution to the vertical direction
         self.swresovert = False
 
-    def setprio(self, flag=None, priocode="") -> bool | tuple:
+    def setprio(self, flag=None, priocode="") -> Result[str, str]:
         """Set the prio switch and the type of prio.
 
         Implements the PRIORULES stack command for MVP. Validates the
@@ -77,13 +78,9 @@ class MVP(ConflictResolution):
             flag (bool): True to enable priority rules, False to disable.
                 When None, the available priority codes are reported.
             priocode (str): One of "FF1", "FF2", "FF3", "LAY1", "LAY2".
-
-        Returns:
-            True on success, or (success (bool), message (str)) tuple.
         """
         if flag is None:
-            return (
-                True,
+            return Ok(
                 "PRIORULES [ON/OFF] [PRIOCODE]"
                 + "\nAvailable priority codes: "
                 + "\n     FF1:  Free Flight Primary (No Prio) "
@@ -94,14 +91,14 @@ class MVP(ConflictResolution):
                 + "\nPriority is currently "
                 + ("ON" if self.swprio else "OFF")
                 + "\nPriority code is currently: "
-                + str(self.priocode),
+                + str(self.priocode)
             )
         options = ["FF1", "FF2", "FF3", "LAY1", "LAY2"]
         if priocode not in options:
-            return False, "Priority code Not Understood. Available Options: " + str(options)
+            return Err("Priority code Not Understood. Available Options: " + str(options))
         return super().setprio(flag, priocode)
 
-    def setresometh(self, value: Txt = "") -> tuple:
+    def setresometh(self, value: Txt = "") -> Result[str, str]:
         """Processes the RMETHH command. Sets swresovert = False.
 
         Selects which horizontal degrees of freedom MVP may use for
@@ -111,28 +108,21 @@ class MVP(ConflictResolution):
         Args:
             value (str): One of "BOTH", "SPD", "HDG", "NONE", "ON", "OFF",
                 "OF". When empty, the current settings are reported.
-
-        Returns:
-            tuple: (success (bool), message (str)) for the command stack.
         """
         # Acceptable arguments for this command
         options = ["BOTH", "SPD", "HDG", "NONE", "ON", "OFF", "OF"]
         if not value:
-            return (
-                True,
+            return Ok(
                 "RMETHH [ON / BOTH / OFF / NONE / SPD / HDG]"
                 + "\nHorizontal resolution limitation is currently "
                 + ("ON" if self.swresohoriz else "OFF")
                 + "\nSpeed resolution limitation is currently "
                 + ("ON" if self.swresospd else "OFF")
                 + "\nHeading resolution limitation is currently "
-                + ("ON" if self.swresohdg else "OFF"),
+                + ("ON" if self.swresohdg else "OFF")
             )
         if value not in options:
-            return (
-                False,
-                "RMETH Not Understood" + "\nRMETHH [ON / BOTH / OFF / NONE / SPD / HDG]",
-            )
+            return Err("RMETH Not Understood" + "\nRMETHH [ON / BOTH / OFF / NONE / SPD / HDG]")
         else:
             if value == "ON" or value == "BOTH":
                 self.swresohoriz = True
@@ -154,9 +144,9 @@ class MVP(ConflictResolution):
                 self.swresospd = False
                 self.swresohdg = True
                 self.swresovert = False
-            return True, f"Horizontal resolution method set to {value}"
+            return Ok(f"Horizontal resolution method set to {value}")
 
-    def setresometv(self, value: Txt = "") -> tuple:
+    def setresometv(self, value: Txt = "") -> Result[str, str]:
         """Processes the RMETHV command. Sets swresohoriz = False.
 
         Enables (ON/"V/S") or disables (OFF/NONE) vertical-speed-only
@@ -165,24 +155,17 @@ class MVP(ConflictResolution):
         Args:
             value (str): One of "ON", "V/S", "OFF", "OF", "NONE". When empty,
                 the current setting is reported.
-
-        Returns:
-            tuple: (success (bool), message (str)) for the command stack.
         """
         # Acceptable arguments for this command
         options = ["NONE", "ON", "OFF", "OF", "V/S"]
         if not value:
-            return (
-                True,
+            return Ok(
                 "RMETHV [ON / V/S / OFF / NONE]"
                 + "\nVertical resolution limitation is currently "
-                + ("ON" if self.swresovert else "OFF"),
+                + ("ON" if self.swresovert else "OFF")
             )
         if value not in options:
-            return (
-                False,
-                f"RMETHV '{value}' Not Understood\nRMETHV [ON / V/S / OFF / NONE]",
-            )
+            return Err(f"RMETHV '{value}' Not Understood\nRMETHV [ON / V/S / OFF / NONE]")
 
         if value == "ON" or value == "V/S":
             self.swresovert = True
@@ -192,7 +175,13 @@ class MVP(ConflictResolution):
         elif value == "OFF" or value == "OF" or value == "NONE":
             # Do NOT swtich off self.swresohoriz if value == OFF
             self.swresovert = False
-        return True, f"Vertical resolution method set to {value}"
+        return Ok(f"Vertical resolution method set to {value}")
+
+    class PriorityResolution(NamedTuple):
+        ownship: np.ndarray
+        """Updated ownship resolution vector [m/s]."""
+        intruder: np.ndarray
+        """Updated intruder resolution vector [m/s]."""
 
     def applyprio(
         self,
@@ -201,7 +190,7 @@ class MVP(ConflictResolution):
         dv2: np.ndarray,
         vs1: float,
         vs2: float,
-    ) -> tuple:
+    ) -> PriorityResolution:
         """Apply the desired priority setting to the resolution.
 
         Distributes the pairwise MVP resolution vector over the two aircraft
@@ -217,9 +206,6 @@ class MVP(ConflictResolution):
             dv2 (ndarray): Accumulated resolution vector of aircraft 2 [m/s].
             vs1 (float): Vertical speed of aircraft 1 [m/s].
             vs2 (float): Vertical speed of aircraft 2 [m/s].
-
-        Returns:
-            tuple: Updated (dv1, dv2) resolution vectors [m/s].
         """
 
         # Primary Free Flight prio rules (no priority)
@@ -284,9 +270,11 @@ class MVP(ConflictResolution):
                 dv1 = dv1 - dv_mvp
                 dv2 = dv2 + dv_mvp
 
-        return dv1, dv2
+        return self.PriorityResolution(dv1, dv2)
 
-    def resolve(self, conf: Any, ownship: Any, intruder: Any) -> tuple:
+    def resolve(
+        self, conf: Any, ownship: Any, intruder: Any
+    ) -> ConflictResolution.ResolutionAdvisories:
         """Resolve all current conflicts.
 
         Loops over all detected conflict pairs, computes the MVP resolution
@@ -304,14 +292,6 @@ class MVP(ConflictResolution):
             ownship: Traffic object with ownship states.
             intruder: Traffic object with intruder states.
 
-        Returns:
-            tuple: Per-aircraft advisories:
-                - newtrack (ndarray): Resolution track [deg].
-                - newgscapped (ndarray): Resolution ground speed, capped to
-                  the performance envelope [m/s].
-                - vscapped (ndarray): Resolution vertical speed, capped to
-                  the performance envelope [m/s].
-                - alt (ndarray): Resolution altitude [m].
         """
         # Initialize an array to store the resolution velocity vector for all A/C
         dv = np.zeros((ownship.ntraf, 3))
@@ -329,15 +309,18 @@ class MVP(ConflictResolution):
             # If A/C indexes are found, then apply MVP on this conflict pair
             # Because ADSB is ON, this is done for each aircraft separately
             if idx1 > -1 and idx2 > -1:
-                dv_mvp, tsolV = self.MVP(ownship, intruder, conf, qdr, dist, tcpa, tLOS, idx1, idx2)
-                if tsolV < timesolveV[idx1]:
-                    timesolveV[idx1] = tsolV
+                pair_resolution = self.MVP(
+                    ownship, intruder, conf, qdr, dist, tcpa, tLOS, idx1, idx2
+                )
+                dv_mvp = pair_resolution.velocity_delta
+                timesolveV[idx1] = min(timesolveV[idx1], pair_resolution.vertical_time)
 
                 # Use priority rules if activated
                 if self.swprio:
-                    dv[idx1], _ = self.applyprio(
+                    priority = self.applyprio(
                         dv_mvp, dv[idx1], dv[idx2], ownship.vs[idx1], intruder.vs[idx2]
                     )
+                    dv[idx1] = priority.ownship
                 else:
                     # since cooperative, the vertical resolution component can be halved, and then dv_mvp can be added
                     dv_mvp[2] = 0.5 * dv_mvp[2]
@@ -417,7 +400,13 @@ class MVP(ConflictResolution):
         # using the auto pilot vertical speed (ownship.avs) using the code in line 106 (asasalttemp) when only
         # horizontal resolutions are allowed.
         alt = alt * (1 - self.swresohoriz) + ownship.selalt * self.swresohoriz
-        return newtrack, newgscapped, vscapped, alt
+        return self.ResolutionAdvisories(newtrack, newgscapped, vscapped, alt)
+
+    class MvpResolution(NamedTuple):
+        velocity_delta: np.ndarray
+        """Resolution velocity change, east/north/up [m/s]."""
+        vertical_time: float
+        """Time needed to resolve the conflict vertically [s]."""
 
     def MVP(
         self,
@@ -430,7 +419,7 @@ class MVP(ConflictResolution):
         tLOS: float,
         idx1: int,
         idx2: int,
-    ) -> tuple:
+    ) -> MvpResolution:
         """Modified Voltage Potential (MVP) resolution method.
 
         Computes the velocity change that displaces the predicted closest
@@ -456,11 +445,6 @@ class MVP(ConflictResolution):
             tLOS (float): Time until loss of separation starts [s].
             idx1 (int): Index of the ownship aircraft.
             idx2 (int): Index of the intruder aircraft.
-
-        Returns:
-            tuple: (dv, tsolV) where dv is the resolution velocity change
-                (east, north, up) [m/s] and tsolV the time needed to resolve
-                the conflict vertically [s].
         """
         # Preliminary calculations-------------------------------------------------
         # Determine largest RPZ and HPZ of the conflict pair, use lookahead of ownship
@@ -546,4 +530,4 @@ class MVP(ConflictResolution):
         # combine the dv components
         dv = np.array([dv1, dv2, dv3])
 
-        return dv, tsolV
+        return self.MvpResolution(dv, tsolV)

@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 import numpy as np
 import pytest
-
 from minisky import MiniSky
 from minisky.tools import geo
 from minisky.traffic import route as route_commands
@@ -126,7 +127,7 @@ class TestRouteEditing:
     ) -> None:
         # addwpt() with a callsign string used to crash on the callsign lookup
         result = route_commands.addwpt(runtime.traffic, aircraft, "52.5,5.0")
-        assert result is True
+        assert result.is_ok()
         route = runtime.traffic.ap.route[0]
         assert route.wplat[0] == pytest.approx(52.5)
         assert route.wplon[0] == pytest.approx(5.0)
@@ -178,7 +179,7 @@ class TestRouteEditing:
         run_cmd(f"ADDWPT {aircraft} 53.0,6.0")
         route = runtime.traffic.ap.route[0]
         result = route_commands.at_wpt(runtime.traffic, 0, route.wpname[1], "FL090/250")
-        assert result is True
+        assert result.is_ok()
         assert route.wpalt[1] == pytest.approx(9000 * FT, rel=1e-3)
         assert route.wpspd[1] == pytest.approx(250 * KTS, rel=1e-3)
 
@@ -298,7 +299,12 @@ class TestWaypointSwitching:
     """
 
     # Zig-zag legs of ~2 nm force a real heading change at every waypoint
-    WPTS = [(52.00, 4.05), (52.03, 4.10), (52.00, 4.15), (52.03, 4.20)]
+    WPTS: ClassVar[list[tuple[float, float]]] = [
+        (52.00, 4.05),
+        (52.03, 4.10),
+        (52.00, 4.15),
+        (52.03, 4.20),
+    ]
 
     @pytest.fixture
     def route(self, runtime: MiniSky, run_cmd: RunCommand, aircraft: str) -> Route:

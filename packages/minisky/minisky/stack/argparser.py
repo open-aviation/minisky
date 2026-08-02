@@ -21,8 +21,9 @@ import inspect
 import re
 from collections.abc import Callable
 from types import SimpleNamespace, UnionType
-from typing import TYPE_CHECKING, Annotated, Any, Union, get_args, get_origin
+from typing import TYPE_CHECKING, Annotated, Any, Protocol, TypeAlias, Union, get_args, get_origin
 
+from minisky.result import Err, Ok
 from minisky.tools.convert import (
     txt2alt,
     txt2bool,
@@ -40,6 +41,22 @@ if TYPE_CHECKING:
     from minisky.tools.navdata import Navdatabase
     from minisky.traffic import Traffic
 
+
+# TODO(abraham): while we would like to migrate all bare tuple[X, Y, Z] to
+# namedtuples/proper dataclasses, right now each Parser subclass returns a
+# different type.
+# we would like to eventually remove implementation inheritance altogether when
+# we work on issue #37, so we just keep types simple for now.
+
+ParserResult: TypeAlias = tuple[Any, ...]
+
+
+class ParserProtocol(Protocol):
+    size: int
+
+    def parse(self, argstring: str) -> ParserResult: ...
+
+
 # Regular expression for argument parser
 # Reading the regular expression:
 # [\'"]?             : skip potential opening quote
@@ -53,10 +70,10 @@ def _match_groups(argstring: str) -> tuple[str, str]:
     """Match argstring against re_getarg (which always matches) and return groups."""
     m = re_getarg.match(argstring)
     assert m is not None
-    return m.groups()  # type: ignore[return-value]
+    return m.group(1), m.group(2)
 
 
-def getnextarg(cmdstring: str) -> tuple:
+def getnextarg(cmdstring: str) -> tuple[str, str]:
     """Return first argument and remainder of command string from cmdstring.
 
     Arguments are separated by whitespace and/or a comma; quoted arguments
@@ -94,7 +111,7 @@ class Parameter:
     def __init__(
         self,
         param: inspect.Parameter,
-        parsers: dict[str, Parser | None],
+        parsers: dict[str, ParserProtocol | None],
         annotation: str = "",
         isopt: bool | None = None,
     ) -> None:
@@ -196,8 +213,6 @@ class Parameter:
 class ArgumentError(Exception):
     """This error is raised when stack argument parsing fails."""
 
-    pass
-
 
 class Parser:
     """Base implementation of argument parsers
@@ -217,10 +232,10 @@ class Parser:
     # Output size of this parser
     size = 1
 
-    def __init__(self, parsefun: Callable[..., Any] | None = None) -> None:
+    def __init__(self, parsefun: Callable[[str], Any] | None = None) -> None:
         self.parsefun = parsefun
 
-    def parse(self, argstring: str) -> tuple:
+    def parse(self, argstring: str) -> ParserResult:
         """Parse the next argument from argstring.
 
         Args:
@@ -237,7 +252,7 @@ class Parser:
 class StringArg(Parser):
     """Argument parser that simply consumes the entire remaining text string."""
 
-    def parse(self, argstring: str) -> tuple:
+    def parse(self, argstring: str) -> tuple[str, str]:
         """Return the complete remaining text as a single string argument."""
         return argstring, ""
 
@@ -249,7 +264,7 @@ class CallsignArg(Parser):
         super().__init__()
         self.argument_parser = argument_parser
 
-    def parse(self, argstring: str) -> tuple:
+    def parse(self, argstring: str) -> tuple[Any, str]:
         """Parse a callsign or group name into traffic index/indices.
 
         For an aircraft callsign the traffic index is returned and the
@@ -263,7 +278,11 @@ class CallsignArg(Parser):
         callsign = arg.upper()
         traffic = self.argument_parser.traffic
         if callsign in traffic.groups:
-            idx = traffic.groups.listgroup(callsign)
+            match traffic.groups.listgroup(callsign):
+                case Ok(group):
+                    idx = group
+                case Err(error):
+                    raise ArgumentError(error)
         else:
             idx = traffic.idx(callsign)
             if idx < 0:
@@ -292,7 +311,7 @@ class WptArg(Parser):
         super().__init__()
         self.argument_parser = argument_parser
 
-    def parse(self, argstring: str) -> tuple:
+    def parse(self, argstring: str) -> tuple[str, str]:
         """Combine one or two arguments into a single waypoint position text.
 
         Aircraft ids are translated to a "lat,lon" text; lat/lon pairs and
@@ -340,7 +359,7 @@ class PosArg(Parser):
         super().__init__()
         self.argument_parser = argument_parser
 
-    def parse(self, argstring: str) -> tuple:
+    def parse(self, argstring: str) -> tuple[float, float, str]:
         """Parse one or two arguments into a lat/lon position.
 
         Also updates the parser reference position to the parsed location.
@@ -398,7 +417,7 @@ class PosArg(Parser):
 class PandirArg(Parser):
     """Parse pan direction commands."""
 
-    def parse(self, argstring: str) -> tuple:
+    def parse(self, argstring: str) -> tuple[str, str]:
         """Parse a screen pan direction (LEFT, RIGHT, UP/ABOVE, or DOWN).
 
         Raises:
@@ -435,7 +454,7 @@ class ArgumentParser:
         # Stack reference data namespace
         self.refdata = SimpleNamespace(lat=None, lon=None, alt=None, acidx=-1, hdg=None, cas=None)
 
-        self.parsers: dict[str, Parser | None] = {
+        self.parsers: dict[str, ParserProtocol | None] = {
             "*": None,
             "txt": Parser(str.upper),
             "word": Parser(str),

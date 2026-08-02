@@ -32,6 +32,7 @@ from typing import Any
 import numpy as np
 
 from minisky.identifiers import normalize_public_name
+from minisky.result import Err, Ok, Result
 
 defaults = MappingProxyType({"float": 0.0, "int": 0, "uint": 0, "bool": False, "S": "", "str": ""})
 
@@ -57,7 +58,7 @@ class _ComponentSlot:
     def current(self) -> TrafficArrays:
         component = getattr(self.traffic, self.attribute)
         if not isinstance(component, self.base):
-            raise RuntimeError(f"replaceable slot {self.attribute} has an invalid component")
+            raise TypeError(f"replaceable slot {self.attribute} has an invalid component")
         return component
 
     def bind(self, callback: Callable[..., Any]) -> Callable[..., Any]:
@@ -178,18 +179,18 @@ class ReplaceableManager:
             if implementations.get(replacement.name) is replacement.implementation:
                 del implementations[replacement.name]
 
-    def select(self, basename: str = "", implname: str = "") -> tuple[bool, str]:
+    def select(self, basename: str = "", implname: str = "") -> Result[str, str]:
         if not basename:
-            return True, "Replaceable classes in MiniSky:\n" + ", ".join(sorted(self._bases))
+            return Ok("Replaceable classes in MiniSky:\n" + ", ".join(sorted(self._bases)))
 
         base = self._bases.get(basename.upper())
         if base is None:
-            return False, f"Replaceable {basename} not found."
+            return Err(f"Replaceable {basename} not found.")
         implementations = self._implementations[base]
         slot = self._slots[base]
         current = type(slot.current)
         if not implname:
-            return True, (
+            return Ok(
                 f"Current implementation for {basename}: {current.__name__}\n"
                 f"Available implementations: {', '.join(sorted(implementations))}"
             )
@@ -197,10 +198,10 @@ class ReplaceableManager:
         requested = base.__name__.upper() if implname.upper() == "BASE" else implname.upper()
         implementation = implementations.get(requested)
         if implementation is None:
-            return False, f"Implementation {implname} not found for {basename}."
+            return Err(f"Implementation {implname} not found for {basename}.")
         if current is not implementation:
             slot.replace(implementation)
-        return True, f"Selected {implname} for {basename}"
+        return Ok(f"Selected {implname} for {basename}")
 
     def reset(self) -> None:
         for base, slot in self._slots.items():
@@ -225,7 +226,6 @@ class RegisterElementParameters:
 
     def __enter__(self) -> None:
         """No-op: the attribute snapshot is already taken in __init__."""
-        pass
 
     def __exit__(self, exc_type, exc_value, tb) -> None:
         """Register all attributes created inside the with-block as traffic arrays."""

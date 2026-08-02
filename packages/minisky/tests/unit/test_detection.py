@@ -17,7 +17,6 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
-
 from minisky.tools import geo
 from minisky.tools.aero import ft, nm
 from minisky.traffic.asas.detection import ConflictDetection
@@ -227,12 +226,15 @@ class TestDetectMatchesDenseReference:
         traf = make_traffic(0, 9)
         cd = ConflictDetection.__new__(ConflictDetection)
         result = cd.detect(traf, traf, *default_params(0))
-        assert result[0] == [] and result[1] == []
-        assert len(result[2]) == 0 and len(result[3]) == 0
+        assert result[0] == []
+        assert result[1] == []
+        assert len(result[2]) == 0
+        assert len(result[3]) == 0
 
     def test_single_aircraft(self):
         traf = make_traffic(1, 10)
         cd = ConflictDetection.__new__(ConflictDetection)
         result = cd.detect(traf, traf, *default_params(1))
-        assert result[0] == [] and result[1] == []
+        assert result[0] == []
+        assert result[1] == []
         assert not result[2].any()

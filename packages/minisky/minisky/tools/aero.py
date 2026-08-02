@@ -19,6 +19,8 @@ single speed input as either CAS or Mach number, using an explicit
 CAS/Mach threshold supplied by the owning runtime.
 """
 
+from typing import NamedTuple
+
 import numpy as np
 
 # International standard atmpshere only up to 72000 ft / 22 km
@@ -78,16 +80,20 @@ DEFAULT_CASMACH_THRESHOLD = 2.0
 # ------------------------------------------------------------------------------
 # Vectorized aero functions
 # ------------------------------------------------------------------------------
-def vatmos(h: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+class VectorAtmosphere(NamedTuple):
+    pressure: np.ndarray
+    """Atmospheric pressure [Pa]."""
+    density: np.ndarray
+    """Air density [kg/m³]."""
+    temperature: np.ndarray
+    """Air temperature [K]."""
+
+
+def vatmos(h: np.ndarray) -> VectorAtmosphere:
     """Calculate atmospheric pressure, density, and temperature for a given altitude.
 
     Arguments:
     - h: Altitude [m]
-
-    Returns:
-    - p: Pressure [Pa]
-    - rho: Density [kg / m3]
-    - T: Temperature [K]
     """
     # Temp
     T = vtemp(h)
@@ -100,7 +106,7 @@ def vatmos(h: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     # Pressure
     p = rho * R * T
 
-    return p, rho, T
+    return VectorAtmosphere(p, rho, T)
 
 
 def vtemp(h: np.ndarray) -> np.ndarray:
@@ -287,11 +293,20 @@ def vcas2mach(cas: np.ndarray, h: np.ndarray) -> np.ndarray:
     return M
 
 
+class VectorAirspeeds(NamedTuple):
+    true: np.ndarray
+    """True airspeed [m/s]."""
+    calibrated: np.ndarray
+    """Calibrated airspeed [m/s]."""
+    mach: np.ndarray
+    """Mach number [-]."""
+
+
 def vcasormach(
     spd: np.ndarray,
     h: np.ndarray,
     threshold: float,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+) -> VectorAirspeeds:
     """Interpret input speed as either CAS or a Mach number, and return TAS, CAS, and Mach.
 
     Arguments:
@@ -299,17 +314,12 @@ def vcasormach(
            CAS/Mach threshold. Otherwise interpreted as CAS [m/s].
     - h: Altitude [m]
     - threshold: Upper bound below which positive speed values are Mach numbers.
-
-    Returns:
-    - tas: True airspeed [m/s]
-    - cas: Calibrated airspeed [m/s]
-    - mach: Mach number [-]
     """
     ismach = np.logical_and(spd > 0.1, spd < threshold)
     tas = np.where(ismach, vmach2tas(spd, h), vcas2tas(spd, h))
     cas = np.where(ismach, vtas2cas(tas, h), spd)
     mach = np.where(ismach, spd, vtas2mach(tas, h))
-    return tas, cas, mach
+    return VectorAirspeeds(tas, cas, mach)
 
 
 def vcasormach2tas(
@@ -359,7 +369,16 @@ def crossoveralt(cas: float, mach: float) -> float:
 # ------------------------------------------------------------------------------
 # Scalar aero functions
 # ------------------------------------------------------------------------------
-def atmos(h: float) -> tuple[float, float, float]:
+class ScalarAtmosphere(NamedTuple):
+    pressure: float
+    """Atmospheric pressure [Pa]."""
+    density: float
+    """Air density [kg/m³]."""
+    temperature: float
+    """Air temperature [K]."""
+
+
+def atmos(h: float) -> ScalarAtmosphere:
     """International Standard Atmosphere calculator (scalar version).
 
     Uses the full multi-layer ISA table up to the mesosphere, with base
@@ -370,10 +389,6 @@ def atmos(h: float) -> tuple[float, float, float]:
     Args:
         h: Altitude [m], 0.0 < h < 84852.0 (clipped when outside range,
             integer input allowed).
-
-    Returns:
-        tuple: (p, rho, T): pressure [Pa], density [kg/m3], and
-        temperature [K].
     """
 
     # Constants
@@ -434,7 +449,7 @@ def atmos(h: float) -> tuple[float, float, float]:
         p = p0[i] * ((T / T0[i]) ** (-g0 / (a[i] * R)))
         rho = p / (R * T)
 
-    return p, rho, T
+    return ScalarAtmosphere(p, rho, T)
 
 
 def temp(h: float) -> float:
@@ -500,7 +515,7 @@ def pressure(h: float) -> float:  # h [m]
     Returns:
         Pressure [Pa].
     """
-    p, r, T = atmos(h)
+    p, _r, _T = atmos(h)
     return p
 
 
@@ -513,7 +528,7 @@ def density(h: float) -> float:  # air density at given altitude h [m]
     Returns:
         Density [kg/m3].
     """
-    p, r, T = atmos(h)
+    _p, r, _T = atmos(h)
     return r
 
 
@@ -613,7 +628,7 @@ def cas2tas(cas: float, h: float) -> float:
     Returns:
         True airspeed [m/s].
     """
-    p, rho, T = atmos(h)
+    p, rho, _T = atmos(h)
     qdyn = p0 * ((1.0 + rho0 * cas * cas / (7.0 * p0)) ** 3.5 - 1.0)
     tas = np.sqrt(7.0 * p / rho * ((1.0 + qdyn / p) ** (2.0 / 7.0) - 1.0))
     tas = -1 * tas if cas < 0 else tas
@@ -634,7 +649,7 @@ def tas2cas(tas: float, h: float) -> float:
     Returns:
         Calibrated airspeed [m/s].
     """
-    p, rho, T = atmos(h)
+    p, rho, _T = atmos(h)
     qdyn = p * ((1.0 + rho * tas * tas / (7.0 * p)) ** 3.5 - 1.0)
     cas = np.sqrt(7.0 * p0 / rho0 * ((qdyn / p0 + 1.0) ** (2.0 / 7.0) - 1.0))
     cas = -1 * cas if tas < 0 else cas
@@ -671,11 +686,22 @@ def cas2mach(cas: float, h: float) -> float:
     return M
 
 
+class ScalarAirspeeds(NamedTuple):
+    true: float
+    """True airspeed [m/s]."""
+    calibrated: float
+    """Calibrated airspeed [m/s]."""
+    mach: float
+    """Mach number [-]."""
+
+
+# TODO(abraham): eventually we want to get rid of the concept of "threshold-encoded" floats
+# not typing it properly for now. see issue #40
 def casormach(
     spd: float,
     h: float,
     threshold: float,
-) -> tuple[float, float, float]:
+) -> ScalarAirspeeds:
     """Interpret input speed as either CAS or a Mach number (scalar version).
 
     The speed is treated as a Mach number when 0.1 < spd < threshold
@@ -685,10 +711,6 @@ def casormach(
         spd: Airspeed: Mach number [-] or calibrated airspeed [m/s].
         h: Altitude [m].
         threshold: Upper bound below which positive speed values are Mach numbers.
-
-    Returns:
-        tuple: (tas, cas, m): true airspeed [m/s], calibrated airspeed
-        [m/s], and Mach number [-].
     """
     if 0.1 < spd < threshold:
         # Interpret spd as Mach number
@@ -700,7 +722,7 @@ def casormach(
         tas = cas2tas(spd, h)
         cas = spd
         m = cas2mach(spd, h)
-    return tas, cas, m
+    return ScalarAirspeeds(tas, cas, m)
 
 
 def casormach2tas(
@@ -729,7 +751,7 @@ def metres_to_feet_rounded(metres: float) -> int:
     Converts metres to feet.
     Returns feet as rounded integer.
     """
-    return int(round(metres / ft))
+    return round(metres / ft)
 
 
 def metric_spd_to_knots_rounded(speed: float) -> int:
@@ -737,4 +759,4 @@ def metric_spd_to_knots_rounded(speed: float) -> int:
     Converts speed in m/s to knots.
     Returns knots as rounded integer.
     """
-    return int(round(speed / kts))
+    return round(speed / kts)

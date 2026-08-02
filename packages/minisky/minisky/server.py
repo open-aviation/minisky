@@ -22,10 +22,10 @@ Interactive OpenAPI docs are served at `/docs`.
 from __future__ import annotations
 
 import asyncio
-import os
 from contextlib import asynccontextmanager, suppress
 from io import StringIO
-from typing import Annotated, Any, cast
+from pathlib import Path
+from typing import Annotated, Any, Literal, TypeAlias, TypedDict, cast
 
 import pandas as pd
 from fastapi import (
@@ -43,6 +43,7 @@ from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from minisky import MiniSky
+from minisky.result import Err, Ok, Result
 from minisky.tools import aero
 
 
@@ -52,6 +53,34 @@ def _get_runtime(request: Request) -> MiniSky:
 
 
 Runtime = Annotated[MiniSky, Depends(_get_runtime)]
+
+# we are using adjacently tagged enums for compatability
+# TODO(abraham): use externally tagged once we remove the html
+
+
+class OkResultResponse(TypedDict):
+    """JSON representation of a successful string result."""
+
+    ok: Literal[True]
+    value: str
+
+
+class ErrResultResponse(TypedDict):
+    """JSON representation of an unsuccessful string result."""
+
+    ok: Literal[False]
+    error: str
+
+
+ResultResponse: TypeAlias = OkResultResponse | ErrResultResponse
+
+
+def _result_response(result: Result[str, str]) -> ResultResponse:
+    match result:
+        case Ok(value):
+            return {"ok": True, "value": value}
+        case Err(error):
+            return {"ok": False, "error": error}
 
 
 @asynccontextmanager
@@ -68,11 +97,11 @@ async def lifespan(app: FastAPI):
         with suppress(asyncio.CancelledError):
             try:
                 await runner_task
-            except Exception as exc:
+            except Exception as exc:  # ruff: ignore[BLE001] aggregate server cleanup failures
                 errors.append(exc)
         try:
             await runtime.aclose()
-        except Exception as exc:
+        except Exception as exc:  # ruff: ignore[BLE001] aggregate server cleanup failures
             errors.append(exc)
         if len(errors) == 1:
             raise errors[0]
@@ -91,8 +120,8 @@ def create_app(runtime: MiniSky | None = None) -> FastAPI:
 
     # TODO(abraham): package static assets inside minisky and resolve them
     # with importlib.resources for wheel installs
-    static_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static")
-    os.makedirs(static_dir, exist_ok=True)
+    static_dir = Path(__file__).parent.parent / "static"
+    static_dir.mkdir(parents=True, exist_ok=True)
     app.mount("/static", StaticFiles(directory=static_dir), name="static")
     return app
 
@@ -102,7 +131,7 @@ def root() -> dict[str, str]:
     return {"msg": "MiniSky API endpoint ready"}
 
 
-def all(runtime: Runtime) -> list[dict[str, Any]]:
+def all_aircraft(runtime: Runtime) -> list[dict[str, Any]]:
     """Get all aircraft states."""
     traffic = runtime.traffic
     df = pd.DataFrame(
@@ -245,7 +274,7 @@ def upload_form() -> Response:
     return Response(content=content, media_type="text/html")
 
 
-async def scn(runtime: Runtime, file: UploadFile = File(...)) -> dict[str, str]:
+async def scn(runtime: Runtime, file: Annotated[UploadFile, File()]) -> dict[str, str]:
     """Load an uploaded scenario file into the running simulation."""
     runtime.console.event.clear()
     contents = await file.read()
@@ -260,21 +289,23 @@ def show_map() -> RedirectResponse:
     return RedirectResponse(url="/static/display.html")
 
 
-def list_plugins(runtime: Runtime) -> Any:
+def list_plugins(runtime: Runtime) -> ResultResponse:
     """List available and loaded plugins."""
-    return runtime.plugins.manage("LIST")
+    result = runtime.plugins.listing()
+    return _result_response(result)
 
 
-async def load_plugin(name: str, runtime: Runtime) -> Any:
+async def load_plugin(name: str, runtime: Runtime) -> ResultResponse:
     """Load a plugin by name."""
-    return await runtime.plugins.load(name)
+    result = await runtime.plugins.load(name)
+    return _result_response(result)
 
 
 def create_router() -> APIRouter:
     """Create the API router for a FastAPI application."""
     router = APIRouter()
     router.add_api_route("/", root, methods=["GET"])
-    router.add_api_route("/all", all, methods=["GET"])
+    router.add_api_route("/all", all_aircraft, methods=["GET"])
     router.add_api_route("/simtime", simtime, methods=["GET"])
     router.add_api_route("/speed/{speed}", speedup, methods=["GET"])
     router.add_api_route("/forward/{seconds}", forward, methods=["GET"])
@@ -288,20 +319,3 @@ def create_router() -> APIRouter:
     router.add_api_route("/plugins", list_plugins, methods=["GET"])
     router.add_api_route("/plugins/load/{name}", load_plugin, methods=["GET"])
     return router
-
-
-def main() -> None:
-    """Console-script entry point: serve the API with uvicorn.
-
-    Host and port are read from `MINISKY_HOST` (default `0.0.0.0`) and
-    `MINISKY_PORT` (default `8000`).
-    """
-    import uvicorn
-
-    host = os.environ.get("MINISKY_HOST", "0.0.0.0")
-    port = int(os.environ.get("MINISKY_PORT", "8000"))
-    uvicorn.run("minisky.server:create_app", factory=True, host=host, port=port)
-
-
-if __name__ == "__main__":
-    main()

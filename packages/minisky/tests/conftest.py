@@ -10,7 +10,6 @@ from __future__ import annotations
 from collections.abc import Callable, Iterator
 
 import pytest
-
 from minisky import MiniSky
 from minisky.core.config import MiniSkyConfig
 from minisky.simulation import Simulation

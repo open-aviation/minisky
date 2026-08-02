@@ -16,7 +16,6 @@ import asyncio
 from collections.abc import Callable, Iterator
 
 import pytest
-
 from minisky import MiniSky
 from minisky.core.config import MiniSkyConfig
 from minisky.simulation import Simulation
@@ -29,8 +28,8 @@ from tests._types import RunCommand, StepUntil
 def mcruntime() -> Iterator[MiniSky]:
     """Module-wide MiniSky runtime with the MULTICOPTER plugin loaded."""
     instance = MiniSky(MiniSkyConfig())
-    ok, message = asyncio.run(instance.plugins.load("MULTICOPTER"))
-    assert ok, message
+    result = asyncio.run(instance.plugins.load("MULTICOPTER"))
+    assert result.is_ok(), result.err()
     yield instance
     asyncio.run(instance.aclose())
 
@@ -45,9 +44,9 @@ def mcsim(mcruntime: MiniSky) -> Simulation:
 
 class TestPluginDiscovery:
     def test_plugin_listed_from_entry_point(self, mcruntime: MiniSky) -> None:
-        ok, text = mcruntime.plugins.listing()
-        assert ok
-        assert "MULTICOPTER" in text
+        result = mcruntime.plugins.listing()
+        assert result.is_ok(), result.err()
+        assert "MULTICOPTER" in result.unwrap()
 
 
 @pytest.fixture

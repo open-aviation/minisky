@@ -6,7 +6,6 @@ altitudes in meters (default vertical range is unbounded).
 
 import numpy as np
 import pytest
-
 from minisky.tools.areafilter import AreaFilter
 
 
@@ -23,8 +22,8 @@ def check_single(
 
 class TestDefineArea:
     def test_define_box_and_has_area(self, area_filter: AreaFilter) -> None:
-        ok, msg = area_filter.define_area("BOX1", "BOX", [52.0, 4.0, 53.0, 5.0])
-        assert ok
+        result = area_filter.define_area("BOX1", "BOX", [52.0, 4.0, 53.0, 5.0])
+        assert result.is_ok()
         assert area_filter.has_area("BOX1")
 
     def test_unknown_area_absent(self, area_filter: AreaFilter) -> None:

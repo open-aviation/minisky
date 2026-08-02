@@ -5,8 +5,8 @@ from __future__ import annotations
 from random import Random
 
 import numpy as np
-
 from minisky import plugin as plugin_api
+from minisky.result import Err, Ok, Result
 
 
 # --8<-- [start:declaration]
@@ -40,16 +40,16 @@ class Example(plugin_api.Entity):
         self.updates += 1
 
     @plugin_api.command(arguments="txt,[int]")
-    def passengers(self, callsign: str, count: int = -1) -> tuple[bool, str]:
+    def passengers(self, callsign: str, count: int = -1) -> Result[str, str]:
         """Set or get the number of passengers on an aircraft."""
         callsign = callsign.upper()
         if callsign not in self.traffic.callsign:
-            return False, f"Aircraft {callsign} not found"
+            return Err(f"Aircraft {callsign} not found")
         index = self.traffic.callsign.index(callsign)
         if count < 0:
-            return True, f"Aircraft {callsign} has {int(self.npassengers[index])} passengers"
+            return Ok(f"Aircraft {callsign} has {int(self.npassengers[index])} passengers")
         self.npassengers[index] = count
-        return True, f"Set {callsign} passengers to {count}"
+        return Ok(f"Set {callsign} passengers to {count}")
 
 
 # --8<-- [end:entity]

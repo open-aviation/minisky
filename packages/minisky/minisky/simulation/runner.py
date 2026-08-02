@@ -13,6 +13,8 @@ import asyncio
 import os
 from typing import TYPE_CHECKING
 
+from minisky.result import Err, Ok, Result
+
 if TYPE_CHECKING:
     from minisky.simulation.console import ConsoleIO
     from minisky.simulation.simulation import Simulation
@@ -73,7 +75,7 @@ class Runner:
         self.jump_to = self.simulation.simt + seconds - 2  # -2 for the action margin
         self.jump = seconds
 
-    def setspeed(self, mult: float) -> tuple[bool, str]:
+    def setspeed(self, mult: float) -> Result[str, str]:
         """Set the simulation speed multiplier (stack DTMULT command).
 
         The loop targets a simulation step every `1 / speed` wall-clock
@@ -84,15 +86,11 @@ class Runner:
         Args:
             mult: Simulation speed factor relative to real time; must be
                 positive.
-
-        Returns:
-            Tuple of (success flag, message reporting the new speed, or an
-            error message when the multiplier is not positive).
         """
         if mult <= 0:
-            return False, "DTMULT: speed multiplier must be positive"
+            return Err("DTMULT: speed multiplier must be positive")
         self.speed = mult
-        return True, f"Simulation speed set to {mult}x"
+        return Ok(f"Simulation speed set to {mult}x")
 
     def prevent_shutdown(self) -> None:
         """Disable shutdown so that `stop` requests are ignored.

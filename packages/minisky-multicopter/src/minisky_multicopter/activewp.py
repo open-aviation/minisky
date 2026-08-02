@@ -18,9 +18,9 @@ from __future__ import annotations
 from typing import Any
 
 import numpy as np
-
 from minisky import plugin as plugin_api
 from minisky.traffic.activewpdata import ActiveWaypoint
+
 from minisky_multicopter.entity import get_multicopter
 
 #: Waypoint capture radius for multicopters [m].

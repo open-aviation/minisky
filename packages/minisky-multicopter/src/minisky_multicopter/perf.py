@@ -29,7 +29,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
-
 from minisky.traffic.performance.perfoap import OpenAP
 
 if TYPE_CHECKING:
@@ -99,7 +98,7 @@ class MulticopterPerf(OpenAP):
         intent_vs: np.ndarray,
         intent_h: np.ndarray,
         ax: np.ndarray,
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    ) -> OpenAP.PerformanceLimits:
         """Clip the intended state to the flight envelope.
 
         Runs the base envelope, then tightens the speed and climb-rate limits
@@ -116,9 +115,9 @@ class MulticopterPerf(OpenAP):
         Returns:
             Allowed TAS [m/s], vertical speed [m/s] and altitude [m].
         """
-        allow_v_tas, allow_vs, allow_h = super().limits(intent_v_tas, intent_vs, intent_h, ax)
+        limits = super().limits(intent_v_tas, intent_vs, intent_h, ax)
         # TODO: shrink vmax/vsmax for multicopter rows at low state of charge
-        return allow_v_tas, allow_vs, allow_h
+        return limits
 
     def required_thrust(self) -> np.ndarray:
         """Return the thrust each multicopter needs right now [N].

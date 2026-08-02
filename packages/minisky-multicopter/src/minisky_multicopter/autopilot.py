@@ -21,10 +21,11 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import numpy as np
-
 from minisky import plugin as plugin_api
+from minisky.result import Err, Ok, Result
 from minisky.stack.argparser import Hdg
 from minisky.traffic.autopilot import Autopilot
+
 from minisky_multicopter.entity import MULTICOPTER_TYPES, get_multicopter
 
 if TYPE_CHECKING:
@@ -128,7 +129,7 @@ class MulticopterAutopilot(Autopilot):
         traf.swvnav = np.where(expired, self.resumevnav & self.resumelnav, traf.swvnav)
         self.swhover = self.swhover & ~resume
 
-    def selhdgcmd(self, idx: int, hdg: Hdg) -> tuple[bool, str]:
+    def selhdgcmd(self, idx: int, hdg: Hdg) -> Result[str, str]:
         """Select the autopilot heading; for multicopters, yaw the nose only.
 
         For a multicopter row the HDG stack command is an alias of ``YAW``:
@@ -139,13 +140,11 @@ class MulticopterAutopilot(Autopilot):
         Args:
             idx: Aircraft index.
             hdg: Selected heading [deg].
-
-        Returns:
-            tuple: (success flag, confirmation message).
         """
         mc = get_multicopter(self.traffic)
         if mc is not None and mc.ismulticopter[idx]:
-            return mc.yaw(idx, float(hdg))
+            ok, message = mc.yaw(idx, float(hdg))
+            return Ok(message) if ok else Err(message)
         return super().selhdgcmd(idx, hdg)
 
     def hover(

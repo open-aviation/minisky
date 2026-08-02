@@ -7,11 +7,10 @@ from typing import Any
 
 import fakeredis
 import pytest
-from redis.client import PubSub
-
 from minisky import MiniSky
 from minisky.simulation import Simulation, SimulationState
 from minisky_tangram import TangramBridge
+from redis.client import PubSub
 
 Observer = tuple[fakeredis.FakeRedis, PubSub]
 StepUntil = Callable[[Callable[[], bool]], int]
@@ -43,8 +42,8 @@ def bridge(
     plugin_runtime = runtime.plugins._plugin_runtime()
     plugin_runtime._activate()
     plugin_runtime.subscribe_console(bridge.capture_console)
-    ok, msg = bridge.start(plugin_runtime)
-    assert ok, msg
+    result = bridge.start(plugin_runtime)
+    assert result.is_ok(), result.err()
     # The I/O thread subscribes asynchronously; commands published before the
     # subscription is live would be silently lost (pub/sub has no replay).
     assert bridge.ready.wait(timeout=5.0), "bridge did not subscribe in time"

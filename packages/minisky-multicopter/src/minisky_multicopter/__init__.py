@@ -28,6 +28,7 @@ Stack commands: MCOPT, YAW, YAWRATE, HOVER.
 from __future__ import annotations
 
 from minisky import plugin as plugin_api
+
 from minisky_multicopter.activewp import MulticopterActiveWaypoint
 from minisky_multicopter.aporasas import MulticopterAPorASAS
 from minisky_multicopter.autopilot import MulticopterAutopilot

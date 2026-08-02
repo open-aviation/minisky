@@ -13,10 +13,10 @@ rows keep the base-class behaviour untouched.
 from __future__ import annotations
 
 import numpy as np
-
 from minisky import plugin as plugin_api
 from minisky.tools.aero import ft
 from minisky.traffic.kinematics import Kinematics
+
 from minisky_multicopter.entity import get_multicopter
 
 

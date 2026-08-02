@@ -5,7 +5,6 @@ All aero functions use SI units: altitude in meters, speed in m/s.
 
 import numpy as np
 import pytest
-
 from minisky.tools import aero
 
 
@@ -89,12 +88,12 @@ class TestSpeedConversions:
         assert aero.vtas2mach(200.0, 10000.0) > aero.vtas2mach(200.0, 0.0)
 
     def test_vcasormach_interprets_small_value_as_mach(self):
-        tas, cas, mach = aero.vcasormach(0.8, 10000.0, aero.DEFAULT_CASMACH_THRESHOLD)
+        tas, _cas, mach = aero.vcasormach(0.8, 10000.0, aero.DEFAULT_CASMACH_THRESHOLD)
         assert mach == pytest.approx(0.8, rel=1e-6)
         assert tas > 200.0
 
     def test_vcasormach_interprets_large_value_as_cas(self):
-        tas, cas, mach = aero.vcasormach(150.0, 5000.0, aero.DEFAULT_CASMACH_THRESHOLD)
+        tas, cas, _mach = aero.vcasormach(150.0, 5000.0, aero.DEFAULT_CASMACH_THRESHOLD)
         assert cas == pytest.approx(150.0, rel=1e-6)
         assert tas > cas
 
