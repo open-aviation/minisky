@@ -5,85 +5,24 @@ the map, optionally bounded by a top and bottom altitude, and provides
 point-inside-shape tests for (vectors of) aircraft positions. This backs
 the BOX, CIRCLE, POLY, POLYALT, LINE, and POLYLINE stack commands, and is
 used by plugins and traffic logic that need to know which aircraft are
-inside an area. Each `AreaFilter` stores its defined shapes by name and
-indexes them in an R-tree for fast geospatial queries.
+inside an area. Each `AreaFilter` stores its defined shapes by name.
 """
 
 from __future__ import annotations
-
-from contextlib import suppress
-from weakref import WeakValueDictionary
 
 import numpy as np
 from matplotlib.path import Path
 
 from minisky.result import Err, Ok, Result
-
-try:
-    from rtree.index import Index  # type: ignore[assignment]
-except (ImportError, OSError):
-    print(
-        "Warning: RTree could not be loaded. areafilter get_intersecting and get_knearest won't work"
-    )
-
-    class Index:
-        """Dummy index class for installations where rtree is missing
-        or doesn't work.
-        """
-
-        @staticmethod
-        def intersection(*args, **kwargs):
-            return []
-
-        @staticmethod
-        def nearest(*args, **kwargs):
-            return []
-
-        @staticmethod
-        def insert(*args, **kwargs):
-            return
-
-        @staticmethod
-        def delete(*args, **kwargs):
-            return
-
-
 from minisky.tools.geo import kwikdist
 
 
 class AreaFilter:
-    """Named geometric shapes and spatial index for a MiniSky runtime."""
+    """Named geometric shapes for a MiniSky runtime."""
 
     def __init__(self) -> None:
         # Dictionary of all basic shapes (The shape classes defined in this file) by name
         self.basic_shapes: dict[str, Shape] = {}
-
-        # Counter to keep track of used shape ids
-        self.max_area_id = 0
-
-        # Weak-value dictionary of all Shape-derived objects by name, and id
-        self.areas_by_id: WeakValueDictionary[int, Shape] = WeakValueDictionary()
-        self.areas_by_name: WeakValueDictionary[str, Shape] = WeakValueDictionary()
-
-        # RTree of all areas for efficient geospatial searching
-        self.areatree = Index()
-
-    def _register(self, shape: Shape) -> None:
-        # Owner-local weak reference and tree storage
-        shape.area_id = self.max_area_id
-        self.max_area_id += 1
-        self.areas_by_id[shape.area_id] = shape
-        self.areas_by_name[shape.name] = shape
-        self.areatree.insert(shape.area_id, shape.bbox)
-        shape._registered = True
-
-    def _unregister(self, shape: Shape) -> None:
-        if not shape._registered:
-            return
-        self.areatree.delete(shape.area_id, shape.bbox)
-        self.areas_by_id.pop(shape.area_id, None)
-        self.areas_by_name.pop(shape.name, None)
-        shape._registered = False
 
     def has_area(self, areaname: str) -> bool:
         """Check if area with name 'areaname' exists."""
@@ -119,18 +58,14 @@ class AreaFilter:
             else:
                 return Err(f"Unknown shape: {areaname}")
 
-        old_shape = self.basic_shapes.get(areaname)
-        if old_shape is not None:
-            self._unregister(old_shape)
-
         if areatype == "BOX":
-            shape = Box(self, areaname, coordinates, top, bottom)
+            shape = Box(areaname, coordinates, top, bottom)
         elif areatype == "CIRCLE":
-            shape = Circle(self, areaname, coordinates, top, bottom)
+            shape = Circle(areaname, coordinates, top, bottom)
         elif areatype[:4] == "POLY":
-            shape = Poly(self, areaname, coordinates, top, bottom)
+            shape = Poly(areaname, coordinates, top, bottom)
         elif areatype == "LINE":
-            shape = Line(self, areaname, coordinates)
+            shape = Line(areaname, coordinates)
         else:
             return Err(f"Unknown shape type: {areatype}")
 
@@ -219,13 +154,7 @@ class AreaFilter:
 
     def reset(self) -> None:
         """Clear all data."""
-        for shape in list(self.basic_shapes.values()):
-            self._unregister(shape)
         self.basic_shapes.clear()
-        self.areas_by_id.clear()
-        self.areas_by_name.clear()
-        self.areatree = Index()
-        self.max_area_id = 0
 
     def deleteArea(self, name: str) -> Result[str, str]:
         """Delete a previously defined area by name.
@@ -233,43 +162,17 @@ class AreaFilter:
         Args:
             name: Name of the area shape to remove.
         """
-        shape = self.basic_shapes.pop(name, None)
-        if shape is not None:
-            self._unregister(shape)
+        if self.basic_shapes.pop(name, None) is not None:
             return Ok(f"Area {name} deleted.")
         return Err(f"No area found with name {name}.")
-
-    def get_intersecting(self, lat0: float, lon0: float, lat1: float, lon1: float) -> list[Shape]:
-        """Return all shapes that intersect with a specified rectangular area.
-
-        Arguments:
-        - lat0/1, lon0/1: Coordinates of the top-left and bottom-right corner
-          of the intersection area.
-        """
-        ids = self.areatree.intersection((lat0, lon0, lat1, lon1))
-        return [self.areas_by_id[area_id] for area_id in ids if area_id in self.areas_by_id]
-
-    def get_knearest(
-        self, lat0: float, lon0: float, lat1: float, lon1: float, k: int = 1
-    ) -> list[Shape]:
-        """Return the k nearest shapes to a specified rectangular area.
-
-        Arguments:
-        - lat0/1, lon0/1: Coordinates of the top-left and bottom-right corner
-          of the relevant area.
-        - k: The (maximum) number of results to return.
-        """
-        ids = self.areatree.nearest((lat0, lon0, lat1, lon1), k)
-        return [self.areas_by_id[area_id] for area_id in ids if area_id in self.areas_by_id]
 
 
 class Shape:
     """
     Base class of BlueSky shapes
 
-    Handles the naming, altitude bounds, bounding box, and R-tree
-    registration common to all shape types. Derived classes implement
-    checkInside() for their specific geometry.
+    Handles the naming and altitude bounds common to all shape types.
+    Derived classes implement checkInside() for their specific geometry.
 
     Attributes:
         name: Area name.
@@ -277,36 +180,16 @@ class Shape:
             shape (plus radius in nm for circles).
         top: Upper altitude bound [m].
         bottom: Lower altitude bound [m].
-        bbox: Bounding box (latmin, lonmin, latmax, lonmax) in deg.
-        area_id: Unique numeric id of this shape in the R-tree.
         raw: Dictionary with the raw shape definition (name, kind,
             coordinates).
     """
 
-    area_id: int
-
-    def __init__(
-        self, owner: AreaFilter, name: str, coordinates, top: float = 1e9, bottom: float = -1e9
-    ) -> None:
-        self.owner = owner
-        self._registered = False
+    def __init__(self, name: str, coordinates, top: float = 1e9, bottom: float = -1e9) -> None:
         self.raw = {"name": name, "shape": self.kind(), "coordinates": coordinates}
         self.name = name
         self.coordinates = coordinates
         self.top = np.maximum(bottom, top)
         self.bottom = np.minimum(bottom, top)
-        lat = coordinates[::2]
-        lon = coordinates[1::2]
-        self.bbox = [min(lat), min(lon), max(lat), max(lon)]
-
-        # Owner-local weak reference and tree storage
-        owner._register(self)
-
-    def __del__(self) -> None:
-        # Objects are removed automatically from the weak-value dicts,
-        # but need to be manually removed from the rtree
-        with suppress(Exception):
-            self.owner._unregister(self)
 
     def checkInside(self, lat: np.ndarray, lon: np.ndarray, alt: np.ndarray) -> np.ndarray:
         """Returns True (or boolean array) if coordinate lat, lon, alt lies
@@ -346,8 +229,8 @@ class Line(Shape):
     Purely graphical: the inherited checkInside() always returns False.
     """
 
-    def __init__(self, owner: AreaFilter, name: str, coordinates) -> None:
-        super().__init__(owner, name, coordinates)
+    def __init__(self, name: str, coordinates) -> None:
+        super().__init__(name, coordinates)
 
     def __str__(self) -> str:
         return (
@@ -364,10 +247,8 @@ class Box(Shape):
     and optional altitude bounds [m].
     """
 
-    def __init__(
-        self, owner: AreaFilter, name: str, coordinates, top: float = 1e9, bottom: float = -1e9
-    ) -> None:
-        super().__init__(owner, name, coordinates, top, bottom)
+    def __init__(self, name: str, coordinates, top: float = 1e9, bottom: float = -1e9) -> None:
+        super().__init__(name, coordinates, top, bottom)
         # Sort the order of the corner points
         self.lat0 = min(coordinates[0], coordinates[2])
         self.lon0 = min(coordinates[1], coordinates[3])
@@ -390,10 +271,8 @@ class Circle(Shape):
     altitude bounds [m].
     """
 
-    def __init__(
-        self, owner: AreaFilter, name: str, coordinates, top: float = 1e9, bottom: float = -1e9
-    ) -> None:
-        super().__init__(owner, name, coordinates, top, bottom)
+    def __init__(self, name: str, coordinates, top: float = 1e9, bottom: float = -1e9) -> None:
+        super().__init__(name, coordinates, top, bottom)
         self.clat = coordinates[0]
         self.clon = coordinates[1]
         self.r = coordinates[2]
@@ -421,10 +300,8 @@ class Poly(Shape):
     point-in-polygon tests.
     """
 
-    def __init__(
-        self, owner: AreaFilter, name: str, coordinates, top: float = 1e9, bottom: float = -1e9
-    ) -> None:
-        super().__init__(owner, name, coordinates, top, bottom)
+    def __init__(self, name: str, coordinates, top: float = 1e9, bottom: float = -1e9) -> None:
+        super().__init__(name, coordinates, top, bottom)
         self.border = Path(np.reshape(coordinates, (len(coordinates) // 2, 2)))
 
     def checkInside(self, lat: np.ndarray, lon: np.ndarray, alt: np.ndarray):

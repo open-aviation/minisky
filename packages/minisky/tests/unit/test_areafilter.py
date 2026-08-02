@@ -38,6 +38,72 @@ class TestDefineArea:
         area_filter.reset()
         assert not area_filter.has_area("TMP")
 
+    def test_unknown_shape_type_is_err(self, area_filter: AreaFilter) -> None:
+        result = area_filter.define_area("X", "BLOB", [52.0, 4.0, 53.0, 5.0])
+        assert result.is_err()
+        assert not area_filter.has_area("X")
+
+
+class TestTracking:
+    def test_each_shape_type_tracked(self, area_filter: AreaFilter) -> None:
+        area_filter.define_area("B", "BOX", [52.0, 4.0, 53.0, 5.0])
+        area_filter.define_area("C", "CIRCLE", [52.0, 4.0, 50.0])
+        area_filter.define_area("P", "POLY", [52.0, 4.0, 53.0, 4.0, 52.5, 5.0])
+        area_filter.define_area("L", "LINE", [52.0, 4.0, 53.0, 5.0])
+        for name in ("B", "C", "P", "L"):
+            assert area_filter.has_area(name)
+
+    def test_list_reports_defined_shapes(self, area_filter: AreaFilter) -> None:
+        result = area_filter.define_area("LIST", "BOX", [])
+        assert result.is_ok()
+        assert "No shapes" in result.unwrap()
+
+        area_filter.define_area("B1", "BOX", [52.0, 4.0, 53.0, 5.0])
+        area_filter.define_area("C1", "CIRCLE", [52.0, 4.0, 50.0])
+        listing = area_filter.define_area("LIST", "BOX", []).unwrap()
+        assert "B1" in listing
+        assert "C1" in listing
+
+    def test_inspect_shape_by_name(self, area_filter: AreaFilter) -> None:
+        area_filter.define_area("C1", "CIRCLE", [52.0, 4.0, 50.0])
+        result = area_filter.define_area("C1", "CIRCLE", [])
+        assert result.is_ok()
+        assert "CIRCLE" in result.unwrap()
+
+        assert area_filter.define_area("NOPE", "BOX", []).is_err()
+
+    def test_delete_area(self, area_filter: AreaFilter) -> None:
+        area_filter.define_area("TMP", "BOX", [52.0, 4.0, 53.0, 5.0])
+        result = area_filter.deleteArea("TMP")
+        assert result.is_ok()
+        assert not area_filter.has_area("TMP")
+        assert not check_single(area_filter, "TMP", 52.5, 4.5)
+
+    def test_delete_unknown_area_is_err(self, area_filter: AreaFilter) -> None:
+        assert area_filter.deleteArea("NOPE").is_err()
+
+    def test_redefine_replaces_shape(self, area_filter: AreaFilter) -> None:
+        area_filter.define_area("B", "BOX", [52.0, 4.0, 53.0, 5.0])
+        assert check_single(area_filter, "B", 52.5, 4.5)
+
+        # Redefine the same name elsewhere; the old geometry must be gone
+        area_filter.define_area("B", "BOX", [10.0, 10.0, 11.0, 11.0])
+        assert not check_single(area_filter, "B", 52.5, 4.5)
+        assert check_single(area_filter, "B", 10.5, 10.5)
+
+    def test_redefine_can_change_shape_type(self, area_filter: AreaFilter) -> None:
+        area_filter.define_area("A", "BOX", [52.0, 4.0, 53.0, 5.0])
+        area_filter.define_area("A", "CIRCLE", [52.0, 4.0, 50.0])
+        assert "CIRCLE" in str(area_filter.basic_shapes["A"])
+
+    def test_delete_leaves_other_shapes(self, area_filter: AreaFilter) -> None:
+        area_filter.define_area("B1", "BOX", [52.0, 4.0, 53.0, 5.0])
+        area_filter.define_area("B2", "BOX", [10.0, 10.0, 11.0, 11.0])
+        area_filter.deleteArea("B1")
+        assert not area_filter.has_area("B1")
+        assert area_filter.has_area("B2")
+        assert check_single(area_filter, "B2", 10.5, 10.5)
+
 
 class TestBox:
     def test_inside_and_outside(self, area_filter: AreaFilter) -> None:
