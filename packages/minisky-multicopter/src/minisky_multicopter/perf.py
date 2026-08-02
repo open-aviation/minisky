@@ -2,30 +2,29 @@
 
 Fills the ``# TODO: implement thrust computation for rotor aircraft`` gap in
 the core :class:`OpenAP` model for multicopter rows: required thrust from
-the mass and acceleration, power and current from a precomputed
-``(airspeed, thrust) -> (power, current, feasible)`` map per typecode, and a
-battery state of charge that is integrated each step and feeds back into the
-flight envelope as the pack voltage sags.
+the mass and acceleration, electrical power from a momentum-theory scaling
+anchored to the installed power already shipped in the OpenAP rotor
+coefficients (``engnum * engpower``), and a battery state of charge that is
+integrated each step and feeds back into the flight envelope.
 
 Fixed-wing rows keep the ``super()`` behaviour untouched. Selected with
 ``SELECTIMPL OPENAP MULTICOPTERPERF`` once registered (it joins the plugin's
 replacements when Phase 3 lands).
 
-The maps are generated offline by ``scripts/gen_multicopter_perf.py`` from
-propeller, motor and battery data vendored under ``data/pythrust/``, and
-checked in under this package's ``data/``. PyThrust itself is *not* a
-runtime dependency: only its data is used, and only through
-``np.interp``-style lookups.
+The only data the shipped rotor ``aircraft.json`` lacks is battery capacity,
+supplied by a small per-typecode spec-sheet constants dict here. No PyThrust
+anywhere: a measured-prop-data upgrade is future work (see the plan doc).
 
-Fidelity caveat: the APC propeller coefficients are axial-flow, so
-forward-flight power for a translating multicopter is approximate. Hover
-figures and the qualitative trends (power against speed, voltage sag) are
-sound — the right level for a traffic simulator.
+Fidelity caveat: the power curve is momentum-theory shape
+(``P = P_max * (T / T_max) ** 1.5``), not measured prop data, so absolute
+forward-flight power is approximate and there is no terminal-voltage or
+current modelling. Hover figures and the qualitative trends (power against
+thrust, endurance, envelope shrink at low battery) are sound — the right
+level for a traffic simulator.
 """
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -34,18 +33,13 @@ from minisky.traffic.performance.perfoap import OpenAP
 if TYPE_CHECKING:
     from minisky.traffic import Traffic
 
-#: Directory holding the generated per-typecode performance maps.
-DATA_PATH = Path(__file__).parent / "data"
-
 
 class MulticopterPerf(OpenAP):
     """OpenAP performance with an electric model for multicopter rows.
 
     Attributes:
         soc (ndarray): Battery state of charge [0-1].
-        capacity (ndarray): Usable pack capacity [As].
-        current (ndarray): Current battery current draw [A].
-        voltage (ndarray): Current battery terminal voltage [V].
+        capacity (ndarray): Usable pack energy [J].
         power (ndarray): Current electrical power draw [W] — the electric
             analogue of ``fuelflow``.
         nrotors (ndarray): Number of rotors [-].
@@ -54,12 +48,9 @@ class MulticopterPerf(OpenAP):
 
     def __init__(self, traffic: Traffic) -> None:
         super().__init__(traffic)
-        # TODO: load the generated maps and battery curves from DATA_PATH
         with self.settrafarrays():
             self.soc = np.array([])
             self.capacity = np.array([])
-            self.current = np.array([])
-            self.voltage = np.array([])
             self.power = np.array([])
             self.nrotors = np.array([])
             self.cds = np.array([])
@@ -74,23 +65,24 @@ class MulticopterPerf(OpenAP):
             n: Number of aircraft that were appended to the traffic arrays.
         """
         super().create(n)
-        # TODO: look up the per-typecode config, seed soc = 1.0, capacity,
-        # nrotors and cds.
+        # TODO: look up the per-typecode constants dict (battery Wh, CdS,
+        # thrust-to-weight ratio), seed soc = 1.0, capacity, nrotors and cds.
 
     def update(self, dt: float = 1) -> None:
         """Update performance, then the electric model for multicopter rows.
 
         After the base update, computes the thrust each multicopter needs to
-        hold its current acceleration and overcome parasite drag, reads power
-        and current off the per-typecode map, and integrates the battery
-        state of charge.
+        hold its current acceleration and overcome parasite drag, derives the
+        electrical power from the momentum-theory scaling, and integrates the
+        battery state of charge.
 
         Args:
             dt: Update timestep [s].
         """
         super().update(dt)
-        # TODO: required thrust -> map lookup -> self.thrust/power/current
-        # TODO: integrate self.soc; update self.voltage from the OCV/R curves
+        # TODO: required thrust -> P = Pmax * (T / Tmax) ** 1.5 ->
+        # self.thrust/self.power
+        # TODO: integrate self.soc (ideal energy tank: soc -= P * dt / capacity)
 
     def limits(
         self,
@@ -102,9 +94,8 @@ class MulticopterPerf(OpenAP):
         """Clip the intended state to the flight envelope.
 
         Runs the base envelope, then tightens the speed and climb-rate limits
-        of multicopter rows wherever the performance map is infeasible at the
-        current pack voltage, so performance genuinely degrades as the
-        battery empties.
+        of multicopter rows below a state-of-charge threshold, so performance
+        degrades as the battery empties.
 
         Args:
             intent_v_tas: Intended true airspeed [m/s].
@@ -135,6 +126,6 @@ class MulticopterPerf(OpenAP):
         Arguments:
         - idx: Aircraft callsign
         """
-        # TODO: report soc/voltage/current/power and a remaining-endurance
-        # estimate at the current draw
+        # TODO: report soc/power and a remaining-endurance estimate at the
+        # current draw
         return False, "BATT: not implemented yet"

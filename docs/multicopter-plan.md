@@ -26,8 +26,11 @@ the project direction: keep the core minimal, make behaviour hackable from outsi
   and not *rotorcraft* (would promise helicopter support).
 - **Aeroelastic / attitude-level dynamics.** We stay at the kinematic point-mass level of the rest
   of the simulator; "heading" is the only attitude state.
-- **A runtime PyThrust dependency.** We use PyThrust's *data* (see Phase 3), never its code at
-  runtime, and it is not added to `pyproject.toml`.
+- **PyThrust, for now.** The measured-prop-data pipeline is deferred entirely to future work
+  (see the last section). Phase 3 uses only the OpenAP rotor coefficients already shipped in
+  `data/performance/openap/rotor/aircraft.json` plus a few spec-sheet constants. If the pipeline
+  is ever built, it uses PyThrust's *data*, never its code at runtime, and it is not added to
+  `pyproject.toml`.
 
 ## What the codebase already provides
 
@@ -277,76 +280,62 @@ multicopter rows.
       fixed-wing regression guard
 - [x] `uv run pytest`, `uv run ruff check .`, `uv run pyright` all green
 
-## Phase 3 — `MulticopterPerf`: electric performance from PyThrust *data*
+## Phase 3 — `MulticopterPerf`: analytic electric model from the OpenAP rotor data
 
 `class MulticopterPerf(OpenAP)`, selected with `SELECTIMPL OPENAP MULTICOPTERPERF`. Fixed-wing
 rows keep `super()` behaviour untouched; multicopter rows get an electric model. This fills the
 long-standing `# TODO: implement thrust computation for rotor aircraft` in `perfoap.py`.
 
-### Data pipeline (no new runtime dependency — decided)
+### Data: what ships already, and the one gap
 
-[PyThrust](https://github.com/Setuav/PyThrust) (Apache 2.0) ships everything needed as plain
-data:
+`data/performance/openap/rotor/aircraft.json` (already loaded by `OpenAP.create()`) provides,
+per rotor typecode: mass (`oew`/`mtow` → `traf.perf.mass`), `n_engines` (`engnum`), per-engine
+max power in kW (`engpower`), and the flight envelope. That is enough for an analytic power
+model with **no new data pipeline and no PyThrust anything**:
 
-- **Propeller tables** (`data/propellers/apc_202602/*.csv`, 441 APC props): full performance
-  grids with `rpm, speed_mps, thrust_n, power_w, torque_nm, ct, cp, ...` — thrust *and* shaft
-  power are already tabulated, so the inverse question a perf model asks
-  ("required thrust at this airspeed → power") is pure interpolation. No solver needed.
-- **Motor specs** (`data/motors/*.json`): `kv`, `resistance`, `io`, `max_current` — shaft-to-
-  electrical conversion is a few lines of textbook motor algebra.
-- **Battery curves** (`data/batteries/*.json`): open-circuit voltage and internal resistance vs
-  depth-of-discharge — `np.interp` territory. (Their example cell is synthetic; real types
-  should get measured curves eventually.)
-
-Pipeline, following the existing regen conventions (navdb parquet, `minisky commands docs`):
-
-1. `scripts/gen_multicopter_perf.py` — **self-contained** (numpy only, no pythrust import):
-   reads vendored prop CSV + motor JSON per multicopter typecode (config mapping typecode →
-   {prop, motor, cell, series/parallel, n_rotors, mass}), and emits one small artifact per type:
-   a grid `(airspeed, thrust) → (power_w, current_a, feasible)` (~30 KB float32 npz/parquet)
-   plus the battery curves.
-2. Artifacts are **checked in** inside the plugin package (`packages/minisky-multicopter/src/minisky_multicopter/data/`).
-   The handful of vendored source CSV/JSONs (~1 MB) live under
-   `packages/minisky-multicopter/src/minisky_multicopter/data/pythrust/` together with PyThrust's LICENSE and an
-   attribution note (the prop tables are repackaged APC published performance data).
-3. Runtime: `MulticopterPerf` loads the artifacts at plugin load and evaluates with vectorised
-   `np.interp`/`RegularGridInterpolator`. Zero per-step Python loops, zero new dependencies.
+- **Installed power** `P_max = engnum · engpower` is the model's anchor.
+- **Battery capacity is the one thing the json lacks** (`mfc` is 0 for every rotor type). A
+  small hand-written per-typecode dict in `perf.py` supplies spec-sheet watt-hours (e.g. MAVIC
+  43.6 Wh, PHAN4 81.3 Wh, M600 6×99.9 Wh), with a fallback that derives energy from
+  `d_range_max` at cruise speed for unlisted types. The same dict optionally carries `CdS`
+  (flat-plate area) and a thrust-to-weight ratio where the default is wrong.
 
 ### Runtime model (multicopter rows)
 
-- **Required thrust:** per rotor, `T = m·√(g² + a²)/n_rotors` in hover/climb, plus a flat-plate
-  parasite term `½ρv²·CdS` in translation (edgewise-flow caveat below).
-- **Power/current:** from the per-type map at `(tas, T)`; write `self.thrust` (total) and expose
-  `battery_power` as the electric analogue of `fuelflow`.
-- **Battery:** per-aircraft `soc` array; integrate `soc -= I·dt / capacity`; terminal voltage
-  from OCV/R curves.
-- **Envelope feedback:** where the map is infeasible at current battery voltage (sag at low SoC),
-  tighten `vmax`/`vsmax` in `limits()` — performance genuinely degrades as the battery empties.
+- **Required thrust:** `T = m·√(g² + a_z²)`, plus a flat-plate parasite term `½ρv²·CdS` in
+  translation (small default `CdS`).
+- **Power:** momentum-theory scaling referenced to installed power,
+  `P = P_max · (T / T_max)^1.5`, with `T_max = TWR · m·g` and a default thrust-to-weight ratio
+  of 2 (typical for camera/delivery multirotors). Sanity anchor: MAVIC installed power is
+  4 × 66.9 W ≈ 268 W, giving ≈ 130 W in hover — matching published figures. Write `self.thrust`
+  and expose `battery_power` as the electric analogue of `fuelflow`.
+- **Battery:** per-aircraft `soc` array, ideal-energy-tank integration
+  `soc -= P·dt / E_batt`. No terminal-voltage/current modelling — that needs the electrical
+  data (motor kv/resistance, OCV/R curves) deferred with PyThrust.
+- **Envelope feedback:** below an SoC threshold, tighten `vmax`/`vsmax` in `limits()` —
+  keyed on SoC directly rather than physical voltage sag.
 - **Stack commands:** `BATT acid` (report SoC/power/endurance estimate), optional auto-RTH/land
   threshold via the conditional-command machinery later.
 
-**Fidelity caveat (documented in the plugin):** APC coefficients are axial-flow; a translating
-multicopter has edgewise inflow, so forward-flight power is approximate. Hover figures and the
-qualitative trends (power vs speed, voltage sag) are sound — the right level for a traffic
-simulator.
+**Fidelity caveat (documented in the plugin):** the power curve is momentum-theory shape, not
+measured prop data — absolute forward-flight power is approximate, and the model deliberately
+ignores the induced-power *drop* in fast translation (power is monotone in required thrust
+here). Hover figures and the qualitative trends (power vs thrust, endurance, envelope shrink at
+low battery) are sound — the right level for a traffic simulator, upgradeable later without API
+changes (see the future-work section).
 
 **Acceptance:** hover endurance for a MAVIC-class config lands within sanity bounds (~20–35 min);
 `BATT` reports monotonically decreasing SoC; envelope shrinks below a SoC threshold; unit tests
-for the map interpolation against a few hand-computed points from the source CSV.
+for the power model against a few hand-computed points.
 
 ### Phase 3 checklist
 
-- [ ] Vendor the needed prop CSVs + motor JSONs under
-      `packages/minisky-multicopter/src/minisky_multicopter/data/pythrust/` with PyThrust's LICENSE and an
-      attribution note
-- [ ] Per-typecode config: `{prop, motor, cell, series/parallel, n_rotors, mass, CdS}`
-- [ ] `scripts/gen_multicopter_perf.py` (numpy-only, no pythrust import) emitting per-type
-      `(airspeed, thrust) → (power, current, feasible)` maps + battery curves
-- [ ] Check in the generated artifacts (`packages/minisky-multicopter/src/minisky_multicopter/data/*.npz`)
-- [ ] `perf.py`: `MulticopterPerf(OpenAP)` — required-thrust model, vectorised map
-      interpolation, per-aircraft SoC integration, envelope feedback in `limits()`;
+- [ ] Per-typecode constants dict in `perf.py`: `{battery_wh, CdS?, twr?}` from public spec
+      sheets, `d_range_max`-derived fallback for unlisted rotor types
+- [ ] `perf.py`: `MulticopterPerf(OpenAP)` — required-thrust model, momentum-theory power from
+      `engnum · engpower`, per-aircraft SoC integration, envelope feedback in `limits()`;
       stack command `BATT`
-- [ ] Unit tests: interpolation vs hand-computed CSV points; SoC monotonically decreasing;
+- [ ] Unit tests: power model vs hand-computed points; SoC monotonically decreasing;
       envelope tightens below SoC threshold
 - [ ] Sanity: MAVIC-class hover endurance in the 20–35 min range
 - [ ] `uv run pytest`, `uv run ruff check .`, `uv run pyright` all green
@@ -354,7 +343,7 @@ for the map interpolation against a few hand-computed points from the source CSV
 ## Phase 4 — docs, scenarios, cleanup
 
 - New guide `docs/guides/multicopters.md`: creating multicopters, hover/yaw commands, battery
-  model, how to add a new type (config + regen script).
+  model, how to add a new type (rotor `aircraft.json` entry + constants dict).
 - Update `docs/architecture.md` with the `Kinematics` entity and the replaceable list.
 - Example scenario `scenarios/multicopter_delivery.scn`: create, fly a route, hover at a
   delivery point, yaw for "camera", return; exercises everything above.
@@ -366,7 +355,8 @@ for the map interpolation against a few hand-computed points from the source CSV
 
 - [ ] `docs/guides/multicopters.md` (usage, commands, battery model, adding a new type)
 - [ ] Update `docs/architecture.md`: `Kinematics` entity + replaceable list
-- [ ] `scenarios/multicopter_delivery.scn` exercising create → route → `DELIVER` → return
+- [ ] `scenarios/multicopter_delivery.scn` exercising create → route → hover-delivery
+      (`HOVER` + `ALT` + `LNAV ON`) → return
 - [ ] Regenerate `docs/reference/commands.md` (`uv run minisky commands docs`)
 - [ ] Final sweep: `uv run pytest`, `uv run ruff check .`, `uv run pyright`
 
@@ -376,7 +366,7 @@ for the map interpolation against a few hand-computed points from the source CSV
 |---|---|---|---|
 | 1 | Extract `Kinematics` (core, behaviour-preserving) | Low — mechanical move guarded by existing tests | — |
 | 2 | Plugin: membership + kinematics + commands | Medium — command semantics for HDG/YAW need care | 1 |
-| 3 | Perf: data vendoring, gen script, `MulticopterPerf`, battery | Medium — model calibration/sanity | 2 (usable after 1) |
+| 3 | Perf: analytic `MulticopterPerf` + battery from shipped OpenAP data | Low–medium — model calibration/sanity | 2 (usable after 1) |
 | 4 | Docs, scenario, polish | Low | 2, 3 |
 
 Implementation lands on this branch phase by phase, checking off the checklists above as items
@@ -393,5 +383,25 @@ complete; phase 1 is intentionally the only one touching `minisky/`.
 | Mission primitive | One composable `HOVER acid [time] [alt]`; no `DELIVER` | Delivery choreography belongs in scenarios (`HOVER` + `ALT` + `LNAV ON`); keeps the primitive abstract |
 | Capture radius | `MulticopterActiveWaypoint` subclass (fourth swap) | `ActiveWaypoint.reached()` recomputes `turndist` every step, so clamping it from the autopilot is overwritten before use |
 | Membership predicate | Plugin-owned typecode set + `ismulticopter` array | `LIFT_ROTOR` includes helicopters |
-| PyThrust | Data only, vendored with attribution; self-contained gen script; nothing at runtime | Prop CSVs already tabulate thrust & power; keeps dependency tree untouched (Apache 2.0 permits) |
-| Perf evaluation | Precomputed per-type maps, vectorised interp | Keeps the numpy discipline; fleet-size independent; regen convention already exists in repo |
+| PyThrust | **Deferred entirely to future work** (2026-08-02; was: vendor its data + gen script) | The shipped OpenAP rotor json (mass, engine power, envelope) supports an analytic model; only battery Wh needs a small constants dict. Avoids ~1 MB vendored data and a gen script until the fidelity is actually needed |
+| Perf evaluation | Analytic momentum-theory scaling, pure numpy | Keeps the numpy discipline; fleet-size independent; no artifacts to regenerate |
+
+## Future work — PyThrust-data fidelity upgrade (deferred)
+
+If measured-data fidelity is ever needed, the original Phase 3 design still applies and slots in
+behind the same `MulticopterPerf` API (only the power/current evaluation changes):
+
+[PyThrust](https://github.com/Setuav/PyThrust) (Apache 2.0) ships everything needed as plain
+data — APC propeller performance grids (`rpm, speed_mps, thrust_n, power_w, ...`; thrust *and*
+shaft power tabulated, so "required thrust at this airspeed → power" is pure interpolation),
+motor specs (`kv`, `resistance`, `io` — shaft-to-electrical is textbook motor algebra), and
+battery OCV/internal-resistance-vs-DoD curves. The pipeline: vendor the handful of needed
+CSV/JSONs (~1 MB) under `packages/minisky-multicopter/src/minisky_multicopter/data/pythrust/`
+with PyThrust's LICENSE and an attribution note; a **self-contained** numpy-only
+`scripts/gen_multicopter_perf.py` (regen convention like navdb parquet) emits one ~30 KB
+`(airspeed, thrust) → (power_w, current_a, feasible)` grid per typecode plus battery curves,
+checked in next to the plugin; runtime evaluates with vectorised interpolation. Never a runtime
+PyThrust dependency. This upgrade adds what the analytic model cannot do: current draw,
+terminal-voltage sag, and envelope infeasibility driven by physical voltage collapse rather
+than an SoC threshold. Fidelity caveat regardless: APC coefficients are axial-flow, so
+forward-flight power in edgewise translation stays approximate.
