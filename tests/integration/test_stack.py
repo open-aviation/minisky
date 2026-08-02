@@ -223,9 +223,9 @@ class TestArgumentSpecs:
                 continue
             seen.add(id(cmd))
             for annot, _isopt in cmd.arguments:
-                assert annot == annot.strip() and annot, (
-                    f"{cmd.name}: whitespace/empty annotation token {annot!r}"
-                )
+                message = f"{cmd.name}: whitespace/empty annotation token {annot!r}"
+                assert annot == annot.strip(), message
+                assert annot, message
                 if annot in placeholders:
                     continue
                 if all(argparsers.get(part) is None for part in annot.split("/")):

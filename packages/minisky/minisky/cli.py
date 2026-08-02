@@ -31,7 +31,7 @@ _ConfigOption: TypeAlias = Annotated[
     typer.Option(help="Config TOML file. Overrides the default user config path."),
 ]
 
-history_file = os.path.expanduser("/tmp/hacksky_console_history")
+history_file = Path("/tmp/hacksky_console_history").expanduser()
 path_completer = PathCompleter()
 completer = NestedCompleter.from_nested_dict({"load": path_completer, "/load": path_completer})
 
@@ -131,7 +131,7 @@ def console_cmd(
 
     while True:
         print(Fore.LIGHTGREEN_EX + Style.BRIGHT, end="")
-        cmd = prompt("> ", completer=completer, history=FileHistory(history_file))
+        cmd = prompt("> ", completer=completer, history=FileHistory(str(history_file)))
         print(Style.RESET_ALL, end="")
 
         if cmd == "":
@@ -145,11 +145,11 @@ def console_cmd(
             continue
 
         if cmd.startswith(("/load ", "load ")):
-            file_path = cmd.split(" ", maxsplit=1)[1]
+            file_path = Path(cmd.split(" ", maxsplit=1)[1])
 
-            if os.path.isfile(file_path):
-                with open(file_path, "rb") as f:
-                    files = {"file": (os.path.basename(file_path), f)}
+            if file_path.is_file():
+                with file_path.open("rb") as f:
+                    files = {"file": (file_path.name, f)}
                     response = requests.post(f"{root_url}/scn", files=files, timeout=30)
                     typer.echo(response.json())
             else:

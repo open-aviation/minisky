@@ -22,9 +22,9 @@ Interactive OpenAPI docs are served at `/docs`.
 from __future__ import annotations
 
 import asyncio
-import os
 from contextlib import asynccontextmanager, suppress
 from io import StringIO
+from pathlib import Path
 from typing import Annotated, Any, Literal, TypeAlias, TypedDict, cast
 
 import pandas as pd
@@ -120,8 +120,8 @@ def create_app(runtime: MiniSky | None = None) -> FastAPI:
 
     # TODO(abraham): package static assets inside minisky and resolve them
     # with importlib.resources for wheel installs
-    static_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static")
-    os.makedirs(static_dir, exist_ok=True)
+    static_dir = Path(__file__).parent.parent / "static"
+    static_dir.mkdir(parents=True, exist_ok=True)
     app.mount("/static", StaticFiles(directory=static_dir), name="static")
     return app
 
@@ -131,7 +131,7 @@ def root() -> dict[str, str]:
     return {"msg": "MiniSky API endpoint ready"}
 
 
-def all(runtime: Runtime) -> list[dict[str, Any]]:
+def all_aircraft(runtime: Runtime) -> list[dict[str, Any]]:
     """Get all aircraft states."""
     traffic = runtime.traffic
     df = pd.DataFrame(
@@ -305,7 +305,7 @@ def create_router() -> APIRouter:
     """Create the API router for a FastAPI application."""
     router = APIRouter()
     router.add_api_route("/", root, methods=["GET"])
-    router.add_api_route("/all", all, methods=["GET"])
+    router.add_api_route("/all", all_aircraft, methods=["GET"])
     router.add_api_route("/simtime", simtime, methods=["GET"])
     router.add_api_route("/speed/{speed}", speedup, methods=["GET"])
     router.add_api_route("/forward/{seconds}", forward, methods=["GET"])

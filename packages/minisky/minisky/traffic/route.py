@@ -643,7 +643,7 @@ class Route:
         qdr, dist = geo.qdrdist(
             self.traffic.lat[iac], self.traffic.lon[iac], self.wplat[0], self.wplon[0]
         )
-        self.wpdirto = [qdr] + self.wpdirfrom[0:-1]  # [deg] Direction to waypoints
+        self.wpdirto = [qdr, *self.wpdirfrom[0:-1]]  # [deg] Direction to waypoints
 
         # Continue flying in the saem direction
         if n_wpt > 1:
@@ -1086,7 +1086,7 @@ def addwpt(
                 rwylon = traffic.lon[acidx]
                 rwyhdg = traffic.trk[acidx]
 
-        elif args[1].count("/") > 0 or len(args) > 2 and args[2]:  # we need apt,rwy
+        elif args[1].count("/") > 0 or (len(args) > 2 and args[2]):  # we need apt,rwy
             # Take care of both EHAM/RW06 as well as EHAM,RWY18L (so /&, and RW/RWY)
             if args[1].count("/") > 0:
                 aptid, rwyname = args[1].split("/")

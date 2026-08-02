@@ -126,9 +126,9 @@ class Navdatabase:
         awydata = pd.read_parquet(nav_data_path / "airway.parquet")
         codata = pd.read_parquet(nav_data_path / "country.parquet")
 
-        with open(nav_data_path / "fir.json") as f:
+        with (nav_data_path / "fir.json").open() as f:
             firdata = json.load(f)
-        with open(nav_data_path / "runway_thresholds.json") as f:
+        with (nav_data_path / "runway_thresholds.json").open() as f:
             rwythresholds = json.load(f)
 
         # Get waypoint data

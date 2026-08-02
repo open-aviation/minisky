@@ -25,7 +25,6 @@ from __future__ import annotations
 
 import asyncio
 import inspect
-import os
 import traceback
 from collections.abc import Awaitable, Callable, Iterator
 from contextlib import suppress
@@ -221,7 +220,7 @@ class Command:
             msg += f"\nFunction {self._callback_source.__name__}(), implemented in "
         if hasattr(self._callback_source, "__code__"):
             fname = self._callback_source.__code__.co_filename
-            fname_stripped = fname.replace(os.getcwd(), "").lstrip("/")
+            fname_stripped = fname.replace(str(Path.cwd()), "").lstrip("/")
             firstline = self._callback_source.__code__.co_firstlineno
             msg += f"{fname_stripped} on line {firstline}"
         else:
@@ -351,7 +350,7 @@ class CommandStack:
         aliases: tuple[str, ...] = (),
         arguments: str = "",
         brief: str = "",
-        help: str = "",
+        help_text: str = "",
     ) -> PreparedCommand:
         """Construct and parse a command without registering it."""
         callback = func.__func__ if isinstance(func, (staticmethod, classmethod)) else func
@@ -368,7 +367,7 @@ class CommandStack:
             aliases=alias_names,
             arguments=arguments,
             brief=brief,
-            help=help,
+            help=help_text,
         )
         return PreparedCommand(command_obj, names)
 
@@ -438,7 +437,7 @@ class CommandStack:
                 aliases=catalog.aliases.get(name, ()),
                 arguments=definition.arguments,
                 brief=definition.brief,
-                help=definition.help,
+                help_text=definition.help,
             )
             for name, definition in catalog.definitions.items()
         )
@@ -628,7 +627,7 @@ class CommandStack:
             # ensure .scn suffix if necessary
             scn_path = Path(scn).with_suffix(".scn")
 
-            with open(scn_path) as fscen:
+            with scn_path.open() as fscen:
                 scn_input = StringIO(fscen.read())
         elif isinstance(scn, StringIO):
             scn_input = scn
@@ -798,7 +797,7 @@ class CommandStack:
 
             # Sort & write table
             table.sort()
-            with open(fname, "w") as f:
+            with Path(fname).open("w") as f:
                 # Header of first table
                 f.write("Command\tDescription\tUsage\tArgument types\tFunction\tSynonyms\n")
                 f.write("\n".join(table))

@@ -9,25 +9,27 @@ dev = [
     "pyright>=1.1.390",
     "fakeredis>=2.26",
 ]
-docs = [
-    "zensical>=0.0.47",
-    "mkdocstrings-python>=2.0.5",
-]
+docs = ["zensical>=0.0.47", "mkdocstrings-python>=2.0.5"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = [".", "packages/minisky"]
 addopts = "-ra -m 'not api'"
-markers = [
-    "api: FastAPI endpoint tests, run separately with just test-api",
-]
+markers = ["api: FastAPI endpoint tests, run separately with just test-api"]
 
 [tool.ruff]
 line-length = 100
 target-version = "py311"
 
 [tool.ruff.lint]
-extend-select = ["NPY"]
+extend-select = [
+    "NPY",
+    "PT",
+    "A", # shadowing
+    "PTH", # prefer pathlib over os.path and built-in open()
+    "RUF006", # keep references to created asyncio tasks
+    "RUF021", # parenthesize mixed and/or expressions
+]
 
 [tool.pyright]
 include = [
@@ -38,9 +40,15 @@ include = [
     "tests",
 ]
 exclude = [
-    "**/.*", "**/__pycache__", "**/node_modules", ".venv", "build", "site",
+    "**/.*",
+    "**/__pycache__",
+    "**/node_modules",
+    ".venv",
+    "build",
+    "site",
     # TODO(abraham): these files will need extensive typing, deferring for now
-    "tests/unit/test_aero.py", "tests/unit/test_detection.py"
+    "tests/unit/test_aero.py",
+    "tests/unit/test_detection.py",
 ]
 extraPaths = [
     "packages/minisky",
