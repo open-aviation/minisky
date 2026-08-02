@@ -6,7 +6,6 @@ import pytest
 from minisky import MiniSky
 from minisky.simulation import Simulation
 from minisky.traffic.asas import MVP
-
 from tests._types import RunCommand, StepUntil
 
 FT = 0.3048

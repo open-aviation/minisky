@@ -10,7 +10,6 @@ from minisky import MiniSky
 from minisky.tools import geo
 from minisky.traffic import route as route_commands
 from minisky.traffic.route import Route
-
 from tests._types import RunCommand, StepUntil
 
 FT = 0.3048

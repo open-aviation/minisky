@@ -12,7 +12,12 @@ dev = [
 docs = ["zensical>=0.0.47", "mkdocstrings-python>=2.0.5"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = [
+    "packages/minisky/tests",
+    "packages/minisky-example/tests",
+    "packages/minisky-example-customautopilot/tests",
+    "packages/minisky-tangram/tests",
+]
 pythonpath = [".", "packages/minisky"]
 addopts = "-ra -m 'not api'"
 markers = ["api: FastAPI endpoint tests, run separately with just test-api"]
@@ -37,7 +42,7 @@ include = [
     "packages/minisky-example*/src",
     "packages/minisky-tangram/src",
     "packages/tangram-minisky/src",
-    "tests",
+    "packages/*/tests",
 ]
 exclude = [
     "**/.*",
@@ -47,8 +52,8 @@ exclude = [
     "build",
     "site",
     # TODO(abraham): these files will need extensive typing, deferring for now
-    "tests/unit/test_aero.py",
-    "tests/unit/test_detection.py",
+    "packages/minisky/tests/unit/test_aero.py",
+    "packages/minisky/tests/unit/test_detection.py",
 ]
 extraPaths = [
     "packages/minisky",
