@@ -20,6 +20,7 @@ from typing import Any
 import numpy as np
 
 from minisky.core import TrafficArrays
+from minisky.result import Err, Ok, Result
 
 
 class VariableExplorer:
@@ -62,13 +63,13 @@ class VariableExplorer:
         if current is not None and (expected is None or current[0] is expected):
             del self.varlist[name]
 
-    def lsvar(self, varname: str = "") -> tuple[bool, str]:
+    def lsvar(self, varname: str = "") -> Result[str, str]:
         """Stack function to list information on simulation variables in the
         BlueSky console."""
         if not varname:
             # When no argument is passed, show a list of parent objects for which
             # variables can be accessed
-            return True, "\n" + str.join(", ", list(self.varlist))
+            return Ok("\n" + str.join(", ", list(self.varlist)))
 
         # Find the variable in the variable list
         v = self.findvar(varname)
@@ -85,8 +86,8 @@ class VariableExplorer:
             txt += f"Parent:     {v.parentname}"
             if attrs:
                 txt += "\nAttributes: " + str.join(", ", attrs) + "\n"
-            return True, "\n" + txt
-        return False, f"Variable {varname} not found"
+            return Ok("\n" + txt)
+        return Err(f"Variable {varname} not found")
 
     def findvar(self, varname: str) -> Variable | None:
         """Find a variable and its parent object in the registered varlist set, based

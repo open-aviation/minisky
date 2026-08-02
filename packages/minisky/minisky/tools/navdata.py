@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 import pandas as pd
 
+from minisky.result import Err, Ok, Result
 from minisky.tools import geo
 from minisky.tools.aero import nm
 
@@ -184,7 +185,7 @@ class Navdatabase:
         lat: float | None = None,
         lon: float | None = None,
         wptype: str | None = None,
-    ) -> tuple[bool, str]:
+    ) -> Result[str, str]:
         """DEFWPT: Define, inspect, or delete a scenario-specific waypoint.
 
         Without lat/lon, information about the existing waypoint is
@@ -198,15 +199,12 @@ class Navdatabase:
             lon: Longitude [deg].
             wptype: Optional waypoint type (e.g. FIX, VOR, DME, NDB), or
                 DEL/DELETE to remove the waypoint.
-
-        Returns:
-            tuple: (success (bool), message (str)).
         """
         # Prevent polluting the database: check arguments
         if name == None or name == "":
-            return False, "Insufficient arguments"
+            return Err("Insufficient arguments")
         elif name.isdigit():
-            return False, "Name needs to start with an alphabetical character"
+            return Err("Name needs to start with an alphabetical character")
 
         # DEL command: give info on waypoint (shudl work wit or without lat,lon, may be clicked by accident
         elif (wptype != None and (wptype.upper() == "DEL" or wptype.upper() == "DELETE")) or (
@@ -222,11 +220,11 @@ class Navdatabase:
                 txt = self.wpid[i] + " : " + str(self.wplat[i]) + "," + str(self.wplon[i])
                 if len(self.wptype[i]) > 0:
                     txt = txt + "  " + self.wptype[i]
-                return True, txt
+                return Ok(txt)
 
             # Waypoint name is free
             else:
-                return True, "Waypoint " + name.upper() + " does not yet exist."
+                return Ok("Waypoint " + name.upper() + " does not yet exist.")
 
         # Still here? So there is data, then we add this waypoint
         self.wpid.append(name.upper())
@@ -246,24 +244,21 @@ class Navdatabase:
         # Update screen info
         self.console.addnavwpt(name.upper(), lat, lon)
 
-        return True, name.upper() + " added to navdb."
+        return Ok(name.upper() + " added to navdb.")
 
-    def delwpt(self, name: str | None = None) -> tuple[bool, str]:
+    def delwpt(self, name: str | None = None) -> Result[str, str]:
         """Delete a waypoint from the database.
 
         The last-added occurrence of the name is removed.
 
         Args:
             name: Waypoint name.
-
-        Returns:
-            tuple: (success (bool), message (str)).
         """
         if name is None:
-            return False, "No waypoint name given"
+            return Err("No waypoint name given")
 
         if self.wpid.count(name.upper()) <= 0:
-            return False, "Waypoint " + name.upper() + " does not exist."
+            return Err("Waypoint " + name.upper() + " does not exist.")
 
         idx = len(self.wpid) - self.wpid[::-1].index(name.upper()) - 1  # Search from back of list
 
@@ -281,7 +276,7 @@ class Navdatabase:
         # Update screen info 9delete necessary there?)
         self.console.removenavwpt(name.upper())
 
-        return True, name.upper() + " deleted from navdb."
+        return Ok(name.upper() + " deleted from navdb.")
 
     def getwpidx(self, txt: str, reflat: float = 999999.0, reflon: float = 999999) -> int:
         """Get waypoint index to access data.

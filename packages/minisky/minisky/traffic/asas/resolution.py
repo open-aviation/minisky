@@ -22,6 +22,7 @@ import numpy as np
 
 from minisky.core.config import MiniSkyConfig
 from minisky.core.trafficarrays import TrafficArrays
+from minisky.result import Err, Ok, Result
 from minisky.stack.argparser import Txt
 from minisky.tools.aero import ft, nm
 from minisky.traffic import route
@@ -71,7 +72,7 @@ class ConflictResolution(TrafficArrays):
         self,
         config: MiniSkyConfig,
         traffic: Traffic,
-        select_implementation: Callable[[str, str], tuple[bool, str]],
+        select_implementation: Callable[[str, str], Result[str, str]],
     ) -> None:
         super().__init__()
         self.config = config
@@ -322,7 +323,7 @@ class ConflictResolution(TrafficArrays):
         # Remove pairs from the list that are past CPA or have deleted aircraft
         self.resopairs -= delpairs
 
-    def setprio(self, flag: bool | None = None, priocode="") -> bool | tuple:
+    def setprio(self, flag: bool | None = None, priocode="") -> Result[str, str]:
         """Define priority rules (right of way) for conflict resolution.
 
         Implements the PRIORULES stack command. The base class only stores
@@ -333,23 +334,19 @@ class ConflictResolution(TrafficArrays):
             flag (bool): True to enable priority rules, False to disable.
                 When None, an informational message is returned.
             priocode (str): Identifier of the priority rule set to use.
-
-        Returns:
-            True on success, or (False, message) when not applicable.
         """
         if flag is None:
             if self.__class__ is ConflictResolution:
-                return False, "No conflict resolution enabled."
-            return (
-                False,
-                f"Resolution algorithm {self.__class__.__name__} hasn't implemented priority.",
+                return Err("No conflict resolution enabled.")
+            return Err(
+                f"Resolution algorithm {self.__class__.__name__} hasn't implemented priority."
             )
 
         self.swprio = flag
         self.priocode = priocode
-        return True
+        return Ok("")
 
-    def setnoreso(self, *idx: int) -> bool | tuple:
+    def setnoreso(self, *idx: int) -> Result[str, str]:
         """ADD or Remove aircraft that nobody will avoid.
         Multiple aircraft can be sent to this function at once.
 
@@ -360,22 +357,18 @@ class ConflictResolution(TrafficArrays):
         Args:
             *idx: Aircraft indices to toggle. When empty, the current list of
                 flagged aircraft is reported.
-
-        Returns:
-            True on success, or (True, message) when reporting.
         """
         if not idx:
-            return (
-                True,
+            return Ok(
                 "NORESO [ACID, ... ] OR NORESO [GROUPID]"
                 + "\nCurrent list of aircraft nobody will avoid:"
-                + ", ".join(np.array(self.traffic.callsign)[self.noresoac]),
+                + ", ".join(np.array(self.traffic.callsign)[self.noresoac])
             )
         indices = list(idx)
         self.noresoac[indices] = np.logical_not(self.noresoac[indices])
-        return True
+        return Ok("")
 
-    def setresooff(self, *idx: int) -> bool | tuple:
+    def setresooff(self, *idx: int) -> Result[str, str]:
         """ADD or Remove aircraft that will not avoid anybody else.
         Multiple aircraft can be sent to this function at once.
 
@@ -386,23 +379,19 @@ class ConflictResolution(TrafficArrays):
         Args:
             *idx: Aircraft indices to toggle. When empty, the current list of
                 flagged aircraft is reported.
-
-        Returns:
-            True on success, or (True, message) when reporting.
         """
         if not idx:
-            return (
-                True,
+            return Ok(
                 "RESOOFF [ACID, ... ] OR RESOOFF [GROUPID]"
                 + "\nCurrent list of aircraft will not avoid anybody:"
-                + ", ".join(np.array(self.traffic.callsign)[self.resooffac]),
+                + ", ".join(np.array(self.traffic.callsign)[self.resooffac])
             )
         else:
             indices = list(idx)
             self.resooffac[indices] = np.logical_not(self.resooffac[indices])
-            return True
+            return Ok("")
 
-    def setresofach(self, factor: float | None = None) -> tuple:
+    def setresofach(self, factor: float | None = None) -> Result[str, str]:
         """Set resolution factor horizontal
         (to maneuver only a fraction of a resolution vector).
 
@@ -414,23 +403,17 @@ class ConflictResolution(TrafficArrays):
         Args:
             factor (float): Horizontal resolution factor [-]. When None, the
                 current factor is reported.
-
-        Returns:
-            tuple: (success (bool), message (str)) for the command stack.
         """
         if factor is None:
-            return (
-                True,
-                f"RFACH [FACTOR]\nCurrent horizontal resolution factor is: {self.resofach}",
-            )
+            return Ok(f"RFACH [FACTOR]\nCurrent horizontal resolution factor is: {self.resofach}")
         else:
             self.resofach = factor
             self.resorrelative = (
                 True  # Size of resolution zone r, vertically, set relative to CD zone
             )
-            return True, f"Horizontal resolution factor set to {self.resofach}"
+            return Ok(f"Horizontal resolution factor set to {self.resofach}")
 
-    def setresofacv(self, factor: float | None = None) -> tuple:
+    def setresofacv(self, factor: float | None = None) -> Result[str, str]:
         """Set resolution factor vertical (to maneuver only a fraction of a resolution vector).
 
         Implements the RFACV stack command. The vertical resolution zone
@@ -439,21 +422,15 @@ class ConflictResolution(TrafficArrays):
         Args:
             factor (float): Vertical resolution factor [-]. When None, the
                 current factor is reported.
-
-        Returns:
-            tuple: (success (bool), message (str)) for the command stack.
         """
         if factor is None:
-            return (
-                True,
-                f"RFACV [FACTOR]\nCurrent vertical resolution factor is: {self.resofacv}",
-            )
+            return Ok(f"RFACV [FACTOR]\nCurrent vertical resolution factor is: {self.resofacv}")
         self.resofacv = factor
         # Size of resolution zone dh, vertically, set relative to CD zone
         self.resodhrelative = True
-        return True, f"Vertical resolution factor set to {self.resofacv}"
+        return Ok(f"Vertical resolution factor set to {self.resofacv}")
 
-    def setresozoner(self, zoner: float | None = None) -> tuple:
+    def setresozoner(self, zoner: float | None = None) -> Result[str, str]:
         """Set resolution factor horizontal, but then with absolute value
         (to maneuver only a fraction of a resolution vector).
 
@@ -465,31 +442,25 @@ class ConflictResolution(TrafficArrays):
         Args:
             zoner (float): Resolution zone radius [NM]. When None, the current
                 factor and resulting radius are reported.
-
-        Returns:
-            tuple: (success (bool), message (str)) for the command stack.
         """
         if not self.traffic.cd.global_rpz:
             self.resorrelative = True
-            return (
-                False,
-                "RSZONER [radiusnm]\nCan only set resolution factor when simulation contains aircraft with different RPZ,\nUse RFACH instead.",
+            return Err(
+                "RSZONER [radiusnm]\nCan only set resolution factor when simulation contains aircraft with different RPZ,\nUse RFACH instead."
             )
         if zoner is None:
-            return (
-                True,
-                f"RSZONER [radiusnm]\nCurrent horizontal resolution factor is: {self.resofach}, resulting in radius: {self.resofach * self.traffic.cd.rpz_def / nm} nm",
+            return Ok(
+                f"RSZONER [radiusnm]\nCurrent horizontal resolution factor is: {self.resofach}, resulting in radius: {self.resofach * self.traffic.cd.rpz_def / nm} nm"
             )
 
         self.resofach = zoner / self.traffic.cd.rpz_def * nm
         # Size of resolution zone r, vertically, no longer relative to CD zone
         self.resorrelative = False
-        return (
-            True,
-            f"Horizontal resolution factor updated to {self.resofach}, resulting in radius: {zoner} nm",
+        return Ok(
+            f"Horizontal resolution factor updated to {self.resofach}, resulting in radius: {zoner} nm"
         )
 
-    def setresozonedh(self, zonedh: float | None = None) -> tuple:
+    def setresozonedh(self, zonedh: float | None = None) -> Result[str, str]:
         """Set resolution factor vertical (to maneuver only a fraction of a
         resolution vector), but then with absolute value.
 
@@ -501,31 +472,25 @@ class ConflictResolution(TrafficArrays):
         Args:
             zonedh (float): Resolution zone height [ft]. When None, the
                 current factor and resulting height are reported.
-
-        Returns:
-            tuple: (success (bool), message (str)) for the command stack.
         """
         if not self.traffic.cd.global_hpz:
             self.resodhrelative = True
-            return (
-                False,
-                "RSZONEH [zonedhft]\nCan only set resolution factor when simulation contains aircraft with different HPZ,\nUse RFACV instead.",
+            return Err(
+                "RSZONEH [zonedhft]\nCan only set resolution factor when simulation contains aircraft with different HPZ,\nUse RFACV instead."
             )
         if zonedh is None:
-            return (
-                True,
-                f"RSZONEDH [zonedhft]\nCurrent vertical resolution factor is: {self.resofacv}, resulting in height: {self.resofacv * self.traffic.cd.hpz_def / ft} ft",
+            return Ok(
+                f"RSZONEDH [zonedhft]\nCurrent vertical resolution factor is: {self.resofacv}, resulting in height: {self.resofacv * self.traffic.cd.hpz_def / ft} ft"
             )
 
         self.resofacv = zonedh / self.traffic.cd.hpz_def * ft
         # Size of resolution zone dh, vertically, no longer relative to CD zone
         self.resodhrelative = False
-        return (
-            True,
-            f"Vertical resolution factor updated to {self.resofacv}, resulting in height: {zonedh} ft",
+        return Ok(
+            f"Vertical resolution factor updated to {self.resofacv}, resulting in height: {zonedh} ft"
         )
 
-    def setmethod(self, name: Txt = "") -> tuple:
+    def setmethod(self, name: Txt = "") -> Result[str, str]:
         """Select a Conflict Resolution method.
 
         Implements the RESO stack command. Selecting "MVP" replaces the
@@ -534,37 +499,34 @@ class ConflictResolution(TrafficArrays):
 
         Args:
             name (str): "OFF", "MVP", or empty to report available methods.
-
-        Returns:
-            tuple: (success (bool), message (str)) for the command stack.
         """
 
         names = ["OFF", "MVP"]
 
         if not name:
             curname = type(self.traffic.cr).__name__ if self.traffic.cr.activate else "OFF"
-            return (
-                True,
-                f"Current CR method: {curname}" + f"\nAvailable CR methods: {', '.join(names)}",
+            return Ok(
+                f"Current CR method: {curname}" + f"\nAvailable CR methods: {', '.join(names)}"
             )
 
         if name == "OFF":
             self.traffic.cr.switch(False)
-            return True, "Conflict Resolution turned off."
+            return Ok("Conflict Resolution turned off.")
 
         if name == "MVP":
-            success, message = self.select_implementation("CONFLICTRESOLUTION", name)
-            if not success:
-                return success, message
-            self.traffic.cr.switch(True)
-            return True, "Selected MVP as Conflict Resolution method."
+            match self.select_implementation("CONFLICTRESOLUTION", name):
+                case Err() as error:
+                    return error
+                case Ok():
+                    self.traffic.cr.switch(True)
+                    return Ok("Selected MVP as Conflict Resolution method.")
 
-        return False, f"Unknown method: {name}. Available: {', '.join(names)}"
+        return Err(f"Unknown method: {name}. Available: {', '.join(names)}")
 
-    def setresometh(self, value: Txt = "") -> tuple:
+    def setresometh(self, value: Txt = "") -> Result[str, str]:
         """Report that horizontal method selection requires the MVP implementation."""
-        return False, f"RMETHH is not available for CR method {type(self).__name__}"
+        return Err(f"RMETHH is not available for CR method {type(self).__name__}")
 
-    def setresometv(self, value: Txt = "") -> tuple:
+    def setresometv(self, value: Txt = "") -> Result[str, str]:
         """Report that vertical method selection requires the MVP implementation."""
-        return False, f"RMETHV is not available for CR method {type(self).__name__}"
+        return Err(f"RMETHV is not available for CR method {type(self).__name__}")

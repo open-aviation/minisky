@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 
 from minisky.core.config import MiniSkyConfig
+from minisky.result import Err, Ok, Result
 from minisky.stack.argparser import Txt
 from minisky.traffic.asas import ConflictResolution
 
@@ -55,7 +56,7 @@ class MVP(ConflictResolution):
         self,
         config: MiniSkyConfig,
         traffic: Traffic,
-        select_implementation: Callable[[str, str], tuple[bool, str]],
+        select_implementation: Callable[[str, str], Result[str, str]],
     ) -> None:
         super().__init__(config, traffic, select_implementation)
         # [-] switch to limit resolution to the horizontal direction
@@ -67,7 +68,7 @@ class MVP(ConflictResolution):
         # [-] switch to limit resolution to the vertical direction
         self.swresovert = False
 
-    def setprio(self, flag=None, priocode="") -> bool | tuple:
+    def setprio(self, flag=None, priocode="") -> Result[str, str]:
         """Set the prio switch and the type of prio.
 
         Implements the PRIORULES stack command for MVP. Validates the
@@ -77,13 +78,9 @@ class MVP(ConflictResolution):
             flag (bool): True to enable priority rules, False to disable.
                 When None, the available priority codes are reported.
             priocode (str): One of "FF1", "FF2", "FF3", "LAY1", "LAY2".
-
-        Returns:
-            True on success, or (success (bool), message (str)) tuple.
         """
         if flag is None:
-            return (
-                True,
+            return Ok(
                 "PRIORULES [ON/OFF] [PRIOCODE]"
                 + "\nAvailable priority codes: "
                 + "\n     FF1:  Free Flight Primary (No Prio) "
@@ -94,14 +91,14 @@ class MVP(ConflictResolution):
                 + "\nPriority is currently "
                 + ("ON" if self.swprio else "OFF")
                 + "\nPriority code is currently: "
-                + str(self.priocode),
+                + str(self.priocode)
             )
         options = ["FF1", "FF2", "FF3", "LAY1", "LAY2"]
         if priocode not in options:
-            return False, "Priority code Not Understood. Available Options: " + str(options)
+            return Err("Priority code Not Understood. Available Options: " + str(options))
         return super().setprio(flag, priocode)
 
-    def setresometh(self, value: Txt = "") -> tuple:
+    def setresometh(self, value: Txt = "") -> Result[str, str]:
         """Processes the RMETHH command. Sets swresovert = False.
 
         Selects which horizontal degrees of freedom MVP may use for
@@ -111,28 +108,21 @@ class MVP(ConflictResolution):
         Args:
             value (str): One of "BOTH", "SPD", "HDG", "NONE", "ON", "OFF",
                 "OF". When empty, the current settings are reported.
-
-        Returns:
-            tuple: (success (bool), message (str)) for the command stack.
         """
         # Acceptable arguments for this command
         options = ["BOTH", "SPD", "HDG", "NONE", "ON", "OFF", "OF"]
         if not value:
-            return (
-                True,
+            return Ok(
                 "RMETHH [ON / BOTH / OFF / NONE / SPD / HDG]"
                 + "\nHorizontal resolution limitation is currently "
                 + ("ON" if self.swresohoriz else "OFF")
                 + "\nSpeed resolution limitation is currently "
                 + ("ON" if self.swresospd else "OFF")
                 + "\nHeading resolution limitation is currently "
-                + ("ON" if self.swresohdg else "OFF"),
+                + ("ON" if self.swresohdg else "OFF")
             )
         if value not in options:
-            return (
-                False,
-                "RMETH Not Understood" + "\nRMETHH [ON / BOTH / OFF / NONE / SPD / HDG]",
-            )
+            return Err("RMETH Not Understood" + "\nRMETHH [ON / BOTH / OFF / NONE / SPD / HDG]")
         else:
             if value == "ON" or value == "BOTH":
                 self.swresohoriz = True
@@ -154,9 +144,9 @@ class MVP(ConflictResolution):
                 self.swresospd = False
                 self.swresohdg = True
                 self.swresovert = False
-            return True, f"Horizontal resolution method set to {value}"
+            return Ok(f"Horizontal resolution method set to {value}")
 
-    def setresometv(self, value: Txt = "") -> tuple:
+    def setresometv(self, value: Txt = "") -> Result[str, str]:
         """Processes the RMETHV command. Sets swresohoriz = False.
 
         Enables (ON/"V/S") or disables (OFF/NONE) vertical-speed-only
@@ -165,24 +155,17 @@ class MVP(ConflictResolution):
         Args:
             value (str): One of "ON", "V/S", "OFF", "OF", "NONE". When empty,
                 the current setting is reported.
-
-        Returns:
-            tuple: (success (bool), message (str)) for the command stack.
         """
         # Acceptable arguments for this command
         options = ["NONE", "ON", "OFF", "OF", "V/S"]
         if not value:
-            return (
-                True,
+            return Ok(
                 "RMETHV [ON / V/S / OFF / NONE]"
                 + "\nVertical resolution limitation is currently "
-                + ("ON" if self.swresovert else "OFF"),
+                + ("ON" if self.swresovert else "OFF")
             )
         if value not in options:
-            return (
-                False,
-                f"RMETHV '{value}' Not Understood\nRMETHV [ON / V/S / OFF / NONE]",
-            )
+            return Err(f"RMETHV '{value}' Not Understood\nRMETHV [ON / V/S / OFF / NONE]")
 
         if value == "ON" or value == "V/S":
             self.swresovert = True
@@ -192,7 +175,7 @@ class MVP(ConflictResolution):
         elif value == "OFF" or value == "OF" or value == "NONE":
             # Do NOT swtich off self.swresohoriz if value == OFF
             self.swresovert = False
-        return True, f"Vertical resolution method set to {value}"
+        return Ok(f"Vertical resolution method set to {value}")
 
     def applyprio(
         self,

@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 
 from minisky.core.trafficarrays import TrafficArrays
+from minisky.result import Ok, Result
 from minisky.tools import aero
 from minisky.tools.aero import fpm, ft, kts
 
@@ -522,7 +523,7 @@ class OpenAP(TrafficArrays):
 
         return axmax
 
-    def show_performance(self, acid: int) -> tuple:
+    def show_performance(self, acid: int) -> Result[str, str]:
         """Report the current performance state of one aircraft.
 
         Implements the PERFSTATS stack command output: flight phase, thrust,
@@ -531,19 +532,13 @@ class OpenAP(TrafficArrays):
 
         Args:
             acid (int): Aircraft index.
-
-        Returns:
-            tuple: (True, message (str)) for the command stack.
         """
-        return (
-            True,
-            (
-                f"Flight phase: {ph.readable_phase(self.phase[acid])}\n"
-                f"Thrust: {self.thrust[acid] / 1000:.0f} kN\n"
-                f"Drag: {self.drag[acid] / 1000:.0f} kN\n"
-                f"Fuel flow: {self.fuelflow[acid]:.2f} kg/s\n"
-                f"Speed envelope: [{self.vmin[acid] / kts:.0f}, {self.vmax[acid] / kts:.0f}] kts\n"
-                f"Vertical speed envelope: [{self.vsmin[acid] / fpm:.0f}, {self.vsmax[acid] / fpm:.0f}] fpm\n"
-                f"Ceiling: {self.hmax[acid] / ft:.0f} ft"
-            ),
+        return Ok(
+            f"Flight phase: {ph.readable_phase(self.phase[acid])}\n"
+            f"Thrust: {self.thrust[acid] / 1000:.0f} kN\n"
+            f"Drag: {self.drag[acid] / 1000:.0f} kN\n"
+            f"Fuel flow: {self.fuelflow[acid]:.2f} kg/s\n"
+            f"Speed envelope: [{self.vmin[acid] / kts:.0f}, {self.vmax[acid] / kts:.0f}] kts\n"
+            f"Vertical speed envelope: [{self.vsmin[acid] / fpm:.0f}, {self.vsmax[acid] / fpm:.0f}] fpm\n"
+            f"Ceiling: {self.hmax[acid] / ft:.0f} ft"
         )

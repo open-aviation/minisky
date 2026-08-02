@@ -15,10 +15,8 @@ KTS = 0.514444
 
 class TestCreate:
     def test_cre_single(self, runtime: MiniSky, sim: Simulation) -> None:
-        ok, _msg = runtime.traffic.cre(
-            "KL001", "A320", lat=52.0, lon=4.0, hdg=90, alt=3000, spd=150
-        )
-        assert ok
+        result = runtime.traffic.cre("KL001", "A320", lat=52.0, lon=4.0, hdg=90, alt=3000, spd=150)
+        assert result.is_ok()
         assert runtime.traffic.ntraf == 1
         assert runtime.traffic.callsign[0] == "KL001"
         assert runtime.traffic.lat[0] == pytest.approx(52.0)
@@ -31,13 +29,13 @@ class TestCreate:
 
     def test_cre_duplicate_callsign_rejected(self, runtime: MiniSky, sim: Simulation) -> None:
         runtime.traffic.cre("KL001")
-        ok, _msg = runtime.traffic.cre("KL001")
-        assert not ok
+        result = runtime.traffic.cre("KL001")
+        assert result.is_err()
         assert runtime.traffic.ntraf == 1
 
     def test_mcre_multiple(self, runtime: MiniSky, sim: Simulation) -> None:
-        ok, _ = runtime.traffic.mcre(5)
-        assert ok
+        result = runtime.traffic.mcre(5)
+        assert result.is_ok()
         assert runtime.traffic.ntraf == 5
         assert len(set(runtime.traffic.callsign)) == 5
 
@@ -178,7 +176,8 @@ class TestConditional:
 class TestWind:
     def test_wind_add_get_roundtrip(self, runtime: MiniSky, sim: Simulation) -> None:
         wind = runtime.traffic.wind
-        assert wind.add(52.0, 4.0, 270.0, 20.0) is True  # from 270 deg, 20 kts
+        result = wind.add(52.0, 4.0, 270.0, 20.0)  # from 270 deg, 20 kts
+        assert result.is_ok()
         vn, ve = wind.getdata(52.0, 4.0, 0.0)
         assert ve == pytest.approx(20 * KTS)  # westerly wind blows eastward
         assert vn == pytest.approx(0.0, abs=1e-9)
@@ -197,7 +196,8 @@ class TestWind:
         wind.add(52.0, 4.0, 270.0, 20.0)
         assert wind.winddim > 0
         # TODO(abraham): possible bug!
-        assert wind.add(52.0, 4.0, "DEL") is True  # type: ignore
+        result = wind.add(52.0, 4.0, "DEL")  # type: ignore
+        assert result.is_ok()
         assert wind.winddim == 0
         assert len(wind.lat) == 0
 
@@ -208,7 +208,8 @@ class TestWind:
         wind.add(52.0, 4.0, 270.0, 20.0)
         # With 3+ winddata elements DEL used to fall into the alt/dir/spd branch
         # TODO(abraham): possible bug!
-        assert wind.add(52.0, 4.0, "DEL", None, None) is True  # type: ignore
+        result = wind.add(52.0, 4.0, "DEL", None, None)  # type: ignore
+        assert result.is_ok()
         assert wind.winddim == 0
 
     def test_wind_via_stack_two_element_form(self, runtime: MiniSky, run_cmd: RunCommand) -> None:

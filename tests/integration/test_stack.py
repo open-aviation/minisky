@@ -158,10 +158,10 @@ class TestHelp:
         # HELP >filename writes the reference to ./docs/<filename>
         monkeypatch.chdir(tmp_path)
         (tmp_path / "docs").mkdir()
-        success, msg = runtime.commands.showhelp(">ref.txt")
-        assert success
+        result = runtime.commands.showhelp(">ref.txt")
+        assert result.is_ok(), result.err()
         ref = tmp_path / "docs" / "ref.txt"
-        assert ref.exists(), msg
+        assert ref.exists(), result.ok()
         content = ref.read_text()
         assert content.startswith("Command\tDescription\tUsage")
         assert "\nCRE\t" in content

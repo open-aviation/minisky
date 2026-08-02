@@ -25,7 +25,7 @@ import asyncio
 import os
 from contextlib import asynccontextmanager, suppress
 from io import StringIO
-from typing import Annotated, Any, cast
+from typing import Annotated, Any, Literal, TypeAlias, TypedDict, cast
 
 import pandas as pd
 from fastapi import (
@@ -43,6 +43,7 @@ from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from minisky import MiniSky
+from minisky.result import Err, Ok, Result
 from minisky.tools import aero
 
 
@@ -52,6 +53,34 @@ def _get_runtime(request: Request) -> MiniSky:
 
 
 Runtime = Annotated[MiniSky, Depends(_get_runtime)]
+
+# we are using adjacently tagged enums for compatability
+# TODO(abraham): use externally tagged once we remove the html
+
+
+class OkResultResponse(TypedDict):
+    """JSON representation of a successful string result."""
+
+    ok: Literal[True]
+    value: str
+
+
+class ErrResultResponse(TypedDict):
+    """JSON representation of an unsuccessful string result."""
+
+    ok: Literal[False]
+    error: str
+
+
+ResultResponse: TypeAlias = OkResultResponse | ErrResultResponse
+
+
+def _result_response(result: Result[str, str]) -> ResultResponse:
+    match result:
+        case Ok(value):
+            return {"ok": True, "value": value}
+        case Err(error):
+            return {"ok": False, "error": error}
 
 
 @asynccontextmanager
@@ -260,14 +289,16 @@ def show_map() -> RedirectResponse:
     return RedirectResponse(url="/static/display.html")
 
 
-def list_plugins(runtime: Runtime) -> Any:
+def list_plugins(runtime: Runtime) -> ResultResponse:
     """List available and loaded plugins."""
-    return runtime.plugins.manage("LIST")
+    result = runtime.plugins.listing()
+    return _result_response(result)
 
 
-async def load_plugin(name: str, runtime: Runtime) -> Any:
+async def load_plugin(name: str, runtime: Runtime) -> ResultResponse:
     """Load a plugin by name."""
-    return await runtime.plugins.load(name)
+    result = await runtime.plugins.load(name)
+    return _result_response(result)
 
 
 def create_router() -> APIRouter:

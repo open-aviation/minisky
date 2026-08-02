@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 
 from minisky.core.trafficarrays import TrafficArrays
+from minisky.result import Err, Ok, Result
 from minisky.stack.argparser import Acid, Alt, Hdg, OnOff, Spd, Vspd, Wpt
 from minisky.tools import geo
 from minisky.tools.aero import (
@@ -36,7 +37,7 @@ from minisky.tools.aero import (
     vcasormach2tas,
 )
 from minisky.tools.convert import degto180
-from minisky.tools.position import Position, txt2pos
+from minisky.tools.position import txt2pos
 
 from .route import Route, direct
 
@@ -933,7 +934,7 @@ class Autopilot(TrafficArrays):
 
     def selaltcmd(
         self, idx: int | np.ndarray, alt: Alt, vspd: Vspd | None = None
-    ) -> tuple[bool, str]:
+    ) -> Result[str, str]:
         """Select the autopilot altitude, optionally with a vertical speed.
 
         Implements the ALT stack command: `ALT acid, alt, [vspd]`.
@@ -946,9 +947,6 @@ class Autopilot(TrafficArrays):
             idx: Aircraft index (or collection of indices).
             alt: Selected altitude [m] (stack input in ft/FL).
             vspd: Optional vertical speed [m/s] (stack input in fpm).
-
-        Returns:
-            tuple: (True, confirmation message).
         """
         self.traffic.selalt[idx] = alt
         self.traffic.swvnav[idx] = False
@@ -967,9 +965,9 @@ class Autopilot(TrafficArrays):
             )
 
             self.traffic.selvs[idxarr[oppositevs]] = 0.0
-        return True, f"altitude set to {alt / ft} ft"
+        return Ok(f"altitude set to {alt / ft} ft")
 
-    def selvspdcmd(self, idx: int, vspd: Vspd) -> tuple[bool, str]:
+    def selvspdcmd(self, idx: int, vspd: Vspd) -> Result[str, str]:
         """Select the autopilot vertical speed.
 
         Implements the VS stack command: `VS acid, vspd (ft/min)`.
@@ -978,15 +976,12 @@ class Autopilot(TrafficArrays):
         Args:
             idx: Aircraft index.
             vspd: Selected vertical speed [m/s] (stack input in fpm).
-
-        Returns:
-            tuple: (True, confirmation message).
         """
         self.traffic.selvs[idx] = vspd
         self.traffic.swvnav[idx] = False
-        return True, f"vertical speed set to {vspd / fpm} ft/min"
+        return Ok(f"vertical speed set to {vspd / fpm} ft/min")
 
-    def selhdgcmd(self, idx: int, hdg: Hdg) -> tuple[bool, str]:  # HDG command
+    def selhdgcmd(self, idx: int, hdg: Hdg) -> Result[str, str]:  # HDG command
         """Select the autopilot heading.
 
         Implements the HDG stack command: `HDG acid, hdg (deg)`. When a
@@ -998,9 +993,6 @@ class Autopilot(TrafficArrays):
         Args:
             idx: Aircraft index.
             hdg: Selected heading [deg].
-
-        Returns:
-            tuple: (True, confirmation message).
         """
 
         if self.traffic.wind.winddim > 0:
@@ -1021,9 +1013,9 @@ class Autopilot(TrafficArrays):
             self.trk[idx] = hdg
 
         self.traffic.swlnav[idx] = False
-        return True, f"heading set to {hdg} deg"
+        return Ok(f"heading set to {hdg} deg")
 
-    def selspdcmd(self, idx: int, casmach: Spd) -> tuple[bool, str]:  # SPD command
+    def selspdcmd(self, idx: int, casmach: Spd) -> Result[str, str]:  # SPD command
         """Select the autopilot speed.
 
         Implements the SPD stack command: `SPD acid, casmach`. Switches
@@ -1035,9 +1027,6 @@ class Autopilot(TrafficArrays):
             idx: Aircraft index.
             casmach: Selected speed: CAS [m/s] or Mach [-] (values above 1.0
                 are interpreted as CAS; stack input in kts or Mach).
-
-        Returns:
-            tuple: (True, confirmation message).
         """
         # Depending on or position relative to crossover altitude,
         # we will maintain CAS or Mach when altitude changes
@@ -1052,11 +1041,11 @@ class Autopilot(TrafficArrays):
         else:
             msg = f"speed set to Mach {casmach}"
 
-        return True, msg
+        return Ok(msg)
 
     def setdest(
         self, acidx: Acid, wpname: Wpt | None = None, casmach: Spd | None = None
-    ) -> tuple[bool, str]:
+    ) -> Result[str, str]:
         """Set (or show) the destination of an aircraft.
 
         Implements the DEST stack command: `DEST acid, latlon/airport`.
@@ -1071,12 +1060,9 @@ class Autopilot(TrafficArrays):
                 current destination is reported.
             casmach: Optional speed constraint at the destination, CAS [m/s]
                 or Mach [-].
-
-        Returns:
-            tuple: (success flag, message).
         """
         if wpname is None:
-            return True, "DEST " + self.traffic.callsign[acidx] + ": " + self.dest[acidx]
+            return Ok("DEST " + self.traffic.callsign[acidx] + ": " + self.dest[acidx])
 
         route = self.route[acidx]
 
@@ -1089,19 +1075,18 @@ class Autopilot(TrafficArrays):
                 reflat = self.traffic.lat[acidx]
                 reflon = self.traffic.lon[acidx]
 
-            success, posobj = txt2pos(
+            match txt2pos(
                 wpname,
                 float(reflat),
                 float(reflon),
                 self.navigation,
                 self.traffic,
-            )
-            if success:
-                assert isinstance(posobj, Position)
-                lat = posobj.lat
-                lon = posobj.lon
-            else:
-                return False, "DEST: Position " + wpname + " not found."
+            ):
+                case Ok(posobj):
+                    lat = posobj.lat
+                    lon = posobj.lon
+                case Err():
+                    return Err("DEST: Position " + wpname + " not found.")
 
         else:
             lat = self.navigation.aptlat[apidx]
@@ -1126,11 +1111,11 @@ class Autopilot(TrafficArrays):
 
         # If not found, say so
         elif iwp < 0:
-            return False, ("DEST position" + self.dest[acidx] + " not found.")
+            return Err("DEST position" + self.dest[acidx] + " not found.")
 
-        return True, f"destination set to {wpname}"
+        return Ok(f"destination set to {wpname}")
 
-    def setorig(self, acidx: int, wpname: Wpt | None = None) -> tuple[bool, str]:
+    def setorig(self, acidx: int, wpname: Wpt | None = None) -> Result[str, str]:
         """Set (or show) the origin of an aircraft.
 
         Implements the ORIG stack command: `ORIG acid, latlon/airport`.
@@ -1141,12 +1126,9 @@ class Autopilot(TrafficArrays):
             acidx: Aircraft index.
             wpname: Airport identifier or position text; when omitted, the
                 current origin is reported.
-
-        Returns:
-            tuple: (success flag, message).
         """
         if wpname is None:
-            return True, "ORIG " + self.traffic.callsign[acidx] + ": " + self.orig[acidx]
+            return Ok("ORIG " + self.traffic.callsign[acidx] + ": " + self.orig[acidx])
 
         route = self.route[acidx]
 
@@ -1160,19 +1142,18 @@ class Autopilot(TrafficArrays):
                 reflat = self.traffic.lat[acidx]
                 reflon = self.traffic.lon[acidx]
 
-            success, posobj = txt2pos(
+            match txt2pos(
                 wpname,
                 float(reflat),
                 float(reflon),
                 self.navigation,
                 self.traffic,
-            )
-            if success:
-                assert isinstance(posobj, Position)
-                lat = posobj.lat
-                lon = posobj.lon
-            else:
-                return False, ("ORIG: Position " + wpname + " not found.")
+            ):
+                case Ok(posobj):
+                    lat = posobj.lat
+                    lon = posobj.lon
+                case Err():
+                    return Err("ORIG: Position " + wpname + " not found.")
 
         else:
             lat = self.navigation.aptlat[apidx]
@@ -1184,11 +1165,11 @@ class Autopilot(TrafficArrays):
             acidx, self.orig[acidx], route.orig, lat, lon, 0.0, self.traffic.cas[acidx]
         )
         if iwp < 0:
-            return False, (self.orig[acidx] + " not found.")
+            return Err(self.orig[acidx] + " not found.")
 
-        return True, f"origin set to {wpname}"
+        return Ok(f"origin set to {wpname}")
 
-    def setVNAV(self, idx: Any, flag: OnOff | None = None) -> tuple[bool, str]:
+    def setVNAV(self, idx: Any, flag: OnOff | None = None) -> Result[str, str]:
         """Switch VNAV (vertical FMS guidance) on or off, or show its state.
 
         Implements the VNAV stack command: `VNAV acid, [ON/OFF]`. VNAV can
@@ -1200,9 +1181,6 @@ class Autopilot(TrafficArrays):
             idx: Aircraft index, collection of indices, or None for all
                 aircraft.
             flag: True/False to switch on/off; None to report the state.
-
-        Returns:
-            tuple: (success flag, status message).
         """
         if not isinstance(idx, Collection):
             if idx is None:
@@ -1229,7 +1207,7 @@ class Autopilot(TrafficArrays):
 
             elif flag:
                 if not self.traffic.swlnav[i]:
-                    return False, (self.traffic.callsign[i] + ": VNAV ON requires LNAV to be ON")
+                    return Err(self.traffic.callsign[i] + ": VNAV ON requires LNAV to be ON")
 
                 route = self.route[i]
                 if len(route.wpname) > 0:
@@ -1247,7 +1225,7 @@ class Autopilot(TrafficArrays):
                     self.traffic.actwp.nextaltco[i] = self.route[i].wptoalt[actwpidx]
 
                 else:
-                    return False, (
+                    return Err(
                         "VNAV "
                         + self.traffic.callsign[i]
                         + ": no waypoints or destination specified"
@@ -1256,11 +1234,11 @@ class Autopilot(TrafficArrays):
                 self.traffic.swvnav[i] = False
                 self.traffic.swvnavspd[i] = False
         if flag == None:
-            return True, "\n".join(output)
+            return Ok("\n".join(output))
 
-        return True, f"VNAV {'ON' if flag else 'OFF'}"
+        return Ok(f"VNAV {'ON' if flag else 'OFF'}")
 
-    def setLNAV(self, idx: Any, flag: OnOff | None = None) -> tuple[bool, str]:
+    def setLNAV(self, idx: Any, flag: OnOff | None = None) -> Result[str, str]:
         """Switch LNAV (lateral FMS guidance) on or off, or show its state.
 
         Implements the LNAV stack command: `LNAV acid, [ON/OFF]`. LNAV can
@@ -1272,9 +1250,6 @@ class Autopilot(TrafficArrays):
             idx: Aircraft index, collection of indices, or None for all
                 aircraft.
             flag: True/False to switch on/off; None to report the state.
-
-        Returns:
-            tuple: (success flag, status message).
         """
         if not isinstance(idx, Collection):
             if idx is None:
@@ -1298,7 +1273,7 @@ class Autopilot(TrafficArrays):
             elif flag:
                 route = self.route[i]
                 if len(route.wpname) <= 0:
-                    return False, (
+                    return Err(
                         "LNAV "
                         + self.traffic.callsign[i]
                         + ": no waypoints or destination specified"
@@ -1309,11 +1284,11 @@ class Autopilot(TrafficArrays):
             else:
                 self.traffic.swlnav[i] = False
         if flag is None:
-            return True, "\n".join(output)
+            return Ok("\n".join(output))
 
-        return True, f"LNAV {'ON' if flag else 'OFF'}"
+        return Ok(f"LNAV {'ON' if flag else 'OFF'}")
 
-    def setswtoc(self, idx: Any, flag: OnOff | None = None) -> tuple[bool, str]:
+    def setswtoc(self, idx: Any, flag: OnOff | None = None) -> Result[str, str]:
         """Switch the Top-of-Climb logic on or off, or show its state.
 
         Implements the SWTOC stack command: `SWTOC acid, [ON/OFF]`. With
@@ -1325,9 +1300,6 @@ class Autopilot(TrafficArrays):
             idx: Aircraft index, collection of indices, or None for all
                 aircraft.
             flag: True/False to switch on/off; None to report the state.
-
-        Returns:
-            tuple: (True, status message).
         """
 
         if not isinstance(idx, Collection):
@@ -1352,11 +1324,11 @@ class Autopilot(TrafficArrays):
             else:
                 self.swtoc[i] = False
         if flag is None:
-            return True, "\n".join(output)
+            return Ok("\n".join(output))
 
-        return True, f"SWTOC {'ON' if flag else 'OFF'}"
+        return Ok(f"SWTOC {'ON' if flag else 'OFF'}")
 
-    def setswtod(self, idx: Any, flag: OnOff | None = None) -> tuple[bool, str]:
+    def setswtod(self, idx: Any, flag: OnOff | None = None) -> Result[str, str]:
         """Switch the Top-of-Descent logic on or off, or show its state.
 
         Implements the SWTOD stack command: `SWTOD acid, [ON/OFF]`. With
@@ -1368,9 +1340,6 @@ class Autopilot(TrafficArrays):
             idx: Aircraft index, collection of indices, or None for all
                 aircraft.
             flag: True/False to switch on/off; None to report the state.
-
-        Returns:
-            tuple: (True, status message).
         """
         if not isinstance(idx, Collection):
             if idx is None:
@@ -1394,9 +1363,9 @@ class Autopilot(TrafficArrays):
             else:
                 self.swtod[i] = False
         if flag is None:
-            return True, "\n".join(output)
+            return Ok("\n".join(output))
 
-        return True, f"SWTOD {'ON' if flag else 'OFF'}"
+        return Ok(f"SWTOD {'ON' if flag else 'OFF'}")
 
 
 def calcvrta(v0: float, dx: float, deltime: float, trafax: float) -> float:
