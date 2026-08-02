@@ -1,10 +1,8 @@
 """Integration tests for the MULTICOPTER plugin (Phase 2).
 
-Driven through the stack, like test_stack.py. The plugin registers
-replaceable implementations on load and selects them from its hooks (first
-step after load, and after every reset), so these tests run on their own
-runtime instead of the shared session runtime — the other integration tests
-keep the core implementations.
+Driven through the stack, like test_stack.py. These tests run on the
+plugin-loaded `mcruntime` from conftest.py instead of the shared session
+runtime — the other integration tests keep the core implementations.
 
 The default simulation timestep is 1 s; yaw rates are lowered where a slew
 must be observable across steps.
@@ -12,34 +10,11 @@ must be observable across steps.
 
 from __future__ import annotations
 
-import asyncio
-from collections.abc import Callable, Iterator
-
-import pytest
 from minisky import MiniSky
-from minisky.core.config import MiniSkyConfig
 from minisky.simulation import Simulation
 from minisky.tools.aero import ft
 from minisky_multicopter.autopilot import MulticopterAutopilot
 from tests._types import RunCommand, StepUntil
-
-
-@pytest.fixture(scope="module")
-def mcruntime() -> Iterator[MiniSky]:
-    """Module-wide MiniSky runtime with the MULTICOPTER plugin loaded."""
-    instance = MiniSky(MiniSkyConfig())
-    result = asyncio.run(instance.plugins.load("MULTICOPTER"))
-    assert result.is_ok(), result.err()
-    yield instance
-    asyncio.run(instance.aclose())
-
-
-@pytest.fixture
-def mcsim(mcruntime: MiniSky) -> Simulation:
-    """Fresh simulation state; the plugin reset hook re-selects the impls."""
-    mcruntime.simulation.reset()
-    mcruntime.console.read_output_buffer()  # drain "Simulation reset" echo
-    return mcruntime.simulation
 
 
 class TestPluginDiscovery:
@@ -47,33 +22,6 @@ class TestPluginDiscovery:
         result = mcruntime.plugins.listing()
         assert result.is_ok(), result.err()
         assert "MULTICOPTER" in result.unwrap()
-
-
-@pytest.fixture
-def run_mc(mcruntime: MiniSky, mcsim: Simulation) -> RunCommand:
-    """Queue a stack command, step the sim, and return the last echoed output."""
-
-    def _run(cmd: str, steps: int = 1) -> str:
-        mcruntime.commands.stack(cmd)
-        for _ in range(steps):
-            mcruntime.simulation.step()
-        return mcruntime.console.read_output_buffer()
-
-    return _run
-
-
-@pytest.fixture
-def step_mc(mcruntime: MiniSky) -> StepUntil:
-    """Step the simulation until a predicate holds, failing after max_steps."""
-
-    def _step(pred: Callable[[], bool], max_steps: int = 600) -> int:
-        for i in range(max_steps):
-            mcruntime.simulation.step()
-            if pred():
-                return i
-        pytest.fail(f"condition not met within {max_steps} simulation steps")
-
-    return _step
 
 
 class TestPluginWiring:
@@ -85,6 +33,7 @@ class TestPluginWiring:
         assert type(mcruntime.traffic.aporasas).__name__ == "MulticopterAPorASAS"
         assert type(mcruntime.traffic.ap).__name__ == "MulticopterAutopilot"
         assert type(mcruntime.traffic.actwp).__name__ == "MulticopterActiveWaypoint"
+        assert type(mcruntime.traffic.perf).__name__ == "MulticopterPerf"
 
     def test_membership_from_typecode(self, mcruntime: MiniSky, run_mc: RunCommand) -> None:
         run_mc("CRE D1,MAVIC,52,4,90,100,20")

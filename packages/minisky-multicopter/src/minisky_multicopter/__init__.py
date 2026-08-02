@@ -17,12 +17,15 @@ simulation step after loading, and every reset):
   HDG-yaws-the-nose semantics, fly-over route defaults.
 - ``ACTIVEWAYPOINT``  -> :class:`MulticopterActiveWaypoint` — fixed waypoint
   capture radius (the bank-angle turn distance degenerates at hover speeds).
+- ``OPENAP``          -> :class:`MulticopterPerf` — electric performance:
+  required thrust, momentum-theory power, battery state of charge with
+  envelope feedback at low charge.
 
 Fixed-wing aircraft in the same simulation are untouched: every override
 calls ``super()`` and adjusts only the multicopter rows. Helicopters are out
 of scope — membership is a typecode set, not ``LIFT_ROTOR``.
 
-Stack commands: MCOPT, YAW, YAWRATE, HOVER.
+Stack commands: MCOPT, YAW, YAWRATE, HOVER, BATT.
 """
 
 from __future__ import annotations
@@ -34,6 +37,7 @@ from minisky_multicopter.aporasas import MulticopterAPorASAS
 from minisky_multicopter.autopilot import MulticopterAutopilot
 from minisky_multicopter.entity import Multicopter, get_multicopter
 from minisky_multicopter.kinematics import MulticopterKinematics
+from minisky_multicopter.perf import MulticopterPerf
 
 __all__ = (
     "Multicopter",
@@ -41,6 +45,7 @@ __all__ = (
     "MulticopterActiveWaypoint",
     "MulticopterAutopilot",
     "MulticopterKinematics",
+    "MulticopterPerf",
     "get_multicopter",
     "plugin",
 )
@@ -60,6 +65,7 @@ def build(context: plugin_api.PluginContext[object]) -> plugin_api.PluginSpec:
             MulticopterAPorASAS,
             MulticopterAutopilot,
             MulticopterActiveWaypoint,
+            MulticopterPerf,
         )
     )
 

@@ -1,6 +1,6 @@
 # Multicopter support plan
 
-Status: **in progress** — Phases 1 and 2 are implemented on this branch.
+Status: **in progress** — Phases 1, 2 and 3 are implemented on this branch.
 
 ## Goal
 
@@ -330,15 +330,18 @@ for the power model against a few hand-computed points.
 
 ### Phase 3 checklist
 
-- [ ] Per-typecode constants dict in `perf.py`: `{battery_wh, CdS?, twr?}` from public spec
-      sheets, `d_range_max`-derived fallback for unlisted rotor types
-- [ ] `perf.py`: `MulticopterPerf(OpenAP)` — required-thrust model, momentum-theory power from
-      `engnum · engpower`, per-aircraft SoC integration, envelope feedback in `limits()`;
-      stack command `BATT`
-- [ ] Unit tests: power model vs hand-computed points; SoC monotonically decreasing;
-      envelope tightens below SoC threshold
-- [ ] Sanity: MAVIC-class hover endurance in the 20–35 min range
-- [ ] `uv run pytest`, `uv run ruff check .`, `uv run pyright` all green
+- [x] Per-typecode constants dict in `perf.py`: `{battery_wh, cds?, twr?}` from public spec
+      sheets (MAVIC, PHAN4, M100, M200, M600), `d_range_max`-derived fallback for unlisted
+      rotor types (MNET, AMZN, HORSEFLY)
+- [x] `perf.py`: `MulticopterPerf(OpenAP)` — required-thrust model, momentum-theory power from
+      `engnum · engpower` (stored in kW — converted at the model boundary), per-aircraft SoC
+      integration, envelope feedback in `limits()` (descent deliberately unrestricted); the
+      `BATT` command lives on the Multicopter entity and delegates at call time, like `HOVER`,
+      so it survives the reset double-swap; fifth entry in the plugin's `IMPLEMENTATIONS`
+- [x] Unit tests: power model vs hand-computed points; SoC monotonically decreasing;
+      envelope tightens below SoC threshold (`tests/integration/test_perf.py`)
+- [x] Sanity: MAVIC-class hover endurance in the 20–35 min range (≈27.7 min analytic)
+- [x] `uv run pytest`, `uv run ruff check .`, `uv run pyright` all green
 
 ## Phase 4 — docs, scenarios, cleanup
 

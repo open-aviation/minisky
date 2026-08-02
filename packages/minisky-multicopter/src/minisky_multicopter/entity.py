@@ -3,7 +3,7 @@
 Holds the plugin-owned per-aircraft arrays that mark which aircraft are
 multicopters and carry their decoupled body heading and yaw rate, plus the
 stack commands that read and write them (``MCOPT``, ``YAW``, ``YAWRATE``,
-``HOVER``) and the hooks that keep the multicopter implementations selected
+``HOVER``, ``BATT``) and the hooks that keep the multicopter implementations selected
 (on the first simulation step after loading, and again after every reset,
 which reverts all replaceables to their core defaults).
 
@@ -38,6 +38,7 @@ IMPLEMENTATIONS = (
     ("APORASAS", "MULTICOPTERAPORASAS"),
     ("AUTOPILOT", "MULTICOPTERAUTOPILOT"),
     ("ACTIVEWAYPOINT", "MULTICOPTERACTIVEWAYPOINT"),
+    ("OPENAP", "MULTICOPTERPERF"),
 )
 
 
@@ -216,3 +217,21 @@ class Multicopter(plugin_api.Entity):
         if not isinstance(ap, MulticopterAutopilot):
             return False, "HOVER: SELECTIMPL AUTOPILOT MULTICOPTERAUTOPILOT first"
         return ap.hover(idx, duration, alt)
+
+    @plugin_api.command(arguments="callsign")
+    def batt(self, idx: int) -> tuple[bool, str]:
+        """Report the battery state of charge, power draw and endurance.
+
+        Arguments:
+        - idx: Aircraft callsign
+        """
+        # Deferred import: the perf module imports this one.
+        from minisky_multicopter.perf import MulticopterPerf
+
+        callsign = self.traffic.callsign[idx]
+        if not self.ismulticopter[idx]:
+            return False, f"BATT: {callsign} is not a multicopter (use MCOPT {callsign} ON)"
+        perf = self.traffic.perf
+        if not isinstance(perf, MulticopterPerf):
+            return False, "BATT: SELECTIMPL OPENAP MULTICOPTERPERF first"
+        return perf.batt(idx)
