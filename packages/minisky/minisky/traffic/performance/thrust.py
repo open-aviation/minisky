@@ -8,7 +8,7 @@ the takeoff regime and for three in-flight altitude segments (below 10000 ft,
 engine emission databank fuel-flow points as a function of thrust ratio.
 """
 
-from typing import Any
+from typing import NamedTuple
 
 import numpy as np
 
@@ -170,9 +170,18 @@ def inflight(v: np.ndarray, h: np.ndarray, vs: np.ndarray, thr0: np.ndarray) -> 
     return ratio_F0
 
 
+class FuelFlowCoefficients(NamedTuple):
+    quadratic: float | np.ndarray
+    """Quadratic fuel-flow coefficient [kg/s]."""
+    linear: float | np.ndarray
+    """Linear fuel-flow coefficient [kg/s]."""
+    constant: float | np.ndarray
+    """Constant fuel-flow coefficient [kg/s]."""
+
+
 def compute_eng_ff_coeff(
     ffidl: float, ffapp: float, ffco: float, ffto: float
-) -> tuple[Any, Any, Any]:
+) -> FuelFlowCoefficients:
     """Compute fuel flow based on engine icao fuel flow model
 
     Fits a quadratic polynomial through the four fuel-flow measurement
@@ -185,9 +194,6 @@ def compute_eng_ff_coeff(
         ffapp (float or 1D-array): fuel flow at approach thrust (30%) [kg/s]
         ffco (float or 1D-array): fuel flow at climb-out thrust (85%) [kg/s]
         ffto (float or 1D-array): fuel flow at takeoff thrust (100%) [kg/s]
-
-    Returns:
-        list of coeff: [a, b, c], fuel flow calc: ax^2 + bx + c
     """
 
     # standard fuel flow at test thrust ratios
@@ -196,4 +202,4 @@ def compute_eng_ff_coeff(
 
     a, b, c = np.polyfit(x, y, 2)
 
-    return a, b, c
+    return FuelFlowCoefficients(a, b, c)

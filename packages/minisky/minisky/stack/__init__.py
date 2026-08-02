@@ -34,7 +34,7 @@ from functools import partial
 from io import StringIO
 from pathlib import Path
 from threading import Lock
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 import numpy as np
 
@@ -233,12 +233,20 @@ class Command:
         """Return the brief usage text."""
         return self.brief
 
-    def _get_arguments(self, arguments) -> tuple:
-        """Get arguments from string, or tuple/list."""
+    class ArgumentSpec(NamedTuple):
+        annotation: str
+        """Parser annotation."""
+        optional: bool
+        """Whether the argument may be omitted."""
+
+    def _get_arguments(
+        self, arguments: str | list[ArgumentSpec] | tuple[ArgumentSpec, ...]
+    ) -> tuple[ArgumentSpec, ...]:
+        """Get arguments from string, or typed argument specifications."""
         if isinstance(arguments, (tuple, list)):
             return tuple(arguments)
         # Assume it is a comma-separated string
-        argtypes = []
+        argtypes: list[Command.ArgumentSpec] = []
 
         # Process and reduce annotation string from left to right
         # First cut at square brackets, then take separate argument types
@@ -253,8 +261,7 @@ class Command:
             )
 
             types = [t.strip() for t in arguments[:cut].strip("[,] ").split(",")]
-            # Returned argtypes are tuples of type and optional status
-            argtypes += [(t, opt or t == "...") for t in types if t]
+            argtypes.extend(self.ArgumentSpec(t, opt or t == "...") for t in types if t)
             arguments = arguments[cut:].lstrip(",]")
 
         return tuple(argtypes)
@@ -850,14 +857,15 @@ class CommandStack:
         or otherwise the filename of the scenario."""
         return self.scenname
 
-    def get_scendata(self) -> tuple:
-        """Return the scenario data that was loaded from a scenario file.
+    class ScenarioData(NamedTuple):
+        times: list[float]
+        """Buffered command execution times [s]."""
+        commands: list[str]
+        """Buffered scenario command lines."""
 
-        Returns:
-            tuple: (scentime, scencmd), the lists of command times [s] and
-            command lines still buffered for execution.
-        """
-        return self.scentime, self.scencmd
+    def get_scendata(self) -> ScenarioData:
+        """Return the scenario data that was loaded from a scenario file."""
+        return self.ScenarioData(self.scentime, self.scencmd)
 
     def set_scendata(self, newtime, newcmd) -> None:
         """Set the scenario data. This is used by the batch logic."""

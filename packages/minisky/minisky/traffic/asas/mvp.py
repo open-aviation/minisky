@@ -17,14 +17,14 @@ way) rules can assign the manoeuvre to only one aircraft of a pair.
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 import numpy as np
 
 from minisky.core.config import MiniSkyConfig
 from minisky.result import Err, Ok, Result
 from minisky.stack.argparser import Txt
-from minisky.traffic.asas import ConflictResolution
+from minisky.traffic.asas.resolution import ConflictResolution
 
 if TYPE_CHECKING:
     from minisky.traffic import Traffic
@@ -177,6 +177,12 @@ class MVP(ConflictResolution):
             self.swresovert = False
         return Ok(f"Vertical resolution method set to {value}")
 
+    class PriorityResolution(NamedTuple):
+        ownship: np.ndarray
+        """Updated ownship resolution vector [m/s]."""
+        intruder: np.ndarray
+        """Updated intruder resolution vector [m/s]."""
+
     def applyprio(
         self,
         dv_mvp: np.ndarray,
@@ -184,7 +190,7 @@ class MVP(ConflictResolution):
         dv2: np.ndarray,
         vs1: float,
         vs2: float,
-    ) -> tuple:
+    ) -> PriorityResolution:
         """Apply the desired priority setting to the resolution.
 
         Distributes the pairwise MVP resolution vector over the two aircraft
@@ -200,9 +206,6 @@ class MVP(ConflictResolution):
             dv2 (ndarray): Accumulated resolution vector of aircraft 2 [m/s].
             vs1 (float): Vertical speed of aircraft 1 [m/s].
             vs2 (float): Vertical speed of aircraft 2 [m/s].
-
-        Returns:
-            tuple: Updated (dv1, dv2) resolution vectors [m/s].
         """
 
         # Primary Free Flight prio rules (no priority)
@@ -267,9 +270,11 @@ class MVP(ConflictResolution):
                 dv1 = dv1 - dv_mvp
                 dv2 = dv2 + dv_mvp
 
-        return dv1, dv2
+        return self.PriorityResolution(dv1, dv2)
 
-    def resolve(self, conf: Any, ownship: Any, intruder: Any) -> tuple:
+    def resolve(
+        self, conf: Any, ownship: Any, intruder: Any
+    ) -> ConflictResolution.ResolutionAdvisories:
         """Resolve all current conflicts.
 
         Loops over all detected conflict pairs, computes the MVP resolution
@@ -287,14 +292,6 @@ class MVP(ConflictResolution):
             ownship: Traffic object with ownship states.
             intruder: Traffic object with intruder states.
 
-        Returns:
-            tuple: Per-aircraft advisories:
-                - newtrack (ndarray): Resolution track [deg].
-                - newgscapped (ndarray): Resolution ground speed, capped to
-                  the performance envelope [m/s].
-                - vscapped (ndarray): Resolution vertical speed, capped to
-                  the performance envelope [m/s].
-                - alt (ndarray): Resolution altitude [m].
         """
         # Initialize an array to store the resolution velocity vector for all A/C
         dv = np.zeros((ownship.ntraf, 3))
@@ -312,14 +309,18 @@ class MVP(ConflictResolution):
             # If A/C indexes are found, then apply MVP on this conflict pair
             # Because ADSB is ON, this is done for each aircraft separately
             if idx1 > -1 and idx2 > -1:
-                dv_mvp, tsolV = self.MVP(ownship, intruder, conf, qdr, dist, tcpa, tLOS, idx1, idx2)
-                timesolveV[idx1] = min(timesolveV[idx1], tsolV)
+                pair_resolution = self.MVP(
+                    ownship, intruder, conf, qdr, dist, tcpa, tLOS, idx1, idx2
+                )
+                dv_mvp = pair_resolution.velocity_delta
+                timesolveV[idx1] = min(timesolveV[idx1], pair_resolution.vertical_time)
 
                 # Use priority rules if activated
                 if self.swprio:
-                    dv[idx1], _ = self.applyprio(
+                    priority = self.applyprio(
                         dv_mvp, dv[idx1], dv[idx2], ownship.vs[idx1], intruder.vs[idx2]
                     )
+                    dv[idx1] = priority.ownship
                 else:
                     # since cooperative, the vertical resolution component can be halved, and then dv_mvp can be added
                     dv_mvp[2] = 0.5 * dv_mvp[2]
@@ -399,7 +400,13 @@ class MVP(ConflictResolution):
         # using the auto pilot vertical speed (ownship.avs) using the code in line 106 (asasalttemp) when only
         # horizontal resolutions are allowed.
         alt = alt * (1 - self.swresohoriz) + ownship.selalt * self.swresohoriz
-        return newtrack, newgscapped, vscapped, alt
+        return self.ResolutionAdvisories(newtrack, newgscapped, vscapped, alt)
+
+    class MvpResolution(NamedTuple):
+        velocity_delta: np.ndarray
+        """Resolution velocity change, east/north/up [m/s]."""
+        vertical_time: float
+        """Time needed to resolve the conflict vertically [s]."""
 
     def MVP(
         self,
@@ -412,7 +419,7 @@ class MVP(ConflictResolution):
         tLOS: float,
         idx1: int,
         idx2: int,
-    ) -> tuple:
+    ) -> MvpResolution:
         """Modified Voltage Potential (MVP) resolution method.
 
         Computes the velocity change that displaces the predicted closest
@@ -438,11 +445,6 @@ class MVP(ConflictResolution):
             tLOS (float): Time until loss of separation starts [s].
             idx1 (int): Index of the ownship aircraft.
             idx2 (int): Index of the intruder aircraft.
-
-        Returns:
-            tuple: (dv, tsolV) where dv is the resolution velocity change
-                (east, north, up) [m/s] and tsolV the time needed to resolve
-                the conflict vertically [s].
         """
         # Preliminary calculations-------------------------------------------------
         # Determine largest RPZ and HPZ of the conflict pair, use lookahead of ownship
@@ -528,4 +530,4 @@ class MVP(ConflictResolution):
         # combine the dv components
         dv = np.array([dv1, dv2, dv3])
 
-        return dv, tsolV
+        return self.MvpResolution(dv, tsolV)

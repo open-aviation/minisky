@@ -16,7 +16,7 @@ Actual resolution algorithms (e.g. the Modified Voltage Potential method in
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 import numpy as np
 
@@ -171,7 +171,17 @@ class ConflictResolution(TrafficArrays):
         """
         return self.active
 
-    def resolve(self, conf: Any, ownship: Any, intruder: Any) -> tuple:
+    class ResolutionAdvisories(NamedTuple):
+        track: np.ndarray
+        """Per-aircraft track advisory [deg]."""
+        tas: np.ndarray
+        """Per-aircraft true airspeed advisory [m/s]."""
+        vertical_speed: np.ndarray
+        """Per-aircraft vertical speed advisory [m/s]."""
+        altitude: np.ndarray
+        """Per-aircraft altitude advisory [m]."""
+
+    def resolve(self, conf: Any, ownship: Any, intruder: Any) -> ResolutionAdvisories:
         """Resolve all current conflicts.
 
         This function should be reimplemented in a subclass for actual
@@ -183,15 +193,13 @@ class ConflictResolution(TrafficArrays):
             conf: The ConflictDetection instance with the current conflicts.
             ownship: Traffic object with ownship states.
             intruder: Traffic object with intruder states.
-
-        Returns:
-            tuple: Per-aircraft advisories (newtrk [deg], newtas [m/s],
-                newvs [m/s], newalt [m]).
         """
         # If resolution is off, and detection is on, and a conflict is detected
         # then asas will be active for that airplane. Since resolution is off, it
         # should then follow the auto pilot instructions.
-        return ownship.ap.trk, ownship.ap.tas, ownship.ap.vs, ownship.ap.alt
+        return self.ResolutionAdvisories(
+            ownship.ap.trk, ownship.ap.tas, ownship.ap.vs, ownship.ap.alt
+        )
 
     def update(self, conf: Any, ownship: Any, intruder: Any) -> None:
         """Perform an update step of the Conflict Resolution implementation.
@@ -207,7 +215,12 @@ class ConflictResolution(TrafficArrays):
         """
         if self.activate:
             if conf.confpairs:
-                self.trk, self.tas, self.vs, self.alt = self.resolve(conf, ownship, intruder)
+                advisories = self.resolve(conf, ownship, intruder)
+                # TODO(abraham): consider storing the entire advisories result
+                self.trk = advisories.track
+                self.tas = advisories.tas
+                self.vs = advisories.vertical_speed
+                self.alt = advisories.altitude
             self.resumenav(conf, ownship, intruder)
 
     def resumenav(self, conf: Any, ownship: Any, intruder: Any) -> None:
