@@ -422,7 +422,7 @@ class OpenAP(TrafficArrays):
         maximum_vertical_speed: float | np.ndarray
         """Maximum vertical speed [m/s]."""
 
-    def currentlimits(self, id: Any = None) -> CurrentPerformanceLimits:
+    def currentlimits(self, idx: Any = None) -> CurrentPerformanceLimits:
         """Get current kinematic performance envelop.
 
         Converts the phase-dependent CAS limits to TAS at the current
@@ -430,7 +430,7 @@ class OpenAP(TrafficArrays):
         operating Mach number.
 
         Args:
-            id (int or 1D-array): Aircraft ID(s). Defualt to None (all aircraft).
+            idx (int or 1D-array): Aircraft index or indices. Defaults to all aircraft.
         """
         vtasmin = aero.vcas2tas(self.vmin, self.traffic.alt)
 
@@ -439,9 +439,9 @@ class OpenAP(TrafficArrays):
             aero.vmach2tas(self.mmo, self.traffic.alt),
         )
 
-        if id is not None:
+        if idx is not None:
             return self.CurrentPerformanceLimits(
-                vtasmin[id], vtasmax[id], self.vsmin[id], self.vsmax[id]
+                vtasmin[idx], vtasmax[idx], self.vsmin[idx], self.vsmax[idx]
             )
         return self.CurrentPerformanceLimits(vtasmin, vtasmax, self.vsmin, self.vsmax)
 

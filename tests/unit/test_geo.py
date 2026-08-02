@@ -95,7 +95,7 @@ class TestMatrixVariants:
 
 
 class TestProjection:
-    @pytest.mark.parametrize("qdr,dist", [(0.0, 60.0), (45.0, 100.0), (270.0, 30.0)])
+    @pytest.mark.parametrize(("qdr", "dist"), [(0.0, 60.0), (45.0, 100.0), (270.0, 30.0)])
     def test_qdrpos_roundtrip(self, qdr: float, dist: float) -> None:
         lat2, lon2 = geo.qdrpos(52.0, 4.0, qdr, dist)
         qdr_back, dist_back = geo.qdrdist(52.0, 4.0, lat2, lon2)

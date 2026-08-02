@@ -84,7 +84,7 @@ class Coefficient:
     def _load_all_rotor_flavor(self) -> dict:
         """Load rotorcraft data from the local JSON database."""
         # read rotor aircraft
-        with open(OPENAP_DIR / "rotor/aircraft.json") as f:
+        with (OPENAP_DIR / "rotor/aircraft.json").open() as f:
             acs = json.load(f)
         acs.pop("__comment")
         acs_ = {}

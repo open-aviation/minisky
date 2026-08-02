@@ -422,7 +422,7 @@ class PluginManager:
                         aliases=bound.aliases,
                         arguments=bound.declaration.arguments,
                         brief=bound.brief,
-                        help=bound.help,
+                        help_text=bound.help,
                     )
                     overlap = command_names.intersection(prepared.names)
                     if overlap:
