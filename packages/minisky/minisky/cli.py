@@ -19,7 +19,7 @@ from prompt_toolkit.completion import NestedCompleter, PathCompleter
 from prompt_toolkit.history import FileHistory
 from pydantic import ValidationError
 
-from minisky.core.config import MiniSkyConfig
+from minisky.core.config import MiniSkyConfig, default_user_config_toml_path
 
 if TYPE_CHECKING:
     from minisky.runtime import MiniSky
@@ -36,14 +36,13 @@ path_completer = PathCompleter()
 completer = NestedCompleter.from_nested_dict({"load": path_completer, "/load": path_completer})
 
 
-def _load_config(path: Path | None) -> MiniSkyConfig | None:
-    if path is None:
-        return None
-
-    selected = path.expanduser()
+def _load_config(path: Path | None) -> MiniSkyConfig:
+    selected = path.expanduser() if path is not None else default_user_config_toml_path()
     try:
         return MiniSkyConfig.from_path(selected)
     except FileNotFoundError as exc:
+        if path is None:
+            return MiniSkyConfig()
         raise typer.BadParameter(
             f"config file not found: {selected}",
             param_hint="--config",
@@ -55,16 +54,16 @@ def _load_config(path: Path | None) -> MiniSkyConfig | None:
         ) from exc
 
 
-def _new_runtime(config_path: Path | None, scenario: str | None = None) -> MiniSky:
-    """Construct a runtime from explicit or default configuration."""
+def _new_runtime(config: MiniSkyConfig, scenario: str | None = None) -> MiniSky:
+    """Construct a runtime from validated configuration."""
     from minisky import MiniSky
 
-    return MiniSky(config=_load_config(config_path), scenario=scenario)
+    return MiniSky(config=config, scenario=scenario)
 
 
 async def _run_scenario(scenario: str, speed: int, config_path: Path | None) -> None:
     """Initialise the simulator with a scenario and run it to completion."""
-    async with _new_runtime(config_path, scenario) as runtime:
+    async with _new_runtime(_load_config(config_path), scenario) as runtime:
         await runtime.plugins.load_configured()
         runtime.runner.speed = speed
         await runtime.run()
@@ -82,12 +81,8 @@ def run_cmd(
 
 @app.command("server")
 def server_cmd(
-    host: Annotated[str, typer.Option(help="Host address to bind.")] = os.environ.get(
-        "MINISKY_HOST", "0.0.0.0"
-    ),
-    port: Annotated[int, typer.Option(help="TCP port to bind.")] = int(
-        os.environ.get("MINISKY_PORT", "8000")
-    ),
+    host: Annotated[str | None, typer.Option(help="Host address to bind.")] = None,
+    port: Annotated[int | None, typer.Option(help="TCP port to bind.")] = None,
     reload: Annotated[bool, typer.Option(help="Enable uvicorn auto-reload.")] = False,
     config: _ConfigOption = None,
 ) -> None:
@@ -100,6 +95,10 @@ def server_cmd(
             "--config cannot be combined with --reload yet",
             param_hint="--config",
         )
+
+    loaded_config = _load_config(config)
+    host = host if host is not None else loaded_config.server.host
+    port = port if port is not None else loaded_config.server.port
 
     if reload:
         uvicorn.run(
@@ -114,7 +113,7 @@ def server_cmd(
     from minisky.server import create_app
 
     uvicorn.run(
-        create_app(_new_runtime(config)),
+        create_app(_new_runtime(loaded_config)),
         host=host,
         port=port,
     )

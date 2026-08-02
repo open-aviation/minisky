@@ -319,20 +319,3 @@ def create_router() -> APIRouter:
     router.add_api_route("/plugins", list_plugins, methods=["GET"])
     router.add_api_route("/plugins/load/{name}", load_plugin, methods=["GET"])
     return router
-
-
-def main() -> None:
-    """Console-script entry point: serve the API with uvicorn.
-
-    Host and port are read from `MINISKY_HOST` (default `0.0.0.0`) and
-    `MINISKY_PORT` (default `8000`).
-    """
-    import uvicorn
-
-    host = os.environ.get("MINISKY_HOST", "0.0.0.0")
-    port = int(os.environ.get("MINISKY_PORT", "8000"))
-    uvicorn.run("minisky.server:create_app", factory=True, host=host, port=port)
-
-
-if __name__ == "__main__":
-    main()
