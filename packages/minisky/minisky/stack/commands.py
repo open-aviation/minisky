@@ -209,12 +209,6 @@ def get_commands(command_stack: CommandStack) -> CommandCatalog:
             "DEL callsign/ALL/WIND/shape",
             "Delete command (aircraft, wind, area)",
         ],
-        "DELAY": [
-            command_stack.delay,
-            "time, string",
-            "DELAY time, cmdline",
-            "Delay a stack command until a specific simulation time.",
-        ],
         "DELRTE": [
             partial(route.delrte, command_stack.traffic),
             "callsign",
@@ -463,12 +457,6 @@ def get_commands(command_stack: CommandStack) -> CommandCatalog:
             "[float]",
             "RSZONER [zoner]",
             "Set resolution factor horizontal, but then with absolute value.",
-        ],
-        "SCHEDULE": [
-            command_stack.schedule,
-            "time,string",
-            "SCHEDULE a stack command at a specific simulation time.",
-            "Schedule a stack command at a specific simulation time.",
         ],
         "SCENARIO": [
             command_stack.scenario,
