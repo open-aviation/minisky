@@ -8,7 +8,6 @@ dependencies = [
     "typer>=0.15.0",
     "colorama>=0.4.6",
     "fastapi[standard]>=0.115.7",
-    "matplotlib>=3.10.0",
     "numpy>=2.2.2",
     "openap>=2.4",
     "pandas>=2.2.3",
@@ -17,6 +16,7 @@ dependencies = [
     "pyarrow>=19.0.1",
     "requests>=2.32.3",
     "scipy>=1.15.1",
+    "shapely>=2.0",
 ]
 
 [project.scripts]

@@ -11,11 +11,11 @@ inside an area. Each `AreaFilter` stores its defined shapes by name.
 from __future__ import annotations
 
 import numpy as np
-from matplotlib.path import Path
+import shapely
 
 from minisky.command import AltM, Keyword, LatLonDeg, LatLonDegrees, command
 from minisky.result import Err, Ok, Result
-from minisky.tools.geo import kwikdist
+from minisky.tools.geo import kwikpos
 
 
 class AreaFilter:
@@ -174,17 +174,21 @@ class Shape:
     Base class of BlueSky shapes
 
     Handles the naming and altitude bounds common to all shape types.
-    Derived classes implement checkInside() for their specific geometry.
+    Derived classes build a shapely geometry (`self.geom`) in (lat, lon)
+    coordinate space; containment is tested against it here.
 
     Attributes:
         name: Area name.
         coordinates: Flat list of lat/lon coordinates in deg defining the
             shape (plus radius in nm for circles).
+        geom: Shapely geometry of the shape in (lat, lon) space.
         top: Upper altitude bound [m].
         bottom: Lower altitude bound [m].
         raw: Dictionary with the raw shape definition (name, kind,
             coordinates).
     """
+
+    geom: shapely.Geometry
 
     def __init__(self, name: str, coordinates, top: float = 1e9, bottom: float = -1e9) -> None:
         self.raw = {"name": name, "shape": self.kind(), "coordinates": coordinates}
@@ -194,13 +198,9 @@ class Shape:
         self.bottom = np.minimum(bottom, top)
 
     def checkInside(self, lat: np.ndarray, lon: np.ndarray, alt: np.ndarray) -> np.ndarray:
-        """Returns True (or boolean array) if coordinate lat, lon, alt lies
-        within this shape.
-
-        Reimplement this function in the derived shape classes for this to
-        work.
-        """
-        return np.zeros(len(lat), dtype=bool)
+        """Return whether points (lat [deg], lon [deg], alt [m]) lie inside
+        this shape's geometry and altitude bounds."""
+        return shapely.contains_xy(self.geom, lat, lon) & (self.bottom <= alt) & (alt <= self.top)
 
     def _str_vrange(self) -> str:
         if self.top < 9e8:
@@ -228,11 +228,16 @@ class Shape:
 class Line(Shape):
     """A line shape between two lat/lon positions [deg].
 
-    Purely graphical: the inherited checkInside() always returns False.
+    Purely graphical: checkInside() always returns False.
     """
 
     def __init__(self, name: str, coordinates) -> None:
         super().__init__(name, coordinates)
+        self.geom = shapely.LineString(np.reshape(coordinates, (-1, 2)))
+
+    def checkInside(self, lat: np.ndarray, lon: np.ndarray, alt: np.ndarray) -> np.ndarray:
+        """A line has zero area: nothing is ever inside it."""
+        return np.zeros(len(lat), dtype=bool)
 
     def __str__(self) -> str:
         return (
@@ -256,14 +261,7 @@ class Box(Shape):
         self.lon0 = min(coordinates[1], coordinates[3])
         self.lat1 = max(coordinates[0], coordinates[2])
         self.lon1 = max(coordinates[1], coordinates[3])
-
-    def checkInside(self, lat: np.ndarray, lon: np.ndarray, alt: np.ndarray):
-        """Return whether points (lat [deg], lon [deg], alt [m]) lie inside this box."""
-        return (
-            ((self.lat0 <= lat) & (lat <= self.lat1))
-            & ((self.lon0 <= lon) & (lon <= self.lon1))
-            & ((self.bottom <= alt) & (alt <= self.top))
-        )
+        self.geom = shapely.box(self.lat0, self.lon0, self.lat1, self.lon1)
 
 
 class Circle(Shape):
@@ -273,18 +271,30 @@ class Circle(Shape):
     altitude bounds [m].
     """
 
+    # Maximum distance [nm] between the polygon border and the true circle
+    TOLERANCE_NM = 0.05
+    MIN_VERTICES = 36
+    MAX_VERTICES = 720
+
     def __init__(self, name: str, coordinates, top: float = 1e9, bottom: float = -1e9) -> None:
         super().__init__(name, coordinates, top, bottom)
         self.clat = coordinates[0]
         self.clon = coordinates[1]
         self.r = coordinates[2]
-
-    def checkInside(self, lat: np.ndarray, lon: np.ndarray, alt: np.ndarray):
-        """Return whether points (lat [deg], lon [deg], alt [m]) lie within
-        the circle radius [nm] and altitude bounds."""
-        distance = kwikdist(self.clat, self.clon, lat, lon)  # [NM]
-        inside = (distance <= self.r) & (self.bottom <= alt) & (alt <= self.top)
-        return inside
+        # An N-gon inscribed in a circle of radius r falls short of the true
+        # border by r*(1 - cos(pi/N)); pick N so that stays within tolerance
+        num_vertices = int(
+            np.clip(
+                np.ceil(np.pi / np.arccos(max(-1.0, 1.0 - self.TOLERANCE_NM / self.r))),
+                self.MIN_VERTICES,
+                self.MAX_VERTICES,
+            )
+        )
+        # Place the vertices geographically so the cos(lat) longitude
+        # scaling keeps this a circle rather than an ellipse in degrees
+        bearings = np.linspace(0.0, 360.0, num_vertices, endpoint=False)
+        vlat, vlon = kwikpos(self.clat, self.clon, bearings, self.r)
+        self.geom = shapely.Polygon(np.column_stack((vlat, vlon)))
 
     def __str__(self) -> str:
         return (
@@ -298,20 +308,9 @@ class Poly(Shape):
     """A polygon shape.
 
     Defined by a sequence of lat/lon vertices [deg] and optional altitude
-    bounds [m]; the border is stored as a matplotlib Path for fast
-    point-in-polygon tests.
+    bounds [m].
     """
 
     def __init__(self, name: str, coordinates, top: float = 1e9, bottom: float = -1e9) -> None:
         super().__init__(name, coordinates, top, bottom)
-        self.border = Path(np.reshape(coordinates, (len(coordinates) // 2, 2)))
-
-    def checkInside(self, lat: np.ndarray, lon: np.ndarray, alt: np.ndarray):
-        """Return whether points (lat [deg], lon [deg], alt [m]) lie inside
-        the polygon border and altitude bounds."""
-        points = np.vstack((lat, lon)).T
-        inside = np.all(
-            (self.border.contains_points(points), self.bottom <= alt, alt <= self.top),
-            axis=0,
-        )
-        return inside
+        self.geom = shapely.Polygon(np.reshape(coordinates, (-1, 2)))
