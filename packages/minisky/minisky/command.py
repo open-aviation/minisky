@@ -11,6 +11,7 @@ from annotated_types import BaseMetadata, Gt, IsFinite, Predicate
 
 from minisky.identifiers import normalize_public_name
 from minisky.result import Err, Ok, Result
+from minisky.tools.convert import txt2bool
 
 CommandCallback = Callable[..., Any]
 CommandTarget = TypeVar("CommandTarget", bound=CommandCallback)
@@ -168,6 +169,14 @@ def parse_int(text: str) -> ParseResult[int]:
 def parse_float(text: str) -> ParseResult[float]:
     """Parse one floating-point command field."""
     return _convert(text, float, "a number")
+
+
+def parse_on_off(text: str) -> ParseResult[bool]:
+    """Parse one on/off command field."""
+    return _convert(text, txt2bool, "ON or OFF")
+
+
+OnOff = Annotated[bool, CmdParser(parse_on_off)]
 
 
 _Constraint: TypeAlias = Gt | Predicate

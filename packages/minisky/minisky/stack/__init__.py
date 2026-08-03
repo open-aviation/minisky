@@ -38,13 +38,14 @@ from typing import TYPE_CHECKING, Any, NamedTuple, TypeAlias
 import numpy as np
 
 from minisky.command import (
+    ArgumentIssue,
     BoundCommand,
+    SourceSpan,
     compile_parameter,
     declared_commands,
+    next_argument,
 )
-from minisky.command import (
-    Parameter as TypedParameter,
-)
+from minisky.command import Parameter as TypedParameter
 from minisky.result import Err, Ok, Result
 from minisky.stack import argparser, commands
 from minisky.stack.argparser import ArgumentError, Parameter, String, Time, Txt, getnextarg
@@ -275,32 +276,36 @@ class Command:
 
 
 @dataclass(frozen=True, slots=True)
-class TypedCommand:
+class TypedCommandForm:
     callback: Callable[..., Any]
     source: Callable[..., Any]
-    name: str
-    aliases: tuple[str, ...]
-    params: tuple[TypedParameter, ...]
+    parameters: tuple[TypedParameter, ...]
     help: str
 
-    def __call__(self, argstring: str) -> Result[str, str]:
-        arguments: list[object] = []
-        remainder = argstring
-        source_text = self.name + (f" {argstring}" if argstring else "")
-        argument_offset = len(self.name) + (1 if argstring else 0)
-        for parameter in self.params:
-            offset = argument_offset + len(argstring) - len(remainder)
-            parsed = parameter.parse(remainder, source_text=source_text, offset=offset)
-            if isinstance(parsed, Err):
-                return Err(str(parsed.err()))
-            value = parsed.ok()
-            arguments.append(value.value)
-            remainder = value.remainder
 
-        if remainder:
-            return Err(f"unexpected command text: {remainder}")
+@dataclass(frozen=True, slots=True)
+class _TypedCommandCall:
+    form: TypedCommandForm
+    arguments: tuple[object, ...]
 
-        result = self.callback(*arguments)
+
+@dataclass(frozen=True, slots=True)
+class TypedCommand:
+    name: str
+    aliases: tuple[str, ...]
+    forms: tuple[TypedCommandForm, ...]
+
+    def __post_init__(self) -> None:
+        if not self.forms:
+            raise ValueError(f"typed command {self.name} has no forms")
+        if len(self.names) != len(set(self.names)):
+            raise ValueError(f"command {self.name} repeats an alias")
+
+    def __call__(self, argstring: str) -> Result[str, str | ArgumentIssue]:
+        if isinstance(resolved := self._resolve(argstring), Err):
+            return resolved
+        call = resolved.ok()
+        result = call.form.callback(*call.arguments)
         if isinstance(result, (Ok, Err)):
             return result
         if result is None:
@@ -308,28 +313,98 @@ class TypedCommand:
         # TODO(abraham): add bool/async compatibility
         raise TypeError(f"typed command {self.name} returned unsupported {type(result).__name__}")
 
+    def _resolve(self, argstring: str) -> Result[_TypedCommandCall, ArgumentIssue]:
+        source_text = self.name + (f" {argstring}" if argstring else "")
+        argument_offset = len(self.name) + (1 if argstring else 0)
+        failure: ArgumentIssue | None = None
+        for form in self.forms:
+            parsed = _parse_typed_form(form, argstring, source_text, argument_offset)
+            if isinstance(parsed, Ok):
+                return Ok(_TypedCommandCall(form, parsed.ok()))
+            failure = parsed.err()
+
+        # TODO(abraham): keep the last form failure for now; richer error aggregation can wait.
+        assert failure is not None
+        return Err(failure)
+
+    def merge(self, other: TypedCommand) -> TypedCommand:
+        if self.name != other.name:
+            raise ValueError(f"cannot merge commands {self.name} and {other.name}")
+        aliases = tuple(dict.fromkeys((*self.aliases, *other.aliases)))
+        return TypedCommand(self.name, aliases, (*self.forms, *other.forms))
+
     @property
     def names(self) -> tuple[str, ...]:
         return (self.name, *self.aliases)
 
     @property
+    def callback(self) -> Callable[..., Any]:
+        return self.forms[0].callback
+
+    @property
+    def params(self) -> tuple[TypedParameter, ...]:
+        return self.forms[0].parameters
+
+    @property
+    def help(self) -> str:
+        return "\n\n".join(form.help for form in self.forms if form.help)
+
+    @property
     def brief(self) -> str:
-        suffix = ",".join(parameter.name for parameter in self.params)
-        return f"{self.name} {suffix}" if suffix else self.name
+        return "\n".join(self._form_brief(form) for form in self.forms)
 
     @property
     def _callback_source(self) -> Callable[..., Any]:
         # temp legacy help-table adapter
-        return self.source
+        return self.forms[0].source
 
     def brieftext(self) -> str:
         return self.brief
 
     def helptext(self, _subcmd: str = "") -> str:
-        message = f"{self.help}\nUsage:\n{self.brief}"
+        sections = []
+        for form in self.forms:
+            usage = f"Usage:\n{self._form_brief(form)}"
+            sections.append(f"{form.help}\n{usage}" if form.help else usage)
+        message = "\n\n".join(sections)
         if self.aliases:
             message += "\nCommand aliases: " + ",".join(self.aliases)
         return message
+
+    def _form_brief(self, form: TypedCommandForm) -> str:
+        suffix = ",".join(parameter.name for parameter in form.parameters)
+        return f"{self.name} {suffix}" if suffix else self.name
+
+
+def _parse_typed_form(
+    form: TypedCommandForm,
+    argstring: str,
+    source_text: str,
+    argument_offset: int,
+) -> Result[tuple[object, ...], ArgumentIssue]:
+    arguments: list[object] = []
+    remainder = argstring
+    for parameter in form.parameters:
+        offset = argument_offset + len(argstring) - len(remainder)
+        parsed = parameter.parse(remainder, source_text=source_text, offset=offset)
+        if isinstance(parsed, Err):
+            return parsed
+        value = parsed.ok()
+        arguments.append(value.value)
+        remainder = value.remainder
+
+    if remainder:
+        offset = argument_offset + len(argstring) - len(remainder)
+        token_result = next_argument(remainder)
+        if isinstance(token_result, Err):
+            issue = token_result.err()
+        else:
+            token = token_result.ok()
+            issue = ArgumentIssue.expected("the end of the command", token.value, token.span)
+        return Err(
+            issue.at_argument("extra", source_text, offset, SourceSpan(0, max(1, len(remainder))))
+        )
+    return Ok(tuple(arguments))
 
 
 CommandEntry: TypeAlias = Command | TypedCommand
@@ -441,12 +516,22 @@ class CommandStack:
         return PreparedCommand(command_obj, names)
 
     def prepare_component(self, component: object) -> tuple[PreparedCommand, ...]:
-        """Compile typed command declarations from one runtime-owned component."""
-        return tuple(
-            self._prepare_declared_command(bound) for bound in declared_commands(component)
-        )
+        """Compile and merge typed declarations from one runtime-owned component."""
+        merged: dict[str, TypedCommand] = {}
+        order: list[str] = []
+        for bound in declared_commands(component):
+            command_obj = self._prepare_declared_command(bound)
+            previous = merged.get(bound.name)
+            if previous is None:
+                merged[bound.name] = command_obj
+                order.append(bound.name)
+                continue
+            merged[bound.name] = previous.merge(command_obj)
 
-    def _prepare_declared_command(self, bound: BoundCommand) -> PreparedCommand:
+        # TODO(abraham): keep overload merging provider-local until plugin mounting shares this path.
+        return tuple(PreparedCommand(merged[name], merged[name].names) for name in order)
+
+    def _prepare_declared_command(self, bound: BoundCommand) -> TypedCommand:
         callback = self.replaceables.bind_callback(bound.callback)
         annotations = inspect.get_annotations(bound.source, eval_str=True)
         signature = inspect.signature(callback, eval_str=False)
@@ -471,17 +556,13 @@ class CommandStack:
                 continue
             parameters.append(compile_parameter(parameter))
 
-        command_obj = TypedCommand(
+        form = TypedCommandForm(
             callback=callback,
             source=bound.source,
-            name=bound.name,
-            aliases=bound.aliases,
-            params=tuple(parameters),
+            parameters=tuple(parameters),
             help=bound.help,
         )
-        if len(command_obj.names) != len(set(command_obj.names)):
-            raise ValueError(f"command {bound.name} repeats an alias")
-        return PreparedCommand(command_obj, command_obj.names)
+        return TypedCommand(bound.name, bound.aliases, (form,))
 
     def validate_commands(self, commands: tuple[PreparedCommand, ...]) -> None:
         """Reject command names already used by this stack or the same batch."""
@@ -684,12 +765,13 @@ class CommandStack:
             self.cmdstack[0:0] = commands
 
     def _echo_command_result(
-        self, command_obj: CommandEntry, argstring: str, result: Result[str, str]
+        self, command_obj: CommandEntry, argstring: str, result: Result[str, str | ArgumentIssue]
     ) -> None:
         match result:
             case Ok(text):
                 pass
-            case Err(text):
+            case Err(error):
+                text = str(error)
                 if not argstring:
                     text = text or command_obj.brieftext()
                 else:
