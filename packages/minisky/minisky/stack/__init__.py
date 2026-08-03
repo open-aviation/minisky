@@ -301,9 +301,12 @@ class TypedCommand:
             return Err(f"unexpected command text: {remainder}")
 
         result = self.callback(*arguments)
-        if result is not None:
-            raise TypeError(f"typed command {self.name} must return None")
-        return Ok("")
+        if isinstance(result, (Ok, Err)):
+            return result
+        if result is None:
+            return Ok("")
+        # TODO(abraham): add bool/async compatibility
+        raise TypeError(f"typed command {self.name} returned unsupported {type(result).__name__}")
 
     @property
     def names(self) -> tuple[str, ...]:
@@ -554,6 +557,7 @@ class CommandStack:
             *legacy,
             *self.prepare_component(self.console),
             *self.prepare_component(self.simulation),
+            *self.prepare_component(self.runner),
         )
         self.validate_commands(prepared)
         self.install_commands(prepared)

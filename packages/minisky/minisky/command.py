@@ -7,6 +7,8 @@ from collections.abc import Callable, Iterator
 from dataclasses import dataclass, replace
 from typing import Annotated, Any, Generic, TypeAlias, TypeVar, get_args, get_origin, overload
 
+from annotated_types import BaseMetadata, Gt, IsFinite, Predicate
+
 from minisky.identifiers import normalize_public_name
 from minisky.result import Err, Ok, Result
 
@@ -141,16 +143,34 @@ Text = Annotated[str, CmdParser(parse_text)]
 """The complete remaining command text, consumed verbatim."""
 
 
-def parse_int(text: str) -> ParseResult[int]:
-    """Parse one integer command field."""
+FiniteFloat: TypeAlias = IsFinite[float]
+PositiveFiniteFloat: TypeAlias = Annotated[FiniteFloat, Gt(0)]
+
+
+def _convert(
+    text: str, converter: Callable[[str], ParsedT_co], expected: str
+) -> ParseResult[ParsedT_co]:
     if isinstance(result := next_argument(text), Err):
         return result
     token = result.ok()
     try:
-        value = int(token.value)
+        value = converter(token.value)
     except ValueError:
-        return Err(ArgumentIssue.expected("an integer", token.value or "empty input", token.span))
+        return Err(ArgumentIssue.expected(expected, token.value or "empty input", token.span))
     return Ok(Parsed(value, token.remainder, token.span))
+
+
+def parse_int(text: str) -> ParseResult[int]:
+    """Parse one integer command field."""
+    return _convert(text, int, "an integer")
+
+
+def parse_float(text: str) -> ParseResult[float]:
+    """Parse one floating-point command field."""
+    return _convert(text, float, "a number")
+
+
+_Constraint: TypeAlias = Gt | Predicate
 
 
 @dataclass(frozen=True, slots=True)
@@ -159,13 +179,18 @@ class Parameter:
 
     name: str
     parser: CmdParser[Any]
+    constraints: tuple[_Constraint, ...] = ()
 
     def parse(self, text: str, *, source_text: str, offset: int) -> ParseResult[Any]:
         if isinstance(result := self.parser(text), Err):
             issue = result.err()
-            # TODO(abraham): missing/default handling live here once optional fields exist?
+            # TODO(abraham): move missing/default semantics here when a command actually needs them.
             fallback = SourceSpan(0, max(1, len(text)))
             return Err(issue.at_argument(self.name, source_text, offset, fallback))
+
+        parsed = result.ok()
+        if isinstance(validation := _validate_constraints(parsed.value, self.constraints), Err):
+            return Err(validation.err().at_argument(self.name, source_text, offset, parsed.span))
         return result
 
     def __str__(self) -> str:
@@ -173,19 +198,52 @@ class Parameter:
 
 
 def compile_parameter(parameter: inspect.Parameter) -> Parameter:
-    """Compile the parser metadata carried by one annotated parameter."""
+    """Compile the parser and constraints carried by one annotation."""
     annotation = parameter.annotation
-    if annotation is int:
-        return Parameter(parameter.name, CmdParser(parse_int))
-    if get_origin(annotation) is not Annotated:
+    metadata: tuple[object, ...] = ()
+    if get_origin(annotation) is Annotated:
+        annotation, *raw_metadata = get_args(annotation)
+        metadata = tuple(raw_metadata)
+
+    parsers = tuple(item for item in metadata if isinstance(item, CmdParser))
+    if len(parsers) > 1:
+        raise TypeError(f"command parameter {parameter.name!r} declares multiple parsers")
+    parser = parsers[0] if parsers else _primitive_parser(annotation)
+    if parser is None:
         raise TypeError(f"command parameter {parameter.name!r} has no typed parser")
 
-    parsers = tuple(
-        metadata for metadata in get_args(annotation)[1:] if isinstance(metadata, CmdParser)
-    )
-    if len(parsers) != 1:
-        raise TypeError(f"command parameter {parameter.name!r} must declare exactly one parser")
-    return Parameter(parameter.name, parsers[0])
+    constraints: list[_Constraint] = []
+    for item in metadata:
+        if isinstance(item, (Gt, Predicate)):
+            constraints.append(item)
+        elif isinstance(item, BaseMetadata):
+            raise TypeError(f"unsupported command constraint: {item!r}")
+
+    return Parameter(parameter.name, parser, tuple(constraints))
+
+
+def _primitive_parser(annotation: object) -> CmdParser[Any] | None:
+    if annotation is int:
+        return CmdParser(parse_int)
+    if annotation is float:
+        return CmdParser(parse_float)
+    return None
+
+
+def _validate_constraints(
+    value: Any, constraints: tuple[_Constraint, ...]
+) -> Result[None, ArgumentIssue]:
+    # TODO(abraham): add more annotated-types constraints
+    for constraint in constraints:
+        expected: str | None = None
+        if isinstance(constraint, Gt) and not value > constraint.gt:
+            expected = f"a value greater than {constraint.gt}"
+        elif isinstance(constraint, Predicate) and not constraint.func(value):
+            name = getattr(constraint.func, "__name__", "predicate")
+            expected = f"a value satisfying {name}"
+        if expected is not None:
+            return Err(ArgumentIssue.expected(expected, value))
+    return Ok(None)
 
 
 @dataclass(frozen=True, slots=True)
