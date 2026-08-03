@@ -11,6 +11,8 @@ from typing import Self
 
 from colorama import Fore, Style
 
+from minisky.command import Text, command
+
 ConsoleCallback = Callable[[str], None]
 
 
@@ -77,7 +79,8 @@ class ConsoleIO:
         self.prevcount = 0
         self.prevtime = 0.0
 
-    def echo(self, text: str = "", flag: int = 0) -> None:
+    @command(name="ECHO", aliases=("PRINT",))
+    def echo(self, text: Text, *, flag: int = 0) -> None:
         """Print, buffer, and publish a console message."""
         del flag
         self.output_buffer.truncate(0)

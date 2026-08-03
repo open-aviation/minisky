@@ -263,12 +263,6 @@ def get_commands(command_stack: CommandStack) -> CommandCatalog:
             "DTNOLOOK [time, callsign...]",
             "Set the interval (in [hh:mm:]sec) in which conflict detection is skipped after a conflict resolution.",
         ],
-        "ECHO": [
-            command_stack.console.echo,
-            "string",
-            "ECHO txt",
-            "Show a text in command window for user to read",
-        ],
         "GETWIND": [
             command_stack.traffic.wind.get,
             "lat, lon, [alt]",
@@ -600,7 +594,6 @@ def get_commands(command_stack: CommandStack) -> CommandCatalog:
         "MAGVAR": ["MAGDEC", "MAGDECL", "VAR"],
         "HOLD": ["PAUSE"],
         "POLY": ["POLYGON"],
-        "ECHO": ["PRINT"],
         "REALTIME": ["RT"],
         "TRAIL": ["TRAILS"],
         "PERFSTATS": ["PERFINFO", "PERFDATA"],
