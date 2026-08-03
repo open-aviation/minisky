@@ -13,11 +13,20 @@ import time
 from collections.abc import Callable
 from enum import IntEnum
 from random import Random
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Annotated, Any, Literal
 
 import numpy as np
+from annotated_types import Ge, Le
 
-from minisky.command import OnOff, command
+from minisky.command import (
+    ArgumentIssue,
+    CmdParser,
+    OnOff,
+    Parsed,
+    ParseResult,
+    command,
+    next_argument,
+)
 from minisky.result import Err, Ok, Result
 
 if TYPE_CHECKING:
@@ -43,6 +52,45 @@ class SimulationState(IntEnum):
 MINSLEEP = 1e-3
 
 
+Day = Annotated[int, Ge(1), Le(31)]
+Month = Annotated[int, Ge(1), Le(12)]
+Year = Annotated[int, Ge(1)]
+
+
+def _clock_time(value: str) -> Result[datetime.time, ArgumentIssue]:
+    try:
+        parsed = (
+            datetime.datetime.strptime(value, "%H:%M:%S.%f" if "." in value else "%H:%M:%S")
+            .replace(tzinfo=datetime.UTC)
+            .time()
+        )
+    except ValueError:
+        return Err(ArgumentIssue.expected("a UTC time", value))
+    return Ok(parsed)
+
+
+def _parse_clock_time(text: str) -> ParseResult[datetime.time]:
+    if isinstance(result := next_argument(text), Err):
+        return result
+    token = result.ok()
+    if isinstance(clock := _clock_time(token.value), Err):
+        return Err(ArgumentIssue(clock.err().message, token.span))
+    return Ok(Parsed(clock.ok(), token.remainder, token.span))
+
+
+ClockTimeArg = Annotated[datetime.time, CmdParser(_parse_clock_time)]
+
+
+def _calendar_datetime(
+    day: int, month: int, year: int, clock: datetime.time = datetime.time()
+) -> Result[datetime.datetime, str]:
+    try:
+        date = datetime.date(year, month, day)
+    except ValueError as exc:
+        return Err(str(exc))
+    return Ok(datetime.datetime.combine(date, clock, tzinfo=datetime.UTC))
+
+
 class Simulation:
     """The simulation object: clock, state machine, and per-step update driver.
 
@@ -59,8 +107,8 @@ class Simulation:
         simt: Elapsed simulation time [s].
         simdt: Simulation timestep [s].
         syst: System (wall-clock) time reference [s].
-        utc: Simulated UTC clock time as a `datetime`; settable with
-            `setutc`.
+        utc: Simulated UTC clock time as a `datetime`; settable with the
+            `TIME` and `DATE` commands.
         rtmode: Flag indicating whether the timestep may be varied to keep
             the simulation running in real time.
         clients: Set of known client identifiers connected to this simulation.
@@ -103,7 +151,7 @@ class Simulation:
         # System time [seconds]
         self.syst: float = 0
 
-        # Simulated UTC clock time (timezone-aware), can be set by setutc()
+        # simulated utc clock time (timezone-aware), set by time/date commands
         self.utc: datetime.datetime = datetime.datetime.now(datetime.UTC)
 
         # Flag indicating running at fixed rate or fast time
@@ -269,66 +317,61 @@ class Simulation:
 
         return event_processed
 
-    def setutc(self, *args: str) -> Result[str, str]:
-        """Set the simulated UTC clock time (stack UTC/DATE command).
+    @command(name="TIME")
+    def report_time(self) -> Result[str, str]:
+        """Report the current simulation UTC timestamp."""
+        return Ok(f"Simulation UTC {self.utc}")
 
-        Usage: UTC [RUN | REAL | UTC | HH:MM:SS[.ff] | day month year [HH:MM:SS[.ff]]]
+    @command(name="TIME")
+    def set_time_run(self, _source: Literal["RUN"]) -> Result[str, str]:
+        """Set simulation UTC to the start of the current UTC day."""
+        self.utc = datetime.datetime.now(datetime.UTC).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
+        return Ok(f"Simulation UTC {self.utc}")
 
-        Accepted argument forms:
+    @command(name="TIME")
+    def set_time_real(self, _source: Literal["REAL"]) -> Result[str, str]:
+        """Set simulation UTC from the current local wall clock."""
+        self.utc = datetime.datetime.now(datetime.UTC).astimezone().replace(microsecond=0)
+        return Ok(f"Simulation UTC {self.utc}")
 
-        - no arguments: leave the clock unchanged (the new value is reported).
-        - `RUN`: today's date at 00:00:00 UTC.
-        - `REAL`: current local date and time.
-        - `UTC`: current UTC date and time.
-        - a time string `HH:MM:SS` or `HH:MM:SS.ff`: set the clock time.
-        - `day month year`: set the date (three integers).
-        - `day month year timestring`: set both date and time.
+    @command(name="TIME")
+    def set_time_utc(self, _source: Literal["UTC"]) -> Result[str, str]:
+        """Set simulation UTC from the current UTC wall clock."""
+        self.utc = datetime.datetime.now(datetime.UTC).replace(microsecond=0)
+        return Ok(f"Simulation UTC {self.utc}")
 
-        Args:
-            *args: Zero, one, three, or four arguments as described above.
-        """
-        if not args:
-            pass  # avoid error message, just give time
+    @command(name="TIME")
+    def set_time_value(self, time: ClockTimeArg) -> Result[str, str]:
+        """Set only the time-of-day using the historical 1900-01-01 date."""
+        self.utc = datetime.datetime.combine(datetime.date(1900, 1, 1), time, tzinfo=datetime.UTC)
+        return Ok(f"Simulation UTC {self.utc}")
 
-        elif len(args) == 1:
-            if args[0].upper() == "RUN":
-                self.utc = datetime.datetime.now(datetime.UTC).replace(
-                    hour=0, minute=0, second=0, microsecond=0
-                )
+    @command(name="DATE")
+    def report_date(self) -> Result[str, str]:
+        """Report the current simulation UTC timestamp."""
+        return Ok(f"Simulation UTC {self.utc}")
 
-            elif args[0].upper() == "REAL":
-                self.utc = datetime.datetime.now(datetime.UTC).astimezone().replace(microsecond=0)
+    @command(name="DATE")
+    def set_date(self, day: Day, month: Month, year: Year) -> Result[str, str]:
+        """Set the calendar date at midnight UTC."""
+        result = _calendar_datetime(day, month, year)
+        if isinstance(result, Err):
+            return result
+        self.utc = result.ok()
+        return Ok(f"Simulation UTC {self.utc}")
 
-            elif args[0].upper() == "UTC":
-                self.utc = datetime.datetime.now(datetime.UTC).replace(microsecond=0)
-
-            else:
-                try:
-                    self.utc = datetime.datetime.strptime(
-                        args[0], "%H:%M:%S.%f" if "." in args[0] else "%H:%M:%S"
-                    ).replace(tzinfo=datetime.UTC)
-                except ValueError:
-                    return Err("Input time invalid")
-
-        elif len(args) == 3:
-            day, month, year = args
-            try:
-                self.utc = datetime.datetime(int(year), int(month), int(day), tzinfo=datetime.UTC)
-            except ValueError:
-                return Err("Input date invalid.")
-        elif len(args) == 4:
-            day, month, year, timestring = args
-            try:
-                self.utc = datetime.datetime.strptime(
-                    f"{year},{month},{day},{timestring}",
-                    ("%Y,%m,%d,%H:%M:%S.%f" if "." in timestring else "%Y,%m,%d,%H:%M:%S"),
-                ).replace(tzinfo=datetime.UTC)
-            except ValueError:
-                return Err("Input date invalid.")
-        else:
-            return Err("Syntax error")
-
-        return Ok("Simulation UTC " + str(self.utc))
+    @command(name="DATE")
+    def set_date_time(
+        self, day: Day, month: Month, year: Year, time: ClockTimeArg
+    ) -> Result[str, str]:
+        """Set the calendar date and UTC time."""
+        result = _calendar_datetime(day, month, year, time)
+        if isinstance(result, Err):
+            return result
+        self.utc = result.ok()
+        return Ok(f"Simulation UTC {self.utc}")
 
     @command(name="SEED")
     def setseed(self, value: int) -> None:
