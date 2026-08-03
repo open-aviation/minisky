@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import inspect
 from collections.abc import Callable, Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Annotated, Any, Generic, TypeAlias, TypeVar, get_args, get_origin, overload
 
 from minisky.identifiers import normalize_public_name
-from minisky.result import Ok, Result
+from minisky.result import Err, Ok, Result
 
 CommandCallback = Callable[..., Any]
 CommandTarget = TypeVar("CommandTarget", bound=CommandCallback)
@@ -22,6 +22,9 @@ class SourceSpan:
 
     start: int
     end: int
+
+    def offset_by(self, offset: int) -> SourceSpan:
+        return SourceSpan(self.start + offset, self.end + offset)
 
 
 @dataclass(frozen=True, slots=True)
@@ -39,13 +42,84 @@ class ArgumentIssue:
 
     message: str
     span: SourceSpan | None = None
+    source_text: str | None = None
+
+    @classmethod
+    def expected(
+        cls, expected: str, actual: object, span: SourceSpan | None = None
+    ) -> ArgumentIssue:
+        return cls(f"expected {expected}, but got {actual}", span)
+
+    def at_argument(
+        self, name: str, source_text: str, offset: int, fallback: SourceSpan
+    ) -> ArgumentIssue:
+        span = (self.span or fallback).offset_by(offset)
+        return replace(
+            self,
+            message=f"argument `{name}`: {self.message}",
+            span=span,
+            source_text=source_text,
+        )
 
     def __str__(self) -> str:
-        return self.message
+        if self.source_text is None or self.span is None:
+            return self.message
+        width = max(1, self.span.end - self.span.start)
+        marker = " " * self.span.start + "^" * width
+        return f"{self.message}\n{self.source_text}\n{marker}"
 
 
 ParseResult: TypeAlias = Result[Parsed[ParsedT_co], ArgumentIssue]
 ParseFunction: TypeAlias = Callable[[str], ParseResult[ParsedT_co]]
+
+
+def next_argument(text: str) -> ParseResult[str]:
+    """Parse one command field and leave the remaining fields untouched."""
+    index = 0
+    length = len(text)
+    while index < length and text[index].isspace():
+        index += 1
+
+    if index == length:
+        return Ok(Parsed("", "", SourceSpan(length, length)))
+
+    token_start = index
+    quote = text[index] if text[index] in ("'", '"') else None
+    if quote is not None:
+        index += 1
+        end = text.find(quote, index)
+        if end < 0:
+            return Err(
+                ArgumentIssue.expected(
+                    f"a closing {quote} quote", "end of input", SourceSpan(token_start, length)
+                )
+            )
+        value = text[index:end]
+        index = end + 1
+        token_end = index
+        if index < length and not text[index].isspace() and text[index] != ",":
+            return Err(
+                ArgumentIssue.expected(
+                    "a separator after the quoted argument",
+                    text[index],
+                    SourceSpan(token_start, index + 1),
+                )
+            )
+    else:
+        start = index
+        while index < length and not text[index].isspace() and text[index] != ",":
+            index += 1
+        value = text[start:index]
+        token_end = index
+
+    # TODO(abraham): spans eventually include separators, or stay value-only?
+    while index < length and text[index].isspace():
+        index += 1
+    if index < length and text[index] == ",":
+        index += 1
+    while index < length and text[index].isspace():
+        index += 1
+    return Ok(Parsed(value, text[index:], SourceSpan(token_start, token_end)))
 
 
 @dataclass(frozen=True, slots=True)
@@ -67,6 +141,18 @@ Text = Annotated[str, CmdParser(parse_text)]
 """The complete remaining command text, consumed verbatim."""
 
 
+def parse_int(text: str) -> ParseResult[int]:
+    """Parse one integer command field."""
+    if isinstance(result := next_argument(text), Err):
+        return result
+    token = result.ok()
+    try:
+        value = int(token.value)
+    except ValueError:
+        return Err(ArgumentIssue.expected("an integer", token.value or "empty input", token.span))
+    return Ok(Parsed(value, token.remainder, token.span))
+
+
 @dataclass(frozen=True, slots=True)
 class Parameter:
     """A callback parameter compiled to a typed command parser."""
@@ -74,8 +160,13 @@ class Parameter:
     name: str
     parser: CmdParser[Any]
 
-    def parse(self, text: str) -> ParseResult[Any]:
-        return self.parser(text)
+    def parse(self, text: str, *, source_text: str, offset: int) -> ParseResult[Any]:
+        if isinstance(result := self.parser(text), Err):
+            issue = result.err()
+            # TODO(abraham): missing/default handling live here once optional fields exist?
+            fallback = SourceSpan(0, max(1, len(text)))
+            return Err(issue.at_argument(self.name, source_text, offset, fallback))
+        return result
 
     def __str__(self) -> str:
         return self.name
@@ -84,6 +175,8 @@ class Parameter:
 def compile_parameter(parameter: inspect.Parameter) -> Parameter:
     """Compile the parser metadata carried by one annotated parameter."""
     annotation = parameter.annotation
+    if annotation is int:
+        return Parameter(parameter.name, CmdParser(parse_int))
     if get_origin(annotation) is not Annotated:
         raise TypeError(f"command parameter {parameter.name!r} has no typed parser")
 
