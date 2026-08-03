@@ -410,12 +410,6 @@ def get_commands(command_stack: CommandStack) -> CommandCatalog:
             "QUIT",
             "Quit program/Stop simulation",
         ],
-        "REALTIME": [
-            command_stack.simulation.realtime,
-            "[bool]",
-            "REALTIME [ON/OFF]",
-            "En-/disable realtime running allowing a variable timestep.",
-        ],
         "RESET": [
             command_stack.simulation.reset,
             "",
@@ -582,7 +576,6 @@ def get_commands(command_stack: CommandStack) -> CommandCatalog:
         "MAGVAR": ["MAGDEC", "MAGDECL", "VAR"],
         "HOLD": ["PAUSE"],
         "POLY": ["POLYGON"],
-        "REALTIME": ["RT"],
         "TRAIL": ["TRAILS"],
         "PERFSTATS": ["PERFINFO", "PERFDATA"],
         "PLUGINS": ["PLUGIN"],

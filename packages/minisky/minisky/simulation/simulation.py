@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-from minisky.command import command
+from minisky.command import OnOff, command
 from minisky.result import Err, Ok, Result
 
 if TYPE_CHECKING:
@@ -221,20 +221,16 @@ class Simulation:
         self.plugins.reset()
         self.console.echo("Simulation reset")
 
-    def realtime(self, flag: bool | None = None) -> Result[str, str]:
-        """Get or set realtime mode (stack REALTIME command).
+    @command(name="REALTIME", aliases=("RT",))
+    def realtime_status(self) -> Result[str, str]:
+        """Report realtime mode."""
+        return Ok(f"Realtime mode is {'on' if self.rtmode else 'off'}")
 
-        In realtime mode the timestep may be varied to keep the simulation
-        synchronized with the wall clock.
-
-        Args:
-            flag: `True`/`False` to enable or disable realtime mode, or
-                `None` to only report the current setting.
-        """
-        if flag is not None:
-            self.rtmode = flag
-
-        return Ok("Realtime mode is o" + ("n" if self.rtmode else "ff"))
+    @command(name="REALTIME")
+    def set_realtime(self, flag: OnOff) -> Result[str, str]:
+        """Enable or disable realtime mode."""
+        self.rtmode = flag
+        return Ok(f"Realtime mode is {'on' if self.rtmode else 'off'}")
 
     def event(self, eventname: bytes, eventdata: Any, sender_rte: Any) -> bool:
         """Handle events coming from the network.

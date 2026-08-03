@@ -137,6 +137,13 @@ class TestCommands:
         run_cmd("MCRE 3")
         assert runtime.traffic.ntraf == 3
 
+    def test_realtime_query_and_update_forms(self, runtime: MiniSky, run_cmd: RunCommand) -> None:
+        runtime.simulation.rtmode = False
+        assert run_cmd("REALTIME") == "Realtime mode is off"
+        assert run_cmd("RT ON") == "Realtime mode is on"
+        assert runtime.simulation.rtmode
+        assert "expected ON or OFF" in run_cmd("REALTIME maybe")
+
 
 class TestReadscn:
     def test_short_command_line_survives(self, runtime: MiniSky) -> None:
