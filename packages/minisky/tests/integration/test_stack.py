@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 from minisky import MiniSky
 from minisky.simulation import Simulation
+from minisky.stack import Command
 from tests._types import RunCommand
 
 FT = 0.3048
@@ -137,6 +138,16 @@ class TestCommands:
         assert runtime.traffic.ntraf == 3
 
 
+class TestTypedCommands:
+    def test_echo_alias_consumes_remainder_verbatim(
+        self, runtime: MiniSky, run_cmd: RunCommand
+    ) -> None:
+        command = runtime.commands.cmddict["ECHO"]
+        assert runtime.commands.cmddict["PRINT"] is command
+        assert command.callback == runtime.console.echo
+        assert run_cmd('PRINT "quoted text", still text') == '"quoted text", still text'
+
+
 class TestReadscn:
     def test_short_command_line_survives(self, runtime: MiniSky) -> None:
         # "0:00:00>OP" is only 10 characters; it used to be dropped by a
@@ -218,7 +229,7 @@ class TestArgumentSpecs:
         seen = set()
         bad = []
         for cmd in runtime.commands.cmddict.values():
-            if id(cmd) in seen:
+            if id(cmd) in seen or not isinstance(cmd, Command):
                 continue
             seen.add(id(cmd))
             for annot, _isopt in cmd.arguments:

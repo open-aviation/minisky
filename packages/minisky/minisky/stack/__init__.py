@@ -33,10 +33,18 @@ from functools import partial
 from io import StringIO
 from pathlib import Path
 from threading import Lock
-from typing import TYPE_CHECKING, Any, NamedTuple
+from typing import TYPE_CHECKING, Any, NamedTuple, TypeAlias
 
 import numpy as np
 
+from minisky.command import (
+    BoundCommand,
+    compile_parameter,
+    declared_commands,
+)
+from minisky.command import (
+    Parameter as TypedParameter,
+)
 from minisky.result import Err, Ok, Result
 from minisky.stack import argparser, commands
 from minisky.stack.argparser import ArgumentError, Parameter, String, Time, Txt, getnextarg
@@ -267,10 +275,65 @@ class Command:
 
 
 @dataclass(frozen=True, slots=True)
+class TypedCommand:
+    callback: Callable[..., Any]
+    source: Callable[..., Any]
+    name: str
+    aliases: tuple[str, ...]
+    params: tuple[TypedParameter, ...]
+    help: str
+
+    def __call__(self, argstring: str) -> Result[str, str]:
+        arguments: list[object] = []
+        remainder = argstring
+        for parameter in self.params:
+            parsed = parameter.parse(remainder)
+            if isinstance(parsed, Err):
+                return Err(str(parsed.err()))
+            value = parsed.ok()
+            arguments.append(value.value)
+            remainder = value.remainder
+
+        if remainder:
+            return Err(f"unexpected command text: {remainder}")
+
+        result = self.callback(*arguments)
+        if result is not None:
+            raise TypeError(f"typed command {self.name} must return None")
+        return Ok("")
+
+    @property
+    def names(self) -> tuple[str, ...]:
+        return (self.name, *self.aliases)
+
+    @property
+    def brief(self) -> str:
+        suffix = ",".join(parameter.name for parameter in self.params)
+        return f"{self.name} {suffix}" if suffix else self.name
+
+    @property
+    def _callback_source(self) -> Callable[..., Any]:
+        # temp legacy help-table adapter
+        return self.source
+
+    def brieftext(self) -> str:
+        return self.brief
+
+    def helptext(self, _subcmd: str = "") -> str:
+        message = f"{self.help}\nUsage:\n{self.brief}"
+        if self.aliases:
+            message += "\nCommand aliases: " + ",".join(self.aliases)
+        return message
+
+
+CommandEntry: TypeAlias = Command | TypedCommand
+
+
+@dataclass(frozen=True, slots=True)
 class PreparedCommand:
     """A parsed command ready for registry installation."""
 
-    command: Command
+    command: CommandEntry
     names: tuple[str, ...]
 
 
@@ -279,7 +342,7 @@ class _PendingCommand:
     task: asyncio.Future[Result[str, str]]
     name: str
     argstring: str
-    command: Command
+    command: CommandEntry
 
 
 class CommandStack:
@@ -327,7 +390,7 @@ class CommandStack:
         # TODO(abraham): package bundled scenarios inside minisky and resolve
         # them with importlib.resources for wheel installs.
         self.scenario_root = scenario_root or Path(__file__).parent.parent.parent
-        self.cmddict: dict[str, Command] = {}
+        self.cmddict: dict[str, CommandEntry] = {}
         self._queue_lock = Lock()
         self._pending_command: _PendingCommand | None = None
         self._reset_state()
@@ -370,6 +433,49 @@ class CommandStack:
             help=help_text,
         )
         return PreparedCommand(command_obj, names)
+
+    def prepare_component(self, component: object) -> tuple[PreparedCommand, ...]:
+        """Compile typed command declarations from one runtime-owned component."""
+        return tuple(
+            self._prepare_declared_command(bound) for bound in declared_commands(component)
+        )
+
+    def _prepare_declared_command(self, bound: BoundCommand) -> PreparedCommand:
+        callback = self.replaceables.bind_callback(bound.callback)
+        annotations = inspect.get_annotations(bound.source, eval_str=True)
+        signature = inspect.signature(callback, eval_str=False)
+        signature = signature.replace(
+            parameters=[
+                parameter.replace(annotation=annotations.get(parameter.name, parameter.annotation))
+                for parameter in signature.parameters.values()
+            ]
+        )
+        if "self" in signature.parameters or "cls" in signature.parameters:
+            raise TypeError(f"typed command {bound.name} is not bound")
+
+        parameters: list[TypedParameter] = []
+        for parameter in signature.parameters.values():
+            if parameter.kind is inspect.Parameter.VAR_KEYWORD:
+                raise TypeError(f"typed command {bound.name} cannot accept **{parameter.name}")
+            if parameter.kind is inspect.Parameter.KEYWORD_ONLY:
+                if parameter.default is inspect.Parameter.empty:
+                    raise TypeError(
+                        f"typed command {bound.name} has required keyword-only argument {parameter.name}"
+                    )
+                continue
+            parameters.append(compile_parameter(parameter))
+
+        command_obj = TypedCommand(
+            callback=callback,
+            source=bound.source,
+            name=bound.name,
+            aliases=bound.aliases,
+            params=tuple(parameters),
+            help=bound.help,
+        )
+        if len(command_obj.names) != len(set(command_obj.names)):
+            raise ValueError(f"command {bound.name} repeats an alias")
+        return PreparedCommand(command_obj, command_obj.names)
 
     def validate_commands(self, commands: tuple[PreparedCommand, ...]) -> None:
         """Reject command names already used by this stack or the same batch."""
@@ -430,7 +536,7 @@ class CommandStack:
     def init(self) -> None:
         """Prepare, validate, and install the base stack commands."""
         catalog = commands.get_commands(self)
-        prepared = tuple(
+        legacy = tuple(
             self.prepare_command(
                 definition.callback,
                 name=name,
@@ -441,6 +547,7 @@ class CommandStack:
             )
             for name, definition in catalog.definitions.items()
         )
+        prepared = (*legacy, *self.prepare_component(self.console))
         self.validate_commands(prepared)
         self.install_commands(prepared)
 
@@ -566,7 +673,7 @@ class CommandStack:
             self.cmdstack[0:0] = commands
 
     def _echo_command_result(
-        self, command_obj: Command, argstring: str, result: Result[str, str]
+        self, command_obj: CommandEntry, argstring: str, result: Result[str, str]
     ) -> None:
         match result:
             case Ok(text):
