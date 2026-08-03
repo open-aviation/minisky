@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
+from minisky.command import command
 from minisky.result import Err, Ok, Result
 
 if TYPE_CHECKING:
@@ -333,6 +334,7 @@ class Simulation:
 
         return Ok("Simulation UTC " + str(self.utc))
 
+    @command(name="SEED")
     def setseed(self, value: int) -> None:
         """Set the random seed for this simulation (stack SEED command).
 

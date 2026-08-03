@@ -494,12 +494,6 @@ def get_commands(command_stack: CommandStack) -> CommandCatalog:
             "SCENARIO name",
             "Sets the scenario name for the current simulation.",
         ],
-        "SEED": [
-            command_stack.simulation.setseed,
-            "int",
-            "SEED value",
-            "Set seed for all functions using a randomizer (e.g.mcre,noise)",
-        ],
         "SELECTIMPL": [
             command_stack.replaceables.select,
             "[txt,txt]",

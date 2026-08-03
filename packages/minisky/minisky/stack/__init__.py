@@ -286,8 +286,11 @@ class TypedCommand:
     def __call__(self, argstring: str) -> Result[str, str]:
         arguments: list[object] = []
         remainder = argstring
+        source_text = self.name + (f" {argstring}" if argstring else "")
+        argument_offset = len(self.name) + (1 if argstring else 0)
         for parameter in self.params:
-            parsed = parameter.parse(remainder)
+            offset = argument_offset + len(argstring) - len(remainder)
+            parsed = parameter.parse(remainder, source_text=source_text, offset=offset)
             if isinstance(parsed, Err):
                 return Err(str(parsed.err()))
             value = parsed.ok()
@@ -547,7 +550,11 @@ class CommandStack:
             )
             for name, definition in catalog.definitions.items()
         )
-        prepared = (*legacy, *self.prepare_component(self.console))
+        prepared = (
+            *legacy,
+            *self.prepare_component(self.console),
+            *self.prepare_component(self.simulation),
+        )
         self.validate_commands(prepared)
         self.install_commands(prepared)
 

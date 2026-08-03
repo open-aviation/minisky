@@ -147,6 +147,19 @@ class TestTypedCommands:
         assert command.callback == runtime.console.echo
         assert run_cmd('PRINT "quoted text", still text') == '"quoted text", still text'
 
+    def test_seed_parses_integer_field(self, runtime: MiniSky, run_cmd: RunCommand) -> None:
+        command = runtime.commands.cmddict["SEED"]
+        assert command.callback == runtime.simulation.setseed
+        assert run_cmd('SEED "17"') == "random seed set"
+
+    def test_seed_reports_source_for_invalid_integer(
+        self, runtime: MiniSky, run_cmd: RunCommand
+    ) -> None:
+        output = run_cmd("SEED nope")
+        assert output == (
+            "Error: argument `value`: expected an integer, but got nope\nSEED nope\n     ^^^^"
+        )
+
 
 class TestReadscn:
     def test_short_command_line_survives(self, runtime: MiniSky) -> None:
