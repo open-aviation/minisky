@@ -245,12 +245,6 @@ def get_commands(command_stack: CommandStack) -> CommandCatalog:
             "DIRECT callsign, wpt",
             "Go direct to a specified waypoint in the route.",
         ],
-        "DTMULT": [
-            command_stack.runner.setspeed,
-            "float",
-            "DTMULT multiplier",
-            "Set the simulation speed multiplier (wall-clock pacing, DTMULT equivalent).",
-        ],
         "DTLOOK": [
             command_stack.traffic.cd.setdtlook,
             "[time,callsign,...]",

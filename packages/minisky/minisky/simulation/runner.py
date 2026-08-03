@@ -13,7 +13,8 @@ import asyncio
 import os
 from typing import TYPE_CHECKING
 
-from minisky.result import Err, Ok, Result
+from minisky.command import PositiveFiniteFloat, command
+from minisky.result import Ok, Result
 
 if TYPE_CHECKING:
     from minisky.simulation.console import ConsoleIO
@@ -75,8 +76,9 @@ class Runner:
         self.jump_to = self.simulation.simt + seconds - 2  # -2 for the action margin
         self.jump = seconds
 
-    def setspeed(self, mult: float) -> Result[str, str]:
-        """Set the simulation speed multiplier (stack DTMULT command).
+    @command(name="DTMULT", aliases=("RTF",))
+    def setspeed(self, mult: PositiveFiniteFloat) -> Result[str, str]:
+        """Set the simulation speed multiplier.
 
         The loop targets a simulation step every `1 / speed` wall-clock
         seconds, so a larger multiplier makes simulated time advance faster
@@ -87,8 +89,6 @@ class Runner:
             mult: Simulation speed factor relative to real time; must be
                 positive.
         """
-        if mult <= 0:
-            return Err("DTMULT: speed multiplier must be positive")
         self.speed = mult
         return Ok(f"Simulation speed set to {mult}x")
 
