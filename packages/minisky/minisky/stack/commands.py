@@ -197,12 +197,6 @@ def get_commands(command_stack: CommandStack) -> CommandCatalog:
             "CRECONFS id, type, targetid, dpsi, cpa, tlos_hor, dH, tlos_ver, spd",
             "Create an aircraft that is in conflict with 'targetid'",
         ],
-        "DATE": [
-            command_stack.simulation.setutc,
-            "[int,int,int,txt]",
-            "DATE [day,month,year,HH:MM:SS.hh]",
-            "Set simulation date",
-        ],
         "DEFWPT": [
             command_stack.navigation.defwpt,
             "txt,latlon,[txt]",
@@ -511,12 +505,6 @@ def get_commands(command_stack: CommandStack) -> CommandCatalog:
             "callsign[,txt]",
             "THR callsign, IDLE/0.0/throttlesetting/1.0/AUTO(default)",
             "Set throttle or autotothrottle(default)",
-        ],
-        "TIME": [
-            command_stack.simulation.setutc,
-            "[txt]",
-            "TIME RUN(default) / HH:MM:SS.hh / REAL / UTC ",
-            "Set simulated clock time",
         ],
         "TRAIL": [
             command_stack.traffic.trails.setTrails,

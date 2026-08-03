@@ -5,9 +5,19 @@ from __future__ import annotations
 import inspect
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, replace
-from typing import Annotated, Any, Generic, TypeAlias, TypeVar, get_args, get_origin, overload
+from typing import (
+    Annotated,
+    Any,
+    Generic,
+    Literal,
+    TypeAlias,
+    TypeVar,
+    get_args,
+    get_origin,
+    overload,
+)
 
-from annotated_types import BaseMetadata, Gt, IsFinite, Predicate
+from annotated_types import BaseMetadata, Ge, Gt, IsFinite, Le, Predicate
 
 from minisky.identifiers import normalize_public_name
 from minisky.result import Err, Ok, Result
@@ -126,10 +136,30 @@ def next_argument(text: str) -> ParseResult[str]:
 
 
 @dataclass(frozen=True, slots=True)
+class LiteralSyntax:
+    """Exact case-insensitive keywords used when rendering command usage."""
+
+    values: tuple[str, ...]
+
+
+ParserSyntax: TypeAlias = LiteralSyntax
+
+
+@dataclass(frozen=True, slots=True)
 class CmdParser(Generic[ParsedT_co]):
     """Connect an annotated Python value to command-text parsing."""
 
     func: ParseFunction[ParsedT_co]
+    syntax: ParserSyntax | None = None
+
+    @classmethod
+    def literals(
+        cls, func: ParseFunction[ParsedT_co], values: tuple[str, ...]
+    ) -> CmdParser[ParsedT_co]:
+        normalized = tuple(value.upper() for value in values)
+        if not normalized or len(normalized) != len(set(normalized)):
+            raise ValueError("command parser literals must be non-empty and unique")
+        return cls(func, LiteralSyntax(normalized))
 
     def __call__(self, text: str) -> ParseResult[ParsedT_co]:
         return self.func(text)
@@ -179,7 +209,7 @@ def parse_on_off(text: str) -> ParseResult[bool]:
 OnOff = Annotated[bool, CmdParser(parse_on_off)]
 
 
-_Constraint: TypeAlias = Gt | Predicate
+_Constraint: TypeAlias = Gt | Ge | Le | Predicate
 
 
 @dataclass(frozen=True, slots=True)
@@ -193,7 +223,7 @@ class Parameter:
     def parse(self, text: str, *, source_text: str, offset: int) -> ParseResult[Any]:
         if isinstance(result := self.parser(text), Err):
             issue = result.err()
-            # TODO(abraham): move missing/default semantics here when a command actually needs them.
+            # TODO(abraham): move missing/default semantics here
             fallback = SourceSpan(0, max(1, len(text)))
             return Err(issue.at_argument(self.name, source_text, offset, fallback))
 
@@ -203,6 +233,8 @@ class Parameter:
         return result
 
     def __str__(self) -> str:
+        if isinstance(self.parser.syntax, LiteralSyntax):
+            return "|".join(self.parser.syntax.values)
         return self.name
 
 
@@ -217,13 +249,13 @@ def compile_parameter(parameter: inspect.Parameter) -> Parameter:
     parsers = tuple(item for item in metadata if isinstance(item, CmdParser))
     if len(parsers) > 1:
         raise TypeError(f"command parameter {parameter.name!r} declares multiple parsers")
-    parser = parsers[0] if parsers else _primitive_parser(annotation)
+    parser = parsers[0] if parsers else _parser_for(annotation)
     if parser is None:
         raise TypeError(f"command parameter {parameter.name!r} has no typed parser")
 
     constraints: list[_Constraint] = []
     for item in metadata:
-        if isinstance(item, (Gt, Predicate)):
+        if isinstance(item, (Gt, Ge, Le, Predicate)):
             constraints.append(item)
         elif isinstance(item, BaseMetadata):
             raise TypeError(f"unsupported command constraint: {item!r}")
@@ -231,12 +263,37 @@ def compile_parameter(parameter: inspect.Parameter) -> Parameter:
     return Parameter(parameter.name, parser, tuple(constraints))
 
 
-def _primitive_parser(annotation: object) -> CmdParser[Any] | None:
+# TODO(abraham): add structured union-choice parsing
+def _parser_for(annotation: object) -> CmdParser[Any] | None:
+    if get_origin(annotation) is Literal:
+        return _literal_parser(annotation)
     if annotation is int:
         return CmdParser(parse_int)
     if annotation is float:
         return CmdParser(parse_float)
     return None
+
+
+def _literal_parser(annotation: object) -> CmdParser[str]:
+    values = get_args(annotation)
+    if not values or any(not isinstance(value, str) for value in values):
+        raise TypeError("command Literal values must be strings")
+    literals = tuple(value.upper() for value in values)
+    if len(literals) != len(set(literals)):
+        raise TypeError("command Literal repeats a case-insensitive value")
+
+    def parse_literal(text: str) -> ParseResult[str]:
+        if isinstance(result := next_argument(text), Err):
+            return result
+        token = result.ok()
+        value = token.value.upper()
+        if value not in literals:
+            return Err(
+                ArgumentIssue.expected(" or ".join(literals), value or "empty input", token.span)
+            )
+        return Ok(Parsed(value, token.remainder, token.span))
+
+    return CmdParser.literals(parse_literal, literals)
 
 
 def _validate_constraints(
@@ -247,6 +304,10 @@ def _validate_constraints(
         expected: str | None = None
         if isinstance(constraint, Gt) and not value > constraint.gt:
             expected = f"a value greater than {constraint.gt}"
+        elif isinstance(constraint, Ge) and not value >= constraint.ge:
+            expected = f"a value greater than or equal to {constraint.ge}"
+        elif isinstance(constraint, Le) and not value <= constraint.le:
+            expected = f"a value less than or equal to {constraint.le}"
         elif isinstance(constraint, Predicate) and not constraint.func(value):
             name = getattr(constraint.func, "__name__", "predicate")
             expected = f"a value satisfying {name}"

@@ -372,7 +372,7 @@ class TypedCommand:
         return message
 
     def _form_brief(self, form: TypedCommandForm) -> str:
-        suffix = ",".join(parameter.name for parameter in form.parameters)
+        suffix = ",".join(str(parameter) for parameter in form.parameters)
         return f"{self.name} {suffix}" if suffix else self.name
 
 
