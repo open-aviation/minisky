@@ -41,6 +41,9 @@ from minisky.command import (
     ArgumentIssue,
     BoundCommand,
     SourceSpan,
+    Text,
+    TimeS,
+    command,
     compile_parameter,
     declared_commands,
     next_argument,
@@ -48,7 +51,7 @@ from minisky.command import (
 from minisky.command import Parameter as TypedParameter
 from minisky.result import Err, Ok, Result
 from minisky.stack import argparser, commands
-from minisky.stack.argparser import ArgumentError, Parameter, String, Time, Txt, getnextarg
+from minisky.stack.argparser import ArgumentError, Parameter, String, Txt, getnextarg
 
 if TYPE_CHECKING:
     from minisky.core.trafficarrays import ReplaceableManager
@@ -310,7 +313,9 @@ class TypedCommand:
             return result
         if result is None:
             return Ok("")
-        # TODO(abraham): add bool/async compatibility
+        if isinstance(result, bool):
+            return Ok("") if result else Err("")
+        # TODO(abraham): async callbacks still use the legacy command path.
         raise TypeError(f"typed command {self.name} returned unsupported {type(result).__name__}")
 
     def _resolve(self, argstring: str) -> Result[_TypedCommandCall, ArgumentIssue]:
@@ -637,6 +642,7 @@ class CommandStack:
         prepared = (
             *legacy,
             *self.prepare_component(self.console),
+            *self.prepare_component(self),
             *self.prepare_component(self.simulation),
             *self.prepare_component(self.runner),
         )
@@ -922,8 +928,9 @@ class CommandStack:
         self.scenname = name
         return Ok("Starting scenario " + name)
 
-    def schedule(self, time: Time, cmdline: String) -> bool:
-        """SCHEDULE: Schedule a stack command at a specific simulation time.
+    @command(name="SCHEDULE")
+    def schedule(self, time: TimeS, cmdline: Text) -> bool:
+        """Schedule a stack command at a specific simulation time.
 
         The command is inserted into the scenario buffer, keeping the buffer
         sorted by execution time.
@@ -942,8 +949,9 @@ class CommandStack:
         self.scencmd.insert(idx, cmdline)
         return True
 
-    def delay(self, time: Time, cmdline: String) -> bool:
-        """DELAY: Delay a stack command by a time interval.
+    @command(name="DELAY")
+    def delay(self, time: TimeS, cmdline: Text) -> bool:
+        """Delay a stack command by a time interval.
 
         Like schedule(), but the given time is relative to the current
         simulation time.

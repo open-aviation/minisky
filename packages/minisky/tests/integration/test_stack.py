@@ -137,6 +137,19 @@ class TestCommands:
         run_cmd("MCRE 3")
         assert runtime.traffic.ntraf == 3
 
+    def test_delay_and_schedule_preserve_nested_command_text(
+        self, runtime: MiniSky, sim: Simulation, run_cmd: RunCommand
+    ) -> None:
+        sim.simt = 5.0
+        run_cmd('DELAY 10 ECHO "quoted text", still text')
+        run_cmd("SCHEDULE 01:30 ECHO scheduled, text")
+
+        assert runtime.commands.scentime == [15.0, 90.0]
+        assert runtime.commands.scencmd == [
+            'ECHO "quoted text", still text',
+            "ECHO scheduled, text",
+        ]
+
 
 class TestReadscn:
     def test_short_command_line_survives(self, runtime: MiniSky) -> None:

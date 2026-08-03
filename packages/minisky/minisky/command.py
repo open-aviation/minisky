@@ -21,7 +21,7 @@ from annotated_types import BaseMetadata, Ge, Gt, IsFinite, Le, Predicate
 
 from minisky.identifiers import normalize_public_name
 from minisky.result import Err, Ok, Result
-from minisky.tools.convert import txt2bool
+from minisky.tools.convert import txt2bool, txt2tim
 
 CommandCallback = Callable[..., Any]
 CommandTarget = TypeVar("CommandTarget", bound=CommandCallback)
@@ -207,6 +207,14 @@ def parse_on_off(text: str) -> ParseResult[bool]:
 
 
 OnOff = Annotated[bool, CmdParser(parse_on_off)]
+
+
+def parse_time(text: str) -> ParseResult[float]:
+    """Parse one BlueSky time field as seconds."""
+    return _convert(text, txt2tim, "a time")
+
+
+TimeS = Annotated[float, CmdParser(parse_time)]
 
 
 _Constraint: TypeAlias = Gt | Ge | Le | Predicate
