@@ -135,6 +135,47 @@ def next_argument(text: str) -> ParseResult[str]:
     return Ok(Parsed(value, text[index:], SourceSpan(token_start, token_end)))
 
 
+def split_commands(text: str) -> Result[tuple[str, ...], ArgumentIssue]:
+    """Split a semicolon-delimited batch without splitting quoted arguments."""
+    commands: list[str] = []
+    start = 0
+    quote: str | None = None
+    quote_start: int | None = None
+    argument_start = True
+    for index, character in enumerate(text):
+        if quote is not None:
+            if character == quote:
+                quote = None
+            continue
+        if argument_start and character in ("'", '"'):
+            quote = character
+            quote_start = index
+            argument_start = False
+        elif character == ";":
+            command_text = text[start:index].strip()
+            if command_text:
+                commands.append(command_text)
+            start = index + 1
+            argument_start = True
+        elif character.isspace() or character == ",":
+            argument_start = True
+        else:
+            argument_start = False
+    if quote is not None:
+        start = quote_start if quote_start is not None else len(text)
+        return Err(
+            ArgumentIssue(
+                f"expected a closing {quote} quote, but got end of input",
+                SourceSpan(start, len(text)),
+                text,
+            )
+        )
+    command_text = text[start:].strip()
+    if command_text:
+        commands.append(command_text)
+    return Ok(tuple(commands))
+
+
 @dataclass(frozen=True, slots=True)
 class LiteralSyntax:
     """Exact case-insensitive keywords used when rendering command usage."""

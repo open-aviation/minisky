@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from typing import Literal
 
+import pytest
 from minisky import MiniSky
-from minisky.command import command
-from minisky.result import Ok
+from minisky.command import command, split_commands
+from minisky.result import Err, Ok
 
 
 def test_overlapping_overloads_use_left_to_right_order(runtime: MiniSky) -> None:
@@ -45,3 +46,28 @@ def test_literal_form_usage_and_order(runtime: MiniSky) -> None:
     assert isinstance(command_obj(""), Ok)
     assert isinstance(command_obj("set 7"), Ok)
     assert received == [("query",), ("SET", 7)]
+
+
+@pytest.mark.parametrize(
+    ("text", "commands"),
+    [
+        ("OP; HOLD", ("OP", "HOLD")),
+        ('ECHO "ONE;TWO"; OP', ('ECHO "ONE;TWO"', "OP")),
+        ("ECHO it's ready; OP", ("ECHO it's ready", "OP")),
+        (" ; OP ;; HOLD ; ", ("OP", "HOLD")),
+    ],
+)
+def test_semicolons_ignored(text: str, commands: tuple[str, ...]) -> None:
+    result = split_commands(text)
+    assert isinstance(result, Ok)
+    assert result.ok() == commands
+
+
+def test_unclosed_quote() -> None:
+    result = split_commands('ECHO "unfinished')
+    assert isinstance(result, Err)
+    issue = result.err()
+    assert issue.message == 'expected a closing " quote, but got end of input'
+    assert issue.source_text == 'ECHO "unfinished'
+    assert issue.span is not None
+    assert issue.span.start == 5

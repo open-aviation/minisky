@@ -28,6 +28,7 @@ from minisky.command import (
     next_argument,
 )
 from minisky.result import Err, Ok, Result
+from minisky.stack import ScenarioData
 
 if TYPE_CHECKING:
     from minisky.core.trafficarrays import ReplaceableManager
@@ -180,7 +181,7 @@ class Simulation:
         """
         # Simulation starts as soon as there is traffic, or pending commands
         if self.state == SimulationState.INIT and (
-            self.traffic.ntraf > 0 or len(self.commands.get_scendata()[0]) > 0
+            self.traffic.ntraf > 0 or self.commands.get_scendata().commands
         ):
             self.op()
 
@@ -280,7 +281,12 @@ class Simulation:
         self.rtmode = flag
         return Ok(f"Realtime mode is {'on' if self.rtmode else 'off'}")
 
-    def event(self, eventname: bytes, eventdata: Any, sender_rte: Any) -> bool:
+    def event(
+        self,
+        eventname: bytes,
+        eventdata: str | ScenarioData,
+        sender_rte: bytes | None,
+    ) -> bool:
         """Handle events coming from the network.
 
         Supports two event types: `b"STACK"`, which appends a single stack
@@ -291,27 +297,27 @@ class Simulation:
         Args:
             eventname: Event type identifier as bytes (`b"STACK"` or
                 `b"BATCH"`).
-            eventdata: Event payload; the command string for `STACK`, or a
-                dict with `scentime` (command times [s]) and `scencmd`
-                (command strings) for `BATCH`.
+            eventdata: Command text for `STACK`, or typed scenario data for
+                `BATCH`.
             sender_rte: Route/identifier of the sending client, passed on as
                 the stack command's sender id.
 
         Returns:
             bool: True if the event was recognized and processed.
         """
-        # Keep track of event processing
         event_processed = False
 
         if eventname == b"STACK":
-            # We received a single stack command. Add it to the existing stack
+            if not isinstance(eventdata, str):
+                raise TypeError("STACK event data must be command text")
             self.commands.stack(eventdata, sender_id=sender_rte)
             event_processed = True
 
         elif eventname == b"BATCH":
-            # We are in a batch simulation, and received an entire scenario. Assign it to the stack.
+            if not isinstance(eventdata, ScenarioData):
+                raise TypeError("BATCH event data must be ScenarioData")
             self.reset()
-            self.commands.set_scendata(eventdata["scentime"], eventdata["scencmd"])
+            self.commands.set_scendata(eventdata)
             self.op()
             event_processed = True
 

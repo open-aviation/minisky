@@ -47,11 +47,12 @@ from minisky.command import (
     compile_parameter,
     declared_commands,
     next_argument,
+    split_commands,
 )
 from minisky.command import Parameter as TypedParameter
 from minisky.result import Err, Ok, Result
 from minisky.stack import argparser, commands
-from minisky.stack.argparser import ArgumentError, Parameter, String, Txt, getnextarg
+from minisky.stack.argparser import ArgumentError, Parameter, Txt, getnextarg
 
 if TYPE_CHECKING:
     from minisky.core.trafficarrays import ReplaceableManager
@@ -423,6 +424,21 @@ class PreparedCommand:
     names: tuple[str, ...]
 
 
+@dataclass(frozen=True, slots=True)
+class ScheduledCommand:
+    """A scenario command with the simulation time at which it becomes due."""
+
+    time: float
+    text: str
+
+
+@dataclass(frozen=True, slots=True)
+class ScenarioData:
+    """An immutable scenario snapshot; time and command text cannot diverge."""
+
+    commands: tuple[ScheduledCommand, ...]
+
+
 @dataclass(slots=True)
 class _PendingCommand:
     task: asyncio.Future[Result[str, str]]
@@ -444,8 +460,7 @@ class CommandStack:
         current: Command line currently being processed.
         cmdstack: List of `(cmdline, sender route)` tuples awaiting processing.
         scenname: Name of the currently loaded scenario.
-        scentime: Execution times [s] of the buffered scenario commands.
-        scencmd: Buffered scenario command lines.
+        scenario_commands: Scheduled scenario commands, each carrying its timestamp.
         sender_rte: Network route to the sender of the current command.
         argument_parser: Runtime-owned parser registry and reference data.
     """
@@ -606,8 +621,7 @@ class CommandStack:
 
         # Scenario details
         self.scenname = ""
-        self.scentime: list[float] = []
-        self.scencmd: list[str] = []
+        self.scenario_commands: list[ScheduledCommand] = []
 
         # Current command details
         self.sender_rte: bytes | None = None
@@ -812,19 +826,19 @@ class CommandStack:
         with suppress(asyncio.CancelledError, Exception):
             await pending.task
 
-    def readscn(self, scn: str | Path | StringIO) -> Iterator[tuple[float, str]]:
+    def readscn(self, scn: str | Path | StringIO) -> Iterator[ScheduledCommand]:
         """Read a scenario file and yield its timestamped commands.
 
-        Parses lines of the form `HH:MM:SS.hh>CMDLINE`, skipping comments
-        (lines starting with "#") and empty lines, and supporting line
-        continuation with a trailing backslash.
+        Parses lines of the form `HH:MM:SS.hh>CMDLINE`, skips full-line comments,
+        supports continuation with a trailing backslash, and yields commands
+        in stable timestamp order.
 
         Args:
             scn: Scenario source: path to a .scn file (str or Path; the .scn
                 suffix is added when missing), or a StringIO object.
 
         Yields:
-            tuple: (command time [s] (float), command line (str)).
+            A scheduled command containing its time and command text.
 
         Raises:
             TypeError: When scn is neither a path nor a StringIO object.
@@ -840,21 +854,22 @@ class CommandStack:
         else:
             raise TypeError("scn must be a string or StringIO")
 
+        commands: list[ScheduledCommand] = []
         prevline = ""
         for line in scn_input:
             line = line.strip()
-            # Skip emtpy lines and comments
             if not line or line[0] == "#":
                 continue
             line = prevline + line
 
-            # Check for line continuation
             if line[-1] == "\\":
                 prevline = f"{line[:-1].strip()} "
                 continue
             prevline = ""
+            line = line.split("#", maxsplit=1)[0].strip()
+            if not line:
+                continue
 
-            # Try reading timestamp and command
             try:
                 icmdline = line.index(">")
                 tstamp = line[:icmdline]
@@ -864,13 +879,14 @@ class CommandStack:
                 xsec = float(ttxt[2])
                 cmdtime = ihr + imin + xsec
 
-                yield (cmdtime, line[icmdline + 1 :].strip("\n"))
+                commands.append(ScheduledCommand(cmdtime, line[icmdline + 1 :]))
             except (ValueError, IndexError):
-                # nice try, we will just ignore this syntax error
-                if not (len(line.strip()) > 0 and line.strip()[0] == "#"):
-                    self.console.echo(f"Skipping invalid scenario line: {line.strip()}")
+                self.console.echo(f"Skipping invalid scenario line: {line}")
 
-    def ic(self, scn: str) -> Result[str, str]:
+        yield from sorted(commands, key=lambda command: command.time)
+
+    @command(name="IC", aliases=("LOAD", "OPEN"))
+    def ic(self, scn: Text) -> Result[str, str]:
         """IC: Load a scenario file.
 
         Resets the simulation, reads the scenario file, and buffers its
@@ -889,9 +905,7 @@ class CommandStack:
 
         lines = self.readscn(scn_path)
 
-        for cmdtime, cmd in lines:
-            self.scentime.append(cmdtime)
-            self.scencmd.append(cmd)
+        self.scenario_commands.extend(lines)
         self.scenname = scn_path.stem
 
         return Ok(f"scenario {scn_path} loaded.")
@@ -912,15 +926,14 @@ class CommandStack:
 
         lines = self.readscn(scn)
 
-        for cmdtime, cmd in lines:
-            self.scentime.append(cmdtime)
-            self.scencmd.append(cmd)
+        self.scenario_commands.extend(lines)
         self.scenname = scn_name or ""
 
         return Ok(f"scenario {scn_name} loaded.")
 
-    def scenario(self, name: String) -> Result[str, str]:
-        """SCENARIO: Set the scenario name for the current simulation.
+    @command(name="SCENARIO", aliases=("SCEN",))
+    def scenario(self, name: Text) -> Result[str, str]:
+        """Set the scenario name for the current simulation.
 
         Args:
             name: The name to give the scenario.
@@ -943,10 +956,12 @@ class CommandStack:
         Returns:
             bool: True (the command is always scheduled).
         """
-        # Get index of first scentime greater than 'time' as insert position
-        idx = next((i for i, t in enumerate(self.scentime) if t > time), len(self.scentime))
-        self.scentime.insert(idx, time)
-        self.scencmd.insert(idx, cmdline)
+        command = ScheduledCommand(time, cmdline)
+        index = next(
+            (i for i, scheduled in enumerate(self.scenario_commands) if scheduled.time > time),
+            len(self.scenario_commands),
+        )
+        self.scenario_commands.insert(index, command)
         return True
 
     @command(name="DELAY")
@@ -963,12 +978,7 @@ class CommandStack:
         Returns:
             bool: True (the command is always scheduled).
         """
-        # Get index of first scentime greater than 'time' as insert position
-        time += self.simulation.simt
-        idx = next((i for i, t in enumerate(self.scentime) if t > time), len(self.scentime))
-        self.scentime.insert(idx, time)
-        self.scencmd.insert(idx, cmdline)
-        return True
+        return self.schedule(self.simulation.simt + time, cmdline)
 
     def showhelp(self, cmd: Txt = "", subcmd: Txt = "") -> Result[str, str]:
         """HELP: Display general help text or help text for a specific command,
@@ -1020,13 +1030,19 @@ class CommandStack:
         current simulation time are moved onto the command stack and removed
         from the scenario buffer.
         """
-        if self.scencmd:
-            # Find index of first timestamp exceeding self.simulation.simt
-            idx = next((i for i, t in enumerate(self.scentime) if t > self.simulation.simt), None)
-            # Stack all commands before that time, and remove from scenario
-            self.stack(*self.scencmd[:idx])
-            del self.scencmd[:idx]
-            del self.scentime[:idx]
+        if not self.scenario_commands:
+            return
+        index = next(
+            (
+                i
+                for i, scheduled in enumerate(self.scenario_commands)
+                if scheduled.time > self.simulation.simt
+            ),
+            len(self.scenario_commands),
+        )
+        due = self.scenario_commands[:index]
+        self.stack(*(scheduled.text for scheduled in due))
+        del self.scenario_commands[:index]
 
     def stack(self, *cmdlines: str, sender_id: bytes | None = None) -> None:
         """Stack one or more commands separated by ";".
@@ -1041,8 +1057,12 @@ class CommandStack:
         queued: list[tuple[str, bytes | None]] = []
         for cmdline in cmdlines:
             text = cmdline.strip()
-            if text:
-                queued.extend((line, sender_id) for line in text.split(";") if line)
+            if not text:
+                continue
+            if isinstance(result := split_commands(text), Err):
+                self.console.echo(f"error: {result.err()}")
+                continue
+            queued.extend((line, sender_id) for line in result.ok())
         with self._queue_lock:
             self.cmdstack.extend(queued)
 
@@ -1064,20 +1084,13 @@ class CommandStack:
         or otherwise the filename of the scenario."""
         return self.scenname
 
-    class ScenarioData(NamedTuple):
-        times: list[float]
-        """Buffered command execution times [s]."""
-        commands: list[str]
-        """Buffered scenario command lines."""
-
     def get_scendata(self) -> ScenarioData:
-        """Return the scenario data that was loaded from a scenario file."""
-        return self.ScenarioData(self.scentime, self.scencmd)
+        """Return an immutable snapshot of buffered scenario commands."""
+        return ScenarioData(tuple(self.scenario_commands))
 
-    def set_scendata(self, newtime, newcmd) -> None:
-        """Set the scenario data. This is used by the batch logic."""
-        self.scentime = newtime
-        self.scencmd = newcmd
+    def set_scendata(self, data: ScenarioData) -> None:
+        """Replace the scenario buffer with commands ordered by execution time."""
+        self.scenario_commands = sorted(data.commands, key=lambda command: command.time)
 
 
 def _consume_task_result(task: asyncio.Future[Any]) -> None:
