@@ -21,6 +21,7 @@ from annotated_types import Ge, Le
 from minisky.command import (
     ArgumentIssue,
     CmdParser,
+    CommandParseContext,
     OnOff,
     Parsed,
     ParseResult,
@@ -70,7 +71,7 @@ def _clock_time(value: str) -> Result[datetime.time, ArgumentIssue]:
     return Ok(parsed)
 
 
-def _parse_clock_time(text: str) -> ParseResult[datetime.time]:
+def _parse_clock_time(_context: CommandParseContext, text: str) -> ParseResult[datetime.time]:
     if isinstance(result := next_argument(text), Err):
         return result
     token = result.ok()

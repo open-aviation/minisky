@@ -4,7 +4,7 @@ from typing import Literal
 
 import pytest
 from minisky import MiniSky
-from minisky.command import command, split_commands
+from minisky.command import ArgumentIssue, LatLonDeg, LatLonDegrees, command, split_commands
 from minisky.result import Err, Ok
 
 
@@ -71,3 +71,29 @@ def test_unclosed_quote() -> None:
     assert issue.source_text == 'ECHO "unfinished'
     assert issue.span is not None
     assert issue.span.start == 5
+
+
+def test_resolved_position_rejects_ambiguous_waypoint_without_ui_reference(
+    runtime: MiniSky,
+) -> None:
+    received: list[LatLonDegrees] = []
+
+    class Component:
+        @command(name="TESTPOS")
+        def record(self, position: LatLonDeg) -> None:
+            received.append(position)
+
+    runtime.navigation.defwpt("ZZDUPPOS", 52.0, 4.0)
+    runtime.navigation.defwpt("ZZDUPPOS", 53.0, 5.0)
+    try:
+        (prepared,) = runtime.commands.prepare_component(Component())
+        result = prepared.command("ZZDUPPOS")
+
+        assert isinstance(result, Err)
+        issue = result.err()
+        assert isinstance(issue, ArgumentIssue)
+        assert "unambiguous waypoint id" in issue.message
+        assert received == []
+    finally:
+        runtime.navigation.delwpt("ZZDUPPOS")
+        runtime.navigation.delwpt("ZZDUPPOS")

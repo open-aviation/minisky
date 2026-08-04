@@ -27,7 +27,6 @@
 #   txt       = text will be converted to upper case
 #               (for keywords, navaids, flags, waypoints, callsign etc)
 #   word      = single, case sensitive word
-#   string    = case sensitive string
 #   on/off    = text => boolean
 #
 #   latlon    = converts callsign, wpt, airport etc => lat,lon (deg) so 2 args!
@@ -122,24 +121,6 @@ def get_commands(command_stack: CommandStack) -> CommandCatalog:
             "callsign,wpt,[txt,...]",
             "AT callsign, wpt, [DEL] ALT/SPD/DO alt/spd/stack command",
             "Set or show altitude and/or speed constraints at a waypoint.",
-        ],
-        "ATALT": [
-            command_stack.traffic.cond.ataltcmd,
-            "callsign,alt,string",
-            "callsign ATALT alt cmd ",
-            "When aircraft at given altitude , execute the command",
-        ],
-        "ATDIST": [
-            command_stack.traffic.cond.atdistcmd,
-            "callsign,latlon,float,string",
-            "callsign ATDIST pos dist cmd ",
-            "When aircraft passing this distance (in nm) to position, execute the command",
-        ],
-        "ATSPD": [
-            command_stack.traffic.cond.atspdcmd,
-            "callsign,spd,string",
-            "callsign ATSPD spd cmd ",
-            "When aircraft reaches given speed, execute the command",
         ],
         "BANK": [
             command_stack.traffic.setbanklim,
