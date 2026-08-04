@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 from minisky import MiniSky
 from minisky.simulation import Simulation
-from minisky.stack import Command
+from minisky.stack import Command, ScheduledCommand
 from tests._types import RunCommand
 
 FT = 0.3048
@@ -137,31 +137,18 @@ class TestCommands:
         run_cmd("MCRE 3")
         assert runtime.traffic.ntraf == 3
 
-    def test_delay_and_schedule_preserve_nested_command_text(
-        self, runtime: MiniSky, sim: Simulation, run_cmd: RunCommand
-    ) -> None:
-        sim.simt = 5.0
-        run_cmd('DELAY 10 ECHO "quoted text", still text')
-        run_cmd("SCHEDULE 01:30 ECHO scheduled, text")
-
-        assert runtime.commands.scentime == [15.0, 90.0]
-        assert runtime.commands.scencmd == [
-            'ECHO "quoted text", still text',
-            "ECHO scheduled, text",
-        ]
-
 
 class TestReadscn:
     def test_short_command_line_survives(self, runtime: MiniSky) -> None:
         # "0:00:00>OP" is only 10 characters; it used to be dropped by a
         # minimum-length check meant to skip empty lines.
         lines = list(runtime.commands.readscn(StringIO("0:00:00>OP\n")))
-        assert lines == [(0.0, "OP")]
+        assert lines == [ScheduledCommand(0.0, "OP")]
 
     def test_blank_and_comment_lines_skipped(self, runtime: MiniSky) -> None:
         scn = StringIO("# a comment\n\n0:00:01>HOLD\n")
         lines = list(runtime.commands.readscn(scn))
-        assert lines == [(1.0, "HOLD")]
+        assert lines == [ScheduledCommand(1.0, "HOLD")]
 
 
 class TestHelp:

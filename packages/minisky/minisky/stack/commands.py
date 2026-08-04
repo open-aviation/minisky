@@ -278,12 +278,6 @@ def get_commands(command_stack: CommandStack) -> CommandCatalog:
             "HOLD",
             "Pause(hold) simulation",
         ],
-        "IC": [
-            command_stack.ic,
-            "string",
-            "IC scenario_filename",
-            "Load a scenario filename.",
-        ],
         "LINE": [
             command_stack.areas.define_line_area,
             "txt,latlon,latlon",
@@ -457,12 +451,6 @@ def get_commands(command_stack: CommandStack) -> CommandCatalog:
             "[float]",
             "RSZONER [zoner]",
             "Set resolution factor horizontal, but then with absolute value.",
-        ],
-        "SCENARIO": [
-            command_stack.scenario,
-            "string",
-            "SCENARIO name",
-            "Sets the scenario name for the current simulation.",
         ],
         "SELECTIMPL": [
             command_stack.replaceables.select,
