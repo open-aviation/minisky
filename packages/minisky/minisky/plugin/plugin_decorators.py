@@ -12,6 +12,14 @@ from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal, TypeVar, overload
 
+from minisky.command import (
+    _bound_method,
+    _declared_attributes,
+    _underlying_function,
+)
+from minisky.command import (
+    command as typed_command,
+)
 from minisky.identifiers import normalize_public_name
 
 if TYPE_CHECKING:
@@ -23,14 +31,15 @@ if TYPE_CHECKING:
 
 CommandCallback = Callable[..., Any]
 CommandTarget = TypeVar("CommandTarget", bound=CommandCallback)
-_COMMAND = "__minisky_command__"
+_LEGACY_COMMAND = "__minisky_legacy_plugin_command__"
+_ARGUMENTS_UNSET = object()
 
 
 @dataclass(frozen=True, slots=True)
-class CommandDeclaration:
-    """Command metadata stored on a decorated method."""
+class LegacyCommandDeclaration:
+    """Legacy plugin command metadata for the arguments DSL."""
 
-    arguments: str = ""
+    arguments: str
     name: str = ""
     aliases: tuple[str, ...] = ()
 
@@ -44,11 +53,11 @@ class CommandDeclaration:
 
 
 @dataclass(frozen=True, slots=True)
-class BoundCommand:
-    """A command declaration bound to a component instance."""
+class BoundLegacyCommand:
+    """A legacy command declaration bound to a component instance."""
 
     callback: CommandCallback
-    declaration: CommandDeclaration
+    declaration: LegacyCommandDeclaration
 
     @property
     def name(self) -> str:
@@ -83,7 +92,15 @@ def command(func: CommandTarget, /) -> CommandTarget: ...
 @overload
 def command(
     *,
-    arguments: str = "",
+    name: str = "",
+    aliases: tuple[str, ...] = (),
+) -> Callable[[CommandTarget], CommandTarget]: ...
+
+
+@overload
+def command(
+    *,
+    arguments: str,
     name: str = "",
     aliases: tuple[str, ...] = (),
 ) -> Callable[[CommandTarget], CommandTarget]: ...
@@ -93,33 +110,35 @@ def command(
     func: CommandTarget | None = None,
     /,
     *,
-    arguments: str = "",
+    arguments: str | object = _ARGUMENTS_UNSET,
     name: str = "",
     aliases: tuple[str, ...] = (),
 ) -> CommandTarget | Callable[[CommandTarget], CommandTarget]:
-    """Declare an instance method as a stack command.
+    """Declare a typed plugin command, with temporary arguments-DSL compatibility."""
+    if arguments is _ARGUMENTS_UNSET:
+        typed_decorator = typed_command(name=name, aliases=aliases)
+        return typed_decorator(func) if func is not None else typed_decorator
+    if not isinstance(arguments, str):
+        raise TypeError("plugin command arguments must be a string")
 
-    The method name becomes the command name unless `name` is provided. Its
-    docstring becomes command help and its signature becomes the brief usage
-    text.
-    """
-
-    def decorate(target: CommandTarget) -> CommandTarget:
-        actual = _underlying_function(target)
-        if _COMMAND in vars(actual):
-            raise TypeError("a plugin command may be declared only once")
-        setattr(actual, _COMMAND, CommandDeclaration(arguments, name, aliases))
+    def decorate_legacy(target: CommandTarget) -> CommandTarget:
+        source = _underlying_function(target)
+        if _LEGACY_COMMAND in vars(source):
+            raise TypeError("a legacy plugin command may be declared only once")
+        setattr(source, _LEGACY_COMMAND, LegacyCommandDeclaration(arguments, name, aliases))
         return target
 
-    return decorate(func) if func is not None else decorate
+    return decorate_legacy(func) if func is not None else decorate_legacy
 
 
-def declared_commands(component: object) -> Iterator[BoundCommand]:
-    """Bind command declarations to this exact component instance."""
-    for attribute_name, value in _declaration_namespace(component).items():
-        declaration = getattr(_underlying_function(value), _COMMAND, None)
-        if isinstance(declaration, CommandDeclaration):
-            yield BoundCommand(_bound_method(component, attribute_name, "command"), declaration)
+def declared_legacy_commands(component: object) -> Iterator[BoundLegacyCommand]:
+    """Bind explicit arguments-DSL declarations to this exact component instance."""
+    for attribute_name, value in _declared_attributes(component):
+        declaration = getattr(_underlying_function(value), _LEGACY_COMMAND, None)
+        if isinstance(declaration, LegacyCommandDeclaration):
+            yield BoundLegacyCommand(
+                _bound_method(component, attribute_name, "legacy command"), declaration
+            )
 
 
 #
@@ -200,7 +219,7 @@ def hook(
 
 def declared_hooks(component: object) -> Iterator[BoundHook]:
     """Bind hook declarations to this exact component instance."""
-    for attribute_name, value in _declaration_namespace(component).items():
+    for attribute_name, value in _declared_attributes(component):
         declarations = getattr(_underlying_function(value), _HOOKS, ())
         if not declarations:
             continue
@@ -263,28 +282,3 @@ def declared_replacement(implementation: type[Any]) -> ReplacementDeclaration:
     if not isinstance(declaration, ReplacementDeclaration):
         raise TypeError(f"replacement {implementation.__name__!r} must use @plugin.replacement")
     return declaration
-
-
-#
-# internals
-#
-
-
-def _bound_method(component: object, name: str, kind: str) -> Callable[..., Any]:
-    callback = getattr(component, name)
-    if not inspect.ismethod(callback) or callback.__self__ is not component:
-        raise TypeError(f"decorated {kind} {name!r} must be an instance method")
-    return callback
-
-
-def _declaration_namespace(component: object) -> dict[str, Any]:
-    namespace: dict[str, Any] = {}
-    for cls in reversed(type(component).__mro__):
-        namespace.update(vars(cls))
-    return namespace
-
-
-def _underlying_function(value: Any) -> Any:
-    if isinstance(value, (staticmethod, classmethod)):
-        value = value.__func__
-    return inspect.unwrap(value) if callable(value) else value

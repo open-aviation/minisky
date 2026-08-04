@@ -609,22 +609,31 @@ def command(
 
 def declared_commands(component: object) -> Iterator[BoundCommand]:
     """Yield typed command declarations bound to a component instance."""
+    for name, value in _declared_attributes(component):
+        source = _underlying_function(value)
+        declaration = getattr(source, _COMMAND, None) if callable(source) else None
+        if declaration is None:
+            continue
+        if not isinstance(declaration, CommandDeclaration):
+            raise TypeError(f"invalid command declaration on {name!r}")
+        yield BoundCommand(_bound_method(component, name), source, declaration)
+
+
+def _bound_method(component: object, name: str, kind: str = "command") -> CommandCallback:
+    callback = getattr(component, name)
+    if not inspect.ismethod(callback) or callback.__self__ is not component:
+        raise TypeError(f"decorated {kind} {name!r} must be an instance method")
+    return callback
+
+
+def _declared_attributes(component: object) -> Iterator[tuple[str, object]]:
     seen: set[str] = set()
     for cls in type(component).__mro__:
         for name, value in vars(cls).items():
             if name in seen:
                 continue
             seen.add(name)
-            source = _underlying_function(value)
-            declaration = getattr(source, _COMMAND, None) if callable(source) else None
-            if declaration is None:
-                continue
-            if not isinstance(declaration, CommandDeclaration):
-                raise TypeError(f"invalid typed command declaration on {name!r}")
-            callback = getattr(component, name)
-            if not inspect.ismethod(callback) or callback.__self__ is not component:
-                raise TypeError(f"decorated command {name!r} must be an instance method")
-            yield BoundCommand(callback, source, declaration)
+            yield name, value
 
 
 def _underlying_function(value: Any) -> Any:
