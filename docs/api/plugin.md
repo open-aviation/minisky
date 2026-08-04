@@ -27,7 +27,13 @@ lifespan capabilities. See the [plugin guide](../guides/plugins.md).
 
 ## Decorators
 
-::: minisky.plugin.plugin_decorators.command
+::: minisky.command.command
+
+::: minisky.command.CmdParser
+
+::: minisky.command.CommandParseContext
+
+::: minisky.command.Parsed
 
 ::: minisky.plugin.plugin_decorators.hook
 

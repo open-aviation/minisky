@@ -104,7 +104,7 @@ or the console — goes through the same interpreter: [`minisky.stack`](api/stac
   (`alt` accepts `FL100`, ft, or m; `spd` accepts CAS knots or Mach; `latlon` resolves
   navaid names to coordinates).
 - The built-in command table lives in `packages/minisky/minisky/stack/commands.py`; plugins add commands
-  with the [`@command`][minisky.plugin.plugin_decorators.command] decorator.
+  with the [`@command`][minisky.command.command] decorator.
 - Scenario files (`.scn`) are simply time-stamped stack commands; `IC filename` loads one.
 
 See the [stack command reference](reference/commands.md) for every available command.

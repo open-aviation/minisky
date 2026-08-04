@@ -22,12 +22,7 @@ from pydantic import TypeAdapter
 from minisky.core.trafficarrays import PreparedReplacement, TrafficArrays
 from minisky.identifiers import validate_plugin_id
 from minisky.plugin.entity import Entity
-from minisky.plugin.plugin_decorators import (
-    HookName,
-    declared_hooks,
-    declared_legacy_commands,
-    declared_replacement,
-)
+from minisky.plugin.plugin_decorators import HookName, declared_hooks, declared_replacement
 from minisky.result import Err, Ok, Result
 from minisky.streaming import Snapshot, build_snapshot
 
@@ -415,17 +410,6 @@ class PluginManager:
         for component in spec.components:
             try:
                 commands.extend(self.commands.prepare_component(component))
-                for bound in declared_legacy_commands(component):
-                    commands.append(
-                        self.commands.prepare_command(
-                            bound.callback,
-                            name=bound.name,
-                            aliases=bound.aliases,
-                            arguments=bound.declaration.arguments,
-                            brief=bound.brief,
-                            help_text=bound.help,
-                        )
-                    )
             except (TypeError, ValueError) as exc:
                 raise PluginError(str(exc)) from exc
         try:
