@@ -40,6 +40,7 @@ import numpy as np
 from minisky.command import (
     ArgumentIssue,
     BoundCommand,
+    CommandParseContext,
     SourceSpan,
     Text,
     TimeS,
@@ -298,6 +299,7 @@ class TypedCommand:
     name: str
     aliases: tuple[str, ...]
     forms: tuple[TypedCommandForm, ...]
+    parse_context: CommandParseContext
 
     def __post_init__(self) -> None:
         if not self.forms:
@@ -324,7 +326,9 @@ class TypedCommand:
         argument_offset = len(self.name) + (1 if argstring else 0)
         failure: ArgumentIssue | None = None
         for form in self.forms:
-            parsed = _parse_typed_form(form, argstring, source_text, argument_offset)
+            parsed = _parse_typed_form(
+                form, argstring, self.parse_context, source_text, argument_offset
+            )
             if isinstance(parsed, Ok):
                 return Ok(_TypedCommandCall(form, parsed.ok()))
             failure = parsed.err()
@@ -337,7 +341,7 @@ class TypedCommand:
         if self.name != other.name:
             raise ValueError(f"cannot merge commands {self.name} and {other.name}")
         aliases = tuple(dict.fromkeys((*self.aliases, *other.aliases)))
-        return TypedCommand(self.name, aliases, (*self.forms, *other.forms))
+        return TypedCommand(self.name, aliases, (*self.forms, *other.forms), self.parse_context)
 
     @property
     def names(self) -> tuple[str, ...]:
@@ -385,6 +389,7 @@ class TypedCommand:
 def _parse_typed_form(
     form: TypedCommandForm,
     argstring: str,
+    context: CommandParseContext,
     source_text: str,
     argument_offset: int,
 ) -> Result[tuple[object, ...], ArgumentIssue]:
@@ -392,7 +397,7 @@ def _parse_typed_form(
     remainder = argstring
     for parameter in form.parameters:
         offset = argument_offset + len(argstring) - len(remainder)
-        parsed = parameter.parse(remainder, source_text=source_text, offset=offset)
+        parsed = parameter.parse(context, remainder, source_text=source_text, offset=offset)
         if isinstance(parsed, Err):
             return parsed
         value = parsed.ok()
@@ -485,6 +490,7 @@ class CommandStack:
         self.variables = variables
         self.plugins = plugins
         self.replaceables = replaceables
+        self.parse_context = CommandParseContext(traffic, navigation)
         self.argument_parser = argparser.ArgumentParser(traffic, navigation, console)
         self._get_simulation = get_simulation
         self._get_runner = get_runner
@@ -582,7 +588,7 @@ class CommandStack:
             parameters=tuple(parameters),
             help=bound.help,
         )
-        return TypedCommand(bound.name, bound.aliases, (form,))
+        return TypedCommand(bound.name, bound.aliases, (form,), self.parse_context)
 
     def validate_commands(self, commands: tuple[PreparedCommand, ...]) -> None:
         """Reject command names already used by this stack or the same batch."""
@@ -658,6 +664,7 @@ class CommandStack:
             *self.prepare_component(self.console),
             *self.prepare_component(self),
             *self.prepare_component(self.traffic),
+            *self.prepare_component(self.traffic.cond),
             *self.prepare_component(self.simulation),
             *self.prepare_component(self.runner),
         )

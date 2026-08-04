@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
+from minisky.command import AcId, AltM, LatLonDeg, SpeedMpsOrMach, Text, command
 from minisky.tools.geo import qdrdist
 
 if TYPE_CHECKING:
@@ -160,7 +161,8 @@ class Condition:
             )
         return
 
-    def ataltcmd(self, acidx: int, targalt: float, cmdtxt: str) -> bool:
+    @command(name="ATALT")
+    def ataltcmd(self, acidx: AcId, targalt: AltM, cmdtxt: Text) -> bool:
         """Schedule a command for when an aircraft crosses an altitude.
 
         Implements the ATALT stack command:
@@ -178,7 +180,8 @@ class Condition:
         self.addcondition(acidx, alttype, targalt, actalt, cmdtxt)
         return True
 
-    def atspdcmd(self, acidx: int, targspd: float, cmdtxt: str) -> bool:
+    @command(name="ATSPD")
+    def atspdcmd(self, acidx: AcId, targspd: SpeedMpsOrMach, cmdtxt: Text) -> bool:
         """Schedule a command for when an aircraft crosses a speed.
 
         Implements the ATSPD stack command:
@@ -196,7 +199,8 @@ class Condition:
         self.addcondition(acidx, spdtype, targspd, actspd, cmdtxt)
         return True
 
-    def atdistcmd(self, acidx: int, lat: float, lon: float, targdist: float, cmdtxt: str) -> bool:
+    @command(name="ATDIST")
+    def atdistcmd(self, acidx: AcId, position: LatLonDeg, targdist: float, cmdtxt: Text) -> bool:
         """Schedule a command for a distance from a reference position.
 
         Implements the ATDIST stack command: `acid ATDIST lat lon dist
@@ -205,16 +209,17 @@ class Condition:
 
         Args:
             acidx: Aircraft index.
-            lat: Reference latitude [deg].
-            lon: Reference longitude [deg].
+            position: Reference latitude and longitude [deg].
             targdist: Trigger distance to the reference position [nm].
             cmdtxt: Command line to stack when the distance is crossed.
 
         Returns:
             bool: True (the condition is always added).
         """
-        _qdr, actdist = qdrdist(self.traffic.lat[acidx], self.traffic.lon[acidx], lat, lon)
-        self.addcondition(acidx, postype, targdist, actdist, cmdtxt, (lat, lon))
+        _qdr, actdist = qdrdist(
+            self.traffic.lat[acidx], self.traffic.lon[acidx], position.lat, position.lon
+        )
+        self.addcondition(acidx, postype, targdist, actdist, cmdtxt, (position.lat, position.lon))
         return True
 
     def addcondition(

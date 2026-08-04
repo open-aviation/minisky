@@ -249,14 +249,6 @@ class Parser:
         return self.parsefun(curarg), argstring
 
 
-class StringArg(Parser):
-    """Argument parser that simply consumes the entire remaining text string."""
-
-    def parse(self, argstring: str) -> tuple[str, str]:
-        """Return the complete remaining text as a single string argument."""
-        return argstring, ""
-
-
 class CallsignArg(Parser):
     """Argument parser for aircraft callsigns and group ids."""
 
@@ -458,7 +450,6 @@ class ArgumentParser:
             "*": None,
             "txt": Parser(str.upper),
             "word": Parser(str),
-            "string": StringArg(),
             "float": Parser(float),
             "int": Parser(int),
             "onoff": Parser(txt2bool),
@@ -532,7 +523,6 @@ Vspd = Annotated[float, "vspd"]
 Hdg = Annotated[float, "hdg"]
 Time = Annotated[float, "time"]
 Txt = Annotated[str, "txt"]
-String = Annotated[str, "string"]
 OnOff = Annotated[bool, "onoff"]
 Lat = Annotated[float, "lat"]
 Lon = Annotated[float, "lon"]

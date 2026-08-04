@@ -6,6 +6,7 @@ import inspect
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, replace
 from typing import (
+    TYPE_CHECKING,
     Annotated,
     Any,
     Generic,
@@ -21,7 +22,12 @@ from annotated_types import BaseMetadata, Ge, Gt, IsFinite, Le, Predicate
 
 from minisky.identifiers import normalize_public_name
 from minisky.result import Err, Ok, Result
-from minisky.tools.convert import txt2bool, txt2tim
+from minisky.tools.convert import txt2alt, txt2bool, txt2lat, txt2lon, txt2spd, txt2tim
+from minisky.tools.position import islat
+
+if TYPE_CHECKING:
+    from minisky.tools.navdata import Navdatabase
+    from minisky.traffic import Traffic
 
 CommandCallback = Callable[..., Any]
 CommandTarget = TypeVar("CommandTarget", bound=CommandCallback)
@@ -83,11 +89,21 @@ class ArgumentIssue:
 
 
 ParseResult: TypeAlias = Result[Parsed[ParsedT_co], ArgumentIssue]
-ParseFunction: TypeAlias = Callable[[str], ParseResult[ParsedT_co]]
+
+
+@dataclass(frozen=True, slots=True)
+class CommandParseContext:
+    """Read-only runtime services available while parsing a command value."""
+
+    traffic: Traffic
+    navigation: Navdatabase
+
+
+ParseFunction: TypeAlias = Callable[[CommandParseContext, str], ParseResult[ParsedT_co]]
 
 
 def next_argument(text: str) -> ParseResult[str]:
-    """Parse one command field and leave the remaining fields untouched."""
+    """Parse a command field and leave the remaining fields untouched."""
     index = 0
     length = len(text)
     while index < length and text[index].isspace():
@@ -202,11 +218,11 @@ class CmdParser(Generic[ParsedT_co]):
             raise ValueError("command parser literals must be non-empty and unique")
         return cls(func, LiteralSyntax(normalized))
 
-    def __call__(self, text: str) -> ParseResult[ParsedT_co]:
-        return self.func(text)
+    def __call__(self, context: CommandParseContext, text: str) -> ParseResult[ParsedT_co]:
+        return self.func(context, text)
 
 
-def parse_text(text: str) -> ParseResult[str]:
+def parse_text(_context: CommandParseContext, text: str) -> ParseResult[str]:
     """Consume the complete remaining command text verbatim."""
     return Ok(Parsed(text, "", SourceSpan(0, len(text))))
 
@@ -232,30 +248,167 @@ def _convert(
     return Ok(Parsed(value, token.remainder, token.span))
 
 
-def parse_int(text: str) -> ParseResult[int]:
-    """Parse one integer command field."""
+def parse_int(_context: CommandParseContext, text: str) -> ParseResult[int]:
+    """Parse a integer command field."""
     return _convert(text, int, "an integer")
 
 
-def parse_float(text: str) -> ParseResult[float]:
-    """Parse one floating-point command field."""
+def parse_float(_context: CommandParseContext, text: str) -> ParseResult[float]:
+    """Parse a floating-point command field."""
     return _convert(text, float, "a number")
 
 
-def parse_on_off(text: str) -> ParseResult[bool]:
-    """Parse one on/off command field."""
+def parse_on_off(_context: CommandParseContext, text: str) -> ParseResult[bool]:
+    """Parse a on/off command field."""
     return _convert(text, txt2bool, "ON or OFF")
 
 
 OnOff = Annotated[bool, CmdParser(parse_on_off)]
 
 
-def parse_time(text: str) -> ParseResult[float]:
-    """Parse one BlueSky time field as seconds."""
+def parse_altitude(_context: CommandParseContext, text: str) -> ParseResult[float]:
+    """Parse a BlueSky altitude field as meters."""
+    return _convert(text, txt2alt, "an altitude")
+
+
+AltM = Annotated[float, CmdParser(parse_altitude)]
+
+
+def parse_speed(_context: CommandParseContext, text: str) -> ParseResult[float]:
+    """Parse a BlueSky speed field as CAS m/s or Mach."""
+    return _convert(text, txt2spd, "a speed")
+
+
+SpeedMpsOrMach = Annotated[float, CmdParser(parse_speed)]
+
+
+def parse_time(_context: CommandParseContext, text: str) -> ParseResult[float]:
+    """Parse a BlueSky time field as seconds."""
     return _convert(text, txt2tim, "a time")
 
 
 TimeS = Annotated[float, CmdParser(parse_time)]
+
+
+def parse_aircraft(context: CommandParseContext, text: str) -> ParseResult[int]:
+    """Resolve an existing aircraft callsign to its traffic-array index."""
+    if isinstance(result := next_argument(text), Err):
+        return result
+    token = result.ok()
+    callsign = token.value.upper()
+    index = context.traffic.idx(callsign)
+    if index < 0 and callsign in context.traffic.groups:
+        return Err(ArgumentIssue.expected("an aircraft", f"group {callsign}", token.span))
+    if index < 0:
+        return Err(ArgumentIssue.expected("an existing aircraft", callsign, token.span))
+    return Ok(Parsed(index, token.remainder, token.span))
+
+
+AcId = Annotated[int, CmdParser(parse_aircraft)]
+
+
+@dataclass(frozen=True, slots=True)
+class LatLonDegrees:
+    """Resolved latitude and longitude in degrees."""
+
+    lat: float
+    lon: float
+
+
+def _resolve_named_lat_lon(
+    context: CommandParseContext, name: str, span: SourceSpan
+) -> Result[LatLonDegrees, ArgumentIssue]:
+    if "/RW" in name:
+        airport, runway_text = name.split("/RW", maxsplit=1)
+        runway = runway_text.lstrip("Y")
+        try:
+            lat, lon, _heading = context.navigation.rwythresholds[airport][runway]
+        except KeyError:
+            return Err(
+                ArgumentIssue.expected("a waypoint, airport, runway, or aircraft id", name, span)
+            )
+        return Ok(LatLonDegrees(float(lat), float(lon)))
+
+    if name in context.navigation.aptid:
+        index = context.navigation.aptid.index(name)
+        return Ok(
+            LatLonDegrees(
+                float(context.navigation.aptlat[index]),
+                float(context.navigation.aptlon[index]),
+            )
+        )
+
+    occurrences = context.navigation.wpid.count(name)
+    if occurrences > 1:
+        return Err(
+            ArgumentIssue.expected("an unambiguous waypoint id or explicit coordinates", name, span)
+        )
+    if occurrences == 1:
+        index = context.navigation.wpid.index(name)
+        return Ok(
+            LatLonDegrees(
+                float(context.navigation.wplat[index]),
+                float(context.navigation.wplon[index]),
+            )
+        )
+    return Err(ArgumentIssue.expected("a waypoint, airport, runway, or aircraft id", name, span))
+
+
+def parse_lat_lon(context: CommandParseContext, text: str) -> ParseResult[LatLonDegrees]:
+    """Resolve coordinates, aircraft, airports, runways, or waypoints to lat/lon."""
+    if isinstance(result := next_argument(text), Err):
+        return result
+    token = result.ok()
+    name = token.value.upper()
+    remainder = token.remainder
+
+    index = context.traffic.idx(name)
+    if index >= 0:
+        coordinates = LatLonDegrees(
+            float(context.traffic.lat[index]), float(context.traffic.lon[index])
+        )
+        return Ok(Parsed(coordinates, remainder, token.span))
+
+    if islat(name):
+        offset = len(text) - len(remainder)
+        if isinstance(longitude_result := next_argument(remainder), Err):
+            issue = longitude_result.err()
+            span = issue.span.offset_by(offset) if issue.span is not None else None
+            return Err(ArgumentIssue(issue.message, span))
+        longitude = longitude_result.ok()
+        span = SourceSpan(token.span.start, offset + longitude.span.end)
+        if not longitude.value:
+            return Err(
+                ArgumentIssue.expected("a longitude after the latitude", "end of input", span)
+            )
+        try:
+            coordinates = LatLonDegrees(txt2lat(name), txt2lon(longitude.value))
+        except ValueError:
+            return Err(
+                ArgumentIssue.expected(
+                    "a latitude and longitude", f"{name},{longitude.value}", span
+                )
+            )
+        return Ok(Parsed(coordinates, longitude.remainder, span))
+
+    span = token.span
+    if remainder[:2].upper() == "RW" and name in context.navigation.aptid:
+        offset = len(text) - len(remainder)
+        if isinstance(runway_result := next_argument(remainder), Err):
+            issue = runway_result.err()
+            issue_span = issue.span.offset_by(offset) if issue.span is not None else None
+            return Err(ArgumentIssue(issue.message, issue_span))
+        runway = runway_result.ok()
+        name = f"{name}/{runway.value.upper()}"
+        span = SourceSpan(token.span.start, offset + runway.span.end)
+        remainder = runway.remainder
+
+    if isinstance(resolved := _resolve_named_lat_lon(context, name, span), Err):
+        return resolved
+    return Ok(Parsed(resolved.ok(), remainder, span))
+
+
+LatLonDeg = Annotated[LatLonDegrees, CmdParser(parse_lat_lon)]
 
 
 _Constraint: TypeAlias = Gt | Ge | Le | Predicate
@@ -269,8 +422,15 @@ class Parameter:
     parser: CmdParser[Any]
     constraints: tuple[_Constraint, ...] = ()
 
-    def parse(self, text: str, *, source_text: str, offset: int) -> ParseResult[Any]:
-        if isinstance(result := self.parser(text), Err):
+    def parse(
+        self,
+        context: CommandParseContext,
+        text: str,
+        *,
+        source_text: str,
+        offset: int,
+    ) -> ParseResult[Any]:
+        if isinstance(result := self.parser(context, text), Err):
             issue = result.err()
             # TODO(abraham): move missing/default semantics here
             fallback = SourceSpan(0, max(1, len(text)))
@@ -288,7 +448,7 @@ class Parameter:
 
 
 def compile_parameter(parameter: inspect.Parameter) -> Parameter:
-    """Compile the parser and constraints carried by one annotation."""
+    """Compile the parser and constraints carried by an annotation."""
     annotation = parameter.annotation
     metadata: tuple[object, ...] = ()
     if get_origin(annotation) is Annotated:
@@ -331,7 +491,7 @@ def _literal_parser(annotation: object) -> CmdParser[str]:
     if len(literals) != len(set(literals)):
         raise TypeError("command Literal repeats a case-insensitive value")
 
-    def parse_literal(text: str) -> ParseResult[str]:
+    def parse_literal(_context: CommandParseContext, text: str) -> ParseResult[str]:
         if isinstance(result := next_argument(text), Err):
             return result
         token = result.ok()
