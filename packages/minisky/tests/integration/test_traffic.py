@@ -234,7 +234,7 @@ class TestNoise:
         self, runtime: MiniSky, sim: Simulation
     ) -> None:
         runtime.traffic.mcre(3)
-        runtime.traffic.setnoise(True)
+        runtime.traffic.configure_noise(True)
         runtime.traffic.noise.lastupdate[:] = -1.0  # make every aircraft due for update
         runtime.traffic.noise.update()
         offsets = runtime.traffic.noise.lat - runtime.traffic.lat

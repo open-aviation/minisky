@@ -231,6 +231,20 @@ Text = Annotated[str, CmdParser(parse_text)]
 """The complete remaining command text, consumed verbatim."""
 
 
+def parse_token(_context: CommandParseContext, text: str) -> ParseResult[str]:
+    """Parse a non-empty command field as case-sensitive text."""
+    if isinstance(result := next_argument(text), Err):
+        return result
+    token = result.ok()
+    if not token.value:
+        return Err(ArgumentIssue.expected("a non-empty argument", "empty input", token.span))
+    return result
+
+
+Token = Annotated[str, CmdParser(parse_token)]
+"""A non-empty command field parsed as case-sensitive text."""
+
+
 FiniteFloat: TypeAlias = IsFinite[float]
 PositiveFiniteFloat: TypeAlias = Annotated[FiniteFloat, Gt(0)]
 

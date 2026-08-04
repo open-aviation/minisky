@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING, Literal, overload
 
 import numpy as np
 
-from minisky.command import Text, command
+from minisky.command import OnOff, Text, command
 from minisky.core.config import MiniSkyConfig
 from minisky.core.trafficarrays import TrafficArrays
 from minisky.result import Err, Ok, Result
@@ -290,7 +290,7 @@ class Traffic(TrafficArrays):
         self.turbulence.reset()
 
         # Trajectory noise (turbulence, navigation uncertainties)
-        self.setnoise(False)
+        self.configure_noise(False)
 
         # Reset transition level to default value
         self.translvl = 5000.0 * ft
@@ -705,19 +705,14 @@ class Traffic(TrafficArrays):
             except ValueError:
                 return -1
 
-    def setnoise(self, noise: bool | None = None) -> Result[str, str]:
-        """Switch trajectory noise models on or off, or report their state.
+    @command(name="NOISE")
+    def noise_status(self) -> Result[str, str]:
+        """Report trajectory-noise state."""
+        return Ok(f"Noise is currently {'on' if self.turbulence.active else 'off'}")
 
-        Implements the NOISE stack command. Controls both the turbulence
-        model and the surveillance (ADS-B transmission/truncation) noise.
-
-        Args:
-            noise: True/False to enable/disable noise; None to report the
-                current state.
-        """
-        if noise is None:
-            return Ok("Noise is currently " + ("on" if self.turbulence.active else "off"))
-
+    @command(name="NOISE")
+    def configure_noise(self, noise: OnOff) -> Result[str, str]:
+        """Enable or disable trajectory and surveillance noise."""
         self.turbulence.setnoise(noise)
         self.noise.setnoise(noise)
         return Ok("")

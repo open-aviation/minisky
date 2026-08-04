@@ -26,7 +26,6 @@
 #   int       = integer
 #   txt       = text will be converted to upper case
 #               (for keywords, navaids, flags, waypoints, callsign etc)
-#   word      = single, case sensitive word
 #   on/off    = text => boolean
 #
 #   latlon    = converts callsign, wpt, airport etc => lat,lon (deg) so 2 args!
@@ -265,12 +264,6 @@ def get_commands(command_stack: CommandStack) -> CommandCatalog:
             "LNAV callsign,[ON/OFF]",
             "LNAV (lateral FMS mode) switch for autopilot.",
         ],
-        "LSVAR": [
-            command_stack.variables.lsvar,
-            "[word]",
-            "LSVAR path.to.variable",
-            "Inspect any variable in a simulation",
-        ],
         "MAGVAR": [
             tools.geo.magdeccmd,
             "lat,lon",
@@ -288,12 +281,6 @@ def get_commands(command_stack: CommandStack) -> CommandCatalog:
             "callsign,latlon,[alt,hdg,spd,vspd]",
             "MOVE callsign,lat,lon,[alt,hdg,spd,vspd]",
             "Move an aircraft to a new position",
-        ],
-        "NOISE": [
-            command_stack.traffic.setnoise,
-            "[onoff]",
-            "NOISE [ON/OFF]",
-            "Turbulence/noise switch",
         ],
         "NORESO": [
             command_stack.traffic.cr.setnoreso,
