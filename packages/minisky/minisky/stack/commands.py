@@ -173,23 +173,11 @@ def get_commands(command_stack: CommandStack) -> CommandCatalog:
             "CIRCLE name,lat,lon,radius,[top,bottom]",
             "Define a circle-shaped area",
         ],
-        "CLRCRECMD": [
-            command_stack.traffic.clrcrecmd,
-            "",
-            "CLRCRECMD",
-            "CLRCRECMD will clear CRECMD list of commands aircraft creation",
-        ],
         "CRE": [
             command_stack.traffic.cre,
             "txt,txt,float,float,[hdg,alt,spd]",
             "CRE callsign,type,lat,lon,hdg,alt,spd",
             "Create an aircraft",
-        ],
-        "CRECMD": [
-            command_stack.traffic.crecmd,
-            "string",
-            "CRECMD cmdline (to be added after aircraft id )",
-            "Add a command for each aircraft to be issued after creation of aircraft",
         ],
         "CRECONFS": [
             command_stack.traffic.creconfs,
