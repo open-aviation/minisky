@@ -152,18 +152,20 @@ async def test_typed_declaration_builds_validated_runtime_state(
 
 
 @pytest.mark.anyio
-async def test_mount_binds_command_to_exact_instance_and_infers_text(
+async def test_mount_binds_command_to_exact_instance_and_respects_annotation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    # plugin parameter names are arbitrary. a parameter named `idx` must keep
+    # its declared integer parser, not become a callsign.
     class Component:
         def __init__(self) -> None:
             self.values: list[int] = []
 
-        @plugin_api.command(arguments="int")
-        def record(self, value: int) -> Result[str, str]:
+        @plugin_api.command(name="SAVE", aliases=("RECORD",))
+        def record(self, idx: int) -> Result[str, str]:
             """Record an integer."""
-            self.values.append(value)
-            return Ok(f"recorded {value}")
+            self.values.append(idx)
+            return Ok(f"recorded {idx}")
 
     component = Component()
 
@@ -174,13 +176,17 @@ async def test_mount_binds_command_to_exact_instance_and_infers_text(
     install(monkeypatch, FakeEntryPoint("mounted", plugin_api.Plugin(build=build)))
     runtime = MiniSky(MiniSkyConfig())
     try:
-        assert "RECORD" not in runtime.commands.cmddict
+        assert "SAVE" not in runtime.commands.cmddict
         result = await runtime.plugins.load("MOUNTED")
         assert result.is_ok(), result.err()
-        command = runtime.commands.cmddict["RECORD"]
-        assert command.callback.__self__ is component
-        assert command.brief == "RECORD value"
-        assert command.help == "Record an integer."
+        command = runtime.commands.cmddict["SAVE"]
+        assert runtime.commands.cmddict["RECORD"] is command
+        assert getattr(command.forms[0].callback, "__self__", None) is component
+        assert command.name == "SAVE"
+        assert command.aliases == ("RECORD",)
+        assert len(command.forms) == 1
+        assert command.forms[0].parameters[0].name == "idx"
+        assert command.forms[0].help == "Record an integer."
 
         runtime.commands.stack("RECORD 7")
         runtime.simulation.step()
