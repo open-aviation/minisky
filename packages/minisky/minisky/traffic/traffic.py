@@ -16,10 +16,11 @@ from __future__ import annotations
 
 from collections.abc import Callable, Collection, Iterable, Mapping
 from random import Random
-from typing import TYPE_CHECKING, overload
+from typing import TYPE_CHECKING, Literal, overload
 
 import numpy as np
 
+from minisky.command import Text, command
 from minisky.core.config import MiniSkyConfig
 from minisky.core.trafficarrays import TrafficArrays
 from minisky.result import Err, Ok, Result
@@ -1062,34 +1063,29 @@ class Traffic(TrafficArrays):
             return Ok("ATS of " + self.callsign[idx] + " is ON")
         return Ok("ATS of " + self.callsign[idx] + " is OFF. THR is " + str(self.thr[idx]))
 
-    def crecmd(self, cmdline: str) -> Result[str, str]:
-        """Add a command to the list issued for every newly created aircraft.
+    def _crecmd_status(self) -> Result[str, str]:
+        if self.crecmdlist:
+            commands = "; ".join(f"[acid] {text}" for text in self.crecmdlist)
+            return Ok(f"CRECMD list: {commands}")
+        return Ok("CRECMD will add a/c specific commands to an aircraft after creation")
 
-        Implements the CRECMD stack command. Each stored command line is
-        stacked as "<acid> <cmdline>" for every aircraft created afterwards.
-        With an empty argument or "?", the current list is shown instead.
+    @command(name="CRECMD")
+    def crecmd_status(self) -> Result[str, str]:
+        """Show commands issued for every newly created aircraft."""
+        return self._crecmd_status()
 
-        Args:
-            cmdline: Command line (without callsign) to add to the list, or
-                ""/"?" to show the current list.
-        """
-        # Help text need or info on current list?
-        if cmdline == "" or cmdline == "?":
-            if len(self.crecmdlist) > 0:
-                allcmds = ""
-                for i, txt in enumerate(self.crecmdlist):
-                    if i == 0:
-                        allcmds = "[acid] " + txt
-                    else:
-                        allcmds += "; [acid] " + txt
-                return Ok("CRECMD list: " + allcmds)
-            else:
-                return Ok("CRECMD will add a/c specific commands to an aircraft after creation")
-        # Command to be added to list
-        else:
-            self.crecmdlist.append(cmdline)
+    @command(name="CRECMD")
+    def crecmd_status_explicit(self, _query: Literal["?"]) -> Result[str, str]:
+        """Show commands issued for every newly created aircraft."""
+        return self._crecmd_status()
+
+    @command(name="CRECMD")
+    def add_crecmd(self, cmdline: Text) -> Result[str, str]:
+        """Add a command to issue for every newly created aircraft."""
+        self.crecmdlist.append(cmdline)
         return Ok("")
 
+    @command(name="CLRCRECMD")
     def clrcrecmd(self) -> Result[str, str]:
         """Clear the list of commands issued for newly created aircraft.
 
