@@ -449,7 +449,6 @@ class ArgumentParser:
         self.parsers: dict[str, ParserProtocol | None] = {
             "*": None,
             "txt": Parser(str.upper),
-            "word": Parser(str),
             "float": Parser(float),
             "int": Parser(int),
             "onoff": Parser(txt2bool),

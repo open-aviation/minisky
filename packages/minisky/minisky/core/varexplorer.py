@@ -19,6 +19,7 @@ from typing import Any
 
 import numpy as np
 
+from minisky.command import Token, command
 from minisky.core import TrafficArrays
 from minisky.result import Err, Ok, Result
 
@@ -63,15 +64,14 @@ class VariableExplorer:
         if current is not None and (expected is None or current[0] is expected):
             del self.varlist[name]
 
-    def lsvar(self, varname: str = "") -> Result[str, str]:
-        """Stack function to list information on simulation variables in the
-        BlueSky console."""
-        if not varname:
-            # When no argument is passed, show a list of parent objects for which
-            # variables can be accessed
-            return Ok("\n" + str.join(", ", list(self.varlist)))
+    @command(name="LSVAR")
+    def list_variables(self) -> Result[str, str]:
+        """List registered variable parents."""
+        return Ok(f"\n{', '.join(self.varlist)}")
 
-        # Find the variable in the variable list
+    @command(name="LSVAR")
+    def describe_variable(self, varname: Token) -> Result[str, str]:
+        """Show information about a simulation variable."""
         v = self.findvar(varname)
         if v:
             thevar = v.get()  # reference to the actual variable
@@ -85,8 +85,8 @@ class VariableExplorer:
                 txt += f"Size:       {len(thevar)}\n"
             txt += f"Parent:     {v.parentname}"
             if attrs:
-                txt += "\nAttributes: " + str.join(", ", attrs) + "\n"
-            return Ok("\n" + txt)
+                txt += f"\nAttributes: {', '.join(attrs)}\n"
+            return Ok(f"\n{txt}")
         return Err(f"Variable {varname} not found")
 
     def findvar(self, varname: str) -> Variable | None:
