@@ -26,6 +26,8 @@ async def test_commands_and_entity_are_runtime_owned() -> None:
         run_command(runtime, "CRE KL001,A320,52,4,90,FL100,250")
         assert "150" in run_command(runtime, "PASSENGERS KL001 150")
         assert "150" in run_command(runtime, "PASSENGERS KL001")
+        assert "expected" in run_command(runtime, "PASSENGERS KL001 -1").lower()
+        assert "150" in run_command(runtime, "PASSENGERS KL001")
 
         again = await runtime.plugins.load("EXAMPLE")
         assert again == Err("Plugin EXAMPLE already loaded")

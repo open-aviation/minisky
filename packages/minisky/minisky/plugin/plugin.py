@@ -24,8 +24,8 @@ from minisky.identifiers import validate_plugin_id
 from minisky.plugin.entity import Entity
 from minisky.plugin.plugin_decorators import (
     HookName,
-    declared_commands,
     declared_hooks,
+    declared_legacy_commands,
     declared_replacement,
 )
 from minisky.result import Err, Ok, Result
@@ -412,27 +412,27 @@ class PluginManager:
 
     def _prepare(self, key: str, spec: PluginSpec) -> _PreparedPlugin:
         commands: list[PreparedCommand] = []
-        command_names: set[str] = set()
         for component in spec.components:
             try:
-                for bound in declared_commands(component):
-                    prepared = self.commands.prepare_command(
-                        bound.callback,
-                        name=bound.name,
-                        aliases=bound.aliases,
-                        arguments=bound.declaration.arguments,
-                        brief=bound.brief,
-                        help_text=bound.help,
+                commands.extend(self.commands.prepare_component(component))
+                for bound in declared_legacy_commands(component):
+                    commands.append(
+                        self.commands.prepare_command(
+                            bound.callback,
+                            name=bound.name,
+                            aliases=bound.aliases,
+                            arguments=bound.declaration.arguments,
+                            brief=bound.brief,
+                            help_text=bound.help,
+                        )
                     )
-                    overlap = command_names.intersection(prepared.names)
-                    if overlap:
-                        raise PluginError(f"plugin {key} repeats command name: {min(overlap)}")
-                    command_names.update(prepared.names)
-                    commands.append(prepared)
             except (TypeError, ValueError) as exc:
                 raise PluginError(str(exc)) from exc
-        command_tuple = tuple(commands)
-        self.commands.validate_commands(command_tuple)
+        try:
+            command_tuple = tuple(commands)
+            self.commands.validate_commands(command_tuple)
+        except ValueError as exc:
+            raise PluginError(str(exc)) from exc
 
         hooks: list[_Hook] = []
         for component in spec.components:

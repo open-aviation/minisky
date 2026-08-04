@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 from random import Random
+from typing import Annotated
 
 import numpy as np
+from annotated_types import Ge, Le
 from minisky import plugin as plugin_api
-from minisky.result import Err, Ok, Result
+from minisky.command import AcId
+from minisky.result import Ok, Result
 
 
 # --8<-- [start:declaration]
@@ -39,15 +42,18 @@ class Example(plugin_api.Entity):
         """Count periodic execution."""
         self.updates += 1
 
-    @plugin_api.command(arguments="txt,[int]")
-    def passengers(self, callsign: str, count: int = -1) -> Result[str, str]:
-        """Set or get the number of passengers on an aircraft."""
-        callsign = callsign.upper()
-        if callsign not in self.traffic.callsign:
-            return Err(f"Aircraft {callsign} not found")
-        index = self.traffic.callsign.index(callsign)
-        if count < 0:
-            return Ok(f"Aircraft {callsign} has {int(self.npassengers[index])} passengers")
+    @plugin_api.command(name="PASSENGERS")
+    def passenger_count(self, index: AcId) -> Result[str, str]:
+        """Show the number of passengers on an aircraft."""
+        callsign = self.traffic.callsign[index]
+        return Ok(f"Aircraft {callsign} has {int(self.npassengers[index])} passengers")
+
+    @plugin_api.command(name="PASSENGERS")
+    def set_passenger_count(
+        self, index: AcId, count: Annotated[int, Ge(0), Le(500)]
+    ) -> Result[str, str]:
+        """Set the number of passengers on an aircraft."""
+        callsign = self.traffic.callsign[index]
         self.npassengers[index] = count
         return Ok(f"Set {callsign} passengers to {count}")
 

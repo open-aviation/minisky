@@ -56,24 +56,9 @@ The example plugin also shows a command and a periodic hook on the same componen
 
 You can use `self.traffic` after the plugin has loaded. Do not use it in `__init__`; the entity is still detached while the plugin is being built.
 
-## Add commands
+## Add a command
 
-Use [`@plugin.command`][minisky.plugin.plugin_decorators.command] on an instance method. The command name defaults to the method name in uppercase, its usage is derived from the signature, and its help text comes from the docstring.
-
-Use the `arguments` option when MiniSky's stack parser needs more information than the Python annotations provide:
-
-```python
-from minisky import Err, Ok, Result
-
-@plugin_api.command(arguments="txt,[int]")
-def passengers(self, callsign: str, count: int = -1) -> Result[str, str]:
-    """Set or get the passenger count for an aircraft."""
-    if count < 0:
-        return Ok("current passenger count")
-    if count > 500:
-        return Err("passenger count is too large")
-    return Ok("passenger count updated")
-```
+Plugin commands use the same typed parser contracts as core commands. See the [stack command reference](../reference/commands.md) for command syntax.
 
 ## Add simulation hooks
 

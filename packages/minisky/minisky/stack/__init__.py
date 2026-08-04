@@ -307,19 +307,37 @@ class TypedCommand:
         if len(self.names) != len(set(self.names)):
             raise ValueError(f"command {self.name} repeats an alias")
 
-    def __call__(self, argstring: str) -> Result[str, str | ArgumentIssue]:
+    def __call__(
+        self, argstring: str
+    ) -> Result[str, str | ArgumentIssue] | Awaitable[Result[str, str]]:
         if isinstance(resolved := self._resolve(argstring), Err):
             return resolved
         call = resolved.ok()
         result = call.form.callback(*call.arguments)
-        if isinstance(result, (Ok, Err)):
+        if inspect.isawaitable(result):
+            return self._await_result(result)
+        return self._result(result)
+
+    @staticmethod
+    async def _await_result(result: Awaitable[object]) -> Result[str, str]:
+        return TypedCommand._result(await result)
+
+    @staticmethod
+    def _result(result: object) -> Result[str, str]:
+        if isinstance(result, Err):
             return result
+        if isinstance(result, Ok):
+            value = result.ok()
+            return Ok("") if value is None else result
         if result is None:
             return Ok("")
         if isinstance(result, bool):
             return Ok("") if result else Err("")
-        # TODO(abraham): async callbacks still use the legacy command path.
-        raise TypeError(f"typed command {self.name} returned unsupported {type(result).__name__}")
+        raise TypeError(
+            f"invalid command return type: {type(result).__name__}\n"
+            "expected: Result[str, str], bool, or None\n"
+            "help: replace legacy (bool, text) returns with Ok(text) or Err(text)"
+        )
 
     def _resolve(self, argstring: str) -> Result[_TypedCommandCall, ArgumentIssue]:
         source_text = self.name + (f" {argstring}" if argstring else "")
@@ -758,7 +776,7 @@ class CommandStack:
                         result.close()
                     self.console.echo("asynchronous stack commands require a running event loop")
                     continue
-                # NOTE(abraham): one awaitable owns the stack. later commands stay
+                # NOTE(abraham): an awaitable owns the stack. later commands stay
                 # at the same simulation timestamp until it finishes.
                 # TODO(abraham): add per-caller completion handles if callers need
                 # responses independent of console output.
