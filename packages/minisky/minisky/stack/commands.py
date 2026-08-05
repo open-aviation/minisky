@@ -147,12 +147,6 @@ def get_commands(command_stack: CommandStack) -> CommandCatalog:
             "CIRCLE name,lat,lon,radius,[top,bottom]",
             "Define a circle-shaped area",
         ],
-        "CRE": [
-            command_stack.traffic.cre,
-            "txt,txt,float,float,[hdg,alt,spd]",
-            "CRE callsign,type,lat,lon,hdg,alt,spd",
-            "Create an aircraft",
-        ],
         "CRECONFS": [
             command_stack.traffic.creconfs,
             "txt,txt,callsign,hdg,float,time,[alt,time,spd]",
@@ -464,7 +458,6 @@ def get_commands(command_stack: CommandStack) -> CommandCatalog:
         "POS": ["AWY", "AIRPORT", "RUNWAYS", "AIRWAY", "AIRWAYS"],
         "BANK": ["BANKLIM"],
         "OP": ["CONTINUE", "RUN", "START"],
-        "CRE": ["CREATE"],
         "QUIT": ["CLOSE", "END", "EXIT", "STOP"],
         "DEL": ["DELETE"],
         "SELECTIMPL": ["IMPL", "IMPLEMENTATION", "IMPLEMENT"],

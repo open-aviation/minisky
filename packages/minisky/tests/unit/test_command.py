@@ -10,7 +10,11 @@ from minisky.command import (
     LatLonDeg,
     LatLonDegrees,
     MagneticHeadingDeg,
+    ResolvedPositionArg,
+    RunwayHeadingRequest,
+    RunwayPosition,
     TrueHeadingDeg,
+    UseRunwayHeading,
     command,
     split_commands,
 )
@@ -144,6 +148,40 @@ def test_heading_parser_preserves_reference_frame(runtime: MiniSky) -> None:
         TrueHeadingDeg(90.0),
         MagneticHeadingDeg(90.0),
     ]
+
+
+def test_heading_union_preserves_runway_request(runtime: MiniSky) -> None:
+    received: list[TrueHeadingDeg | MagneticHeadingDeg | RunwayHeadingRequest | None] = []
+
+    class Component:
+        @command(name="TESTHDGUNION")
+        def record(self, heading: HeadingDeg | UseRunwayHeading | None = None) -> None:
+            received.append(heading)
+
+    (prepared,) = runtime.commands.prepare_component(Component())
+    assert "TESTHDGUNION [heading|*]" in prepared.command.helptext()
+    assert isinstance(prepared.command("*"), Ok)
+    assert isinstance(prepared.command("090M"), Ok)
+    assert isinstance(prepared.command(""), Ok)
+    assert isinstance(received[0], RunwayHeadingRequest)
+    assert received[1:] == [MagneticHeadingDeg(90.0), None]
+
+
+def test_resolved_position_retains_runway_heading(runtime: MiniSky) -> None:
+    received: list[object] = []
+
+    class Component:
+        @command(name="TESTRUNWAY")
+        def record(self, position: ResolvedPositionArg) -> None:
+            received.append(position)
+
+    (prepared,) = runtime.commands.prepare_component(Component())
+    assert isinstance(prepared.command("EHAM,RWY18L"), Ok)
+    position = received[0]
+    assert isinstance(position, RunwayPosition)
+    assert position.runway_heading == pytest.approx(
+        runtime.navigation.rwythresholds["EHAM"]["18L"][2]
+    )
 
 
 def test_resolved_position_rejects_ambiguous_waypoint_without_ui_reference(

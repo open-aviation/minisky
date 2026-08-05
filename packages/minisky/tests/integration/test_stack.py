@@ -8,6 +8,8 @@ from pathlib import Path
 
 import pytest
 from minisky import MiniSky
+from minisky.command import ArgumentIssue
+from minisky.result import Err
 from minisky.simulation import Simulation
 from minisky.stack import Command, ScheduledCommand
 from tests._types import RunCommand
@@ -115,6 +117,35 @@ class TestCommands:
         run_cmd("CRE KL204,B744,52,4,45,FL250,350")
         run_cmd("ALT KL204 FL260")
         assert runtime.traffic.selalt[0] == pytest.approx(26000 * FT, rel=1e-3)
+
+    def test_cre_omitted_heading_uses_default(self, runtime: MiniSky, run_cmd: RunCommand) -> None:
+        output = run_cmd("CRE COMPAT1,B738,52,4,,FL100,250")
+        assert "created" in output.lower()
+        index = runtime.traffic.idx("COMPAT1")
+        assert runtime.traffic.hdg[index] == pytest.approx(45.0)
+
+    def test_cre_runway_heading_marker_is_resolved(
+        self, runtime: MiniSky, run_cmd: RunCommand
+    ) -> None:
+        output = run_cmd("CRE RWYREF,A320,EHAM,RWY18L,*,0,250")
+        assert "created" in output.lower()
+        index = runtime.traffic.idx("RWYREF")
+        runway_heading = runtime.navigation.rwythresholds["EHAM"]["18L"][2]
+        assert runtime.traffic.hdg[index] == pytest.approx(runway_heading)
+
+    def test_cre_runway_heading_marker_requires_runway(self, runtime: MiniSky) -> None:
+        result = runtime.commands.cmddict["CRE"]("NORWY,A320,52,4,*,0,250")
+        assert isinstance(result, Err)
+        assert result.err() == "CRE: heading * requires a runway position"
+
+    def test_cre_error_span_points_to_invalid_speed(self, runtime: MiniSky) -> None:
+        result = runtime.commands.cmddict["CRE"]("SPAN1,A320,52,4,,FL100,BAD")
+        assert isinstance(result, Err)
+        issue = result.err()
+        assert isinstance(issue, ArgumentIssue)
+        assert issue.source_text == "CRE SPAN1,A320,52,4,,FL100,BAD"
+        assert issue.span is not None
+        assert issue.source_text[issue.span.start : issue.span.end] == "BAD"
 
     def test_hdg_sets_autopilot_track(self, runtime: MiniSky, run_cmd: RunCommand) -> None:
         run_cmd("CRE KL204,B744,52,4,45,FL250,350")

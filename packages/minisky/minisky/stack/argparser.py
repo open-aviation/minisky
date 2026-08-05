@@ -8,11 +8,9 @@ parameter of a stack command a `Parameter` object is created, which selects
 the applicable parsers based on the command's annotation string; when
 multiple types are allowed (separated by "/"), each parser is tried in turn.
 
-`ArgumentParser.refdata` stores reference data (position, aircraft index,
-heading, speed) taken from previously parsed arguments, so that
-context-dependent arguments - such as a bare waypoint name resolved to the
-closest occurrence, or a magnetic heading - can be interpreted relative to
-the last parsed position or aircraft.
+`ArgumentParser.refdata` stores the reference position from previously
+parsed arguments so legacy waypoint and magnetic-heading parsers can resolve
+relative syntax until those remaining commands migrate to typed values.
 """
 
 from __future__ import annotations
@@ -283,7 +281,6 @@ class CallsignArg(Parser):
             # Update ref position for navdb lookup
             self.argument_parser.refdata.lat = traffic.lat[idx]
             self.argument_parser.refdata.lon = traffic.lon[idx]
-            self.argument_parser.refdata.acidx = idx
         return idx, argstring
 
 
@@ -401,7 +398,6 @@ class PosArg(Parser):
         # Update reference lat/lon
         refdata.lat = posobj.lat
         refdata.lon = posobj.lon
-        refdata.hdg = posobj.refhdg
 
         return posobj.lat, posobj.lon, argstring
 
@@ -433,8 +429,7 @@ class ArgumentParser:
         traffic: Traffic object used for callsign and aircraft-position lookup.
         navigation: Navigation database used for airport and runway lookup.
         console: Console used to obtain the current view centre.
-        refdata: Reference position, aircraft index, heading, and speed from
-            previously parsed arguments.
+        refdata: Reference position from previously parsed arguments.
         parsers: Mapping of argument type names to parser objects.
     """
 
@@ -444,7 +439,7 @@ class ArgumentParser:
         self.console = console
 
         # Stack reference data namespace
-        self.refdata = SimpleNamespace(lat=None, lon=None, alt=None, acidx=-1, hdg=None, cas=None)
+        self.refdata = SimpleNamespace(lat=None, lon=None)
 
         self.parsers: dict[str, ParserProtocol | None] = {
             "*": None,
@@ -478,15 +473,10 @@ class ArgumentParser:
     def reset(self) -> None:
         """Reset reference data.
 
-        Clears the stored reference position, aircraft index, heading, and
-        speed used to resolve context-dependent arguments.
+        Clears the stored reference position used by legacy context-dependent arguments.
         """
         self.refdata.lat = None
         self.refdata.lon = None
-        self.refdata.alt = None
-        self.refdata.acidx = -1
-        self.refdata.hdg = None
-        self.refdata.cas = None
 
     def _parse_heading(self, text: str) -> float:
         return txt2hdg(text, self.refdata.lat, self.refdata.lon)
