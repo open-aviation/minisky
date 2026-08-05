@@ -20,7 +20,20 @@ from typing import TYPE_CHECKING, Literal, overload
 
 import numpy as np
 
-from minisky.command import OnOff, Text, command
+from minisky.command import (
+    AltM,
+    HeadingDeg,
+    Keyword,
+    MagneticHeadingDeg,
+    OnOff,
+    ResolvedPositionArg,
+    RunwayHeadingRequest,
+    RunwayPosition,
+    SpeedMpsOrMach,
+    Text,
+    UseRunwayHeading,
+    command,
+)
 from minisky.core.config import MiniSkyConfig
 from minisky.core.trafficarrays import TrafficArrays
 from minisky.result import Err, Ok, Result
@@ -295,15 +308,54 @@ class Traffic(TrafficArrays):
         # Reset transition level to default value
         self.translvl = 5000.0 * ft
 
+    @command(name="CRE", aliases=("CREATE",))
+    def command_cre(
+        self,
+        callsign: Keyword,
+        actype: Keyword,
+        position: ResolvedPositionArg,
+        hdg: HeadingDeg | UseRunwayHeading | None = None,
+        alt: AltM = 25000 * ft,
+        spd: SpeedMpsOrMach = 300 * kts,
+    ) -> Result[str, str]:
+        """Create an aircraft."""
+        if isinstance(position, RunwayPosition):
+            coordinates = position.coordinates
+            default_heading = position.runway_heading
+        else:
+            coordinates = position
+            default_heading = 45.0
+
+        if isinstance(hdg, RunwayHeadingRequest):
+            if not isinstance(position, RunwayPosition):
+                return Err("CRE: heading * requires a runway position")
+            heading = position.runway_heading
+        elif hdg is None:
+            heading = default_heading
+        elif isinstance(hdg, MagneticHeadingDeg):
+            heading = (hdg.degrees + geo.magdec(coordinates.lat, coordinates.lon)) % 360.0
+        else:
+            heading = hdg.degrees
+
+        return self.cre(
+            callsign,
+            actype,
+            coordinates.lat,
+            coordinates.lon,
+            heading,
+            alt,
+            spd,
+        )
+
     def cre(
         self,
-        callsign: str,
-        actype: str = "A320",
+        callsign: Keyword,
+        actype: Keyword = "A320",
         lat: float = 53.0,
         lon: float = 4.0,
         hdg: float = 45.0,
-        alt: float = 25000 * ft,
-        spd: float = 300 * kts,
+        alt: AltM = 25000 * ft,
+        spd: SpeedMpsOrMach = 300 * kts,
     ) -> Result[str, str]:
         """Create a single aircraft and add it to the traffic database.
 

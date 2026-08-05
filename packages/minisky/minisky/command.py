@@ -5,6 +5,7 @@ from __future__ import annotations
 import inspect
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, replace
+from types import UnionType
 from typing import (
     TYPE_CHECKING,
     Annotated,
@@ -13,6 +14,7 @@ from typing import (
     Literal,
     TypeAlias,
     TypeVar,
+    Union,
     get_args,
     get_origin,
     overload,
@@ -78,6 +80,9 @@ class ArgumentIssue:
         cls, expected: str, actual: object, span: SourceSpan | None = None
     ) -> ArgumentIssue:
         return cls(f"expected {expected}, but got {actual}", span)
+
+    def with_span(self, span: SourceSpan | None) -> ArgumentIssue:
+        return replace(self, span=span or self.span)
 
     def at_argument(
         self, name: str, source_text: str, offset: int, fallback: SourceSpan
@@ -209,7 +214,14 @@ class LiteralSyntax:
     values: tuple[str, ...]
 
 
-ParserSyntax: TypeAlias = LiteralSyntax
+@dataclass(frozen=True, slots=True)
+class ChoiceSyntax:
+    """Alternative syntax used when rendering a union annotation."""
+
+    alternatives: tuple[ParserSyntax | None, ...]
+
+
+ParserSyntax: TypeAlias = LiteralSyntax | ChoiceSyntax
 
 
 @dataclass(frozen=True, slots=True)
@@ -253,6 +265,18 @@ def parse_token(_context: CommandParseContext, text: str) -> ParseResult[str]:
 
 Token = Annotated[str, CmdParser(parse_token)]
 """A non-empty command field parsed as case-sensitive text."""
+
+
+def parse_keyword(context: CommandParseContext, text: str) -> ParseResult[str]:
+    """Parse a non-empty command field and normalize it to upper case."""
+    if isinstance(result := parse_token(context, text), Err):
+        return result
+    token = result.ok()
+    return Ok(Parsed(token.value.upper(), token.remainder, token.span))
+
+
+Keyword = Annotated[str, CmdParser(parse_keyword)]
+"""A non-empty command field normalized to upper case."""
 
 
 FiniteFloat: TypeAlias = IsFinite[float]
@@ -369,6 +393,32 @@ HeadingDeg = Annotated[TrueHeadingDeg | MagneticHeadingDeg, CmdParser(parse_head
 """Heading syntax preserving whether the input refers to true or magnetic north."""
 
 
+@dataclass(frozen=True, slots=True)
+class RunwayHeadingRequest:
+    """A request to use the heading carried by a runway position."""
+
+
+_RUNWAY_HEADING = RunwayHeadingRequest()
+
+
+def parse_runway_heading(
+    _context: CommandParseContext, text: str
+) -> ParseResult[RunwayHeadingRequest]:
+    if isinstance(result := next_argument(text), Err):
+        return result
+    token = result.ok()
+    if token.value != "*":
+        return Err(ArgumentIssue.expected("*", token.value or "empty input", token.span))
+    return Ok(Parsed(_RUNWAY_HEADING, token.remainder, token.span))
+
+
+UseRunwayHeading = Annotated[
+    RunwayHeadingRequest,
+    CmdParser.literals(parse_runway_heading, ("*",)),
+]
+"""The `*` heading form preserved until the command resolves its runway position."""
+
+
 def parse_aircraft(context: CommandParseContext, text: str) -> ParseResult[int]:
     """Resolve an existing aircraft callsign to its traffic-array index."""
     if isinstance(result := next_argument(text), Err):
@@ -419,19 +469,30 @@ class LatLonDegrees:
     lon: float
 
 
-def _resolve_named_lat_lon(
+@dataclass(frozen=True, slots=True)
+class RunwayPosition:
+    """Resolved runway coordinates and their runway heading."""
+
+    coordinates: LatLonDegrees
+    runway_heading: float
+
+
+ResolvedPosition: TypeAlias = LatLonDegrees | RunwayPosition
+
+
+def _resolve_named_position(
     context: CommandParseContext, name: str, span: SourceSpan
-) -> Result[LatLonDegrees, ArgumentIssue]:
+) -> Result[ResolvedPosition, ArgumentIssue]:
     if "/RW" in name:
         airport, runway_text = name.split("/RW", maxsplit=1)
         runway = runway_text.lstrip("Y")
         try:
-            lat, lon, _heading = context.navigation.rwythresholds[airport][runway]
+            lat, lon, heading = context.navigation.rwythresholds[airport][runway]
         except KeyError:
             return Err(
                 ArgumentIssue.expected("a waypoint, airport, runway, or aircraft id", name, span)
             )
-        return Ok(LatLonDegrees(float(lat), float(lon)))
+        return Ok(RunwayPosition(LatLonDegrees(float(lat), float(lon)), float(heading)))
 
     if name in context.navigation.aptid:
         index = context.navigation.aptid.index(name)
@@ -458,8 +519,10 @@ def _resolve_named_lat_lon(
     return Err(ArgumentIssue.expected("a waypoint, airport, runway, or aircraft id", name, span))
 
 
-def parse_lat_lon(context: CommandParseContext, text: str) -> ParseResult[LatLonDegrees]:
-    """Resolve coordinates, aircraft, airports, runways, or waypoints to lat/lon."""
+def parse_resolved_position(
+    context: CommandParseContext, text: str
+) -> ParseResult[ResolvedPosition]:
+    """Resolve coordinates, aircraft, airports, runways, or waypoints."""
     if isinstance(result := next_argument(text), Err):
         return result
     token = result.ok()
@@ -496,7 +559,7 @@ def parse_lat_lon(context: CommandParseContext, text: str) -> ParseResult[LatLon
         return Ok(Parsed(coordinates, longitude.remainder, span))
 
     span = token.span
-    if remainder[:2].upper() == "RW" and name in context.navigation.aptid:
+    if remainder[:2].upper() == "RW":
         offset = len(text) - len(remainder)
         if isinstance(runway_result := next_argument(remainder), Err):
             issue = runway_result.err()
@@ -507,9 +570,24 @@ def parse_lat_lon(context: CommandParseContext, text: str) -> ParseResult[LatLon
         span = SourceSpan(token.span.start, offset + runway.span.end)
         remainder = runway.remainder
 
-    if isinstance(resolved := _resolve_named_lat_lon(context, name, span), Err):
+    if isinstance(resolved := _resolve_named_position(context, name, span), Err):
         return resolved
     return Ok(Parsed(resolved.ok(), remainder, span))
+
+
+ResolvedPositionArg = Annotated[ResolvedPosition, CmdParser(parse_resolved_position)]
+"""A resolved position that retains runway heading when the source names a runway."""
+
+
+def parse_lat_lon(context: CommandParseContext, text: str) -> ParseResult[LatLonDegrees]:
+    """Resolve a position and reduce it to latitude/longitude degrees."""
+    if isinstance(result := parse_resolved_position(context, text), Err):
+        return result
+    parsed = result.ok()
+    coordinates = (
+        parsed.value.coordinates if isinstance(parsed.value, RunwayPosition) else parsed.value
+    )
+    return Ok(Parsed(coordinates, parsed.remainder, parsed.span))
 
 
 LatLonDeg = Annotated[LatLonDegrees, CmdParser(parse_lat_lon)]
@@ -519,13 +597,26 @@ _Constraint: TypeAlias = Gt | Ge | Le | Predicate
 
 
 @dataclass(frozen=True, slots=True)
+class _ArgumentType:
+    parser: CmdParser[Any]
+    constraints: tuple[_Constraint, ...]
+    nullable: bool = False
+
+    def parse(self, context: CommandParseContext, text: str) -> ParseResult[Any]:
+        if isinstance(result := self.parser(context, text), Err):
+            return result
+        parsed = result.ok()
+        if isinstance(validation := _validate_constraints(parsed.value, self.constraints), Err):
+            return Err(validation.err().with_span(parsed.span))
+        return result
+
+
+@dataclass(frozen=True, slots=True)
 class Parameter:
     """A callback parameter compiled to a typed command parser."""
 
     name: str
-    parser: CmdParser[Any]
-    constraints: tuple[_Constraint, ...] = ()
-    nullable: bool = False
+    argument_type: _ArgumentType
     default: object = inspect.Parameter.empty
 
     def parse(
@@ -549,21 +640,26 @@ class Parameter:
             if self.default is not inspect.Parameter.empty:
                 return Ok(Parsed(self.default, field.remainder, field.span))
 
-        if isinstance(result := self.parser(context, text), Err):
+        if isinstance(result := self.argument_type.parse(context, text), Err):
             issue = result.err()
-            fallback = SourceSpan(0, max(1, len(text)))
+            fallback = issue.span or SourceSpan(0, max(1, len(text)))
             return Err(issue.at_argument(self.name, source_text, offset, fallback))
-
-        parsed = result.ok()
-        if isinstance(validation := _validate_constraints(parsed.value, self.constraints), Err):
-            return Err(validation.err().at_argument(self.name, source_text, offset, parsed.span))
         return result
 
+    @property
+    def parser(self) -> CmdParser[Any]:
+        return self.argument_type.parser
+
+    @property
+    def constraints(self) -> tuple[_Constraint, ...]:
+        return self.argument_type.constraints
+
+    @property
+    def nullable(self) -> bool:
+        return self.argument_type.nullable
+
     def __str__(self) -> str:
-        if isinstance(self.parser.syntax, LiteralSyntax):
-            text = "|".join(self.parser.syntax.values)
-        else:
-            text = self.name
+        text = _format_parser_syntax(self.parser.syntax, self.name)
         if self.default is not inspect.Parameter.empty or self.nullable:
             return f"[{text}]"
         return text
@@ -571,64 +667,108 @@ class Parameter:
 
 def compile_parameter(parameter: inspect.Parameter) -> Parameter:
     """Compile the parser and constraints carried by an annotation."""
-    annotation = parameter.annotation
-    nullable = False
-    union_members = get_args(annotation)
-    if type(None) in union_members:
-        non_null = tuple(member for member in union_members if member is not type(None))
-        if len(non_null) != 1:
-            raise TypeError(f"command parameter {parameter.name!r} has unsupported nullable union")
-        annotation = non_null[0]
-        nullable = True
-
-    metadata: tuple[object, ...] = ()
-    if get_origin(annotation) is Annotated:
-        annotation, *raw_metadata = get_args(annotation)
-        metadata = tuple(raw_metadata)
-
-    parsers = tuple(item for item in metadata if isinstance(item, CmdParser))
-    if len(parsers) > 1:
-        raise TypeError(f"command parameter {parameter.name!r} declares multiple parsers")
-    parser = parsers[0] if parsers else _parser_for(annotation)
-    if parser is None:
+    argument_type = _argument_type(parameter.annotation)
+    if argument_type is None:
         raise TypeError(f"command parameter {parameter.name!r} has no typed parser")
-
-    constraints: list[_Constraint] = []
-    for item in metadata:
-        if isinstance(item, (Gt, Ge, Le, Predicate)):
-            constraints.append(item)
-        elif isinstance(item, BaseMetadata):
-            raise TypeError(f"unsupported command constraint: {item!r}")
-
-    if parameter.default is None and not nullable:
+    if parameter.default is None and not argument_type.nullable:
         raise TypeError(
             f"command parameter {parameter.name!r} defaults to None but is not nullable"
         )
     if (
-        nullable
+        argument_type.nullable
         and parameter.default is not inspect.Parameter.empty
         and parameter.default is not None
     ):
         raise TypeError(f"nullable command parameter {parameter.name!r} must default to None")
-
-    return Parameter(
-        parameter.name,
-        parser,
-        tuple(constraints),
-        nullable=nullable,
-        default=parameter.default,
-    )
+    return Parameter(parameter.name, argument_type, parameter.default)
 
 
-# TODO(abraham): add structured union-choice parsing
-def _parser_for(annotation: object) -> CmdParser[Any] | None:
+def _argument_type(annotation: Any) -> _ArgumentType | None:
+    nullable = _is_nullable(annotation)
+    members = _union_members(annotation)
+    if len(members) > 1:
+        alternatives = tuple(_argument_type(member) for member in members)
+        if any(alternative is None for alternative in alternatives):
+            return None
+        typed = tuple(alternative for alternative in alternatives if alternative is not None)
+        return _ArgumentType(_choice_parser(typed), (), nullable=nullable)
+
+    value_annotation = members[0] if members else annotation
+    parser = _parser_for(value_annotation)
+    if parser is None:
+        return None
+    return _ArgumentType(parser, _annotation_constraints(value_annotation), nullable=nullable)
+
+
+def _parser_for(annotation: Any) -> CmdParser[Any] | None:
     if get_origin(annotation) is Literal:
         return _literal_parser(annotation)
+    if get_origin(annotation) is Annotated:
+        parsers = tuple(item for item in get_args(annotation)[1:] if isinstance(item, CmdParser))
+        if len(parsers) > 1:
+            raise TypeError("command annotation contains multiple CmdParser markers")
+        if parsers:
+            return parsers[0]
+        return _parser_for(get_args(annotation)[0])
     if annotation is int:
         return CmdParser(parse_int)
     if annotation is float:
         return CmdParser(parse_float)
     return None
+
+
+def _annotation_constraints(annotation: Any) -> tuple[_Constraint, ...]:
+    if get_origin(annotation) is not Annotated:
+        return ()
+    constraints: list[_Constraint] = []
+    for item in get_args(annotation)[1:]:
+        if isinstance(item, (Gt, Ge, Le, Predicate)):
+            constraints.append(item)
+        elif isinstance(item, BaseMetadata):
+            raise TypeError(f"unsupported command constraint: {item!r}")
+    return tuple(constraints)
+
+
+@dataclass(frozen=True, slots=True)
+class _ChoiceParse:
+    alternatives: tuple[_ArgumentType, ...]
+
+    def __call__(self, context: CommandParseContext, text: str) -> ParseResult[Any]:
+        failure: ArgumentIssue | None = None
+        for alternative in self.alternatives:
+            result = alternative.parse(context, text)
+            if isinstance(result, Ok):
+                return result
+            failure = result.err()
+        assert failure is not None
+        return Err(failure)
+
+
+def _choice_parser(alternatives: tuple[_ArgumentType, ...]) -> CmdParser[Any]:
+    syntax = ChoiceSyntax(tuple(alternative.parser.syntax for alternative in alternatives))
+    return CmdParser(_ChoiceParse(alternatives), syntax)
+
+
+def _is_nullable(annotation: Any) -> bool:
+    if get_origin(annotation) is Annotated:
+        return _is_nullable(get_args(annotation)[0])
+    if get_origin(annotation) not in (Union, UnionType):
+        return False
+    return type(None) in get_args(annotation)
+
+
+def _union_members(annotation: Any) -> tuple[Any, ...]:
+    if get_origin(annotation) not in (Union, UnionType):
+        return ()
+    return tuple(member for member in get_args(annotation) if member is not type(None))
+
+
+def _format_parser_syntax(syntax: ParserSyntax | None, parameter_name: str) -> str:
+    if isinstance(syntax, LiteralSyntax):
+        return "|".join(syntax.values)
+    if isinstance(syntax, ChoiceSyntax):
+        return "|".join(_format_parser_syntax(item, parameter_name) for item in syntax.alternatives)
+    return parameter_name
 
 
 def _literal_parser(annotation: object) -> CmdParser[str]:
