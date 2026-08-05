@@ -22,10 +22,18 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-from minisky.command import AcIdSelection, AltM, VspdMps, command
+from minisky.command import (
+    AcIdSelection,
+    AltM,
+    HeadingDeg,
+    MagneticHeadingDeg,
+    SpeedMpsOrMach,
+    VspdMps,
+    command,
+)
 from minisky.core.trafficarrays import TrafficArrays
 from minisky.result import Err, Ok, Result
-from minisky.stack.argparser import Acid, Hdg, OnOff, Spd, Vspd, Wpt
+from minisky.stack.argparser import Acid, OnOff, Spd, Wpt
 from minisky.tools import geo
 from minisky.tools.aero import (
     fpm,
@@ -969,7 +977,8 @@ class Autopilot(TrafficArrays):
             self.traffic.selvs[idxarr[oppositevs]] = 0.0
         return Ok(f"altitude set to {alt / ft} ft")
 
-    def selvspdcmd(self, idx: int, vspd: Vspd) -> Result[str, str]:
+    @command(name="VS")
+    def selvspdcmd(self, idx: AcIdSelection, vspd: VspdMps) -> Result[str, str]:
         """Select the autopilot vertical speed.
 
         Implements the VS stack command: `VS acid, vspd (ft/min)`.
@@ -983,7 +992,8 @@ class Autopilot(TrafficArrays):
         self.traffic.swvnav[idx] = False
         return Ok(f"vertical speed set to {vspd / fpm} ft/min")
 
-    def selhdgcmd(self, idx: int, hdg: Hdg) -> Result[str, str]:  # HDG command
+    @command(name="HDG", aliases=("HEADING", "TURN"))
+    def selhdgcmd(self, idx: AcIdSelection, hdg: HeadingDeg) -> Result[str, str]:  # HDG command
         """Select the autopilot heading.
 
         Implements the HDG stack command: `HDG acid, hdg (deg)`. When a
@@ -993,31 +1003,39 @@ class Autopilot(TrafficArrays):
         LNAV for this aircraft.
 
         Args:
-            idx: Aircraft index.
-            hdg: Selected heading [deg].
+            idx: Aircraft indices.
+            hdg: Selected true or magnetic heading.
         """
+        resolved_hdg: float | np.ndarray[Any, Any]
+        if isinstance(hdg, MagneticHeadingDeg):
+            resolved_hdg = np.fromiter(
+                (
+                    (hdg.degrees + geo.magdec(float(lat), float(lon))) % 360.0
+                    for lat, lon in zip(self.traffic.lat[idx], self.traffic.lon[idx], strict=True)
+                ),
+                dtype=float,
+            )
+        else:
+            resolved_hdg = hdg.degrees
 
         if self.traffic.wind.winddim > 0:
-            if self.traffic.alt[idx] > 50.0 * ft:
-                # Above 50ft: compute track based on wind
-                tasnorth = self.traffic.tas[idx] * np.cos(np.radians(hdg))
-                taseast = self.traffic.tas[idx] * np.sin(np.radians(hdg))
-                wind_v, wind_u = self.traffic.wind.getdata(
-                    self.traffic.lat[idx], self.traffic.lon[idx], self.traffic.alt[idx]
-                )
-                gsnorth = tasnorth + wind_v
-                gseast = taseast + wind_u
-                self.trk[idx] = np.degrees(np.arctan2(gseast, gsnorth)) % 360.0
-            else:
-                # Below 50ft: track equals heading
-                self.trk[idx] = hdg
+            tasnorth = self.traffic.tas[idx] * np.cos(np.radians(resolved_hdg))
+            taseast = self.traffic.tas[idx] * np.sin(np.radians(resolved_hdg))
+            wind_north, wind_east = self.traffic.wind.getdata(
+                self.traffic.lat[idx], self.traffic.lon[idx], self.traffic.alt[idx]
+            )
+            wind_track = np.degrees(np.arctan2(taseast + wind_east, tasnorth + wind_north)) % 360.0
+            self.trk[idx] = np.where(self.traffic.alt[idx] > 50.0 * ft, wind_track, resolved_hdg)
         else:
-            self.trk[idx] = hdg
+            self.trk[idx] = resolved_hdg
 
         self.traffic.swlnav[idx] = False
-        return Ok(f"heading set to {hdg} deg")
+        return Ok(f"heading set to {resolved_hdg} deg")
 
-    def selspdcmd(self, idx: int, casmach: Spd) -> Result[str, str]:  # SPD command
+    @command(name="SPD", aliases=("SPEED",))
+    def selspdcmd(
+        self, idx: AcIdSelection, casmach: SpeedMpsOrMach
+    ) -> Result[str, str]:  # SPD command
         """Select the autopilot speed.
 
         Implements the SPD stack command: `SPD acid, casmach`. Switches
@@ -1026,7 +1044,7 @@ class Autopilot(TrafficArrays):
         depends on the position relative to the crossover altitude.
 
         Args:
-            idx: Aircraft index.
+            idx: Aircraft indices.
             casmach: Selected speed: CAS [m/s] or Mach [-] (values above 1.0
                 are interpreted as CAS; stack input in kts or Mach).
         """
