@@ -23,7 +23,16 @@ from annotated_types import BaseMetadata, Ge, Gt, IsFinite, Le, Predicate
 
 from minisky.identifiers import normalize_public_name
 from minisky.result import Err, Ok, Result
-from minisky.tools.convert import txt2alt, txt2bool, txt2lat, txt2lon, txt2spd, txt2tim, txt2vs
+from minisky.tools.convert import (
+    txt2alt,
+    txt2bool,
+    txt2hdg,
+    txt2lat,
+    txt2lon,
+    txt2spd,
+    txt2tim,
+    txt2vs,
+)
 from minisky.tools.position import islat
 
 if TYPE_CHECKING:
@@ -311,6 +320,53 @@ def parse_time(_context: CommandParseContext, text: str) -> ParseResult[float]:
 
 
 TimeS = Annotated[float, CmdParser(parse_time)]
+
+
+@dataclass(frozen=True, slots=True)
+class TrueHeadingDeg:
+    """A true heading in degrees."""
+
+    degrees: float
+
+
+@dataclass(frozen=True, slots=True)
+class MagneticHeadingDeg:
+    """A magnetic heading in degrees, not yet resolved to true north."""
+
+    degrees: float
+
+
+def _parse_heading_token(
+    token: Parsed[str],
+) -> Result[TrueHeadingDeg | MagneticHeadingDeg, ArgumentIssue]:
+    value = token.value.upper()
+    if value.endswith("M"):
+        try:
+            return Ok(MagneticHeadingDeg(float(value[:-1])))
+        except ValueError:
+            return Err(ArgumentIssue.expected("a heading", token.value, token.span))
+    if "M" in value:
+        return Err(ArgumentIssue.expected("a heading", token.value, token.span))
+    try:
+        return Ok(TrueHeadingDeg(txt2hdg(value)))
+    except ValueError:
+        return Err(ArgumentIssue.expected("a heading", token.value, token.span))
+
+
+def parse_heading(
+    _context: CommandParseContext, text: str
+) -> ParseResult[TrueHeadingDeg | MagneticHeadingDeg]:
+    """Parse true or magnetic heading syntax without discarding its reference frame."""
+    if isinstance(result := next_argument(text), Err):
+        return result
+    token = result.ok()
+    if isinstance(value := _parse_heading_token(token), Err):
+        return value
+    return Ok(Parsed(value.ok(), token.remainder, token.span))
+
+
+HeadingDeg = Annotated[TrueHeadingDeg | MagneticHeadingDeg, CmdParser(parse_heading)]
+"""Heading syntax preserving whether the input refers to true or magnetic north."""
 
 
 def parse_aircraft(context: CommandParseContext, text: str) -> ParseResult[int]:

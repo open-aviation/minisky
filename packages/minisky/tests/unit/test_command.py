@@ -4,7 +4,16 @@ from typing import Literal
 
 import pytest
 from minisky import MiniSky
-from minisky.command import ArgumentIssue, LatLonDeg, LatLonDegrees, command, split_commands
+from minisky.command import (
+    ArgumentIssue,
+    HeadingDeg,
+    LatLonDeg,
+    LatLonDegrees,
+    MagneticHeadingDeg,
+    TrueHeadingDeg,
+    command,
+    split_commands,
+)
 from minisky.result import Err, Ok
 
 
@@ -115,6 +124,26 @@ def test_nullable_default_allows_argument_omission(runtime: MiniSky) -> None:
     assert isinstance(prepared.command(""), Ok)
     assert isinstance(prepared.command(","), Ok)
     assert received == [None, None]
+
+
+def test_heading_parser_preserves_reference_frame(runtime: MiniSky) -> None:
+    received: list[TrueHeadingDeg | MagneticHeadingDeg] = []
+
+    class Component:
+        @command(name="TESTHDG")
+        def record(self, heading: HeadingDeg) -> None:
+            received.append(heading)
+
+    (prepared,) = runtime.commands.prepare_component(Component())
+    assert isinstance(prepared.command("090"), Ok)
+    assert isinstance(prepared.command("090T"), Ok)
+    assert isinstance(prepared.command("090M"), Ok)
+    assert isinstance(prepared.command("09M0"), Err)
+    assert received == [
+        TrueHeadingDeg(90.0),
+        TrueHeadingDeg(90.0),
+        MagneticHeadingDeg(90.0),
+    ]
 
 
 def test_resolved_position_rejects_ambiguous_waypoint_without_ui_reference(

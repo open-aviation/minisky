@@ -222,12 +222,6 @@ def get_commands(command_stack: CommandStack) -> CommandCatalog:
             + "Returns list of aircraft in group when only a groupname is passed.\n"
             + "A group is created when a group with the given name doesn't exist yet.",
         ],
-        "HDG": [
-            command_stack.traffic.ap.selhdgcmd,
-            "callsign,hdg",
-            "HDG callsign,hdg (deg,True or Magnetic)",
-            "Autopilot select heading command.",
-        ],
         "HELP": [
             command_stack.showhelp,
             "[txt,txt]",
@@ -408,12 +402,6 @@ def get_commands(command_stack: CommandStack) -> CommandCatalog:
             "SELECTIMPL [classname, implname]",
             "Select implementation for a replaceable class (e.g., SELECTIMPL AUTOPILOT MYAUTOPILOT)",
         ],
-        "SPD": [
-            command_stack.traffic.ap.selspdcmd,
-            "callsign,spd",
-            "SPD callsign,casmach (= CASkts/Mach)",
-            "Select autopilot speed.",
-        ],
         "SWTOC": [
             command_stack.traffic.ap.setswtoc,
             "callsign,[bool]",
@@ -449,12 +437,6 @@ def get_commands(command_stack: CommandStack) -> CommandCatalog:
             "callsign,[bool]",
             "VNAV callsign,[ON/OFF]",
             "Switch on/off VNAV mode, the vertical FMS mode (autopilot).",
-        ],
-        "VS": [
-            command_stack.traffic.ap.selvspdcmd,
-            "callsign,vspd",
-            "VS callsign,vspd (ft/min)",
-            "Vertical speed command (autopilot).",
         ],
         "WIND": [
             command_stack.traffic.wind.add,
