@@ -18,11 +18,12 @@ from typing import (
     overload,
 )
 
+import numpy as np
 from annotated_types import BaseMetadata, Ge, Gt, IsFinite, Le, Predicate
 
 from minisky.identifiers import normalize_public_name
 from minisky.result import Err, Ok, Result
-from minisky.tools.convert import txt2alt, txt2bool, txt2lat, txt2lon, txt2spd, txt2tim
+from minisky.tools.convert import txt2alt, txt2bool, txt2lat, txt2lon, txt2spd, txt2tim, txt2vs
 from minisky.tools.position import islat
 
 if TYPE_CHECKING:
@@ -296,6 +297,14 @@ def parse_speed(_context: CommandParseContext, text: str) -> ParseResult[float]:
 SpeedMpsOrMach = Annotated[float, CmdParser(parse_speed)]
 
 
+def parse_vertical_speed(_context: CommandParseContext, text: str) -> ParseResult[float]:
+    """Parse a BlueSky vertical-speed field as meters per second."""
+    return _convert(text, txt2vs, "a vertical speed")
+
+
+VspdMps = Annotated[float, CmdParser(parse_vertical_speed)]
+
+
 def parse_time(_context: CommandParseContext, text: str) -> ParseResult[float]:
     """Parse a BlueSky time field as seconds."""
     return _convert(text, txt2tim, "a time")
@@ -319,6 +328,31 @@ def parse_aircraft(context: CommandParseContext, text: str) -> ParseResult[int]:
 
 
 AcId = Annotated[int, CmdParser(parse_aircraft)]
+
+
+def parse_aircraft_selection(
+    context: CommandParseContext, text: str
+) -> ParseResult[np.ndarray[Any, Any]]:
+    """Resolve an aircraft, group, or `*` to traffic-array indices."""
+    if isinstance(result := next_argument(text), Err):
+        return result
+    token = result.ok()
+    name = token.value.upper()
+
+    if name == "*" or name in context.traffic.groups:
+        if isinstance(selection := context.traffic.groups.listgroup(name), Err):
+            return Err(
+                ArgumentIssue.expected("an existing aircraft or group", selection.err(), token.span)
+            )
+        return Ok(Parsed(np.asarray(selection.ok(), dtype=int), token.remainder, token.span))
+
+    index = context.traffic.idx(name)
+    if index < 0:
+        return Err(ArgumentIssue.expected("an existing aircraft or group", name, token.span))
+    return Ok(Parsed(np.asarray([index], dtype=int), token.remainder, token.span))
+
+
+AcIdSelection = Annotated[np.ndarray[Any, Any], CmdParser(parse_aircraft_selection)]
 
 
 @dataclass(frozen=True, slots=True)
@@ -435,6 +469,8 @@ class Parameter:
     name: str
     parser: CmdParser[Any]
     constraints: tuple[_Constraint, ...] = ()
+    nullable: bool = False
+    default: object = inspect.Parameter.empty
 
     def parse(
         self,
@@ -444,9 +480,21 @@ class Parameter:
         source_text: str,
         offset: int,
     ) -> ParseResult[Any]:
+        if not text and self.default is not inspect.Parameter.empty:
+            return Ok(Parsed(self.default, text, SourceSpan(0, 0)))
+
+        index = len(text) - len(text.lstrip())
+        if text[index : index + 1] == ",":
+            omitted = next_argument(text)
+            assert isinstance(omitted, Ok)
+            field = omitted.ok()
+            if self.nullable:
+                return Ok(Parsed(None, field.remainder, field.span))
+            if self.default is not inspect.Parameter.empty:
+                return Ok(Parsed(self.default, field.remainder, field.span))
+
         if isinstance(result := self.parser(context, text), Err):
             issue = result.err()
-            # TODO(abraham): move missing/default semantics here
             fallback = SourceSpan(0, max(1, len(text)))
             return Err(issue.at_argument(self.name, source_text, offset, fallback))
 
@@ -457,13 +505,26 @@ class Parameter:
 
     def __str__(self) -> str:
         if isinstance(self.parser.syntax, LiteralSyntax):
-            return "|".join(self.parser.syntax.values)
-        return self.name
+            text = "|".join(self.parser.syntax.values)
+        else:
+            text = self.name
+        if self.default is not inspect.Parameter.empty or self.nullable:
+            return f"[{text}]"
+        return text
 
 
 def compile_parameter(parameter: inspect.Parameter) -> Parameter:
     """Compile the parser and constraints carried by an annotation."""
     annotation = parameter.annotation
+    nullable = False
+    union_members = get_args(annotation)
+    if type(None) in union_members:
+        non_null = tuple(member for member in union_members if member is not type(None))
+        if len(non_null) != 1:
+            raise TypeError(f"command parameter {parameter.name!r} has unsupported nullable union")
+        annotation = non_null[0]
+        nullable = True
+
     metadata: tuple[object, ...] = ()
     if get_origin(annotation) is Annotated:
         annotation, *raw_metadata = get_args(annotation)
@@ -483,7 +544,24 @@ def compile_parameter(parameter: inspect.Parameter) -> Parameter:
         elif isinstance(item, BaseMetadata):
             raise TypeError(f"unsupported command constraint: {item!r}")
 
-    return Parameter(parameter.name, parser, tuple(constraints))
+    if parameter.default is None and not nullable:
+        raise TypeError(
+            f"command parameter {parameter.name!r} defaults to None but is not nullable"
+        )
+    if (
+        nullable
+        and parameter.default is not inspect.Parameter.empty
+        and parameter.default is not None
+    ):
+        raise TypeError(f"nullable command parameter {parameter.name!r} must default to None")
+
+    return Parameter(
+        parameter.name,
+        parser,
+        tuple(constraints),
+        nullable=nullable,
+        default=parameter.default,
+    )
 
 
 # TODO(abraham): add structured union-choice parsing

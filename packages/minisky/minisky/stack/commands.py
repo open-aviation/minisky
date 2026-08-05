@@ -103,12 +103,6 @@ def get_commands(command_stack: CommandStack) -> CommandCatalog:
             "AFTER callsign, wpt, addwpt, waypoint, [alt, spd]",
             "Add a waypoint after another waypoint in the route.",
         ],
-        "ALT": [
-            command_stack.traffic.ap.selaltcmd,
-            "callsign,alt,[vspd]",
-            "ALT callsign, alt, [vspd]",
-            "Select autopilot altitude command.",
-        ],
         "ASAS": [
             command_stack.traffic.cd.switch,
             "[txt]",

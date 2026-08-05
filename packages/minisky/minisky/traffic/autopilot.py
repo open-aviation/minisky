@@ -22,9 +22,10 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
+from minisky.command import AcIdSelection, AltM, VspdMps, command
 from minisky.core.trafficarrays import TrafficArrays
 from minisky.result import Err, Ok, Result
-from minisky.stack.argparser import Acid, Alt, Hdg, OnOff, Spd, Vspd, Wpt
+from minisky.stack.argparser import Acid, Hdg, OnOff, Spd, Vspd, Wpt
 from minisky.tools import geo
 from minisky.tools.aero import (
     fpm,
@@ -932,8 +933,9 @@ class Autopilot(TrafficArrays):
         else:
             return False
 
+    @command(name="ALT")
     def selaltcmd(
-        self, idx: int | np.ndarray, alt: Alt, vspd: Vspd | None = None
+        self, idx: AcIdSelection, alt: AltM, vspd: VspdMps | None = None
     ) -> Result[str, str]:
         """Select the autopilot altitude, optionally with a vertical speed.
 

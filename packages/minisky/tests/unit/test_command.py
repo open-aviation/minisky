@@ -73,6 +73,50 @@ def test_unclosed_quote() -> None:
     assert issue.span.start == 5
 
 
+def test_empty_comma_field_uses_parameter_default(runtime: MiniSky) -> None:
+    received: list[tuple[int, int]] = []
+
+    class Component:
+        @command(name="TESTDEFAULT")
+        def record(self, first: int = 7, second: int = 9) -> None:
+            received.append((first, second))
+
+    (prepared,) = runtime.commands.prepare_component(Component())
+    assert isinstance(prepared.command(",3"), Ok)
+    assert received == [(7, 3)]
+
+
+def test_required_nullable_field_accepts_only_explicit_omission(runtime: MiniSky) -> None:
+    received: list[tuple[int | None, int]] = []
+
+    class Component:
+        @command(name="TESTNULLABLE")
+        def record(self, first: int | None, second: int) -> None:
+            received.append((first, second))
+
+    (prepared,) = runtime.commands.prepare_component(Component())
+    parameter = prepared.command.forms[0].parameters[0]
+    assert parameter.nullable
+    assert isinstance(prepared.command(",7"), Ok)
+    assert isinstance(prepared.command(""), Err)
+    assert received == [(None, 7)]
+
+
+def test_nullable_default_allows_argument_omission(runtime: MiniSky) -> None:
+    received: list[int | None] = []
+
+    class Component:
+        @command(name="TESTOPTIONAL")
+        def record(self, value: int | None = None) -> None:
+            received.append(value)
+
+    (prepared,) = runtime.commands.prepare_component(Component())
+    assert "TESTOPTIONAL [value]" in prepared.command.helptext()
+    assert isinstance(prepared.command(""), Ok)
+    assert isinstance(prepared.command(","), Ok)
+    assert received == [None, None]
+
+
 def test_resolved_position_rejects_ambiguous_waypoint_without_ui_reference(
     runtime: MiniSky,
 ) -> None:
