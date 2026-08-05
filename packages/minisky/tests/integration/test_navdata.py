@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from minisky import MiniSky
 from minisky.simulation import Simulation
+from tests._types import RunCommand
 
 
 class TestDefwpt:
@@ -43,28 +44,23 @@ class TestDefwpt:
         assert navdb.wplat[idx] == 10.0
         assert navdb.wplon[idx] == 20.0
 
-    def test_defwpt_delete_via_lon_delete_keyword(self, runtime: MiniSky, sim: Simulation) -> None:
-        # Regression: `lon.upper == "DELETE"` (missing call parentheses)
-        # made deletion via the DELETE keyword silently impossible
-        navdb = runtime.navigation
-        n = len(navdb.wpid)
-        navdb.defwpt("TSTWPT2", 52.0, 4.0)
-
-        # TODO(abraham): there may be an inherited bug in the following line, ignoring for now
-        result = navdb.defwpt("TSTWPT2", 0.0, "delete")  # type: ignore
-        assert result.is_ok()
-        assert "deleted" in result.unwrap()
-        assert "TSTWPT2" not in navdb.wpid
-        assert len(navdb.wpid) == n
-        assert len(navdb.wplat) == n
-        assert len(navdb.wplon) == n
-
-    def test_defwpt_delete_via_wptype_del(self, runtime: MiniSky, sim: Simulation) -> None:
+    def test_defwpt_delete_via_stack(
+        self, runtime: MiniSky, sim: Simulation, run_cmd: RunCommand
+    ) -> None:
         navdb = runtime.navigation
         navdb.defwpt("TSTWPT3", 52.0, 4.0)
-        result = navdb.defwpt("TSTWPT3", 52.0, 4.0, "DEL")
-        assert result.is_ok()
+        output = run_cmd("DEFWPT TSTWPT3 DELETE")
+        assert "deleted" in output.lower()
         assert "TSTWPT3" not in navdb.wpid
+
+    def test_defwpt_position_delete_form(
+        self, runtime: MiniSky, sim: Simulation, run_cmd: RunCommand
+    ) -> None:
+        navdb = runtime.navigation
+        navdb.defwpt("TSTWPT5", 52.0, 4.0)
+        output = run_cmd("DEFWPT TSTWPT5 52 4 DEL")
+        assert "deleted" in output.lower()
+        assert "TSTWPT5" not in navdb.wpid
 
     def test_delwpt_accepts_lowercase_name(self, runtime: MiniSky, sim: Simulation) -> None:
         # Regression: delwpt uppercased the name for the existence check but

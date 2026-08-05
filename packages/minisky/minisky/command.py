@@ -81,6 +81,10 @@ class ArgumentIssue:
     ) -> ArgumentIssue:
         return cls(f"expected {expected}, but got {actual}", span)
 
+    def offset_by(self, offset: int) -> ArgumentIssue:
+        span = self.span.offset_by(offset) if self.span is not None else None
+        return replace(self, span=span)
+
     def with_span(self, span: SourceSpan | None) -> ArgumentIssue:
         return replace(self, span=span or self.span)
 
@@ -470,6 +474,80 @@ class LatLonDegrees:
 
 
 @dataclass(frozen=True, slots=True)
+class NamedWaypoint:
+    """A waypoint expression that should be resolved by name."""
+
+    name: str
+
+
+@dataclass(frozen=True, slots=True)
+class CoordinateWaypoint:
+    """A waypoint expressed directly as latitude and longitude."""
+
+    coordinates: LatLonDegrees
+    source: str
+
+
+WaypointSpec: TypeAlias = NamedWaypoint | CoordinateWaypoint
+
+
+def parse_waypoint(_context: CommandParseContext, text: str) -> ParseResult[WaypointSpec]:
+    """Preserve named and coordinate waypoint syntax as structured values."""
+    if isinstance(result := next_argument(text), Err):
+        return result
+    token = result.ok()
+    name = token.value.upper()
+    remainder = token.remainder
+
+    if islat(name):
+        offset = len(text) - len(remainder)
+        if isinstance(longitude_result := next_argument(remainder), Err):
+            return Err(longitude_result.err().offset_by(offset))
+        longitude = longitude_result.ok()
+        if not longitude.value:
+            return Err(
+                ArgumentIssue.expected(
+                    "a longitude after the latitude", "end of input", longitude.span
+                ).offset_by(offset)
+            )
+        span = SourceSpan(token.span.start, offset + longitude.span.end)
+        try:
+            coordinates = LatLonDegrees(txt2lat(name), txt2lon(longitude.value))
+        except ValueError:
+            return Err(
+                ArgumentIssue.expected(
+                    "a latitude and longitude", f"{name},{longitude.value}", span
+                )
+            )
+        return Ok(
+            Parsed(
+                CoordinateWaypoint(coordinates, f"{name},{longitude.value}"),
+                longitude.remainder,
+                span,
+            )
+        )
+
+    if remainder[:2].upper() == "RW":
+        offset = len(text) - len(remainder)
+        if isinstance(runway_result := next_argument(remainder), Err):
+            return Err(runway_result.err().offset_by(offset))
+        runway = runway_result.ok()
+        span = SourceSpan(token.span.start, offset + runway.span.end)
+        return Ok(
+            Parsed(
+                NamedWaypoint(f"{name}/{runway.value.upper()}"),
+                runway.remainder,
+                span,
+            )
+        )
+
+    return Ok(Parsed(NamedWaypoint(name), remainder, token.span))
+
+
+Wpt = Annotated[WaypointSpec, CmdParser(parse_waypoint)]
+
+
+@dataclass(frozen=True, slots=True)
 class RunwayPosition:
     """Resolved runway coordinates and their runway heading."""
 
@@ -522,57 +600,25 @@ def _resolve_named_position(
 def parse_resolved_position(
     context: CommandParseContext, text: str
 ) -> ParseResult[ResolvedPosition]:
-    """Resolve coordinates, aircraft, airports, runways, or waypoints."""
-    if isinstance(result := next_argument(text), Err):
+    """Resolve structured waypoint syntax against runtime navigation data."""
+    if isinstance(result := parse_waypoint(context, text), Err):
         return result
-    token = result.ok()
-    name = token.value.upper()
-    remainder = token.remainder
+    parsed = result.ok()
+    waypoint = parsed.value
 
-    index = context.traffic.idx(name)
+    if isinstance(waypoint, CoordinateWaypoint):
+        return Ok(Parsed(waypoint.coordinates, parsed.remainder, parsed.span))
+
+    index = context.traffic.idx(waypoint.name)
     if index >= 0:
         coordinates = LatLonDegrees(
             float(context.traffic.lat[index]), float(context.traffic.lon[index])
         )
-        return Ok(Parsed(coordinates, remainder, token.span))
+        return Ok(Parsed(coordinates, parsed.remainder, parsed.span))
 
-    if islat(name):
-        offset = len(text) - len(remainder)
-        if isinstance(longitude_result := next_argument(remainder), Err):
-            issue = longitude_result.err()
-            span = issue.span.offset_by(offset) if issue.span is not None else None
-            return Err(ArgumentIssue(issue.message, span))
-        longitude = longitude_result.ok()
-        span = SourceSpan(token.span.start, offset + longitude.span.end)
-        if not longitude.value:
-            return Err(
-                ArgumentIssue.expected("a longitude after the latitude", "end of input", span)
-            )
-        try:
-            coordinates = LatLonDegrees(txt2lat(name), txt2lon(longitude.value))
-        except ValueError:
-            return Err(
-                ArgumentIssue.expected(
-                    "a latitude and longitude", f"{name},{longitude.value}", span
-                )
-            )
-        return Ok(Parsed(coordinates, longitude.remainder, span))
-
-    span = token.span
-    if remainder[:2].upper() == "RW":
-        offset = len(text) - len(remainder)
-        if isinstance(runway_result := next_argument(remainder), Err):
-            issue = runway_result.err()
-            issue_span = issue.span.offset_by(offset) if issue.span is not None else None
-            return Err(ArgumentIssue(issue.message, issue_span))
-        runway = runway_result.ok()
-        name = f"{name}/{runway.value.upper()}"
-        span = SourceSpan(token.span.start, offset + runway.span.end)
-        remainder = runway.remainder
-
-    if isinstance(resolved := _resolve_named_position(context, name, span), Err):
+    if isinstance(resolved := _resolve_named_position(context, waypoint.name, parsed.span), Err):
         return resolved
-    return Ok(Parsed(resolved.ok(), remainder, span))
+    return Ok(Parsed(resolved.ok(), parsed.remainder, parsed.span))
 
 
 ResolvedPositionArg = Annotated[ResolvedPosition, CmdParser(parse_resolved_position)]

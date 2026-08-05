@@ -12,11 +12,12 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 import pandas as pd
 
+from minisky.command import Keyword, LatLonDeg, command
 from minisky.result import Err, Ok, Result
 from minisky.tools import geo
 from minisky.tools.aero import nm
@@ -179,74 +180,78 @@ class Navdatabase:
 
         self.rwythresholds = rwythresholds
 
+    @command(name="DEFWPT")
+    def describe_from_scenario(self, name: Keyword) -> Result[str, str]:
+        """Inspect a scenario-specific waypoint or report that its name is available."""
+        return self.describe_waypoint(name)
+
+    @command(name="DEFWPT")
+    def delete_from_scenario(
+        self, name: Keyword, _action: Literal["DEL", "DELETE"]
+    ) -> Result[str, str]:
+        """Delete a scenario-specific waypoint."""
+        return self.delwpt(name)
+
+    @command(name="DEFWPT")
+    def define_from_scenario(self, name: Keyword, position: LatLonDeg) -> Result[str, str]:
+        """Define a scenario-specific waypoint from a position."""
+        return self.defwpt(name, position.lat, position.lon)
+
+    @command(name="DEFWPT")
+    def delete_from_position_form(
+        self, name: Keyword, position: LatLonDeg, _action: Literal["DEL", "DELETE"]
+    ) -> Result[str, str]:
+        """Delete a waypoint from the DEFWPT name,position,DEL form."""
+        return self.delwpt(name)
+
+    @command(name="DEFWPT")
+    def define_typed_from_scenario(
+        self, name: Keyword, position: LatLonDeg, waypoint_type: Keyword
+    ) -> Result[str, str]:
+        """Define a scenario-specific waypoint with an explicit waypoint type."""
+        return self.defwpt(name, position.lat, position.lon, waypoint_type)
+
+    def describe_waypoint(self, name: str) -> Result[str, str]:
+        """Describe a waypoint or report that its name is available."""
+        normalized = name.upper()
+        reflat, reflon = self.console.getviewctr()
+        if normalized not in self.wpid:
+            return Ok(f"Waypoint {normalized} does not yet exist.")
+        index = self.getwpidx(normalized, reflat, reflon)
+        description = f"{self.wpid[index]} : {self.wplat[index]},{self.wplon[index]}"
+        if self.wptype[index]:
+            description += f"  {self.wptype[index]}"
+        return Ok(description)
+
     def defwpt(
         self,
-        name: str | None = None,
-        lat: float | None = None,
-        lon: float | None = None,
-        wptype: str | None = None,
+        name: str,
+        lat: float,
+        lon: float,
+        waypoint_type: str | None = None,
     ) -> Result[str, str]:
-        """DEFWPT: Define, inspect, or delete a scenario-specific waypoint.
-
-        Without lat/lon, information about the existing waypoint is
-        returned; with wptype DEL/DELETE the waypoint is deleted;
-        otherwise the waypoint is appended to the database and shown on
-        the screen.
-
-        Args:
-            name: Waypoint name (must not be purely numeric).
-            lat: Latitude [deg].
-            lon: Longitude [deg].
-            wptype: Optional waypoint type (e.g. FIX, VOR, DME, NDB), or
-                DEL/DELETE to remove the waypoint.
-        """
-        # Prevent polluting the database: check arguments
-        if name == None or name == "":
-            return Err("Insufficient arguments")
-        elif name.isdigit():
-            return Err("Name needs to start with an alphabetical character")
-
-        # DEL command: give info on waypoint (shudl work wit or without lat,lon, may be clicked by accident
-        elif (wptype != None and (wptype.upper() == "DEL" or wptype.upper() == "DELETE")) or (
-            type(lon) == str and (lon.upper() == "DEL" or lon.upper() == "DELETE")
-        ):
-            return self.delwpt(name)
-
-        # No data: give info on waypoint
-        elif lat == None or lon == None:
-            reflat, reflon = self.console.getviewctr()
-            if self.wpid.count(name.upper()) > 0:
-                i = self.getwpidx(name.upper(), reflat, reflon)
-                txt = self.wpid[i] + " : " + str(self.wplat[i]) + "," + str(self.wplon[i])
-                if len(self.wptype[i]) > 0:
-                    txt = txt + "  " + self.wptype[i]
-                return Ok(txt)
-
-            # Waypoint name is free
-            else:
-                return Ok("Waypoint " + name.upper() + " does not yet exist.")
+        """Add a scenario-specific waypoint to the navigation database."""
+        normalized = name.upper()
+        if not normalized:
+            return Err("Waypoint name is required")
+        if normalized.isdigit():
+            return Err("Waypoint name must start with an alphabetical character")
 
         # Still here? So there is data, then we add this waypoint
-        self.wpid.append(name.upper())
+        self.wpid.append(normalized)
         self.wplat = np.append(self.wplat, lat)
         self.wplon = np.append(self.wplon, lon)
-
-        if wptype == None:
-            self.wptype.append("")
-        else:
-            self.wptype.append(wptype)
-
+        self.wptype.append("" if waypoint_type is None else waypoint_type.upper())
         self.wpelev.append(0.0)  # elevation [m]
         self.wpvar.append(0.0)  # magn variation [deg]
         self.wpfreq.append(0.0)  # frequency [kHz/MHz]
         self.wpdesc.append("Custom waypoint")  # description
 
         # Update screen info
-        self.console.addnavwpt(name.upper(), lat, lon)
+        self.console.addnavwpt(normalized, lat, lon)
+        return Ok(f"{normalized} added to navdb.")
 
-        return Ok(name.upper() + " added to navdb.")
-
-    def delwpt(self, name: str | None = None) -> Result[str, str]:
+    def delwpt(self, name: str) -> Result[str, str]:
         """Delete a waypoint from the database.
 
         The last-added occurrence of the name is removed.
@@ -254,9 +259,6 @@ class Navdatabase:
         Args:
             name: Waypoint name.
         """
-        if name is None:
-            return Err("No waypoint name given")
-
         if self.wpid.count(name.upper()) <= 0:
             return Err("Waypoint " + name.upper() + " does not exist.")
 

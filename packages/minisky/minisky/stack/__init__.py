@@ -572,7 +572,6 @@ class CommandStack:
                 continue
             merged[bound.name] = previous.merge(command_obj)
 
-        # TODO(abraham): keep overload merging provider-local until plugin mounting shares this path.
         return tuple(PreparedCommand(merged[name], merged[name].names) for name in order)
 
     def _prepare_declared_command(self, bound: BoundCommand) -> TypedCommand:
@@ -680,6 +679,7 @@ class CommandStack:
         prepared = (
             *legacy,
             *self.prepare_component(self.console),
+            *self.prepare_component(self.navigation),
             *self.prepare_component(self),
             *self.prepare_component(self.traffic),
             *self.prepare_component(self.traffic.ap),

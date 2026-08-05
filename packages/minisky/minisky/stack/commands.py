@@ -153,12 +153,6 @@ def get_commands(command_stack: CommandStack) -> CommandCatalog:
             "CRECONFS id, type, targetid, dpsi, cpa, tlos_hor, dH, tlos_ver, spd",
             "Create an aircraft that is in conflict with 'targetid'",
         ],
-        "DEFWPT": [
-            command_stack.navigation.defwpt,
-            "txt,latlon,[txt]",
-            "DEFWPT wpname,lat,lon,[DELETE/FIX/VOR/DME/NDB/DEL]",
-            "Define (or delete) a waypoint only for this scenario/run",
-        ],
         "DEL": [
             command_stack.delete_element,
             "callsign/txt,...",
