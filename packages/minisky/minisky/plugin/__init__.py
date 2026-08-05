@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from minisky.command import (
     AcId,
+    AcIdSelection,
     AltM,
     ArgumentIssue,
     CmdParser,
@@ -22,6 +23,7 @@ from minisky.command import (
     Text,
     TimeS,
     Token,
+    VspdMps,
     command,
 )
 from minisky.plugin.entity import Entity
@@ -38,6 +40,7 @@ from minisky.plugin.plugin_decorators import HookName, hook, replacement
 
 __all__ = (
     "AcId",
+    "AcIdSelection",
     "AltM",
     "ArgumentIssue",
     "CmdParser",
@@ -61,6 +64,7 @@ __all__ = (
     "Text",
     "TimeS",
     "Token",
+    "VspdMps",
     "command",
     "hook",
     "replacement",

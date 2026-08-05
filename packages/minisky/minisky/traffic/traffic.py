@@ -594,7 +594,7 @@ class Traffic(TrafficArrays):
 
         # Create and, when necessary, set vertical speed
         self.cre(callsign, actype, float(aclat), float(aclon), float(achdg), acalt, float(acspd))
-        self.ap.selaltcmd(len(self.lat) - 1, altref, acvs)
+        self.ap.selaltcmd(np.asarray([len(self.lat) - 1]), altref, acvs)
         self.vs[-1] = acvs
 
     def delete(self, idx: int | np.ndarray) -> bool:  # type: ignore[override]
