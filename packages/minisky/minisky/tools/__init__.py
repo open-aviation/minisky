@@ -11,5 +11,4 @@ from . import aero as aero
 from . import areafilter as areafilter
 from . import convert as convert
 from . import geo as geo
-from . import navdata as navdata
 from . import position as position

@@ -6,15 +6,18 @@ import pytest
 from minisky import MiniSky
 from minisky.command import (
     ArgumentIssue,
+    CoordinateWaypoint,
     HeadingDeg,
     LatLonDeg,
     LatLonDegrees,
     MagneticHeadingDeg,
+    NamedWaypoint,
     ResolvedPositionArg,
     RunwayHeadingRequest,
     RunwayPosition,
     TrueHeadingDeg,
     UseRunwayHeading,
+    Wpt,
     command,
     split_commands,
 )
@@ -182,6 +185,23 @@ def test_resolved_position_retains_runway_heading(runtime: MiniSky) -> None:
     assert position.runway_heading == pytest.approx(
         runtime.navigation.rwythresholds["EHAM"]["18L"][2]
     )
+
+
+def test_waypoint_parser_preserves_named_and_coordinate_structure(runtime: MiniSky) -> None:
+    received: list[object] = []
+
+    class Component:
+        @command(name="TESTWPT")
+        def record(self, waypoint: Wpt) -> None:
+            received.append(waypoint)
+
+    (prepared,) = runtime.commands.prepare_component(Component())
+    assert isinstance(prepared.command("EHAM"), Ok)
+    assert isinstance(prepared.command("52.5,5.0"), Ok)
+    assert received == [
+        NamedWaypoint("EHAM"),
+        CoordinateWaypoint(LatLonDegrees(52.5, 5.0), "52.5,5.0"),
+    ]
 
 
 def test_resolved_position_rejects_ambiguous_waypoint_without_ui_reference(
