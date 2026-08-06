@@ -195,12 +195,6 @@ def get_commands(command_stack: CommandStack) -> CommandCatalog:
             "DTNOLOOK [time, callsign...]",
             "Set the interval (in [hh:mm:]sec) in which conflict detection is skipped after a conflict resolution.",
         ],
-        "GETWIND": [
-            command_stack.traffic.wind.get,
-            "lat, lon, [alt]",
-            "GETWIND lat, lon, [alt]",
-            "Get wind at a specified position (and optionally at altitude).",
-        ],
         "GROUP": [
             command_stack.traffic.groups.group,
             "[txt,callsign/txt,...]",
@@ -425,12 +419,6 @@ def get_commands(command_stack: CommandStack) -> CommandCatalog:
             "callsign,[bool]",
             "VNAV callsign,[ON/OFF]",
             "Switch on/off VNAV mode, the vertical FMS mode (autopilot).",
-        ],
-        "WIND": [
-            command_stack.traffic.wind.add,
-            "latlon,[float/txt,float,float]...",
-            "WIND lat,lon,[alt],dir,spd[,alt,dir,spd,...] or WIND lat,lon,DEL",
-            "Define a wind vector as part of the 2D or 3D wind field.",
         ],
         "ZONEDH": [
             command_stack.traffic.cd.sethpz,

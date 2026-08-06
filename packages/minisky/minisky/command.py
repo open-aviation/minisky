@@ -130,6 +130,12 @@ def next_argument(text: str) -> ParseResult[str]:
 
     if index == length:
         return Ok(Parsed("", "", SourceSpan(length, length)))
+    if text[index] == ",":
+        start = index
+        index += 1
+        while index < length and text[index].isspace():
+            index += 1
+        return Ok(Parsed("", text[index:], SourceSpan(start, start + 1)))
 
     token_start = index
     quote = text[index] if text[index] in ("'", '"') else None
@@ -212,10 +218,26 @@ def split_commands(text: str) -> Result[tuple[str, ...], ArgumentIssue]:
 
 
 @dataclass(frozen=True, slots=True)
+class NamedFields:
+    """Semantic field names used when rendering command usage."""
+
+    names: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        if not self.names:
+            raise ValueError("command parser fields cannot be empty")
+
+
+@dataclass(frozen=True, slots=True)
 class LiteralSyntax:
     """Exact case-insensitive keywords used when rendering command usage."""
 
     values: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class OmittedSyntax:
+    """A field that must be present syntactically but contain no value."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -225,7 +247,7 @@ class ChoiceSyntax:
     alternatives: tuple[ParserSyntax | None, ...]
 
 
-ParserSyntax: TypeAlias = LiteralSyntax | ChoiceSyntax
+ParserSyntax: TypeAlias = NamedFields | LiteralSyntax | OmittedSyntax | ChoiceSyntax
 
 
 @dataclass(frozen=True, slots=True)
@@ -236,6 +258,12 @@ class CmdParser(Generic[ParsedT_co]):
     syntax: ParserSyntax | None = None
 
     @classmethod
+    def fields(
+        cls, func: ParseFunction[ParsedT_co], names: tuple[str, ...]
+    ) -> CmdParser[ParsedT_co]:
+        return cls(func, NamedFields(names))
+
+    @classmethod
     def literals(
         cls, func: ParseFunction[ParsedT_co], values: tuple[str, ...]
     ) -> CmdParser[ParsedT_co]:
@@ -243,6 +271,10 @@ class CmdParser(Generic[ParsedT_co]):
         if not normalized or len(normalized) != len(set(normalized)):
             raise ValueError("command parser literals must be non-empty and unique")
         return cls(func, LiteralSyntax(normalized))
+
+    @classmethod
+    def omitted(cls, func: ParseFunction[ParsedT_co]) -> CmdParser[ParsedT_co]:
+        return cls(func, OmittedSyntax())
 
     def __call__(self, context: CommandParseContext, text: str) -> ParseResult[ParsedT_co]:
         return self.func(context, text)
@@ -283,8 +315,41 @@ Keyword = Annotated[str, CmdParser(parse_keyword)]
 """A non-empty command field normalized to upper case."""
 
 
+@dataclass(frozen=True, slots=True)
+class OmittedField:
+    """Sentinel for a required empty comma field."""
+
+
+_OMITTED_FIELD = OmittedField()
+
+
+def parse_omitted_field(_context: CommandParseContext, text: str) -> ParseResult[OmittedField]:
+    if isinstance(result := next_argument(text), Err):
+        return result
+    token = result.ok()
+    if token.value or token.span.start == token.span.end:
+        return Err(
+            ArgumentIssue.expected("an omitted comma field", token.value or "input", token.span)
+        )
+    return Ok(Parsed(_OMITTED_FIELD, token.remainder, token.span))
+
+
+Omitted = Annotated[OmittedField, CmdParser.omitted(parse_omitted_field)]
+"""A required empty positional field, such as the middle field in `CMD A,,B`."""
+
+
 FiniteFloat: TypeAlias = IsFinite[float]
+NonNegativeFiniteFloat: TypeAlias = Annotated[FiniteFloat, Ge(0)]
 PositiveFiniteFloat: TypeAlias = Annotated[FiniteFloat, Gt(0)]
+
+
+def _convert_value(
+    value: str, converter: Callable[[str], ParsedT_co], expected: str
+) -> Result[ParsedT_co, ArgumentIssue]:
+    try:
+        return Ok(converter(value))
+    except ValueError:
+        return Err(ArgumentIssue.expected(expected, value or "empty input"))
 
 
 def _convert(
@@ -293,11 +358,9 @@ def _convert(
     if isinstance(result := next_argument(text), Err):
         return result
     token = result.ok()
-    try:
-        value = converter(token.value)
-    except ValueError:
-        return Err(ArgumentIssue.expected(expected, token.value or "empty input", token.span))
-    return Ok(Parsed(value, token.remainder, token.span))
+    if isinstance(value := _convert_value(token.value, converter, expected), Err):
+        return Err(value.err().with_span(token.span))
+    return Ok(Parsed(value.ok(), token.remainder, token.span))
 
 
 def parse_int(_context: CommandParseContext, text: str) -> ParseResult[int]:
@@ -316,6 +379,10 @@ def parse_on_off(_context: CommandParseContext, text: str) -> ParseResult[bool]:
 
 
 OnOff = Annotated[bool, CmdParser(parse_on_off)]
+
+
+def parse_altitude_value(value: str) -> Result[float, ArgumentIssue]:
+    return _convert_value(value, txt2alt, "an altitude")
 
 
 def parse_altitude(_context: CommandParseContext, text: str) -> ParseResult[float]:
@@ -658,12 +725,21 @@ class _ArgumentType:
 
 
 @dataclass(frozen=True, slots=True)
+class ParsedArguments:
+    """Values produced for a callback parameter plus remaining command text."""
+
+    values: tuple[Any, ...]
+    remainder: str
+
+
+@dataclass(frozen=True, slots=True)
 class Parameter:
     """A callback parameter compiled to a typed command parser."""
 
     name: str
     argument_type: _ArgumentType
     default: object = inspect.Parameter.empty
+    repeat: bool = False
 
     def parse(
         self,
@@ -672,25 +748,80 @@ class Parameter:
         *,
         source_text: str,
         offset: int,
-    ) -> ParseResult[Any]:
-        if not text and self.default is not inspect.Parameter.empty:
-            return Ok(Parsed(self.default, text, SourceSpan(0, 0)))
-
-        index = len(text) - len(text.lstrip())
-        if text[index : index + 1] == ",":
-            omitted = next_argument(text)
-            assert isinstance(omitted, Ok)
-            field = omitted.ok()
-            if self.nullable:
-                return Ok(Parsed(None, field.remainder, field.span))
+    ) -> Result[ParsedArguments, ArgumentIssue]:
+        if self.repeat:
+            return self._parse_repeated(context, text, source_text=source_text, offset=offset)
+        if not text:
             if self.default is not inspect.Parameter.empty:
-                return Ok(Parsed(self.default, field.remainder, field.span))
+                return Ok(ParsedArguments((self.default,), text))
+            return Err(
+                ArgumentIssue.expected("a value", "end of input", SourceSpan(0, 0)).at_argument(
+                    self.name, source_text, offset, SourceSpan(0, 0)
+                )
+            )
 
+        if (omitted := self._omitted_field(text)) is not None:
+            if self.nullable:
+                return Ok(ParsedArguments((None,), omitted.remainder))
+            if self.default is not inspect.Parameter.empty:
+                return Ok(ParsedArguments((self.default,), omitted.remainder))
+        return self._parse_one(context, text, source_text=source_text, offset=offset)
+
+    def _parse_repeated(
+        self,
+        context: CommandParseContext,
+        text: str,
+        *,
+        source_text: str,
+        offset: int,
+    ) -> Result[ParsedArguments, ArgumentIssue]:
+        values: list[Any] = []
+        remainder = text
+        while remainder:
+            current_offset = offset + len(text) - len(remainder)
+            if (omitted := self._omitted_field(remainder)) is not None:
+                return Err(
+                    ArgumentIssue.expected("a value", "an omitted field", omitted.span).at_argument(
+                        self.name, source_text, current_offset, omitted.span
+                    )
+                )
+            if isinstance(
+                parsed_result := self._parse_one(
+                    context, remainder, source_text=source_text, offset=current_offset
+                ),
+                Err,
+            ):
+                return parsed_result
+            parsed = parsed_result.ok()
+            if len(parsed.remainder) >= len(remainder):
+                raise TypeError(f"parser {self.parser!r} consumed no input")
+            values.extend(parsed.values)
+            remainder = parsed.remainder
+        return Ok(ParsedArguments(tuple(values), remainder))
+
+    @staticmethod
+    def _omitted_field(text: str) -> Parsed[str] | None:
+        index = len(text) - len(text.lstrip())
+        if text[index : index + 1] != ",":
+            return None
+        result = next_argument(text)
+        assert isinstance(result, Ok)
+        return result.ok()
+
+    def _parse_one(
+        self,
+        context: CommandParseContext,
+        text: str,
+        *,
+        source_text: str,
+        offset: int,
+    ) -> Result[ParsedArguments, ArgumentIssue]:
         if isinstance(result := self.argument_type.parse(context, text), Err):
             issue = result.err()
             fallback = issue.span or SourceSpan(0, max(1, len(text)))
             return Err(issue.at_argument(self.name, source_text, offset, fallback))
-        return result
+        parsed = result.ok()
+        return Ok(ParsedArguments((parsed.value,), parsed.remainder))
 
     @property
     def parser(self) -> CmdParser[Any]:
@@ -706,6 +837,8 @@ class Parameter:
 
     def __str__(self) -> str:
         text = _format_parser_syntax(self.parser.syntax, self.name)
+        if self.repeat:
+            text += "..."
         if self.default is not inspect.Parameter.empty or self.nullable:
             return f"[{text}]"
         return text
@@ -726,7 +859,12 @@ def compile_parameter(parameter: inspect.Parameter) -> Parameter:
         and parameter.default is not None
     ):
         raise TypeError(f"nullable command parameter {parameter.name!r} must default to None")
-    return Parameter(parameter.name, argument_type, parameter.default)
+    return Parameter(
+        parameter.name,
+        argument_type,
+        parameter.default,
+        repeat=parameter.kind is inspect.Parameter.VAR_POSITIONAL,
+    )
 
 
 def _argument_type(annotation: Any) -> _ArgumentType | None:
@@ -810,8 +948,12 @@ def _union_members(annotation: Any) -> tuple[Any, ...]:
 
 
 def _format_parser_syntax(syntax: ParserSyntax | None, parameter_name: str) -> str:
+    if isinstance(syntax, NamedFields):
+        return ",".join(syntax.names)
     if isinstance(syntax, LiteralSyntax):
         return "|".join(syntax.values)
+    if isinstance(syntax, OmittedSyntax):
+        return ""
     if isinstance(syntax, ChoiceSyntax):
         return "|".join(_format_parser_syntax(item, parameter_name) for item in syntax.alternatives)
     return parameter_name

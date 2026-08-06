@@ -187,6 +187,23 @@ def test_resolved_position_retains_runway_heading(runtime: MiniSky) -> None:
     )
 
 
+def test_variadic_is_zero_or_more(runtime: MiniSky) -> None:
+    received: list[tuple[int, ...]] = []
+
+    class Component:
+        @command(name="TESTREPEAT")
+        def record(self, *values: int) -> None:
+            received.append(values)
+
+    (prepared,) = runtime.commands.prepare_component(Component())
+    parameter = prepared.command.forms[0].parameters[0]
+    assert parameter.name == "values"
+    assert parameter.repeat
+    assert isinstance(prepared.command(""), Ok)
+    assert isinstance(prepared.command("1, 2 3"), Ok)
+    assert received == [(), (1, 2, 3)]
+
+
 def test_waypoint_parser_preserves_named_and_coordinate_structure(runtime: MiniSky) -> None:
     received: list[object] = []
 
@@ -202,6 +219,15 @@ def test_waypoint_parser_preserves_named_and_coordinate_structure(runtime: MiniS
         NamedWaypoint("EHAM"),
         CoordinateWaypoint(LatLonDegrees(52.5, 5.0), "52.5,5.0"),
     ]
+
+
+def test_wind_error_span_points_to_invalid_profile_field(runtime: MiniSky) -> None:
+    result = runtime.commands.cmddict["WIND"]("52 4 100 180 BAD")
+    assert isinstance(result, Err)
+    issue = result.err()
+    assert issue.source_text == "WIND 52 4 100 180 BAD"
+    assert issue.span is not None
+    assert issue.source_text[issue.span.start : issue.span.end] == "BAD"
 
 
 def test_resolved_position_rejects_ambiguous_waypoint_without_ui_reference(

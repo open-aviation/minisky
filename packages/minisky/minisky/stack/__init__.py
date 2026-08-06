@@ -419,7 +419,7 @@ def _parse_typed_form(
         if isinstance(parsed, Err):
             return parsed
         value = parsed.ok()
-        arguments.append(value.value)
+        arguments.extend(value.values)
         remainder = value.remainder
 
     if remainder:
@@ -684,6 +684,7 @@ class CommandStack:
             *self.prepare_component(self.traffic),
             *self.prepare_component(self.traffic.ap),
             *self.prepare_component(self.traffic.cond),
+            *self.prepare_component(self.traffic.wind),
             *self.prepare_component(self.variables),
             *self.prepare_component(self.simulation),
             *self.prepare_component(self.runner),

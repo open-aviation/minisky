@@ -175,8 +175,7 @@ class TestConditional:
 class TestWind:
     def test_wind_add_get_roundtrip(self, runtime: MiniSky, sim: Simulation) -> None:
         wind = runtime.traffic.wind
-        result = wind.add(52.0, 4.0, 270.0, 20.0)  # from 270 deg, 20 kts
-        assert result.is_ok()
+        wind.addpoint(52.0, 4.0, 270.0, 20.0 * KTS)
         vn, ve = wind.getdata(52.0, 4.0, 0.0)
         assert ve == pytest.approx(20 * KTS)  # westerly wind blows eastward
         assert vn == pytest.approx(0.0, abs=1e-9)
@@ -192,24 +191,11 @@ class TestWind:
 
     def test_wind_del_clears_field(self, runtime: MiniSky, sim: Simulation) -> None:
         wind = runtime.traffic.wind
-        wind.add(52.0, 4.0, 270.0, 20.0)
+        wind.addpoint(52.0, 4.0, 270.0, 20.0 * KTS)
         assert wind.winddim > 0
-        # TODO(abraham): possible bug!
-        result = wind.add(52.0, 4.0, "DEL")  # type: ignore
-        assert result.is_ok()
+        wind.clear()
         assert wind.winddim == 0
         assert len(wind.lat) == 0
-
-    def test_wind_del_not_shadowed_by_altitude_form(
-        self, runtime: MiniSky, sim: Simulation
-    ) -> None:
-        wind = runtime.traffic.wind
-        wind.add(52.0, 4.0, 270.0, 20.0)
-        # With 3+ winddata elements DEL used to fall into the alt/dir/spd branch
-        # TODO(abraham): possible bug!
-        result = wind.add(52.0, 4.0, "DEL", None, None)  # type: ignore
-        assert result.is_ok()
-        assert wind.winddim == 0
 
     def test_wind_via_stack_two_element_form(self, runtime: MiniSky, run_cmd: RunCommand) -> None:
         # The WIND spec ran the direction through the altitude parser

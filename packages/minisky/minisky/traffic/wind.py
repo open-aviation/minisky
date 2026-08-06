@@ -12,14 +12,32 @@ speed and track from heading and airspeed.
 
 from __future__ import annotations
 
-from typing import Any
+from dataclasses import dataclass
+from itertools import pairwise
+from math import isfinite
+from typing import Annotated, Any, Literal
 
 import numpy as np
 from scipy.interpolate import LinearNDInterpolator, interp1d
 
+from minisky.command import (
+    AltM,
+    ArgumentIssue,
+    CmdParser,
+    CommandParseContext,
+    FiniteFloat,
+    LatLonDeg,
+    NonNegativeFiniteFloat,
+    Omitted,
+    Parsed,
+    ParseResult,
+    SourceSpan,
+    command,
+    next_argument,
+    parse_altitude_value,
+)
 from minisky.core.trafficarrays import TrafficArrays
 from minisky.result import Err, Ok, Result
-from minisky.stack.argparser import Alt, Lat, Lon
 from minisky.tools.aero import ft, kts
 
 
@@ -404,80 +422,147 @@ class Windfield:
                 self.winddim = min(2, len(self.lat))  # Check for 0, 1D, 2D or 3D
 
 
+@dataclass(frozen=True, slots=True)
+class WindLevel:
+    """A validated altitude-dependent wind vector in SI units."""
+
+    altitude_meters: FiniteFloat
+    direction_degrees: FiniteFloat
+    speed_meters_per_second: NonNegativeFiniteFloat
+
+
+def _parse_wind_level(_context: CommandParseContext, text: str) -> ParseResult[WindLevel]:
+    if isinstance(altitude_token_result := next_argument(text), Err):
+        return altitude_token_result
+    altitude_token = altitude_token_result.ok()
+    if isinstance(altitude_result := parse_altitude_value(altitude_token.value), Err):
+        return Err(altitude_result.err().with_span(altitude_token.span))
+    altitude = altitude_result.ok()
+    if not isfinite(altitude):
+        return Err(
+            ArgumentIssue.expected("a finite altitude", altitude_token.value, altitude_token.span)
+        )
+
+    direction_offset = len(text) - len(altitude_token.remainder)
+    if isinstance(direction_token_result := next_argument(altitude_token.remainder), Err):
+        return Err(direction_token_result.err().offset_by(direction_offset))
+    direction_token = direction_token_result.ok()
+    try:
+        direction = float(direction_token.value)
+    except ValueError:
+        return Err(
+            ArgumentIssue.expected(
+                "a finite direction", direction_token.value, direction_token.span
+            ).offset_by(direction_offset)
+        )
+    if not isfinite(direction):
+        return Err(
+            ArgumentIssue.expected(
+                "a finite direction", direction_token.value, direction_token.span
+            ).offset_by(direction_offset)
+        )
+
+    speed_offset = len(text) - len(direction_token.remainder)
+    if isinstance(speed_token_result := next_argument(direction_token.remainder), Err):
+        return Err(speed_token_result.err().offset_by(speed_offset))
+    speed_token = speed_token_result.ok()
+    try:
+        speed = float(speed_token.value)
+    except ValueError:
+        return Err(
+            ArgumentIssue.expected(
+                "a non-negative finite speed", speed_token.value, speed_token.span
+            ).offset_by(speed_offset)
+        )
+    if not isfinite(speed) or speed < 0:
+        return Err(
+            ArgumentIssue.expected(
+                "a non-negative finite speed", speed_token.value, speed_token.span
+            ).offset_by(speed_offset)
+        )
+
+    consumed = len(text) - len(speed_token.remainder)
+    return Ok(
+        Parsed(
+            WindLevel(altitude, direction % 360.0, speed * kts),
+            speed_token.remainder,
+            SourceSpan(0, consumed),
+        )
+    )
+
+
+WindLevelArg = Annotated[
+    WindLevel,
+    CmdParser.fields(_parse_wind_level, ("altitude", "direction", "speed")),
+]
+
+
 class Wind(TrafficArrays, Windfield):
     """Wind field with the stack-command interface of the simulation.
 
     Combines the [`Windfield`][minisky.traffic.wind.Windfield] data and interpolation with the
     TrafficArrays machinery so the field is cleared on simulation reset.
-    Implements the WIND (add()) and GETWIND (get()) stack commands.
     Available at runtime as [`runtime.traffic.wind`][minisky.traffic.wind.Wind].
     """
 
-    def add(self, lat: Lat, lon: Lon, *winddata: float) -> Result[str, str]:
-        """Define a wind vector as part of the 2D or 3D wind field.
-
-        Implements the WIND stack command.
-
-        Arguments:
-        - lat/lon: Horizonal position to define wind vector(s)
-        - winddata:
-          - If the wind at this location is independent of altitude
-            winddata has two elements:
-            - direction [degrees]
-            - speed (magnitude) [knots]
-          - If the wind varies with altitude winddata has three elements:
-            - altitude [ft]
-            - direction [degrees]
-            - speed (magnitude) [knots]
-            In this case, repeating combinations of alt/dir/spd can be provided
-            to specify wind at multiple altitudes.
-          - If winddata contains "DEL" or "DELETE" the whole wind field is
-            deleted (e.g. WIND lat,lon,DEL), like the DEL WIND command.
-        """
-        ndata = len(winddata)
-
+    @command(name="WIND")
+    def clear_wind(
+        self, position: LatLonDeg, _action: Literal["DEL", "DELETE"]
+    ) -> Result[str, str]:
+        """Clear wind defined at a position."""
         # Delete the wind field: WIND lat,lon,DEL(ETE)
-        # Check this first: it would otherwise be shadowed by the numeric forms
-        if "DEL" in winddata or "DELETE" in winddata:
-            self.clear()
-
-        # No altitude or just one: same wind for all altitudes at this position
-        elif ndata == 2 or (ndata == 3 and winddata[0] is None):  # only one point, ignore altitude
-            if winddata[-2] is None or winddata[-1] is None:
-                return Err("Wind direction and speed needed.")
-
-            self.addpoint(lat, lon, winddata[-2], winddata[-1] * kts)
-
-        # More than one altitude is given
-        elif ndata >= 3:
-            windarr = np.array(winddata)
-            dirarr = windarr[1::3]
-            spdarr = windarr[2::3] * kts
-            altarr = windarr[0::3] * ft
-
-            self.addpoint(lat, lon, dirarr, spdarr, altarr)
-
-        else:  # Something is wrong
-            return Err("Winddata not recognized")
-
+        self.clear()
         return Ok("")
 
-    def get(self, lat: Lat, lon: Lon, alt: Alt | None = None) -> Result[str, str]:
-        """Get wind at a specified position (and optionally at altitude)
+    @command(name="WIND")
+    def set_constant_wind(
+        self,
+        position: LatLonDeg,
+        direction: FiniteFloat,
+        speed: NonNegativeFiniteFloat,
+    ) -> Result[str, str]:
+        """Define altitude-independent wind at a position."""
+        # No altitude: use the same wind for all altitudes at this position.
+        self.addpoint(position.lat, position.lon, direction % 360.0, speed * kts)
+        return Ok("")
 
-        Implements the GETWIND stack command. The result is reported as
-        direction/speed text (e.g. "270/25", speed in kts).
+    @command(name="WIND")
+    def set_constant_wind_with_omitted_field(
+        self,
+        position: LatLonDeg,
+        _omitted: Omitted,
+        direction: FiniteFloat,
+        speed: NonNegativeFiniteFloat,
+    ) -> Result[str, str]:
+        """Define constant wind when the altitude field is explicitly omitted."""
+        self.addpoint(position.lat, position.lon, direction % 360.0, speed * kts)
+        return Ok("")
 
-        Arguments:
-        - lat, lon: Horizontal position where wind should be determined [deg]
-        - alt: Altitude at which wind should be determined [m]
-          (stack input in ft)
-        """
-        vn, ve = self.getdata(lat, lon, alt)
+    @command(name="WIND")
+    def set_wind_profile(
+        self, position: LatLonDeg, first: WindLevelArg, *additional: WindLevelArg
+    ) -> Result[str, str]:
+        """Define several altitude-dependent wind vectors at a position."""
+        # Several altitude levels are given: build a vertical wind profile.
+        levels = (first, *additional)
+        if any(
+            current.altitude_meters <= previous.altitude_meters
+            for previous, current in pairwise(levels)
+        ):
+            return Err("WIND profile altitudes must be strictly increasing")
+        altitude = np.asarray([level.altitude_meters for level in levels])
+        direction = np.asarray([level.direction_degrees for level in levels])
+        speed = np.asarray([level.speed_meters_per_second for level in levels])
+        self.addpoint(position.lat, position.lon, direction, speed, altitude)
+        return Ok("")
 
-        wdir = (np.degrees(np.arctan2(ve, vn)) + 180.0) % 360.0
-        wspd = np.sqrt(vn * vn + ve * ve)
-
-        txt = f"WIND AT {lat:.5f}, {lon:.5f}: {round(wdir):03d}/{round(wspd / kts)}"
-
-        return Ok(txt)
+    @command(name="GETWIND")
+    def report(self, position: LatLonDeg, alt: AltM | None = None) -> Result[str, str]:
+        """Report wind at an aviation position and optional altitude."""
+        north, east = self.getdata(position.lat, position.lon, alt)
+        direction = (np.degrees(np.arctan2(east, north)) + 180.0) % 360.0
+        speed = np.sqrt(north * north + east * east)
+        return Ok(
+            f"WIND AT {position.lat:.5f}, {position.lon:.5f}: "
+            f"{round(direction):03d}/{round(speed / kts)}"
+        )
