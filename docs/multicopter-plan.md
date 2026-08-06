@@ -1,6 +1,6 @@
 # Multicopter support plan
 
-Status: **in progress** — Phases 1, 2 and 3 are implemented on this branch.
+Status: **complete** — all four phases are implemented on this branch.
 
 ## Goal
 
@@ -348,20 +348,24 @@ for the power model against a few hand-computed points.
 - New guide `docs/guides/multicopters.md`: creating multicopters, hover/yaw commands, battery
   model, how to add a new type (rotor `aircraft.json` entry + constants dict).
 - Update `docs/architecture.md` with the `Kinematics` entity and the replaceable list.
-- Example scenario `scenarios/multicopter_delivery.scn`: create, fly a route, hover at a
-  delivery point, yaw for "camera", return; exercises everything above.
+- Example scenario `packages/minisky-multicopter/scenarios/multicopter_delivery.scn`: create,
+  fly a route, hover at a delivery point, yaw for "camera", return; exercises everything
+  above. Lives in the plugin package because it depends entirely on the plugin.
 - Regenerate `docs/reference/commands.md` (`uv run minisky commands docs`) after adding the
   stack commands (`MCOPT`, `YAW`, `YAWRATE`, `HOVER`, `BATT`).
 - `ruff`, `pyright`, full test suite green at every phase boundary.
 
 ### Phase 4 checklist
 
-- [ ] `docs/guides/multicopters.md` (usage, commands, battery model, adding a new type)
-- [ ] Update `docs/architecture.md`: `Kinematics` entity + replaceable list
-- [ ] `scenarios/multicopter_delivery.scn` exercising create → route → hover-delivery
-      (`HOVER` + `ALT` + `LNAV ON`) → return
-- [ ] Regenerate `docs/reference/commands.md` (`uv run minisky commands docs`)
-- [ ] Final sweep: `uv run pytest`, `uv run ruff check .`, `uv run pyright`
+- [x] `docs/guides/multicopters.md` (usage, commands, battery model, adding a new type)
+- [x] Update `docs/architecture.md`: `Kinematics` entity + replaceable list
+- [x] `packages/minisky-multicopter/scenarios/multicopter_delivery.scn` exercising
+      create → route → hover-delivery (`HOVER` + `ALT` + `LNAV ON`) → return
+- [x] Verify `docs/reference/commands.md` regeneration — the reference is now built by the
+      `command_docs()` macro at site build (`just docs-build`), so there is no separate gen
+      step; the table is core-only by design and the plugin commands are documented in
+      `docs/guides/multicopters.md`
+- [x] Final sweep: `uv run pytest`, `uv run ruff check .`, `uv run pyright`
 
 ## Sequencing and effort
 

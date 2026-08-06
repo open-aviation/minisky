@@ -32,9 +32,7 @@ MAVIC_PMAX = 4 * 66.9
 MAVIC_MASS = 0.5 * (0.494 + 0.734)
 
 
-def hovering_mavic(
-    mcruntime: MiniSky, run_mc: RunCommand, step_mc: StepUntil
-) -> MulticopterPerf:
+def hovering_mavic(mcruntime: MiniSky, run_mc: RunCommand, step_mc: StepUntil) -> MulticopterPerf:
     """Create a MAVIC, bring it to a stationary hover, return the perf."""
     traf = mcruntime.traffic
     run_mc("CRE D1,MAVIC,52,4,90,100,20")
@@ -141,9 +139,7 @@ class TestEnvelopeFeedback:
 
         perf.soc[0] = 0.0
         vsmin = perf.vsmin[0]
-        low = perf.limits(
-            np.array([1.0]), np.array([vsmin]), np.array([100.0]), np.array([0.0])
-        )
+        low = perf.limits(np.array([1.0]), np.array([vsmin]), np.array([100.0]), np.array([0.0]))
         assert low.vertical_speed[0] == pytest.approx(vsmin)
 
 
@@ -158,9 +154,7 @@ class TestBattCommand:
         assert "W" in report
         assert "min" in report
 
-    def test_batt_rejects_non_multicopter(
-        self, mcruntime: MiniSky, run_mc: RunCommand
-    ) -> None:
+    def test_batt_rejects_non_multicopter(self, mcruntime: MiniSky, run_mc: RunCommand) -> None:
         run_mc("CRE KL001,A320,52,4,90,FL100,250")
         assert "not a multicopter" in run_mc("BATT KL001")
 
