@@ -13,6 +13,7 @@ from __future__ import annotations
 import numpy as np
 from matplotlib.path import Path
 
+from minisky.command import AltM, Keyword, LatLonDeg, LatLonDegrees, command
 from minisky.result import Err, Ok, Result
 from minisky.tools.geo import kwikdist
 
@@ -72,46 +73,81 @@ class AreaFilter:
         self.basic_shapes[areaname] = shape
         return Ok(f"Created {areatype} {areaname}")
 
-    def define_box_area(self, name: str, *coords: float) -> Result[str, str]:
+    @staticmethod
+    def _coordinates(points: tuple[LatLonDegrees, ...]) -> tuple[float, ...]:
+        return tuple(value for point in points for value in (point.lat, point.lon))
+
+    @command(name="BOX")
+    def define_box_area(
+        self,
+        name: Keyword,
+        first: LatLonDeg,
+        second: LatLonDeg,
+        top: AltM = 1e9,
+        bottom: AltM = -1e9,
+    ) -> Result[str, str]:
         """BOX: Define a box-shaped area.
 
         Args:
             name: Area name.
-            *coords: lat1, lon1, lat2, lon2 [deg] of two opposite corners,
-                optionally followed by top and bottom altitude [m].
+            first: First corner position.
+            second: Opposite corner position.
+            top: Top altitude bound [m].
+            bottom: Bottom altitude bound [m].
         """
-        return self.define_area(name, "BOX", coords[:4], *coords[4:])
+        return self.define_area(name, "BOX", self._coordinates((first, second)), top, bottom)
 
-    def define_circle_area(self, name: str, *coords: float) -> Result[str, str]:
+    @command(name="CIRCLE")
+    def define_circle_area(
+        self,
+        name: Keyword,
+        center: LatLonDeg,
+        radius: float,
+        top: AltM = 1e9,
+        bottom: AltM = -1e9,
+    ) -> Result[str, str]:
         """CIRCLE: Define a circle-shaped area.
 
         Args:
             name: Area name.
-            *coords: lat, lon [deg] of the center and radius [nm], optionally
-                followed by top and bottom altitude [m].
+            center: Center position.
+            radius: Radius [nm].
+            top: Top altitude bound [m].
+            bottom: Bottom altitude bound [m].
         """
-        return self.define_area(name, "CIRCLE", coords[:3], *coords[3:])
+        return self.define_area(
+            name, "CIRCLE", (*self._coordinates((center,)), radius), top, bottom
+        )
 
-    def define_line_area(self, name: str, *coords: float) -> Result[str, str]:
+    @command(name="LINE")
+    def define_line_area(self, name: Keyword, start: LatLonDeg, end: LatLonDeg) -> Result[str, str]:
         """LINE: Draw a line between two positions on the radar screen.
 
         Args:
             name: Line name.
-            *coords: lat1, lon1, lat2, lon2 [deg] of the two end points.
+            start: First line position.
+            end: Second line position.
         """
-        return self.define_area(name, "LINE", coords)
+        return self.define_area(name, "LINE", self._coordinates((start, end)))
 
-    def define_poly_area(self, name: str, *coords: float) -> Result[str, str]:
+    @command(name="POLY", aliases=("POLYGON",))
+    def define_poly_area(self, name: Keyword, *points: LatLonDeg) -> Result[str, str]:
         """POLY: Define a polygon-shaped area.
 
         Args:
             name: Area name.
-            *coords: lat, lon pairs [deg] of the polygon vertices.
+            *points: Polygon vertex positions.
         """
-        return self.define_area(name, "POLY", coords)
+        return self.define_area(name, "POLY", self._coordinates(points))
 
+    @command(name="POLYALT")
     def define_polyalt_area(
-        self, name: str, top: float, bottom: float, *coords: float
+        self,
+        name: Keyword,
+        top: AltM,
+        bottom: AltM,
+        first: LatLonDeg,
+        *additional: LatLonDeg,
     ) -> Result[str, str]:
         """POLYALT: Define a polygon-shaped area in 3D, between two altitudes.
 
@@ -119,18 +155,25 @@ class AreaFilter:
             name: Area name.
             top: Top altitude bound [m].
             bottom: Bottom altitude bound [m].
-            *coords: lat, lon pairs [deg] of the polygon vertices.
+            first: First polygon vertex.
+            *additional: Additional polygon vertices.
         """
-        return self.define_area(name, "POLYALT", coords, top, bottom)
+        return self.define_area(
+            name, "POLYALT", self._coordinates((first, *additional)), top, bottom
+        )
 
-    def define_polyline_area(self, name: str, *coords: float) -> Result[str, str]:
+    @command(name="POLYLINE", aliases=("LINES", "POLYLINES"))
+    def define_polyline_area(
+        self, name: Keyword, first: LatLonDeg, *additional: LatLonDeg
+    ) -> Result[str, str]:
         """POLYLINE: Draw a multi-segment line on the radar screen.
 
         Args:
             name: Line name.
-            *coords: lat, lon pairs [deg] of the line points.
+            first: First line position.
+            *additional: Additional line positions.
         """
-        return self.define_area(name, "LINE", coords)
+        return self.define_area(name, "LINE", self._coordinates((first, *additional)))
 
     def checkInside(
         self, areaname: str, lat: np.ndarray, lon: np.ndarray, alt: np.ndarray

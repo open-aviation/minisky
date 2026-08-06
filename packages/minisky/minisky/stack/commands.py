@@ -127,12 +127,6 @@ def get_commands(command_stack: CommandStack) -> CommandCatalog:
             "BEFORE callsign, wpt, addwpt, waypoint, [alt, spd]",
             "Add a waypoint before another waypoint in the route.",
         ],
-        "BOX": [
-            command_stack.areas.define_box_area,
-            "txt,latlon,latlon,[alt,alt]",
-            "BOX name,lat,lon,lat,lon,[top,bottom]",
-            "Define a box-shaped area",
-        ],
         "CASMACHTHR": [
             command_stack.traffic.casmachthr,
             "float",
@@ -140,12 +134,6 @@ def get_commands(command_stack: CommandStack) -> CommandCatalog:
             """Set a threshold below which speeds should be considered as Mach numbers
                 in CRE(ATE), ADDWPT, and SPD commands. Set to zero if speeds should
                 never be considered as Mach number(e.g., when simulating drones).""",
-        ],
-        "CIRCLE": [
-            command_stack.areas.define_circle_area,
-            "txt,latlon,float,[alt,alt]",
-            "CIRCLE name,lat,lon,radius,[top,bottom]",
-            "Define a circle-shaped area",
         ],
         "CRECONFS": [
             command_stack.traffic.creconfs,
@@ -216,12 +204,6 @@ def get_commands(command_stack: CommandStack) -> CommandCatalog:
             "HOLD",
             "Pause(hold) simulation",
         ],
-        "LINE": [
-            command_stack.areas.define_line_area,
-            "txt,latlon,latlon",
-            "LINE name,lat,lon,lat,lon",
-            "Draw a line on the radar screen",
-        ],
         "LISTRTE": [
             partial(route.listrte, command_stack.traffic),
             "callsign,[txt]",
@@ -281,24 +263,6 @@ def get_commands(command_stack: CommandStack) -> CommandCatalog:
             "[txt,txt]",
             "PLUGINS [LIST/LOAD, plugin_name]",
             "List available plugins or load a plugin",
-        ],
-        "POLY": [
-            command_stack.areas.define_poly_area,
-            "txt,[latlon,...]",
-            "POLY name,[lat,lon,lat,lon, ...]",
-            "Define a polygon-shaped area",
-        ],
-        "POLYALT": [
-            command_stack.areas.define_polyalt_area,
-            "txt,alt,alt,latlon,...",
-            "POLYALT name,top,bottom,lat,lon,lat,lon, ...",
-            "Define a polygon-shaped area in 3D: between two altitudes",
-        ],
-        "POLYLINE": [
-            command_stack.areas.define_polyline_area,
-            "txt,latlon,...",
-            "POLYLINE name,lat,lon,lat,lon,...",
-            "Draw a multi-segment line on the radar screen",
         ],
         "POS": [
             command_stack.traffic.position,
@@ -443,10 +407,8 @@ def get_commands(command_stack: CommandStack) -> CommandCatalog:
         "QUIT": ["CLOSE", "END", "EXIT", "STOP"],
         "DEL": ["DELETE"],
         "SELECTIMPL": ["IMPL", "IMPLEMENTATION", "IMPLEMENT"],
-        "POLYLINE": ["LINES", "POLYLINES"],
         "MAGVAR": ["MAGDEC", "MAGDECL", "VAR"],
         "HOLD": ["PAUSE"],
-        "POLY": ["POLYGON"],
         "TRAIL": ["TRAILS"],
         "PERFSTATS": ["PERFINFO", "PERFDATA"],
         "PLUGINS": ["PLUGIN"],

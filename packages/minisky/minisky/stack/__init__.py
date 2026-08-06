@@ -680,6 +680,7 @@ class CommandStack:
             *legacy,
             *self.prepare_component(self.console),
             *self.prepare_component(self.navigation),
+            *self.prepare_component(self.areas),
             *self.prepare_component(self),
             *self.prepare_component(self.traffic),
             *self.prepare_component(self.traffic.ap),
