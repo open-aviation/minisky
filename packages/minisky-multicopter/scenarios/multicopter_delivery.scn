@@ -1,16 +1,17 @@
-# Multicopter delivery mission: an M600 flies a package to a drop point,
-# hovers down for the delivery, and returns home — exercising the
-# MULTICOPTER plugin (packages/minisky-multicopter): decoupled yaw, the
-# composable HOVER primitive, and the battery model.
+# Multicopter delivery mission: an M600 takes off vertically, flies a package
+# to a drop point, hovers down for the delivery, climbs back up vertically and
+# returns home — exercising the MULTICOPTER plugin
+# (packages/minisky-multicopter): decoupled yaw, the composable HOVER
+# primitive, and the battery model.
 00:00:00.00>PLUGINS LOAD MULTICOPTER
 
 # The drop point, 1.4 km east of home.
 00:00:01.00>DEFWPT HOME 52.0000 4.0000
 00:00:01.00>DEFWPT DROP 52.0000 4.0200
 
-# Create the drone at home. M600 is a multicopter typecode, so MCOPT
-# reports ON without being set.
-00:00:02.00>CRE PH1 M600 52.0 4.0 90 100 20
+# Create the drone on the ground at home, stationary. M600 is a multicopter
+# typecode, so MCOPT reports ON without being set.
+00:00:02.00>CRE PH1 M600 52.0 4.0 90 0 0
 00:00:03.00>MCOPT PH1
 
 # Out and back. Multicopter waypoints are fly-over with a fixed capture
@@ -19,29 +20,39 @@
 00:00:03.00>ADDWPT PH1 HOME
 
 # The delivery, composed on the waypoint stack: when PH1 reaches DROP,
-# hold position for 30 s while descending to 50 ft, and yaw the camera
-# south — the nose stays there for the rest of the flight, so the return
-# leg is flown strafing (track west, nose south).
-00:00:03.00>AT PH1 DROP DO PH1 HOVER 30 50
+# hold position at 50 ft, and yaw the camera south — the nose stays there
+# for the rest of the flight, so the return leg is flown strafing (track
+# west, nose south). The 45 s is a guard that never expires: the timed
+# climb-out below re-issues the hover after 30 s of hold.
+00:00:03.00>AT PH1 DROP DO PH1 HOVER 45 50
 00:00:03.00>AT PH1 DROP DO PH1 YAW 180
 # When PH1 arrives back at HOME, stop and hover indefinitely.
 00:00:03.00>AT PH1 HOME DO PH1 HOVER
 
-00:00:04.00>LNAV PH1 ON
+# Vertical takeoff: climb straight up to 100 ft and hold 5 s. A hover that
+# started with the route disengaged does not engage it on expiry, so the
+# departure below is a separate timed command.
+00:00:04.00>HOVER PH1 5 100
+
+# Depart eastbound once the takeoff hover has expired.
+00:00:20.00>SPD PH1 20
+00:00:20.00>LNAV PH1 ON
 
 # Enroute to the drop point.
 00:01:00.00>POS PH1
 00:01:00.00>BATT PH1
 
 # Mid-delivery: stopped over DROP at 50 ft, nose south.
-00:02:30.00>POS PH1
-00:02:30.00>BATT PH1
+00:03:00.00>POS PH1
+00:03:00.00>BATT PH1
 
-# The 30 s hold has expired and the route resumed at the hover altitude;
-# climb back to cruise altitude for the return leg.
-00:03:10.00>ALT PH1 100
+# Climb out of the delivery: re-issuing the hover while it is still held
+# keeps the position pinned and sets a new target altitude — a pure
+# vertical climb back to cruise altitude, a 10 s hold at the top, then the
+# route resumes on its own for the return leg.
+00:03:10.00>HOVER PH1 10 100
 
 # Hovering at home with the mission complete.
-00:05:30.00>POS PH1
-00:05:30.00>BATT PH1
-00:05:40.00>QUIT
+00:06:20.00>POS PH1
+00:06:20.00>BATT PH1
+00:06:30.00>QUIT
