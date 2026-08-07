@@ -215,12 +215,6 @@ def get_commands(command_stack: CommandStack) -> CommandCatalog:
             "MOVE callsign,lat,lon,[alt,hdg,spd,vspd]",
             "Move an aircraft to a new position",
         ],
-        "NORESO": [
-            command_stack.traffic.cr.setnoreso,
-            "[callsign,...]",
-            "NORESO callsign...",
-            "ADD or Remove aircraft that nobody will avoid.",
-        ],
         "OP": [
             command_stack.simulation.op,
             "",
@@ -251,12 +245,6 @@ def get_commands(command_stack: CommandStack) -> CommandCatalog:
             "POS callsign/waypoint",
             "Get info on aircraft, airport or waypoint",
         ],
-        "PRIORULES": [
-            command_stack.traffic.cr.setprio,
-            "[bool, txt]",
-            "PRIORULES [flag, priocode]",
-            "Define priority rules (right of way) for conflict resolution.",
-        ],
         "QUIT": [
             command_stack.simulation.stop,
             "",
@@ -269,59 +257,11 @@ def get_commands(command_stack: CommandStack) -> CommandCatalog:
             "RESET",
             "Reset simulation",
         ],
-        "RESO": [
-            command_stack.traffic.cr.setmethod,
-            "[txt]",
-            "RESO [name]",
-            "Select a Conflict Resolution method.",
-        ],
-        "RESOOFF": [
-            command_stack.traffic.cr.setresooff,
-            "[callsign,...]",
-            "RESOOFF callsign...",
-            "ADD or Remove aircraft that will not avoid anybody else.",
-        ],
-        "RMETHH": [
-            command_stack.traffic.cr.setresometh,
-            "[txt]",
-            "RMETHH [ON / BOTH / OFF / NONE / SPD / HDG]",
-            "Select the horizontal resolution method for MVP conflict resolution.",
-        ],
-        "RMETHV": [
-            command_stack.traffic.cr.setresometv,
-            "[txt]",
-            "RMETHV [ON / V/S / OFF / NONE]",
-            "Select the vertical resolution method for MVP conflict resolution.",
-        ],
-        "RFACH": [
-            command_stack.traffic.cr.setresofach,
-            "[float]",
-            "RFACH [factor]",
-            "Set resolution factor horizontal.",
-        ],
-        "RFACV": [
-            command_stack.traffic.cr.setresofacv,
-            "[float]",
-            "RFACV [factor]",
-            "Set resolution factor vertical.",
-        ],
         "RTA": [
             partial(route.set_rta, command_stack.traffic),
             "callsign, wpt, time",
             "RTA callsign, wpt, time",
             "Add RTA to waypoint record.",
-        ],
-        "RSZONEDH": [
-            command_stack.traffic.cr.setresozonedh,
-            "[float]",
-            "RSZONEDH [zonedh]",
-            "Set resolution factor vertical, but then with absolute value.",
-        ],
-        "RSZONER": [
-            command_stack.traffic.cr.setresozoner,
-            "[float]",
-            "RSZONER [zoner]",
-            "Set resolution factor horizontal, but then with absolute value.",
         ],
         "SELECTIMPL": [
             command_stack.replaceables.select,

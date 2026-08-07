@@ -73,13 +73,13 @@ class TestResolutionCommands:
 
     def test_rmethh_returns_ok_result(self, runtime: MiniSky, run_cmd: RunCommand) -> None:
         run_cmd("RESO MVP")
-        result = runtime.traffic.cr.setresometh("SPD")
+        result = runtime.traffic.cr.configure_horizontal_method("SPD")
         assert result.is_ok()
         assert result.unwrap() == "Horizontal resolution method set to SPD"
 
     def test_rmethv_returns_ok_result(self, runtime: MiniSky, run_cmd: RunCommand) -> None:
         run_cmd("RESO MVP")
-        result = runtime.traffic.cr.setresometv("ON")
+        result = runtime.traffic.cr.configure_vertical_method("ON")
         assert result.is_ok()
         assert result.unwrap() == "Vertical resolution method set to ON"
 
@@ -102,10 +102,8 @@ class TestResolutionCommands:
         output = run_cmd("RMETHH SPD")
         assert "not available" in output
 
-    def test_resooff_report_mentions_resooff(self, runtime: MiniSky, sim: Simulation) -> None:
-        result = runtime.traffic.cr.setresooff()
-        assert result.is_ok()
-        message = result.unwrap()
+    def test_resooff_report_mentions_resooff(self, runtime: MiniSky, run_cmd: RunCommand) -> None:
+        message = run_cmd("RESOOFF")
         assert "RESOOFF" in message
         assert "NORESO" not in message
 
