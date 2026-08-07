@@ -123,9 +123,8 @@ class TestDetectionCommands:
 
     def test_sethpz_status_uses_default(self, runtime: MiniSky, run_cmd: RunCommand) -> None:
         run_cmd("CRE KL204,B744,52,4,45,FL250,350")
-        result = runtime.traffic.cd.sethpz()
-        assert result.is_ok()
-        assert f"{runtime.traffic.cd.hpz_def / FT:.2f} ft" in result.unwrap()
+        output = run_cmd("ZONEDH")
+        assert f"{runtime.traffic.cd.hpz_def / FT:.2f} ft" in output
 
     def test_hpz_default_consistent_after_reset(self, runtime: MiniSky, sim: Simulation) -> None:
         # reset() must restore the same default as __init__

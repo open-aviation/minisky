@@ -20,7 +20,6 @@ import numpy as np
 import pandas as pd
 
 from minisky.core.config import data
-from minisky.result import Ok, Result
 
 # Type alias for values that may be a scalar or a numpy array
 FloatOrArray = float | np.ndarray
@@ -708,22 +707,3 @@ def load_magnetic_declination() -> np.ndarray:
     # lon = -180 ... 180 (columns)
     decl_lat_lon.setflags(write=False)
     return decl_lat_lon
-
-
-# Command MAGVAR to get magnetic variation at position lat,lon
-def magdeccmd(latdeg: float, londeg: float) -> Result[str, str]:
-    """MAGVAR Get magnetic variation at position lat/lon.
-
-    Args:
-        latdeg: Latitude [deg].
-        londeg: Longitude [deg].
-    """
-    return Ok(
-        "Magnetic variation at "
-        + str(latdeg)
-        + ","
-        + str(londeg)
-        + " = "
-        + str(magdec(latdeg, londeg))
-        + " deg"
-    )
