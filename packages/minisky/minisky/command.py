@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import inspect
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass, replace
 from types import UnionType
 from typing import (
@@ -530,6 +530,14 @@ def parse_aircraft_selection(
 
 
 AcIdSelection = Annotated[np.ndarray[Any, Any], CmdParser(parse_aircraft_selection)]
+
+
+def aircraft_indices(
+    selections: Iterable[np.ndarray[Any, Any]],
+) -> np.ndarray[Any, Any]:
+    """Flatten aircraft and group selections into an index array."""
+    indices = (int(index) for selection in selections for index in selection)
+    return np.fromiter(indices, dtype=int)
 
 
 @dataclass(frozen=True, slots=True)

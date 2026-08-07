@@ -15,6 +15,7 @@ from minisky.simulation import ConsoleIO, Runner, Simulation, SimulationState
 from minisky.stack import CommandStack
 from minisky.streaming import StreamHub, build_snapshot
 from minisky.tools.areafilter import AreaFilter
+from minisky.tools.geo_commands import GeoCommands
 from minisky.tools.navdata import Navdatabase
 from minisky.traffic import Traffic
 from minisky.traffic.activewpdata import ActiveWaypoint
@@ -50,6 +51,7 @@ class MiniSky:
         self.console = ConsoleIO(lambda: self.simulation.state == SimulationState.OP)
         self.navigation = Navdatabase(data("navigation"), self.console)
         self.areas = AreaFilter()
+        self.geo_commands = GeoCommands()
         self.variables = VariableExplorer()
         self.traffic = Traffic(
             config=config,
@@ -115,6 +117,9 @@ class MiniSky:
         self.variables.init(self.simulation, self.traffic)
 
         self.commands.init()
+        geo_commands = self.commands.prepare_component(self.geo_commands)
+        self.commands.validate_commands(geo_commands)
+        self.commands.install_commands(geo_commands)
         self.plugins.discover()
 
         if scenario:

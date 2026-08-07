@@ -20,15 +20,23 @@ aviation units (NM, ft).
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any, NamedTuple
+from typing import TYPE_CHECKING, Annotated, Any, NamedTuple
 
 import numpy as np
+from annotated_types import Ge
 from scipy.spatial import KDTree
 
+from minisky.command import (
+    AcIdSelection,
+    NonNegativeFiniteFloat,
+    TimeS,
+    aircraft_indices,
+    command,
+)
 from minisky.core.config import MiniSkyConfig
 from minisky.core.trafficarrays import TrafficArrays
 from minisky.result import Ok, Result
-from minisky.stack.argparser import Time, Txt
+from minisky.stack.argparser import Txt
 from minisky.tools.aero import ft, nm
 
 if TYPE_CHECKING:
@@ -36,6 +44,8 @@ if TYPE_CHECKING:
 
 # Mean earth radius [m], same value as the geo module's flat-earth helpers
 RE = 6371000.0
+
+NonNegativeTime = Annotated[TimeS, Ge(0)]
 
 
 # TODO(abraham): model callsign pairs as a named ConflictPair record.
@@ -251,30 +261,16 @@ class ConflictDetection(TrafficArrays):
         self.activate = True
         return Ok("Conflict Detection is on.")
 
-    def setrpz(self, radius: float = -1.0, *acidx: int) -> Result[str, str]:
-        """Set the horizontal separation distance (i.e., the radius of the
-        protected zone) in nautical miles.
+    @command(name="ZONER", aliases=("PZR", "RPZ", "PZRADIUS"))
+    def protected_zone_radius(self) -> Result[str, str]:
+        """Report the default protected-zone radius."""
+        return Ok(
+            f"ZONER [radius(nm), acid(s)/ac group]\nCurrent default PZ radius: {self.rpz_def / nm:.2f} NM"
+        )
 
-        Implements the ZONER stack command. When an absolute resolution zone
-        radius was previously set (RSZONER), the resolution factor is rescaled
-        so that the absolute resolution zone size is preserved.
-
-        Args:
-            radius (float): The protected zone radius [NM]. When negative
-                (default), the current default radius is reported instead.
-            *acidx: Aircraft index/indices or group. When not provided, the
-                default PZ radius is changed. Otherwise the PZ radius for the
-                passed aircraft is changed.
-        """
-        if radius < 0.0:
-            return Ok(
-                f"ZONER [radius(nm), acid(s)/ac group]\nCurrent default PZ radius: {self.rpz_def / nm:.2f} NM"
-            )
-        if len(acidx) > 0:
-            idx: Any = acidx[0] if isinstance(acidx[0], np.ndarray) else acidx
-            self.rpz[idx] = radius * nm
-            self.global_rpz = False
-            return Ok(f"Setting PZ radius to {radius} NM for {len(idx)} aircraft")
+    @command(name="ZONER")
+    def set_protected_zone_radius(self, radius: NonNegativeFiniteFloat) -> Result[str, str]:
+        """Set the default protected-zone radius in nautical miles."""
         oldradius = self.rpz_def
         self.rpz_def = radius * nm
         if self.global_rpz:
@@ -284,30 +280,26 @@ class ConflictDetection(TrafficArrays):
             self.stack_command(f"RSZONER {self.traffic.cr.resofach * oldradius / nm}")
         return Ok(f"Setting default PZ radius to {radius} NM")
 
-    def sethpz(self, height: float = -1.0, *acidx: int) -> Result[str, str]:
-        """Set the vertical separation distance (i.e., half of the protected
-        zone height) in feet.
+    @command(name="ZONER")
+    def set_aircraft_protected_zone_radius(
+        self, radius: NonNegativeFiniteFloat, first: AcIdSelection, *additional: AcIdSelection
+    ) -> Result[str, str]:
+        """Set the protected-zone radius for selected aircraft."""
+        idx = aircraft_indices((first, *additional))
+        self.rpz[idx] = radius * nm
+        self.global_rpz = False
+        return Ok(f"Setting PZ radius to {radius} NM for {len(idx)} aircraft")
 
-        Implements the ZONEDH stack command. When an absolute resolution zone
-        height was previously set (RSZONEDH), the resolution factor is
-        rescaled so that the absolute resolution zone size is preserved.
+    @command(name="ZONEDH", aliases=("PZDH", "DHPZ", "PZHEIGHT"))
+    def protected_zone_height(self) -> Result[str, str]:
+        """Report the default protected-zone half-height."""
+        return Ok(
+            f"ZONEDH [height (ft), acid(s)/ac group]\nCurrent default PZ height: {self.hpz_def / ft:.2f} ft"
+        )
 
-        Args:
-            height (float): The vertical separation height [ft]. When negative
-                (default), the current default height is reported instead.
-            *acidx: Aircraft index/indices or group. When not provided, the
-                default PZ height is changed. Otherwise the PZ height for the
-                passed aircraft is changed.
-        """
-        if height < 0.0:
-            return Ok(
-                f"ZONEDH [height (ft), acid(s)/ac group]\nCurrent default PZ height: {self.hpz_def / ft:.2f} ft"
-            )
-        if len(acidx) > 0:
-            idx: Any = acidx[0] if isinstance(acidx[0], np.ndarray) else acidx
-            self.hpz[idx] = height * ft
-            self.global_hpz = False
-            return Ok(f"Setting PZ height to {height} ft for {len(idx)} aircraft")
+    @command(name="ZONEDH")
+    def set_protected_zone_height(self, height: NonNegativeFiniteFloat) -> Result[str, str]:
+        """Set the default protected-zone half-height in feet."""
         oldhpz = self.hpz_def
         self.hpz_def = height * ft
         if self.global_hpz:
@@ -317,54 +309,61 @@ class ConflictDetection(TrafficArrays):
             self.stack_command(f"RSZONEDH {self.traffic.cr.resofacv * oldhpz / ft}")
         return Ok(f"Setting default PZ height to {height} ft")
 
-    def setdtlook(self, time: Time = -1.0, *acidx: int) -> Result[str, str]:
-        """Set the lookahead time (in [hh:mm:]sec) for conflict detection.
+    @command(name="ZONEDH")
+    def set_aircraft_protected_zone_height(
+        self, height: NonNegativeFiniteFloat, first: AcIdSelection, *additional: AcIdSelection
+    ) -> Result[str, str]:
+        """Set the protected-zone half-height for selected aircraft."""
+        idx = aircraft_indices((first, *additional))
+        self.hpz[idx] = height * ft
+        self.global_hpz = False
+        return Ok(f"Setting PZ height to {height} ft for {len(idx)} aircraft")
 
-        Implements the DTLOOK stack command.
+    @command(name="DTLOOK")
+    def detection_lookahead(self) -> Result[str, str]:
+        """Report the default conflict-detection lookahead."""
+        return Ok(f"DTLOOK[time]\nCurrent value: {self.dtlookahead_def: .1f} sec")
 
-        Args:
-            time (float): Lookahead time [s]. When negative (default), the
-                current default lookahead time is reported instead.
-            *acidx: Aircraft index/indices or group. When not provided, the
-                default lookahead time is changed. Otherwise the lookahead
-                time for the passed aircraft is changed.
-        """
-        if time < 0.0:
-            return Ok(f"DTLOOK[time]\nCurrent value: {self.dtlookahead_def: .1f} sec")
-        if len(acidx) > 0:
-            idx: Any = acidx[0] if isinstance(acidx[0], np.ndarray) else acidx
-            self.dtlookahead[idx] = time
-            self.global_dtlook = False
-            return Ok(f"Setting CD lookahead to {time} sec for {len(idx)} aircraft")
+    @command(name="DTLOOK")
+    def set_detection_lookahead(self, time: NonNegativeTime) -> Result[str, str]:
+        """Set the default conflict-detection lookahead."""
         self.dtlookahead_def = time
         if self.global_dtlook:
             self.dtlookahead[:] = time
         return Ok(f"Setting default CD lookahead to {time} sec")
 
-    def setdtnolook(self, time: Time = -1.0, *acidx: int) -> Result[str, str]:
-        """Set the interval (in [hh:mm:]sec) in which conflict detection
-        is skipped after a conflict resolution.
+    @command(name="DTLOOK")
+    def set_aircraft_detection_lookahead(
+        self, time: NonNegativeTime, first: AcIdSelection, *additional: AcIdSelection
+    ) -> Result[str, str]:
+        """Set conflict-detection lookahead for selected aircraft."""
+        idx = aircraft_indices((first, *additional))
+        self.dtlookahead[idx] = time
+        self.global_dtlook = False
+        return Ok(f"Setting CD lookahead to {time} sec for {len(idx)} aircraft")
 
-        Implements the DTNOLOOK stack command.
+    @command(name="DTNOLOOK")
+    def detection_no_look(self) -> Result[str, str]:
+        """Report the default post-resolution no-look interval."""
+        return Ok(f"DTNOLOOK[time]\nCurrent value: {self.dtnolook_def: .1f} sec")
 
-        Args:
-            time (float): No-look interval [s]. When negative (default), the
-                current default no-look interval is reported instead.
-            *acidx: Aircraft index/indices or group. When not provided, the
-                default interval is changed. Otherwise the interval for the
-                passed aircraft is changed.
-        """
-        if time < 0.0:
-            return Ok(f"DTNOLOOK[time]\nCurrent value: {self.dtnolook_def: .1f} sec")
-        if len(acidx) > 0:
-            idx: Any = acidx[0] if isinstance(acidx[0], np.ndarray) else acidx
-            self.dtnolook[idx] = time
-            self.global_dtnolook = False
-            return Ok(f"Setting CD no-look to {time} sec for {len(idx)} aircraft")
+    @command(name="DTNOLOOK")
+    def set_detection_no_look(self, time: NonNegativeTime) -> Result[str, str]:
+        """Set the default post-resolution no-look interval."""
         self.dtnolook_def = time
         if self.global_dtnolook:
             self.dtnolook[:] = time
         return Ok(f"Setting default CD no-look to {time} sec")
+
+    @command(name="DTNOLOOK")
+    def set_aircraft_detection_no_look(
+        self, time: NonNegativeTime, first: AcIdSelection, *additional: AcIdSelection
+    ) -> Result[str, str]:
+        """Set the post-resolution no-look interval for selected aircraft."""
+        idx = aircraft_indices((first, *additional))
+        self.dtnolook[idx] = time
+        self.global_dtnolook = False
+        return Ok(f"Setting CD no-look to {time} sec for {len(idx)} aircraft")
 
     def update(self, ownship: Any, intruder: Any) -> None:
         """Perform an update step of the Conflict Detection implementation.

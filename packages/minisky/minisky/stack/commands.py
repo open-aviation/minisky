@@ -80,7 +80,6 @@ def get_commands(command_stack: CommandStack) -> CommandCatalog:
 
     Binds callbacks to the objects owned by the provided runtime command stack.
     """
-    from minisky import tools
     from minisky.traffic import route
 
     # TODO(abraham): migrate core commands from this legacy table to typed declarations.
@@ -171,18 +170,6 @@ def get_commands(command_stack: CommandStack) -> CommandCatalog:
             "DIRECT callsign, wpt",
             "Go direct to a specified waypoint in the route.",
         ],
-        "DTLOOK": [
-            command_stack.traffic.cd.setdtlook,
-            "[time,callsign,...]",
-            "DTLOOK [time, callsign...]",
-            "Set the lookahead time (in [hh:mm:]sec) for conflict detection.",
-        ],
-        "DTNOLOOK": [
-            command_stack.traffic.cd.setdtnolook,
-            "[time,callsign,...]",
-            "DTNOLOOK [time, callsign...]",
-            "Set the interval (in [hh:mm:]sec) in which conflict detection is skipped after a conflict resolution.",
-        ],
         "GROUP": [
             command_stack.traffic.groups.group,
             "[txt,callsign/txt,...]",
@@ -215,12 +202,6 @@ def get_commands(command_stack: CommandStack) -> CommandCatalog:
             "callsign,[bool]",
             "LNAV callsign,[ON/OFF]",
             "LNAV (lateral FMS mode) switch for autopilot.",
-        ],
-        "MAGVAR": [
-            tools.geo.magdeccmd,
-            "lat,lon",
-            "MAGVAR lat,lon",
-            "Show magnetic variation/declination at position",
         ],
         "MCRE": [
             command_stack.traffic.mcre,
@@ -384,18 +365,6 @@ def get_commands(command_stack: CommandStack) -> CommandCatalog:
             "VNAV callsign,[ON/OFF]",
             "Switch on/off VNAV mode, the vertical FMS mode (autopilot).",
         ],
-        "ZONEDH": [
-            command_stack.traffic.cd.sethpz,
-            "[float,callsign,...]",
-            "ZONEDH [height, callsign...]",
-            "Set the vertical separation distance (i.e., half of the protected zone height) in feet.",
-        ],
-        "ZONER": [
-            command_stack.traffic.cd.setrpz,
-            "[float,callsign,...]",
-            "ZONER [radius, callsign...]",
-            "Set the horizontal separation distance (i.e., the radius of the protected zone) in nautical miles.",
-        ],
     }
 
     # Command synonym dictionary
@@ -407,7 +376,6 @@ def get_commands(command_stack: CommandStack) -> CommandCatalog:
         "QUIT": ["CLOSE", "END", "EXIT", "STOP"],
         "DEL": ["DELETE"],
         "SELECTIMPL": ["IMPL", "IMPLEMENTATION", "IMPLEMENT"],
-        "MAGVAR": ["MAGDEC", "MAGDECL", "VAR"],
         "HOLD": ["PAUSE"],
         "TRAIL": ["TRAILS"],
         "PERFSTATS": ["PERFINFO", "PERFDATA"],
