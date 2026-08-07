@@ -22,9 +22,13 @@ from typing import TYPE_CHECKING, Any, NamedTuple
 import numpy as np
 
 from minisky.core.config import MiniSkyConfig
-from minisky.result import Err, Ok, Result
-from minisky.stack.argparser import Txt
-from minisky.traffic.asas.resolution import ConflictResolution
+from minisky.result import Ok, Result
+from minisky.traffic.asas.resolution import (
+    ConflictResolution,
+    HorizontalResolutionMethod,
+    PriorityCode,
+    VerticalResolutionMethod,
+)
 
 if TYPE_CHECKING:
     from minisky.traffic import Traffic
@@ -68,111 +72,72 @@ class MVP(ConflictResolution):
         # [-] switch to limit resolution to the vertical direction
         self.swresovert = False
 
-    def setprio(self, flag=None, priocode="") -> Result[str, str]:
-        """Set the prio switch and the type of prio.
+    def priority_status(self) -> Result[str, str]:
+        """Show MVP priority-rule options and state."""
+        return Ok(
+            "PRIORULES [ON/OFF] [PRIOCODE]"
+            "\nAvailable priority codes: "
+            "\n     FF1:  Free Flight Primary (No Prio) "
+            "\n     FF2:  Free Flight Secondary (Cruising has priority)"
+            "\n     FF3:  Free Flight Tertiary (Climbing/descending has priority)"
+            "\n     LAY1: Layers Primary (Cruising has priority + horizontal resolutions)"
+            "\n     LAY2: Layers Secondary (Climbing/descending has priority + horizontal resolutions)"
+            f"\nPriority is currently {'ON' if self.swprio else 'OFF'}"
+            f"\nPriority code is currently: {self.priocode}"
+        )
 
-        Implements the PRIORULES stack command for MVP. Validates the
-        priority code against the codes supported by [`MVP.applyprio`][minisky.traffic.asas.mvp.MVP.applyprio].
+    def configure_priority(self, flag: bool, priocode: PriorityCode) -> Result[str, str]:
+        """Configure MVP priority rules."""
+        return super().configure_priority(flag, priocode)
 
-        Args:
-            flag (bool): True to enable priority rules, False to disable.
-                When None, the available priority codes are reported.
-            priocode (str): One of "FF1", "FF2", "FF3", "LAY1", "LAY2".
-        """
-        if flag is None:
-            return Ok(
-                "PRIORULES [ON/OFF] [PRIOCODE]"
-                + "\nAvailable priority codes: "
-                + "\n     FF1:  Free Flight Primary (No Prio) "
-                + "\n     FF2:  Free Flight Secondary (Cruising has priority)"
-                + "\n     FF3:  Free Flight Tertiary (Climbing/descending has priority)"
-                + "\n     LAY1: Layers Primary (Cruising has priority + horizontal resolutions)"
-                + "\n     LAY2: Layers Secondary (Climbing/descending has priority + horizontal resolutions)"
-                + "\nPriority is currently "
-                + ("ON" if self.swprio else "OFF")
-                + "\nPriority code is currently: "
-                + str(self.priocode)
-            )
-        options = ["FF1", "FF2", "FF3", "LAY1", "LAY2"]
-        if priocode not in options:
-            return Err("Priority code Not Understood. Available Options: " + str(options))
-        return super().setprio(flag, priocode)
+    def horizontal_method_status(self) -> Result[str, str]:
+        """Show MVP horizontal resolution limitations."""
+        return Ok(
+            "RMETHH [ON / BOTH / OFF / NONE / SPD / HDG]"
+            f"\nHorizontal resolution limitation is currently {'ON' if self.swresohoriz else 'OFF'}"
+            f"\nSpeed resolution limitation is currently {'ON' if self.swresospd else 'OFF'}"
+            f"\nHeading resolution limitation is currently {'ON' if self.swresohdg else 'OFF'}"
+        )
 
-    def setresometh(self, value: Txt = "") -> Result[str, str]:
-        """Processes the RMETHH command. Sets swresovert = False.
-
-        Selects which horizontal degrees of freedom MVP may use for
-        resolutions: both heading and speed (ON/BOTH), speed only (SPD),
-        heading only (HDG), or none (OFF/NONE).
-
-        Args:
-            value (str): One of "BOTH", "SPD", "HDG", "NONE", "ON", "OFF",
-                "OF". When empty, the current settings are reported.
-        """
-        # Acceptable arguments for this command
-        options = ["BOTH", "SPD", "HDG", "NONE", "ON", "OFF", "OF"]
-        if not value:
-            return Ok(
-                "RMETHH [ON / BOTH / OFF / NONE / SPD / HDG]"
-                + "\nHorizontal resolution limitation is currently "
-                + ("ON" if self.swresohoriz else "OFF")
-                + "\nSpeed resolution limitation is currently "
-                + ("ON" if self.swresospd else "OFF")
-                + "\nHeading resolution limitation is currently "
-                + ("ON" if self.swresohdg else "OFF")
-            )
-        if value not in options:
-            return Err("RMETH Not Understood" + "\nRMETHH [ON / BOTH / OFF / NONE / SPD / HDG]")
+    def configure_horizontal_method(self, value: HorizontalResolutionMethod) -> Result[str, str]:
+        """Configure MVP horizontal resolution limitations."""
+        if value in {"ON", "BOTH"}:
+            self.swresohoriz = True
+            self.swresospd = True
+            self.swresohdg = True
+            self.swresovert = False
+        elif value in {"OFF", "OF", "NONE"}:
+            # Do NOT swtich off self.swresovert if value == OFF
+            self.swresohoriz = False
+            self.swresospd = False
+            self.swresohdg = False
+        elif value == "SPD":
+            self.swresohoriz = True
+            self.swresospd = True
+            self.swresohdg = False
+            self.swresovert = False
         else:
-            if value == "ON" or value == "BOTH":
-                self.swresohoriz = True
-                self.swresospd = True
-                self.swresohdg = True
-                self.swresovert = False
-            elif value == "OFF" or value == "OF" or value == "NONE":
-                # Do NOT swtich off self.swresovert if value == OFF
-                self.swresohoriz = False
-                self.swresospd = False
-                self.swresohdg = False
-            elif value == "SPD":
-                self.swresohoriz = True
-                self.swresospd = True
-                self.swresohdg = False
-                self.swresovert = False
-            elif value == "HDG":
-                self.swresohoriz = True
-                self.swresospd = False
-                self.swresohdg = True
-                self.swresovert = False
-            return Ok(f"Horizontal resolution method set to {value}")
+            self.swresohoriz = True
+            self.swresospd = False
+            self.swresohdg = True
+            self.swresovert = False
+        return Ok(f"Horizontal resolution method set to {value}")
 
-    def setresometv(self, value: Txt = "") -> Result[str, str]:
-        """Processes the RMETHV command. Sets swresohoriz = False.
+    def vertical_method_status(self) -> Result[str, str]:
+        """Show MVP vertical resolution limitations."""
+        return Ok(
+            "RMETHV [ON / V/S / OFF / NONE]"
+            f"\nVertical resolution limitation is currently {'ON' if self.swresovert else 'OFF'}"
+        )
 
-        Enables (ON/"V/S") or disables (OFF/NONE) vertical-speed-only
-        resolutions; enabling it switches off all horizontal limitations.
-
-        Args:
-            value (str): One of "ON", "V/S", "OFF", "OF", "NONE". When empty,
-                the current setting is reported.
-        """
-        # Acceptable arguments for this command
-        options = ["NONE", "ON", "OFF", "OF", "V/S"]
-        if not value:
-            return Ok(
-                "RMETHV [ON / V/S / OFF / NONE]"
-                + "\nVertical resolution limitation is currently "
-                + ("ON" if self.swresovert else "OFF")
-            )
-        if value not in options:
-            return Err(f"RMETHV '{value}' Not Understood\nRMETHV [ON / V/S / OFF / NONE]")
-
-        if value == "ON" or value == "V/S":
+    def configure_vertical_method(self, value: VerticalResolutionMethod) -> Result[str, str]:
+        """Configure MVP vertical resolution limitations."""
+        if value in {"ON", "V/S"}:
             self.swresovert = True
             self.swresohoriz = False
             self.swresospd = False
             self.swresohdg = False
-        elif value == "OFF" or value == "OF" or value == "NONE":
+        else:
             # Do NOT swtich off self.swresohoriz if value == OFF
             self.swresovert = False
         return Ok(f"Vertical resolution method set to {value}")

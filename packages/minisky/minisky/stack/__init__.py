@@ -687,6 +687,7 @@ class CommandStack:
             *self.prepare_component(self.traffic.cond),
             *self.prepare_component(self.traffic.wind),
             *self.prepare_component(self.traffic.cd),
+            *self.prepare_component(self.traffic.cr),
             *self.prepare_component(self.variables),
             *self.prepare_component(self.simulation),
             *self.prepare_component(self.runner),

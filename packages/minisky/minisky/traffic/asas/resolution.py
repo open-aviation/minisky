@@ -16,19 +16,24 @@ Actual resolution algorithms (e.g. the Modified Voltage Potential method in
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any, NamedTuple
+from typing import TYPE_CHECKING, Any, Literal, NamedTuple
 
 import numpy as np
 
+from minisky.command import AcIdSelection, OnOff, aircraft_indices, command
 from minisky.core.config import MiniSkyConfig
 from minisky.core.trafficarrays import TrafficArrays
 from minisky.result import Err, Ok, Result
-from minisky.stack.argparser import Txt
 from minisky.tools.aero import ft, nm
 from minisky.traffic import route
 
 if TYPE_CHECKING:
     from minisky.traffic import Traffic
+
+
+PriorityCode = Literal["FF1", "FF2", "FF3", "LAY1", "LAY2"]
+HorizontalResolutionMethod = Literal["BOTH", "SPD", "HDG", "NONE", "ON", "OFF", "OF"]
+VerticalResolutionMethod = Literal["NONE", "ON", "OFF", "OF", "V/S"]
 
 
 class ConflictResolution(TrafficArrays):
@@ -336,136 +341,105 @@ class ConflictResolution(TrafficArrays):
         # Remove pairs from the list that are past CPA or have deleted aircraft
         self.resopairs -= delpairs
 
-    def setprio(self, flag: bool | None = None, priocode="") -> Result[str, str]:
-        """Define priority rules (right of way) for conflict resolution.
+    def priority_status(self) -> Result[str, str]:
+        if self.__class__ is ConflictResolution:
+            return Err("No conflict resolution enabled.")
+        return Err(f"Resolution algorithm {self.__class__.__name__} hasn't implemented priority.")
 
-        Implements the PRIORULES stack command. The base class only stores
-        the settings; interpretation of the priority code is up to the
-        resolution algorithm (see e.g. `MVP.applyprio`).
-
-        Args:
-            flag (bool): True to enable priority rules, False to disable.
-                When None, an informational message is returned.
-            priocode (str): Identifier of the priority rule set to use.
-        """
-        if flag is None:
-            if self.__class__ is ConflictResolution:
-                return Err("No conflict resolution enabled.")
-            return Err(
-                f"Resolution algorithm {self.__class__.__name__} hasn't implemented priority."
-            )
-
+    def configure_priority(self, flag: bool, priocode: PriorityCode) -> Result[str, str]:
         self.swprio = flag
         self.priocode = priocode
         return Ok("")
 
-    def setnoreso(self, *idx: int) -> Result[str, str]:
-        """ADD or Remove aircraft that nobody will avoid.
-        Multiple aircraft can be sent to this function at once.
+    @command(name="PRIORULES")
+    def show_priority_rules(self) -> Result[str, str]:
+        """Show priority-rule support and state."""
+        return self.priority_status()
 
-        Implements the NORESO stack command: toggles the `noresoac` flag
-        for the given aircraft. Flagged aircraft still avoid others, but
-        other aircraft will not avoid them.
+    @command(name="PRIORULES")
+    def set_priority_rules(self, flag: OnOff, priocode: PriorityCode) -> Result[str, str]:
+        """Enable or disable priority rules using a selected rule code."""
+        return self.configure_priority(flag, priocode)
 
-        Args:
-            *idx: Aircraft indices to toggle. When empty, the current list of
-                flagged aircraft is reported.
-        """
-        if not idx:
-            return Ok(
-                "NORESO [ACID, ... ] OR NORESO [GROUPID]"
-                + "\nCurrent list of aircraft nobody will avoid:"
-                + ", ".join(np.array(self.traffic.callsign)[self.noresoac])
-            )
-        indices = list(idx)
+    @command(name="NORESO")
+    def noreso_status(self) -> Result[str, str]:
+        """Show aircraft that nobody will avoid."""
+        aircraft = ", ".join(np.array(self.traffic.callsign)[self.noresoac])
+        return Ok(
+            "NORESO [ACID, ... ] OR NORESO [GROUPID]"
+            f"\nCurrent list of aircraft nobody will avoid:{aircraft}"
+        )
+
+    @command(name="NORESO")
+    def toggle_noreso(self, first: AcIdSelection, *additional: AcIdSelection) -> Result[str, str]:
+        """Toggle the nobody-avoids flag for selected aircraft."""
+        indices = aircraft_indices((first, *additional))
         self.noresoac[indices] = np.logical_not(self.noresoac[indices])
         return Ok("")
 
-    def setresooff(self, *idx: int) -> Result[str, str]:
-        """ADD or Remove aircraft that will not avoid anybody else.
-        Multiple aircraft can be sent to this function at once.
+    @command(name="RESOOFF")
+    def resooff_status(self) -> Result[str, str]:
+        """Show aircraft that perform no resolution manoeuvres."""
+        aircraft = ", ".join(np.array(self.traffic.callsign)[self.resooffac])
+        return Ok(
+            "RESOOFF [ACID, ... ] OR RESOOFF [GROUPID]"
+            f"\nCurrent list of aircraft will not avoid anybody:{aircraft}"
+        )
 
-        Implements the RESOOFF stack command: toggles the `resooffac` flag
-        for the given aircraft. Flagged aircraft perform no resolution
-        manoeuvres themselves, but others may still avoid them.
+    @command(name="RESOOFF")
+    def toggle_resooff(self, first: AcIdSelection, *additional: AcIdSelection) -> Result[str, str]:
+        """Toggle resolution manoeuvres for selected aircraft."""
+        indices = aircraft_indices((first, *additional))
+        self.resooffac[indices] = np.logical_not(self.resooffac[indices])
+        return Ok("")
 
-        Args:
-            *idx: Aircraft indices to toggle. When empty, the current list of
-                flagged aircraft is reported.
-        """
-        if not idx:
-            return Ok(
-                "RESOOFF [ACID, ... ] OR RESOOFF [GROUPID]"
-                + "\nCurrent list of aircraft will not avoid anybody:"
-                + ", ".join(np.array(self.traffic.callsign)[self.resooffac])
-            )
-        else:
-            indices = list(idx)
-            self.resooffac[indices] = np.logical_not(self.resooffac[indices])
-            return Ok("")
+    @command(name="RFACH", aliases=("RESOFACH", "HRFAC", "HRESOFAC"))
+    def horizontal_resolution_factor(self) -> Result[str, str]:
+        """Show the horizontal resolution factor."""
+        return Ok(f"RFACH [FACTOR]\nCurrent horizontal resolution factor is: {self.resofach}")
 
-    def setresofach(self, factor: float | None = None) -> Result[str, str]:
-        """Set resolution factor horizontal
-        (to maneuver only a fraction of a resolution vector).
+    @command(name="RFACH")
+    def set_horizontal_resolution_factor(self, factor: float) -> Result[str, str]:
+        """Set the horizontal resolution factor."""
+        self.resofach = factor
+        self.resorrelative = True  # Size of resolution zone r, vertically, set relative to CD zone
+        return Ok(f"Horizontal resolution factor set to {self.resofach}")
 
-        Implements the RFACH stack command. The horizontal resolution zone
-        radius is `resofach` times the detection protected zone radius:
-        values below 1 manoeuvre only a fraction of the resolution, values
-        above 1 add a separation margin.
+    @command(name="RFACV", aliases=("RESOFACV",))
+    def vertical_resolution_factor(self) -> Result[str, str]:
+        """Show the vertical resolution factor."""
+        return Ok(f"RFACV [FACTOR]\nCurrent vertical resolution factor is: {self.resofacv}")
 
-        Args:
-            factor (float): Horizontal resolution factor [-]. When None, the
-                current factor is reported.
-        """
-        if factor is None:
-            return Ok(f"RFACH [FACTOR]\nCurrent horizontal resolution factor is: {self.resofach}")
-        else:
-            self.resofach = factor
-            self.resorrelative = (
-                True  # Size of resolution zone r, vertically, set relative to CD zone
-            )
-            return Ok(f"Horizontal resolution factor set to {self.resofach}")
-
-    def setresofacv(self, factor: float | None = None) -> Result[str, str]:
-        """Set resolution factor vertical (to maneuver only a fraction of a resolution vector).
-
-        Implements the RFACV stack command. The vertical resolution zone
-        height is `resofacv` times the detection protected zone height.
-
-        Args:
-            factor (float): Vertical resolution factor [-]. When None, the
-                current factor is reported.
-        """
-        if factor is None:
-            return Ok(f"RFACV [FACTOR]\nCurrent vertical resolution factor is: {self.resofacv}")
+    @command(name="RFACV")
+    def set_vertical_resolution_factor(self, factor: float) -> Result[str, str]:
+        """Set the vertical resolution factor."""
         self.resofacv = factor
         # Size of resolution zone dh, vertically, set relative to CD zone
         self.resodhrelative = True
         return Ok(f"Vertical resolution factor set to {self.resofacv}")
 
-    def setresozoner(self, zoner: float | None = None) -> Result[str, str]:
-        """Set resolution factor horizontal, but then with absolute value
-        (to maneuver only a fraction of a resolution vector).
+    def _horizontal_absolute_zone_available(self) -> Result[None, str]:
+        if self.traffic.cd.global_rpz:
+            return Ok(None)
+        self.resorrelative = True
+        return Err(
+            "RSZONER [radiusnm]\nCan only set resolution factor when simulation contains aircraft with different RPZ,\nUse RFACH instead."
+        )
 
-        Implements the RSZONER stack command: sets the horizontal resolution
-        zone as an absolute radius, from which `resofach` is derived. Only
-        available when all aircraft share the same (global) protected zone
-        radius.
+    @command(name="RSZONER", aliases=("RESOZONER",))
+    def horizontal_resolution_zone(self) -> Result[str, str]:
+        """Show the absolute horizontal resolution zone."""
+        if isinstance(available := self._horizontal_absolute_zone_available(), Err):
+            return available
+        return Ok(
+            f"RSZONER [radiusnm]\nCurrent horizontal resolution factor is: {self.resofach}, resulting in radius: {self.resofach * self.traffic.cd.rpz_def / nm} nm"
+        )
 
-        Args:
-            zoner (float): Resolution zone radius [NM]. When None, the current
-                factor and resulting radius are reported.
-        """
-        if not self.traffic.cd.global_rpz:
-            self.resorrelative = True
-            return Err(
-                "RSZONER [radiusnm]\nCan only set resolution factor when simulation contains aircraft with different RPZ,\nUse RFACH instead."
-            )
-        if zoner is None:
-            return Ok(
-                f"RSZONER [radiusnm]\nCurrent horizontal resolution factor is: {self.resofach}, resulting in radius: {self.resofach * self.traffic.cd.rpz_def / nm} nm"
-            )
-
+    @command(name="RSZONER")
+    def set_horizontal_resolution_zone(self, zoner: float) -> Result[str, str]:
+        """Set the absolute horizontal resolution-zone radius."""
+        if isinstance(available := self._horizontal_absolute_zone_available(), Err):
+            return available
         self.resofach = zoner / self.traffic.cd.rpz_def * nm
         # Size of resolution zone r, vertically, no longer relative to CD zone
         self.resorrelative = False
@@ -473,29 +447,28 @@ class ConflictResolution(TrafficArrays):
             f"Horizontal resolution factor updated to {self.resofach}, resulting in radius: {zoner} nm"
         )
 
-    def setresozonedh(self, zonedh: float | None = None) -> Result[str, str]:
-        """Set resolution factor vertical (to maneuver only a fraction of a
-        resolution vector), but then with absolute value.
+    def _vertical_absolute_zone_available(self) -> Result[None, str]:
+        if self.traffic.cd.global_hpz:
+            return Ok(None)
+        self.resodhrelative = True
+        return Err(
+            "RSZONEH [zonedhft]\nCan only set resolution factor when simulation contains aircraft with different HPZ,\nUse RFACV instead."
+        )
 
-        Implements the RSZONEDH stack command: sets the vertical resolution
-        zone as an absolute height, from which `resofacv` is derived. Only
-        available when all aircraft share the same (global) protected zone
-        height.
+    @command(name="RSZONEDH", aliases=("RESOZONEDH",))
+    def vertical_resolution_zone(self) -> Result[str, str]:
+        """Show the absolute vertical resolution zone."""
+        if isinstance(available := self._vertical_absolute_zone_available(), Err):
+            return available
+        return Ok(
+            f"RSZONEDH [zonedhft]\nCurrent vertical resolution factor is: {self.resofacv}, resulting in height: {self.resofacv * self.traffic.cd.hpz_def / ft} ft"
+        )
 
-        Args:
-            zonedh (float): Resolution zone height [ft]. When None, the
-                current factor and resulting height are reported.
-        """
-        if not self.traffic.cd.global_hpz:
-            self.resodhrelative = True
-            return Err(
-                "RSZONEH [zonedhft]\nCan only set resolution factor when simulation contains aircraft with different HPZ,\nUse RFACV instead."
-            )
-        if zonedh is None:
-            return Ok(
-                f"RSZONEDH [zonedhft]\nCurrent vertical resolution factor is: {self.resofacv}, resulting in height: {self.resofacv * self.traffic.cd.hpz_def / ft} ft"
-            )
-
+    @command(name="RSZONEDH")
+    def set_vertical_resolution_zone(self, zonedh: float) -> Result[str, str]:
+        """Set the absolute vertical resolution-zone height."""
+        if isinstance(available := self._vertical_absolute_zone_available(), Err):
+            return available
         self.resofacv = zonedh / self.traffic.cd.hpz_def * ft
         # Size of resolution zone dh, vertically, no longer relative to CD zone
         self.resodhrelative = False
@@ -503,43 +476,56 @@ class ConflictResolution(TrafficArrays):
             f"Vertical resolution factor updated to {self.resofacv}, resulting in height: {zonedh} ft"
         )
 
-    def setmethod(self, name: Txt = "") -> Result[str, str]:
-        """Select a Conflict Resolution method.
+    @command(name="RESO")
+    def resolution_method(self) -> Result[str, str]:
+        """Show the current and available conflict-resolution methods."""
+        curname = type(self.traffic.cr).__name__ if self.traffic.cr.activate else "OFF"
+        return Ok(f"Current CR method: {curname}\nAvailable CR methods: OFF, MVP")
 
-        Implements the RESO stack command. Selecting "MVP" replaces the
-        traffic object's resolution instance ([`runtime.traffic.cr`][minisky.traffic.asas.resolution.ConflictResolution]) with a new
-        MVP instance and activates it.
+    @command(name="RESO")
+    def disable_resolution(self, _method: Literal["OFF"]) -> Result[str, str]:
+        """Disable conflict resolution."""
+        self.traffic.cr.switch(False)
+        return Ok("Conflict Resolution turned off.")
 
-        Args:
-            name (str): "OFF", "MVP", or empty to report available methods.
-        """
+    @command(name="RESO")
+    def enable_mvp_resolution(self, _method: Literal["MVP"]) -> Result[str, str]:
+        """Select and enable MVP conflict resolution."""
+        match self.select_implementation("CONFLICTRESOLUTION", "MVP"):
+            case Err() as error:
+                return error
+            case Ok():
+                self.traffic.cr.switch(True)
+                return Ok("Selected MVP as Conflict Resolution method.")
 
-        names = ["OFF", "MVP"]
-
-        if not name:
-            curname = type(self.traffic.cr).__name__ if self.traffic.cr.activate else "OFF"
-            return Ok(
-                f"Current CR method: {curname}" + f"\nAvailable CR methods: {', '.join(names)}"
-            )
-
-        if name == "OFF":
-            self.traffic.cr.switch(False)
-            return Ok("Conflict Resolution turned off.")
-
-        if name == "MVP":
-            match self.select_implementation("CONFLICTRESOLUTION", name):
-                case Err() as error:
-                    return error
-                case Ok():
-                    self.traffic.cr.switch(True)
-                    return Ok("Selected MVP as Conflict Resolution method.")
-
-        return Err(f"Unknown method: {name}. Available: {', '.join(names)}")
-
-    def setresometh(self, value: Txt = "") -> Result[str, str]:
-        """Report that horizontal method selection requires the MVP implementation."""
+    def horizontal_method_status(self) -> Result[str, str]:
         return Err(f"RMETHH is not available for CR method {type(self).__name__}")
 
-    def setresometv(self, value: Txt = "") -> Result[str, str]:
-        """Report that vertical method selection requires the MVP implementation."""
+    def configure_horizontal_method(self, value: HorizontalResolutionMethod) -> Result[str, str]:
+        return Err(f"RMETHH is not available for CR method {type(self).__name__}")
+
+    @command(name="RMETHH")
+    def show_horizontal_method(self) -> Result[str, str]:
+        """Show horizontal resolution-method settings."""
+        return self.horizontal_method_status()
+
+    @command(name="RMETHH")
+    def set_horizontal_method(self, value: HorizontalResolutionMethod) -> Result[str, str]:
+        """Configure horizontal resolution degrees of freedom."""
+        return self.configure_horizontal_method(value)
+
+    def vertical_method_status(self) -> Result[str, str]:
         return Err(f"RMETHV is not available for CR method {type(self).__name__}")
+
+    def configure_vertical_method(self, value: VerticalResolutionMethod) -> Result[str, str]:
+        return Err(f"RMETHV is not available for CR method {type(self).__name__}")
+
+    @command(name="RMETHV")
+    def show_vertical_method(self) -> Result[str, str]:
+        """Show vertical resolution-method settings."""
+        return self.vertical_method_status()
+
+    @command(name="RMETHV")
+    def set_vertical_method(self, value: VerticalResolutionMethod) -> Result[str, str]:
+        """Configure vertical resolution degrees of freedom."""
+        return self.configure_vertical_method(value)
