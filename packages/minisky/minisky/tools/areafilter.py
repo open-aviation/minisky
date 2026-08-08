@@ -6,16 +6,23 @@ point-inside-shape tests for (vectors of) aircraft positions. This backs
 the BOX, CIRCLE, POLY, POLYALT, LINE, and POLYLINE stack commands, and is
 used by plugins and traffic logic that need to know which aircraft are
 inside an area. Each `AreaFilter` stores its defined shapes by name.
+
+Boxes and circles are tested directly in geographic coordinates; polygons
+use a planar shapely geometry internally, which is only valid for polygons
+that do not cross the antimeridian or enclose a pole - those are rejected
+at definition time.
 """
 
 from __future__ import annotations
+
+from typing import Protocol
 
 import numpy as np
 import shapely
 
 from minisky.command import AltM, Keyword, LatLonDeg, LatLonDegrees, command
 from minisky.result import Err, Ok, Result
-from minisky.tools.geo import kwikpos
+from minisky.tools.geo import kwikdist
 
 
 class AreaFilter:
@@ -23,7 +30,7 @@ class AreaFilter:
 
     def __init__(self) -> None:
         # Dictionary of all basic shapes (The shape classes defined in this file) by name
-        self.basic_shapes: dict[str, Shape] = {}
+        self.basic_shapes: dict[str, HasArea | Line] = {}
 
     def has_area(self, areaname: str) -> bool:
         """Check if area with name 'areaname' exists."""
@@ -59,16 +66,19 @@ class AreaFilter:
             else:
                 return Err(f"Unknown shape: {areaname}")
 
-        if areatype == "BOX":
-            shape = Box(areaname, coordinates, top, bottom)
-        elif areatype == "CIRCLE":
-            shape = Circle(areaname, coordinates, top, bottom)
-        elif areatype[:4] == "POLY":
-            shape = Poly(areaname, coordinates, top, bottom)
-        elif areatype == "LINE":
-            shape = Line(areaname, coordinates)
-        else:
-            return Err(f"Unknown shape type: {areatype}")
+        try:
+            if areatype == "BOX":
+                shape = Box(areaname, coordinates, top, bottom)
+            elif areatype == "CIRCLE":
+                shape = Circle(areaname, coordinates, top, bottom)
+            elif areatype[:4] == "POLY":
+                shape = Poly(areaname, coordinates, top, bottom)
+            elif areatype == "LINE":
+                shape = Line(areaname, coordinates)
+            else:
+                return Err(f"Unknown shape type: {areatype}")
+        except ValueError as e:
+            return Err(str(e))
 
         self.basic_shapes[areaname] = shape
         return Ok(f"Created {areatype} {areaname}")
@@ -147,11 +157,11 @@ class AreaFilter:
 
         Returns:
             Array of booleans, True == Inside. All False when no area with
-            the given name exists.
+            the given name exists, or when the named shape is a line.
         """
-        if areaname not in self.basic_shapes:
+        area = self.basic_shapes.get(areaname)
+        if area is None or isinstance(area, Line):
             return np.zeros(len(lat), dtype=bool)
-        area = self.basic_shapes[areaname]
         return area.checkInside(lat, lon, alt)
 
     def reset(self) -> None:
@@ -169,75 +179,40 @@ class AreaFilter:
         return Err(f"No area found with name {name}.")
 
 
-class Shape:
+def _vrange_str(top: float, bottom: float) -> str:
+    """Describe an altitude range [m] for shape __str__ output."""
+    if top < 9e8:
+        if bottom > -9e8:
+            return f" with altitude between {bottom} and {top}"
+        else:
+            return f" with altitude below {top}"
+    if bottom > -9e8:
+        return f" with altitude above {bottom}"
+    return ""
+
+
+class HasArea(Protocol):
+    """An area shape that supports point-inside tests.
+
+    Lines are deliberately not part of this protocol: a line has zero area,
+    so asking whether an aircraft is inside one is a category error.
     """
-    Base class of BlueSky shapes
-
-    Handles the naming and altitude bounds common to all shape types.
-    Derived classes build a shapely geometry (`self.geom`) in (lat, lon)
-    coordinate space; containment is tested against it here.
-
-    Attributes:
-        name: Area name.
-        coordinates: Flat list of lat/lon coordinates in deg defining the
-            shape (plus radius in nm for circles).
-        geom: Shapely geometry of the shape in (lat, lon) space.
-        top: Upper altitude bound [m].
-        bottom: Lower altitude bound [m].
-        raw: Dictionary with the raw shape definition (name, kind,
-            coordinates).
-    """
-
-    geom: shapely.Geometry
-
-    def __init__(self, name: str, coordinates, top: float = 1e9, bottom: float = -1e9) -> None:
-        self.raw = {"name": name, "shape": self.kind(), "coordinates": coordinates}
-        self.name = name
-        self.coordinates = coordinates
-        self.top = np.maximum(bottom, top)
-        self.bottom = np.minimum(bottom, top)
 
     def checkInside(self, lat: np.ndarray, lon: np.ndarray, alt: np.ndarray) -> np.ndarray:
         """Return whether points (lat [deg], lon [deg], alt [m]) lie inside
         this shape's geometry and altitude bounds."""
-        return shapely.contains_xy(self.geom, lat, lon) & (self.bottom <= alt) & (alt <= self.top)
-
-    def _str_vrange(self) -> str:
-        if self.top < 9e8:
-            if self.bottom > -9e8:
-                return f" with altitude between {self.bottom} and {self.top}"
-            else:
-                return f" with altitude below {self.top}"
-        if self.bottom > -9e8:
-            return f" with altitude above {self.bottom}"
-        return ""
-
-    def __str__(self) -> str:
-        return (
-            f"{self.name} is a {self.raw['shape']} with coordinates "
-            + ", ".join(str(c) for c in self.coordinates)
-            + self._str_vrange()
-        )
-
-    @classmethod
-    def kind(cls) -> str:
-        """Return a string describing what kind of shape this is."""
-        return cls.__name__.upper()
+        ...
 
 
-class Line(Shape):
+class Line:
     """A line shape between two lat/lon positions [deg].
 
-    Purely graphical: checkInside() always returns False.
+    Purely graphical: a line has no inside, and no checkInside().
     """
 
     def __init__(self, name: str, coordinates) -> None:
-        super().__init__(name, coordinates)
-        self.geom = shapely.LineString(np.reshape(coordinates, (-1, 2)))
-
-    def checkInside(self, lat: np.ndarray, lon: np.ndarray, alt: np.ndarray) -> np.ndarray:
-        """A line has zero area: nothing is ever inside it."""
-        return np.zeros(len(lat), dtype=bool)
+        self.name = name
+        self.coordinates = coordinates
 
     def __str__(self) -> str:
         return (
@@ -247,7 +222,7 @@ class Line(Shape):
         )
 
 
-class Box(Shape):
+class Box(HasArea):
     """A lat/lon-aligned box shape.
 
     Defined by two opposite corner points [deg] (sorted at construction)
@@ -255,62 +230,96 @@ class Box(Shape):
     """
 
     def __init__(self, name: str, coordinates, top: float = 1e9, bottom: float = -1e9) -> None:
-        super().__init__(name, coordinates, top, bottom)
+        self.name = name
+        self.coordinates = coordinates
+        self.top = np.maximum(bottom, top)
+        self.bottom = np.minimum(bottom, top)
         # Sort the order of the corner points
         self.lat0 = min(coordinates[0], coordinates[2])
         self.lon0 = min(coordinates[1], coordinates[3])
         self.lat1 = max(coordinates[0], coordinates[2])
         self.lon1 = max(coordinates[1], coordinates[3])
-        self.geom = shapely.box(self.lat0, self.lon0, self.lat1, self.lon1)
+
+    def checkInside(self, lat: np.ndarray, lon: np.ndarray, alt: np.ndarray) -> np.ndarray:
+        """Return whether points (lat [deg], lon [deg], alt [m]) lie inside this box."""
+        return (
+            ((self.lat0 <= lat) & (lat <= self.lat1))
+            & ((self.lon0 <= lon) & (lon <= self.lon1))
+            & ((self.bottom <= alt) & (alt <= self.top))
+        )
+
+    def __str__(self) -> str:
+        return (
+            f"{self.name} is a BOX with coordinates "
+            + ", ".join(str(c) for c in self.coordinates)
+            + _vrange_str(self.top, self.bottom)
+        )
 
 
-class Circle(Shape):
+class Circle(HasArea):
     """A circle shape.
 
     Defined by a center position [deg], a radius [nm], and optional
     altitude bounds [m].
     """
 
-    # Maximum distance [nm] between the polygon border and the true circle
-    TOLERANCE_NM = 0.05
-    MIN_VERTICES = 36
-    MAX_VERTICES = 720
-
     def __init__(self, name: str, coordinates, top: float = 1e9, bottom: float = -1e9) -> None:
-        super().__init__(name, coordinates, top, bottom)
+        self.name = name
+        self.coordinates = coordinates
+        self.top = np.maximum(bottom, top)
+        self.bottom = np.minimum(bottom, top)
         self.clat = coordinates[0]
         self.clon = coordinates[1]
         self.r = coordinates[2]
-        # An N-gon inscribed in a circle of radius r falls short of the true
-        # border by r*(1 - cos(pi/N)); pick N so that stays within tolerance
-        num_vertices = int(
-            np.clip(
-                np.ceil(np.pi / np.arccos(max(-1.0, 1.0 - self.TOLERANCE_NM / self.r))),
-                self.MIN_VERTICES,
-                self.MAX_VERTICES,
-            )
-        )
-        # Place the vertices geographically so the cos(lat) longitude
-        # scaling keeps this a circle rather than an ellipse in degrees
-        bearings = np.linspace(0.0, 360.0, num_vertices, endpoint=False)
-        vlat, vlon = kwikpos(self.clat, self.clon, bearings, self.r)
-        self.geom = shapely.Polygon(np.column_stack((vlat, vlon)))
+
+    def checkInside(self, lat: np.ndarray, lon: np.ndarray, alt: np.ndarray) -> np.ndarray:
+        """Return whether points (lat [deg], lon [deg], alt [m]) lie within
+        the circle radius [nm] and altitude bounds."""
+        distance = kwikdist(self.clat, self.clon, lat, lon)  # [NM]
+        return (distance <= self.r) & (self.bottom <= alt) & (alt <= self.top)
 
     def __str__(self) -> str:
         return (
             f"{self.name} is a CIRCLE with "
             f"center ({self.clat}, {self.clon}) "
-            f"and radius {self.r}." + self._str_vrange()
+            f"and radius {self.r}." + _vrange_str(self.top, self.bottom)
         )
 
 
-class Poly(Shape):
+class Poly(HasArea):
     """A polygon shape.
 
     Defined by a sequence of lat/lon vertices [deg] and optional altitude
-    bounds [m].
+    bounds [m]. Containment is tested against a planar shapely polygon in
+    (lat, lon) space, which cannot represent polygons that cross the
+    antimeridian or enclose a pole; those are rejected with ValueError.
     """
 
     def __init__(self, name: str, coordinates, top: float = 1e9, bottom: float = -1e9) -> None:
-        super().__init__(name, coordinates, top, bottom)
-        self.geom = shapely.Polygon(np.reshape(coordinates, (-1, 2)))
+        self.name = name
+        self.coordinates = coordinates
+        self.top = np.maximum(bottom, top)
+        self.bottom = np.minimum(bottom, top)
+        vertices = np.reshape(coordinates, (-1, 2))
+        # A ring with an edge spanning more than 180 deg of longitude either
+        # crosses the antimeridian or winds around a pole; both are invalid
+        # in the planar (lat, lon) space the containment test runs in.
+        lons = np.append(vertices[:, 1], vertices[0, 1])
+        if np.any(np.abs(np.diff(lons)) > 180.0):
+            raise ValueError(
+                f"Polygon {name} crosses the antimeridian or encloses a pole; "
+                "split it into separate polygons."
+            )
+        self._geom = shapely.Polygon(vertices)
+
+    def checkInside(self, lat: np.ndarray, lon: np.ndarray, alt: np.ndarray) -> np.ndarray:
+        """Return whether points (lat [deg], lon [deg], alt [m]) lie inside
+        the polygon border and altitude bounds."""
+        return shapely.contains_xy(self._geom, lat, lon) & (self.bottom <= alt) & (alt <= self.top)
+
+    def __str__(self) -> str:
+        return (
+            f"{self.name} is a POLY with coordinates "
+            + ", ".join(str(c) for c in self.coordinates)
+            + _vrange_str(self.top, self.bottom)
+        )

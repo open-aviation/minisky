@@ -137,6 +137,14 @@ class TestCircle:
         # 2 deg lat is about 120 NM: outside
         assert not check_single(area_filter, "C", 54.0, 4.0)
 
+    def test_circle_near_pole(self, area_filter: AreaFilter) -> None:
+        # 100 NM radius centred close to the north pole must remain valid
+        result = area_filter.define_area("C", "CIRCLE", [89.9, 0.0, 100.0])
+        assert result.is_ok()
+        assert check_single(area_filter, "C", 89.9, 0.0)
+        # 2 deg of latitude south is about 120 NM: outside
+        assert not check_single(area_filter, "C", 87.9, 0.0)
+
 
 class TestPoly:
     def test_triangle_centroid_inside(self, area_filter: AreaFilter) -> None:
@@ -144,3 +152,19 @@ class TestPoly:
         area_filter.define_area("P", "POLY", [52.0, 4.0, 53.0, 4.0, 52.5, 5.0])
         assert check_single(area_filter, "P", 52.5, 4.3)
         assert not check_single(area_filter, "P", 52.5, 5.5)
+
+    def test_antimeridian_polygon_rejected(self, area_filter: AreaFilter) -> None:
+        # Quad spanning lon 170 to -170 across the antimeridian
+        result = area_filter.define_area(
+            "P", "POLY", [10.0, 170.0, 10.0, -170.0, -10.0, -170.0, -10.0, 170.0]
+        )
+        assert result.is_err()
+        assert not area_filter.has_area("P")
+
+
+class TestLine:
+    def test_line_has_no_inside(self, area_filter: AreaFilter) -> None:
+        area_filter.define_area("L", "LINE", [52.0, 4.0, 53.0, 5.0])
+        assert area_filter.has_area("L")
+        # A point exactly on the line is still not "inside" it
+        assert not check_single(area_filter, "L", 52.5, 4.5)
