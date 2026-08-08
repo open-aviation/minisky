@@ -393,6 +393,10 @@ def parse_altitude(_context: CommandParseContext, text: str) -> ParseResult[floa
 AltM = Annotated[float, CmdParser(parse_altitude)]
 
 
+def parse_speed_value(value: str) -> Result[float, ArgumentIssue]:
+    return _convert_value(value, txt2spd, "a speed")
+
+
 def parse_speed(_context: CommandParseContext, text: str) -> ParseResult[float]:
     """Parse a BlueSky speed field as CAS m/s or Mach."""
     return _convert(text, txt2spd, "a speed")
