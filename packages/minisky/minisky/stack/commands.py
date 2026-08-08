@@ -52,7 +52,6 @@ shown by the HELP command.
 from __future__ import annotations
 
 from collections.abc import Callable
-from functools import partial
 from typing import TYPE_CHECKING, Any, NamedTuple, TypeAlias
 
 if TYPE_CHECKING:
@@ -80,51 +79,19 @@ def get_commands(command_stack: CommandStack) -> CommandCatalog:
 
     Binds callbacks to the objects owned by the provided runtime command stack.
     """
-    from minisky.traffic import route
-
     # TODO(abraham): migrate core commands from this legacy table to typed declarations.
     cmddict: dict[str, list[Any]] = {
-        "ADDWPT": [
-            partial(route.addwpt, command_stack.traffic),
-            "callsign,wpt,[alt,spd,wpt,wpt]",
-            "ADDWPT callsign, wpt, [alt, spd, wpt, wpt]",
-            "Add a waypoint to the route.",
-        ],
-        "ADDWPTMODE": [
-            partial(route.change_wpt_mode, command_stack.traffic),
-            "callsign, [wpt,alt]",
-            "ADDWPTMODE callsign, [wpt,alt]",
-            "Changes the mode of the ADDWPT command to add waypoints of type 'mode'.",
-        ],
-        "AFTER": [
-            partial(route.addwpt_after, command_stack.traffic),
-            "callsign,wpt,txt,wpt,[alt,spd]",
-            "AFTER callsign, wpt, addwpt, waypoint, [alt, spd]",
-            "Add a waypoint after another waypoint in the route.",
-        ],
         "ASAS": [
             command_stack.traffic.cd.switch,
             "[txt]",
             "ASAS [ON/OFF]",
             "Select a Conflict Detection method.",
         ],
-        "AT": [
-            partial(route.at_wpt, command_stack.traffic),
-            "callsign,wpt,[txt,...]",
-            "AT callsign, wpt, [DEL] ALT/SPD/DO alt/spd/stack command",
-            "Set or show altitude and/or speed constraints at a waypoint.",
-        ],
         "BANK": [
             command_stack.traffic.setbanklim,
             "callsign,[float]",
             "BANK callsign bankangle[deg]",
             "Set or show bank limit for this vehicle",
-        ],
-        "BEFORE": [
-            partial(route.addwpt_before, command_stack.traffic),
-            "callsign,wpt,txt,wpt,[alt,spd]",
-            "BEFORE callsign, wpt, addwpt, waypoint, [alt, spd]",
-            "Add a waypoint before another waypoint in the route.",
         ],
         "CASMACHTHR": [
             command_stack.traffic.casmachthr,
@@ -146,29 +113,11 @@ def get_commands(command_stack: CommandStack) -> CommandCatalog:
             "DEL callsign/ALL/WIND/shape",
             "Delete command (aircraft, wind, area)",
         ],
-        "DELRTE": [
-            partial(route.delrte, command_stack.traffic),
-            "callsign",
-            "DELRTE callsign",
-            "Delete the complete route for an aircraft.",
-        ],
-        "DELWPT": [
-            partial(route.delwpt, command_stack.traffic),
-            "callsign,wpt",
-            "DELWPT callsign,wpt",
-            "Delete a waypoint from a route.",
-        ],
         "DEST": [
             command_stack.traffic.ap.setdest,
             "callsign,wpt,[spd]",
             "DEST callsign, latlon/airport, casmach (= CASkts/Mach)",
             "Set destination of aircraft, aircraft will fly to this airport.",
-        ],
-        "DIRECT": [
-            partial(route.direct, command_stack.traffic),
-            "callsign, wpt",
-            "DIRECT callsign, wpt",
-            "Go direct to a specified waypoint in the route.",
         ],
         "GROUP": [
             command_stack.traffic.groups.group,
@@ -190,12 +139,6 @@ def get_commands(command_stack: CommandStack) -> CommandCatalog:
             "",
             "HOLD",
             "Pause(hold) simulation",
-        ],
-        "LISTRTE": [
-            partial(route.listrte, command_stack.traffic),
-            "callsign,[txt]",
-            "LISTRTE callsign, [pagenr]",
-            "Show list of route in window per page of 5 waypoints.",
         ],
         "LNAV": [
             command_stack.traffic.ap.setLNAV,
@@ -256,12 +199,6 @@ def get_commands(command_stack: CommandStack) -> CommandCatalog:
             "",
             "RESET",
             "Reset simulation",
-        ],
-        "RTA": [
-            partial(route.set_rta, command_stack.traffic),
-            "callsign, wpt, time",
-            "RTA callsign, wpt, time",
-            "Add RTA to waypoint record.",
         ],
         "SELECTIMPL": [
             command_stack.replaceables.select,

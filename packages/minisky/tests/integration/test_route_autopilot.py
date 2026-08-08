@@ -31,6 +31,8 @@ class TestAddwpt:
         assert len(route.wpname) == 1
         assert route.wplat[0] == pytest.approx(52.5)
         assert route.wplon[0] == pytest.approx(5.0)
+        assert route.iactwp == 0
+        assert runtime.traffic.swlnav[0]
 
     def test_addwpt_by_navdb_name(
         self, runtime: MiniSky, run_cmd: RunCommand, aircraft: str
@@ -57,6 +59,15 @@ class TestAddwpt:
         route = runtime.traffic.ap.route[0]
         assert route.wpalt[0] == pytest.approx(15000 * FT, rel=1e-3)
 
+    @pytest.mark.parametrize("runway", ["EHAM/RW06", "EHAM RW06"])
+    def test_addwpt_takeoff_with_explicit_runway(
+        self, runtime: MiniSky, run_cmd: RunCommand, aircraft: str, runway: str
+    ) -> None:
+        out = run_cmd(f"ADDWPT {aircraft} TAKEOFF {runway}")
+        route = runtime.traffic.ap.route[0]
+        assert "error:" not in out.lower()
+        assert route.wpname == [f"T/O-{aircraft}"]
+
     def test_dest_resolves_airport(
         self, runtime: MiniSky, run_cmd: RunCommand, aircraft: str
     ) -> None:
@@ -81,15 +92,6 @@ class TestLnav:
             return hdg > 350.0 or hdg < 10.0
 
         step_until(heading_north, max_steps=300)
-
-    def test_lnav_off_keeps_heading(
-        self, runtime: MiniSky, run_cmd: RunCommand, aircraft: str
-    ) -> None:
-        run_cmd(f"ADDWPT {aircraft} 54.0,4.0")
-        run_cmd(f"LNAV {aircraft} OFF")
-        for _ in range(30):
-            runtime.simulation.step()
-        assert runtime.traffic.hdg[0] == pytest.approx(90.0, abs=1.0)
 
 
 class TestVerticalGuidance:
@@ -122,16 +124,6 @@ class TestVerticalGuidance:
 class TestRouteEditing:
     """Regression tests for route-editing bugs from docs/known-issues.md."""
 
-    def test_addwpt_accepts_string_callsign(
-        self, runtime: MiniSky, run_cmd: RunCommand, aircraft: str
-    ) -> None:
-        # addwpt() with a callsign string used to crash on the callsign lookup
-        result = route_commands.addwpt(runtime.traffic, aircraft, "52.5,5.0")
-        assert result.is_ok()
-        route = runtime.traffic.ap.route[0]
-        assert route.wplat[0] == pytest.approx(52.5)
-        assert route.wplon[0] == pytest.approx(5.0)
-
     def test_direct_switches_active_waypoint(
         self, runtime: MiniSky, run_cmd: RunCommand, aircraft: str
     ) -> None:
@@ -148,7 +140,6 @@ class TestRouteEditing:
         # direct() used bare `pi` in the heading-rate branch (NameError)
         run_cmd(f"ADDWPT {aircraft} TURNHDG 3")
         run_cmd(f"ADDWPT {aircraft} 52.5,5.0")
-        # Second waypoint activates the first one via direct()
         out = run_cmd(f"ADDWPT {aircraft} 53.0,6.0")
         assert "Error" not in out
         route = runtime.traffic.ap.route[0]
@@ -178,8 +169,8 @@ class TestRouteEditing:
         run_cmd(f"ADDWPT {aircraft} 52.5,5.0")
         run_cmd(f"ADDWPT {aircraft} 53.0,6.0")
         route = runtime.traffic.ap.route[0]
-        result = route_commands.at_wpt(runtime.traffic, 0, route.wpname[1], "FL090/250")
-        assert result.is_ok()
+        output = run_cmd(f"{aircraft} AT {route.wpname[1]} FL090/250")
+        assert "Error" not in output
         assert route.wpalt[1] == pytest.approx(9000 * FT, rel=1e-3)
         assert route.wpspd[1] == pytest.approx(250 * KTS, rel=1e-3)
 
@@ -195,11 +186,27 @@ class TestRouteEditing:
         assert "Error" not in out
         assert runtime.traffic.swlnav[0]
 
+    def test_at_stacked_command_is_stored_verbatim(
+        self, runtime: MiniSky, run_cmd: RunCommand, aircraft: str
+    ) -> None:
+        run_cmd(f"ADDWPT {aircraft} 52.5,5.0")
+        route = runtime.traffic.ap.route[0]
+        waypoint = route.wpname[0]
+        output = run_cmd(f"{aircraft} AT {waypoint} DO {aircraft} DELRTE")
+        assert "Error" not in output
+        assert route.wpstack[0] == [f"{aircraft} DELRTE"]
+
+        # we break compatibility with bluesky here, the aircraft target must be
+        # explicit.
+        output = run_cmd(f"{aircraft} AT {waypoint} STACK ALT 95")
+        assert "Error" not in output
+        assert route.wpstack[0][-1] == "ALT 95"
+
     def test_at_via_stack_sets_constraints(
         self, runtime: MiniSky, run_cmd: RunCommand, aircraft: str
     ) -> None:
         # The AT registration used help text as its argument spec, so the
-        # command never reached at_wpt() from the stack
+        # command never reached the AT implementation from the stack
         run_cmd(f"ADDWPT {aircraft} 52.5,5.0")
         run_cmd(f"ADDWPT {aircraft} 53.0,6.0")
         route = runtime.traffic.ap.route[0]

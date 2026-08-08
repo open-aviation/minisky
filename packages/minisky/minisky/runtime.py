@@ -24,6 +24,7 @@ from minisky.traffic.asas import MVP, ConflictDetection, ConflictResolution
 from minisky.traffic.autopilot import Autopilot
 from minisky.traffic.kinematics import Kinematics
 from minisky.traffic.performance.perfoap import OpenAP
+from minisky.traffic.route import RouteCommands
 
 
 class MiniSky:
@@ -114,9 +115,13 @@ class MiniSky:
             publish_tick=self.streaming.publish_tick,
         )
         self.runner = Runner(self.simulation, self.console)
+        self.route_commands = RouteCommands(self.traffic)
         self.variables.init(self.simulation, self.traffic)
 
         self.commands.init()
+        route_commands = self.commands.prepare_component(self.route_commands)
+        self.commands.validate_commands(route_commands)
+        self.commands.install_commands(route_commands)
         geo_commands = self.commands.prepare_component(self.geo_commands)
         self.commands.validate_commands(geo_commands)
         self.commands.install_commands(geo_commands)
