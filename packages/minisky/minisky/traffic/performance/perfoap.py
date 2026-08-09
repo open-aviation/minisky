@@ -368,10 +368,6 @@ class OpenAP(TrafficArrays):
         # ----- update max acceleration ----
         self.axmax = self.calc_axmax()
 
-        # TODO: implement thrust computation for rotor aircraft
-        # idx_rotor = np.where(self.lifttype==coeff.LiftType.ROTORCRAFT)[0]
-        # self.thrust[idx_rotor] = 0
-
         # update bank angle, due to phase change
         self.bank = np.where((self.phase == FlightPhase.GROUND), 15, self.bank)
         self.bank = np.where(
