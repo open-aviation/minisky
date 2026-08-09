@@ -62,10 +62,7 @@ Year = Annotated[int, Ge(1)]
 def _clock_time(value: str) -> Result[datetime.time, ArgumentIssue]:
     try:
         parsed = (
-            datetime.datetime.strptime(
-                value,
-                "%H:%M:%S.%f" if "." in value else "%H:%M:%S"
-            )
+            datetime.datetime.strptime(value, "%H:%M:%S.%f" if "." in value else "%H:%M:%S")
             .replace(tzinfo=datetime.UTC)
             .time()
         )
