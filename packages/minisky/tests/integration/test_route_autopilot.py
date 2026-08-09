@@ -9,7 +9,7 @@ import pytest
 from minisky import MiniSky
 from minisky.tools import geo
 from minisky.traffic import route as route_commands
-from minisky.traffic.route import Route
+from minisky.traffic.route import Route, TurnHeadingRate
 from tests._types import RunCommand, StepUntil
 
 FT = 0.3048
@@ -146,7 +146,9 @@ class TestRouteEditing:
         out = run_cmd(f"ADDWPT {aircraft} 53.0,6.0")
         assert "Error" not in out
         route = runtime.traffic.ap.route[0]
-        assert route.wpturnhdgr == [3.0, 3.0]
+        assert all(
+            turn is not None and turn.geometry == TurnHeadingRate(3.0) for turn in route.wpturn
+        )
         assert route.iactwp == 0
         assert runtime.traffic.swlnav[0]
 
@@ -361,10 +363,13 @@ class TestWaypointSwitching:
         run_cmd(f"ADDWPT {aircraft} {self.WPTS[3][0]},{self.WPTS[3][1]}")
         run_cmd(f"LNAV {aircraft} ON")
         route = runtime.traffic.ap.route[0]
-        assert route.wpflyturn == [False, False, True, False]
 
         # After passing waypoint 0, the next fly-turn waypoint is index 2
         step_until(lambda: route.iactwp == 1, max_steps=200)
+        next_turn = route.getnextturnwp()
+        assert next_turn is not None
+        assert next_turn.waypoint_index == 2
+        assert next_turn.turn.speed == pytest.approx(250 * KTS, rel=1e-3)
         assert runtime.traffic.actwp.nextturnidx[0] == 2
         assert runtime.traffic.actwp.nextturnlat[0] == pytest.approx(self.WPTS[2][0])
         assert runtime.traffic.actwp.nextturnlon[0] == pytest.approx(self.WPTS[2][1])
@@ -374,12 +379,12 @@ class TestWaypointSwitching:
         step_until(lambda: route.iactwp == 2, max_steps=200)
         assert runtime.traffic.actwp.nextturnidx[0] == 2
 
-        # Once past the fly-turn waypoint there is no upcoming turn: defaults
+        # Once past the fly-turn waypoint there is no upcoming turn.
         step_until(lambda: route.iactwp == 3, max_steps=600)
-        assert runtime.traffic.actwp.nextturnidx[0] == -999
+        assert route.getnextturnwp() is None
 
-    def test_no_flyturn_waypoints_gives_defaults(
+    def test_no_flyturn_waypoints_has_no_next_turn(
         self, runtime: MiniSky, step_until: StepUntil, route: Route
     ) -> None:
         step_until(lambda: route.iactwp == 1, max_steps=200)
-        assert runtime.traffic.actwp.nextturnidx[0] == -999
+        assert route.getnextturnwp() is None

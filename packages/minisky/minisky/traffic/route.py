@@ -59,6 +59,31 @@ if TYPE_CHECKING:
     from minisky.traffic import Traffic
 
 
+class TurnRadius(NamedTuple):
+    radius: float
+    """Turn radius [m]."""
+
+
+class TurnHeadingRate(NamedTuple):
+    heading_rate: float
+    """Turn heading rate [deg/s]."""
+
+
+TurnGeometry: TypeAlias = TurnRadius | TurnHeadingRate
+
+
+class TurnParameters(NamedTuple):
+    geometry: TurnGeometry | None = None
+    speed: float | None = None
+
+
+class NextTurn(NamedTuple):
+    latitude: float
+    longitude: float
+    turn: TurnParameters
+    waypoint_index: int
+
+
 class Route:
     """Flight plan (route) of a single aircraft: basic FMS functionality.
 
@@ -83,11 +108,7 @@ class Route:
         wpspd (list): Optional speed constraints, CAS [m/s] or Mach [-].
         wprta (list): Optional required times of arrival [s].
         wpflyby (list): Fly-by (True) / fly-over (False) switch.
-        wpflyturn (list): Fly-turn switch (use specified turn parameters).
-        wpturnrad (list): Turn radius per waypoint (<0 = not specified).
-        wpturnspd (list): Turn speed (CAS) per waypoint (<0 = not specified).
-        wpturnhdgr (list): Turn heading rate per waypoint [deg/s]
-            (<0 = not specified).
+        wpturn (list): Optional fly-turn parameters per waypoint.
         wpstack (list): Stack command lines executed when passing each
             waypoint (AT ... DO).
         iactwp (int): Index of the currently active waypoint (-1 = none).
@@ -137,28 +158,18 @@ class Route:
         self.wpstack = []  # Stack with command execured when passing this waypoint
 
         # Made for drones: fly turn mode, means use specified turn radius and optionally turn speed
-        self.wpflyturn = []  # Flyturn (True) or flyover/flyby (False) switch
-        self.wpturnrad = []  # [nm] Turn radius per waypoint (<0 = not specified)
-        self.wpturnspd = []  # [kts] Turn speed (IAS/CAS) per waypoint (<0 = not specified)
-        self.wpturnhdgr = []  # [deg/s] Heading rate, uses actual speed to calculate bank & radius (<0 = not specified)
+        self.wpturn: list[TurnParameters | None] = []
 
         # Current actual waypoint
         self.iactwp = -1
 
-        # Set to default addwpt wpmode
-        # Note that neither flyby nor flyturn means: flyover)
+        # FIXME(abraham): BlueSky 01ea1f9 (2020-04-03) introduced this two-boolean mode state;
+        # swflyby and swflyturn can both be true even though only three modes are valid.
         self.swflyby = True  # Default waypoints are flyby waypoint
         self.swflyturn = False  # Default waypoints are waypoints w/o specified turn
 
-        # Default turn values to be used in flyturn mode
         self.bank = 25.0  # [deg] Default bank angle
-        self.turnrad = -999.0  # [m] Negative value indicating no value has been set
-        self.turnspd = (
-            -999.0
-        )  # [kts] Dito, in this case bank angle of vehicle will be used with current speed
-        self.turnhdgr = (
-            -999.0
-        )  # [deg/s] Dito, in this case bank angle of vehicle will be used with current speed
+        self.turn = TurnParameters()
 
         # if the aircraft lands on a runway, the aircraft should keep the
         # runway heading
@@ -207,10 +218,7 @@ class Route:
         self.wpspd.insert(wpidx, wpspd)
         self.wptype.insert(wpidx, wptype)
         self.wpflyby.insert(wpidx, self.swflyby)
-        self.wpflyturn.insert(wpidx, self.swflyturn)
-        self.wpturnrad.insert(wpidx, self.turnrad)
-        self.wpturnspd.insert(wpidx, self.turnspd)
-        self.wpturnhdgr.insert(wpidx, self.turnhdgr)
+        self.wpturn.insert(wpidx, self.turn if self.swflyturn else None)
         self.wprta.insert(wpidx, None)
         self.wpstack.insert(wpidx, [])
 
@@ -291,10 +299,7 @@ class Route:
                 self.wptype[wpidx] = wptype
                 # also apply other current settings
                 self.wpflyby[wpidx] = self.swflyby
-                self.wpflyturn[wpidx] = self.swflyturn
-                self.wpturnrad[wpidx] = self.turnrad
-                self.wpturnspd[wpidx] = self.turnspd
-                self.wpturnhdgr[wpidx] = self.turnhdgr
+                self.wpturn[wpidx] = self.turn if self.swflyturn else None
                 self.wprta[wpidx] = None
                 self.wpstack[wpidx] = []
 
@@ -383,36 +388,18 @@ class Route:
 
         return idx
 
-    def getnextturnwp(self) -> list:
-        """Give the data of the next fly-turn waypoint at or after the
-        active waypoint.
-
-        Returns:
-            list: [lat [deg], lon [deg], turn speed (CAS, <0 = not
-            specified), turn radius (<0 = not specified), turn heading rate
-            [deg/s] (<0 = not specified), waypoint index]. Default values
-            (zeros / -999) are returned when the route has no upcoming turn
-            waypoint.
-        """
-        # Scan forward from the active waypoint; called for every switching
-        # aircraft, so avoid converting the whole route to a numpy array
-        trnidx = next(
-            (j for j in range(max(self.iactwp, 0), len(self.wpflyturn)) if self.wpflyturn[j]),
-            None,
-        )
-        if trnidx is None:
-            # No turn waypoints, return default values
-            return [0.0, 0.0, -999.0, -999.0, -999, -999.0]
-
-        # Return the next turn waypoint info
-        return [
-            self.wplat[trnidx],
-            self.wplon[trnidx],
-            self.wpturnspd[trnidx],
-            self.wpturnrad[trnidx],
-            self.wpturnhdgr[trnidx],
-            trnidx,
-        ]
+    def getnextturnwp(self) -> NextTurn | None:
+        """Return the next fly-turn waypoint at or after the active waypoint."""
+        for waypoint_index in range(max(self.iactwp, 0), len(self.wpturn)):
+            turn = self.wpturn[waypoint_index]
+            if turn is not None:
+                return NextTurn(
+                    self.wplat[waypoint_index],
+                    self.wplon[waypoint_index],
+                    turn,
+                    waypoint_index,
+                )
+        return None
 
     # TODO(abraham): split this large transition record into constraints, turn,
     # and next-leg records
@@ -438,14 +425,8 @@ class Route:
         """Whether lateral navigation remains enabled."""
         fly_by: bool
         """Whether the waypoint uses fly-by switching."""
-        fly_turn: bool
-        """Whether the waypoint uses an explicit turn."""
-        turn_radius: float
-        """Turn radius [m]."""
-        turn_speed: float
-        """Turn calibrated airspeed [m/s]."""
-        turn_heading_rate: float
-        """Turn heading rate [deg/s]."""
+        turn: TurnParameters | None
+        """Fly-turn parameters, or None when this is not a fly-turn waypoint."""
         next_leg_latitude: float
         """Next-leg endpoint latitude [deg], or -999.0 when there is no next leg."""
         next_leg_longitude: float
@@ -515,10 +496,7 @@ class Route:
                 self.wptorta[self.iactwp],
                 lnavon,
                 self.wpflyby[self.iactwp],
-                self.wpflyturn[self.iactwp],
-                self.wpturnrad[self.iactwp],
-                self.wpturnspd[self.iactwp],
-                self.wpturnhdgr[self.iactwp],
+                self.wpturn[self.iactwp],
                 nextleglat,
                 nextleglon,
                 swlastwp,
@@ -568,10 +546,7 @@ class Route:
             self.wptorta[self.iactwp],
             lnavon,
             self.wpflyby[self.iactwp],
-            self.wpflyturn[self.iactwp],
-            self.wpturnrad[self.iactwp],
-            self.wpturnspd[self.iactwp],
-            self.wpturnhdgr[self.iactwp],
+            self.wpturn[self.iactwp],
             nextleglat,
             nextleglon,
             swlastwp,
@@ -977,19 +952,22 @@ def _set_turn_parameter(
     for heading rate.
     """
     acrte = traffic.ap.route[acidx]
-    # bluesky tracks the last two turn settings because TURNBANK adds a fourth
-    # competing value. with radius/speed/heading-rate only, radius and heading
-    # rate are mutually exclusive and speed can coexist, so no history list is needed.
     if parameter is TurnParameter.RADIUS:
-        acrte.turnrad = -999.0 if value is None else value * nm
+        geometry = acrte.turn.geometry
         if value is not None:
-            acrte.turnhdgr = -999.0
+            geometry = TurnRadius(value * nm)
+        elif isinstance(geometry, TurnRadius):
+            geometry = None
+        acrte.turn = acrte.turn._replace(geometry=geometry)
     elif parameter is TurnParameter.SPEED:
-        acrte.turnspd = -999.0 if value is None else value * kts
+        acrte.turn = acrte.turn._replace(speed=None if value is None else value * kts)
     else:
-        acrte.turnhdgr = -999.0 if value is None else value
+        geometry = acrte.turn.geometry
         if value is not None:
-            acrte.turnrad = -999.0
+            geometry = TurnHeadingRate(value)
+        elif isinstance(geometry, TurnHeadingRate):
+            geometry = None
+        acrte.turn = acrte.turn._replace(geometry=geometry)
     acrte.swflyby = False
     acrte.swflyturn = True
     return Ok("")
@@ -1275,19 +1253,38 @@ def direct(traffic: Traffic, acidx: int, wpname: str) -> bool:
     traffic.actwp.lat[acidx] = acrte.wplat[wpidx]
     traffic.actwp.lon[acidx] = acrte.wplon[wpidx]
     traffic.actwp.flyby[acidx] = acrte.wpflyby[wpidx]
-    traffic.actwp.flyturn[acidx] = acrte.wpflyturn[wpidx]
-    traffic.actwp.turnrad[acidx] = acrte.wpturnrad[wpidx]
-    traffic.actwp.turnspd[acidx] = acrte.wpturnspd[wpidx]
-    traffic.actwp.turnhdgr[acidx] = acrte.wpturnhdgr[wpidx]
+    turn = acrte.wpturn[wpidx]
+    traffic.actwp.flyturn[acidx] = turn is not None
+    geometry = None if turn is None else turn.geometry
+    # NOTE(abraham): keeping legacy for ActiveWaypoint
+    traffic.actwp.turnrad[acidx] = geometry.radius if isinstance(geometry, TurnRadius) else -999.0
+    traffic.actwp.turnspd[acidx] = -999.0 if turn is None or turn.speed is None else turn.speed
+    traffic.actwp.turnhdgr[acidx] = (
+        geometry.heading_rate if isinstance(geometry, TurnHeadingRate) else -999.0
+    )
 
-    (
-        traffic.actwp.nextturnlat[acidx],
-        traffic.actwp.nextturnlon[acidx],
-        traffic.actwp.nextturnspd[acidx],
-        traffic.actwp.nextturnrad[acidx],
-        traffic.actwp.nextturnhdgr[acidx],
-        traffic.actwp.nextturnidx[acidx],
-    ) = acrte.getnextturnwp()
+    next_turn = acrte.getnextturnwp()
+    if next_turn is None:
+        traffic.actwp.nextturnlat[acidx] = 0.0
+        traffic.actwp.nextturnlon[acidx] = 0.0
+        traffic.actwp.nextturnspd[acidx] = -999.0
+        traffic.actwp.nextturnrad[acidx] = -999.0
+        traffic.actwp.nextturnhdgr[acidx] = -999.0
+        traffic.actwp.nextturnidx[acidx] = -999.0
+    else:
+        traffic.actwp.nextturnlat[acidx] = next_turn.latitude
+        traffic.actwp.nextturnlon[acidx] = next_turn.longitude
+        traffic.actwp.nextturnspd[acidx] = (
+            -999.0 if next_turn.turn.speed is None else next_turn.turn.speed
+        )
+        next_geometry = next_turn.turn.geometry
+        traffic.actwp.nextturnrad[acidx] = (
+            next_geometry.radius if isinstance(next_geometry, TurnRadius) else -999.0
+        )
+        traffic.actwp.nextturnhdgr[acidx] = (
+            next_geometry.heading_rate if isinstance(next_geometry, TurnHeadingRate) else -999.0
+        )
+        traffic.actwp.nextturnidx[acidx] = next_turn.waypoint_index
 
     # Determine next turn waypoint data
 
@@ -1335,18 +1332,17 @@ def direct(traffic: Traffic, acidx: int, wpname: str) -> bool:
     traffic.actwp.curlegdir[acidx] = qdr_  # [deg]
     traffic.actwp.curleglen[acidx] = dist_ * nm  # [m]
 
-    if acrte.wpflyturn[wpidx] and acrte.wpturnrad[wpidx] > 0.0:  # turn radius specified
-        turnrad = acrte.wpturnrad[wpidx]
-    # Overwrite is hdgrate  defined
-    if acrte.wpflyturn[wpidx] and acrte.wpturnhdgr[wpidx] > 0.0:  # heading rate specified
-        turnrad = traffic.tas[acidx] * 360.0 / (2 * math.pi * acrte.wpturnhdgr[wpidx])
-    else:  # nothing specified, use default bank ang;e
+    # FIXME(abraham): BlueSky a918582 (2022-12-30) introduced a bug: an explicit radius
+    # is ignored when no heading rate is set because this path falls back to bank-derived radius
+    if isinstance(geometry, TurnHeadingRate):
+        turnrad = traffic.tas[acidx] * 360.0 / (2 * math.pi * geometry.heading_rate)
+    else:
         turnrad = (
             traffic.tas[acidx] * traffic.tas[acidx] / math.tan(math.radians(acrte.bank)) / g0 / nm
-        )  # [nm]default bank angle e.g. 25 deg
+        )
 
     traffic.actwp.turndist[acidx] = (
-        np.logical_or(acrte.wpturnhdgr[wpidx] > 0.0, traffic.actwp.flyby[acidx] > 0.5)
+        np.logical_or(isinstance(geometry, TurnHeadingRate), traffic.actwp.flyby[acidx] > 0.5)
         * turnrad
         * abs(
             math.tan(
@@ -1444,7 +1440,7 @@ def listrte(traffic: Traffic, acidx: int, ipagetxt: str = "0") -> Result[None, s
                 txt += "[orig]"
             elif acrte.wptype[i] == Route.dest:
                 txt += "[dest]"
-            elif acrte.wpflyturn[i]:
+            elif acrte.wpturn[i] is not None:
                 txt += "[U]"
             elif acrte.wpflyby[i]:
                 txt += "[C]"
@@ -1520,10 +1516,7 @@ def delwpt(traffic: Traffic, acidx: int, wpname: str) -> Result[str, str]:
     del acrte.wprta[wpidx]
     del acrte.wptype[wpidx]
     del acrte.wpflyby[wpidx]
-    del acrte.wpflyturn[wpidx]
-    del acrte.wpturnrad[wpidx]
-    del acrte.wpturnspd[wpidx]
-    del acrte.wpturnhdgr[wpidx]
+    del acrte.wpturn[wpidx]
     del acrte.wpstack[wpidx]
 
     if acrte.iactwp > wpidx:
