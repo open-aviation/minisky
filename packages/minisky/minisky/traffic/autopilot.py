@@ -54,7 +54,7 @@ from minisky.tools.aero import (
 from minisky.tools.convert import degto180
 from minisky.tools.position import txt2pos
 
-from .route import Route, TurnHeadingRate, TurnRadius, direct
+from .route import Route, RouteProfile, RtaTarget, TurnHeadingRate, TurnRadius, direct
 
 if TYPE_CHECKING:
     from minisky.simulation import Simulation
@@ -338,43 +338,73 @@ class Autopilot(TrafficArrays):
         # switched to a new waypoint
         if idxnext:
             nxt = np.array(idxnext)
-            lat = np.fromiter((transition.latitude for transition in transitions), dtype=float)
-            lon = np.fromiter((transition.longitude for transition in transitions), dtype=float)
-            xtoalt = np.fromiter(
-                (transition.distance_to_altitude for transition in transitions), dtype=float
-            )
-            toalt = np.fromiter(
-                (transition.next_altitude for transition in transitions), dtype=float
-            )
-            xtorta = np.fromiter(
-                (transition.distance_to_rta for transition in transitions), dtype=float
-            )
-            torta = np.fromiter((transition.next_rta for transition in transitions), dtype=float)
+            lat = np.fromiter((transition.position.lat for transition in transitions), dtype=float)
+            lon = np.fromiter((transition.position.lon for transition in transitions), dtype=float)
             lnavon = np.fromiter(
                 (transition.lnav_enabled for transition in transitions), dtype=bool
             )
             flyby = np.fromiter((transition.fly_by for transition in transitions), dtype=bool)
-            nextleglat = np.fromiter(
-                (transition.next_leg_latitude for transition in transitions), dtype=float
-            )
-            nextleglon = np.fromiter(
-                (transition.next_leg_longitude for transition in transitions), dtype=float
-            )
             swlastwp = np.fromiter(
                 (transition.last_waypoint for transition in transitions), dtype=bool
             )
-
-            # NOTE(abraham): keeping legacy for ActiveWaypoint
-            alt = np.fromiter(
+            has_nextleg = np.fromiter(
+                (transition.next_leg is not None for transition in transitions), dtype=bool
+            )
+            nextleglat = np.fromiter(
                 (
-                    -999.0 if transition.altitude is None else transition.altitude
+                    transition.position.lat
+                    if transition.next_leg is None
+                    else transition.next_leg.lat
                     for transition in transitions
                 ),
                 dtype=float,
             )
+            nextleglon = np.fromiter(
+                (
+                    transition.position.lon
+                    if transition.next_leg is None
+                    else transition.next_leg.lon
+                    for transition in transitions
+                ),
+                dtype=float,
+            )
+
+            # NOTE(abraham): keeping legacy for ActiveWaypoint
             nextspd = np.fromiter(
                 (
                     -999.0 if transition.speed is None else transition.speed
+                    for transition in transitions
+                ),
+                dtype=float,
+            )
+            nextaltco = np.fromiter(
+                (
+                    -999.0
+                    if transition.profile.altitude is None
+                    else transition.profile.altitude.altitude
+                    for transition in transitions
+                ),
+                dtype=float,
+            )
+            xtoalt = np.fromiter(
+                (
+                    0.0
+                    if transition.profile.altitude is None
+                    else transition.profile.altitude.distance
+                    for transition in transitions
+                ),
+                dtype=float,
+            )
+            torta = np.fromiter(
+                (
+                    -999.0 if transition.profile.rta is None else transition.profile.rta.time
+                    for transition in transitions
+                ),
+                dtype=float,
+            )
+            xtorta = np.fromiter(
+                (
+                    0.0 if transition.profile.rta is None else transition.profile.rta.distance
                     for transition in transitions
                 ),
                 dtype=float,
@@ -453,22 +483,20 @@ class Autopilot(TrafficArrays):
             )
 
             # Bearing of the leg after the new active waypoint, batched over
-            # all switching aircraft (-999.0 sentinel when there is no next
-            # leg; dummy coordinates keep the masked lanes NaN-free)
-            has_nextleg = nextleglat > -900.0
-            batched_qdr, _ = geo.qdrdist(
-                lat,
-                lon,
-                np.where(has_nextleg, nextleglat, lat),
-                np.where(has_nextleg, nextleglon, lon),
-            )
+            # all switching aircraft; dummy coordinates keep lanes without a
+            # next leg NaN-free until the ActiveWaypoint boundary conversion.
+            batched_qdr, _ = geo.qdrdist(lat, lon, nextleglat, nextleglon)
             next_qdr = np.where(has_nextleg, batched_qdr, -999.0)
 
             actwp.nextspd[nxt] = nextspd
+
+            # User-entered altitude guidance for the new waypoint/profile.
+            actwp.nextaltco[nxt] = nextaltco
+            actwp.xtoalt[nxt] = xtoalt
             actwp.xtorta[nxt] = xtorta
             actwp.torta[nxt] = torta
             actwp.next_qdr[nxt] = next_qdr
-            actwp.swlastwp[nxt] = swlastwp.astype(bool)
+            actwp.swlastwp[nxt] = swlastwp
             actwp.nextturnlat[nxt] = nextturnlat
             actwp.nextturnlon[nxt] = nextturnlon
             actwp.nextturnspd[nxt] = nextturnspd
@@ -521,12 +549,6 @@ class Autopilot(TrafficArrays):
             actwp.curlegdir[nxt] = qdrnxt
             actwp.curleglen[nxt] = self.dist2wp[nxt]
 
-            # User has entered an altitude for the new waypoint:
-            # positive altitude on this waypoint means altitude constraint
-            altco = alt >= -0.01
-            actwp.nextaltco[nxt] = np.where(altco, alt, toalt)  # [m]
-            actwp.xtoalt[nxt] = np.where(altco, 0.0, xtoalt)  # [m]
-
             # VNAV speed mode: use speed of this waypoint as commanded speed
             # while passing waypoint and save next speed for passing next waypoint
             # Speed is now from speed! Next speed is ready in waypoint data
@@ -564,8 +586,8 @@ class Autopilot(TrafficArrays):
             )
 
             # VNAV = FMS ALT/SPD mode including RTA: still scalar, per aircraft
-            for k, i in enumerate(idxnext):
-                self.ComputeVNAV(i, toalt[k], actwp.xtoalt[i], actwp.torta[i], actwp.xtorta[i])
+            for i, transition in zip(idxnext, transitions, strict=True):
+                self.ComputeVNAV(i, transition.profile)
 
         # End of the waypoint switching update
 
@@ -582,19 +604,22 @@ class Autopilot(TrafficArrays):
             iwp = self.route[iac].iactwp
             if self.route[iac].wprta[iwp] is not None:
                 # For all aircraft flying to an RTA waypoint, recalculate speed more often
-                dist2go4rta = (
-                    geo.kwikdist(
-                        self.traffic.lat[iac],
-                        self.traffic.lon[iac],
-                        self.traffic.actwp.lat[iac],
-                        self.traffic.actwp.lon[iac],
+                distance_to_waypoint = (
+                    float(
+                        np.asarray(
+                            geo.kwikdist(
+                                self.traffic.lat[iac],
+                                self.traffic.lon[iac],
+                                self.traffic.actwp.lat[iac],
+                                self.traffic.actwp.lon[iac],
+                            )
+                        ).item()
                     )
                     * nm
-                    + self.route[iac].wpxtorta[iwp]
-                )  # last term zero for active waypoint RTA
+                )
 
                 # Set self.traffic.actwp.spd to RTA speed, if necessary
-                self.setspeedforRTA(iac, self.traffic.actwp.torta[iac], dist2go4rta)
+                self.setspeedforRTA(iac, self.route[iac].wpprofile[iwp].rta, distance_to_waypoint)
 
                 # If VNAV speed is on (by default coupled to VNAV), use it for speed guidance
                 if self.traffic.swvnavspd[iac] and self.traffic.actwp.spd[iac] >= 0.0:
@@ -818,7 +843,7 @@ class Autopilot(TrafficArrays):
             self.traffic.casmach_threshold,
         )
 
-    def ComputeVNAV(self, idx: int, toalt: Any, xtoalt: Any, torta: Any, xtorta: Any) -> None:
+    def ComputeVNAV(self, idx: int, profile: RouteProfile) -> None:
         """
         This function to do VNAV (and RTA) calculations is only called only once per leg for an aircraft index.
         If:
@@ -848,29 +873,23 @@ class Autopilot(TrafficArrays):
 
         Args:
             idx: Aircraft index (scalar).
-            toalt: Next altitude constraint [m] (negative = none).
-            xtoalt: Distance from the active waypoint to that altitude
-                constraint [m].
-            torta: Next required time of arrival (RTA) as simulation time
-                [s] (-999 = none).
-            xtorta: Distance from the active waypoint to the RTA waypoint [m].
+            profile: Optional altitude and RTA targets ahead of the active waypoint.
         """
 
-        # print ("ComputeVNAV for",self.traffic.id[idx],":",toalt/ft,"ft  ",xtoalt/nm,"nm")
-        # print("Called by",callstack()[1].function)
+        # Check  whether active waypoint speed needs to be adjusted for RTA.
+        # setspeedforRTA sets self.traffic.actwp.spd if necessary.
+        self.setspeedforRTA(idx, profile.rta, self.dist2wp[idx])
 
-        # Check  whether active waypoint speed needs to be adjusted for RTA
-        # sets self.traffic.actwp.spd, if necessary
-        # debug print("xtorta+legdist =",(xtorta+legdist)/nm)
-        self.setspeedforRTA(idx, torta, xtorta + self.dist2wp[idx])  # all scalar
-
-        # Check if there is a target altitude and VNAV is on, else return doing nothing
-        if toalt < 0 or not self.traffic.swvnav[idx]:
+        # Check if there is a target altitude and VNAV is on, else return doing nothing.
+        altitude_target = profile.altitude
+        if altitude_target is None or not self.traffic.swvnav[idx]:
             self.dist2vs[
                 idx
             ] = -999999.0  # dist to next wp will never be less than this, so VNAV will do nothing
             return
 
+        toalt = altitude_target.altitude
+        xtoalt = altitude_target.distance
         # So: somewhere there is an altitude constraint ahead
         # Compute proper values for self.traffic.actwp.nextaltco, self.dist2vs, self.alt, self.traffic.actwp.vs
         # Descent VNAV mode (T/D logic)
@@ -1022,7 +1041,9 @@ class Autopilot(TrafficArrays):
 
         return
 
-    def setspeedforRTA(self, idx: int, torta: Any, xtorta: float) -> float | bool:
+    def setspeedforRTA(
+        self, idx: int, target: RtaTarget | None, distance_to_waypoint: float
+    ) -> float | None:
         """Compute and set the speed required to meet an RTA constraint.
 
         Calculates the ground speed needed to cover the remaining distance
@@ -1033,24 +1054,19 @@ class Autopilot(TrafficArrays):
 
         Args:
             idx: Aircraft index (scalar).
-            torta: Required time of arrival as simulation time [s]
-                (-999 = no RTA).
-            xtorta: Distance to go to the RTA waypoint [m].
+            target: RTA guidance target, or None when no RTA remains.
+            distance_to_waypoint: Distance to the active waypoint [m].
 
         Returns:
-            float or bool: Required CAS [m/s], or False when there is no
-            (feasible) RTA.
+            Required CAS [m/s], or None when there is no feasible RTA.
         """
-        # debug print("setspeedforRTA called, torta,xtorta =",torta,xtorta/nm)
+        if target is None:
+            return None
 
-        # Calculate required CAS to meet RTA
-        # for aircraft nr. idx (scalar)
-        if torta < -90.0:  # -999 signals there is no RTA defined in remainder of route
-            return False
-
-        deltime = torta - self.simulation.simt  # Remaining time to next RTA [s] in simtime
+        distance = distance_to_waypoint + target.distance
+        deltime = target.time - self.simulation.simt
         if deltime > 0:  # Still possible?
-            gsrta = calcvrta(self.traffic.gs[idx], xtorta, deltime, self.traffic.perf.axmax[idx])
+            gsrta = calcvrta(self.traffic.gs[idx], distance, deltime, self.traffic.perf.axmax[idx])
 
             # Subtract tail wind speed vector
             tailwind = (
@@ -1068,7 +1084,7 @@ class Autopilot(TrafficArrays):
 
             return rtacas
         else:
-            return False
+            return None
 
     @command(name="ALT")
     def selaltcmd(
@@ -1285,14 +1301,12 @@ class Autopilot(TrafficArrays):
                 self.traffic.swvnavspd[i] = True
                 route.calcfp()
                 actwpidx = route.iactwp
-                self.ComputeVNAV(
-                    i,
-                    route.wptoalt[actwpidx],
-                    route.wpxtoalt[actwpidx],
-                    route.wptorta[actwpidx],
-                    route.wpxtorta[actwpidx],
+                profile = route.wpprofile[actwpidx]
+                self.ComputeVNAV(i, profile)
+                # NOTE(abraham): keeping legacy for ActiveWaypoint
+                self.traffic.actwp.nextaltco[i] = (
+                    -999.0 if profile.altitude is None else profile.altitude.altitude
                 )
-                self.traffic.actwp.nextaltco[i] = route.wptoalt[actwpidx]
             else:
                 self.traffic.swvnav[i] = False
                 self.traffic.swvnavspd[i] = False
