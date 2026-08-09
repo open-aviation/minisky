@@ -17,7 +17,7 @@ def area_filter() -> AreaFilter:
 def check_single(
     area_filter: AreaFilter, name: str, lat: float, lon: float, alt: float = 0.0
 ) -> bool:
-    return bool(area_filter.checkInside(name, np.array([lat]), np.array([lon]), np.array([alt]))[0])
+    return bool(area_filter.contains(name, np.array([lat]), np.array([lon]), np.array([alt]))[0])
 
 
 class TestDefineArea:
@@ -30,7 +30,7 @@ class TestDefineArea:
         assert not area_filter.has_area("NOPE")
 
     def test_checkinside_unknown_area_returns_false(self, area_filter: AreaFilter) -> None:
-        result = area_filter.checkInside("NOPE", np.array([52.0]), np.array([4.0]), np.array([0.0]))
+        result = area_filter.contains("NOPE", np.array([52.0]), np.array([4.0]), np.array([0.0]))
         assert not result.any()
 
     def test_reset_clears_areas(self, area_filter: AreaFilter) -> None:
@@ -123,7 +123,7 @@ class TestBox:
         lat = np.array([52.5, 51.0, 52.9])
         lon = np.array([4.5, 4.5, 4.1])
         alt = np.zeros(3)
-        inside = area_filter.checkInside("B", lat, lon, alt)
+        inside = area_filter.contains("B", lat, lon, alt)
         assert inside.tolist() == [True, False, True]
 
 
