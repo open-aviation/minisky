@@ -34,6 +34,8 @@ class TestAddwpt:
         assert route.wpalt[0] is None
         assert route.wpspd[0] is None
         assert route.wprta[0] is None
+        assert route.wpprofile[0].altitude is None
+        assert route.wpprofile[0].rta is None
         assert route.iactwp == 0
         assert runtime.traffic.swlnav[0]
 
@@ -61,6 +63,10 @@ class TestAddwpt:
         run_cmd(f"ADDWPT {aircraft} 52.5,5.0 FL150")
         route = runtime.traffic.ap.route[0]
         assert route.wpalt[0] == pytest.approx(15000 * FT, rel=1e-3)
+        target = route.wpprofile[0].altitude
+        assert target is not None
+        assert target.altitude == pytest.approx(15000 * FT, rel=1e-3)
+        assert target.distance == 0.0
 
     @pytest.mark.parametrize("runway", ["EHAM/RW06", "EHAM RW06"])
     def test_addwpt_takeoff_with_explicit_runway(
@@ -178,6 +184,22 @@ class TestRouteEditing:
         assert "Error" not in output
         assert route.wpalt[1] == pytest.approx(9000 * FT, rel=1e-3)
         assert route.wpspd[1] == pytest.approx(250 * KTS, rel=1e-3)
+
+    def test_rta_profile_pairs_time_and_distance(
+        self, runtime: MiniSky, run_cmd: RunCommand, aircraft: str
+    ) -> None:
+        run_cmd(f"ADDWPT {aircraft} 52.5,5.0")
+        run_cmd(f"ADDWPT {aircraft} 53.0,6.0")
+        route = runtime.traffic.ap.route[0]
+        assert route_commands.set_rta(runtime.traffic, 0, route.wpname[1], 1000.0)
+
+        first_target = route.wpprofile[0].rta
+        second_target = route.wpprofile[1].rta
+        assert first_target is not None
+        assert second_target is not None
+        assert first_target.time == second_target.time == 1000.0
+        assert first_target.distance > 0.0
+        assert second_target.distance == 0.0
 
     def test_lnav_reengage_issues_direct(
         self, runtime: MiniSky, run_cmd: RunCommand, aircraft: str
@@ -345,11 +367,12 @@ class TestWaypointSwitching:
         expected, _ = geo.qdrdist(*self.WPTS[1], *self.WPTS[2])
         assert runtime.traffic.actwp.next_qdr[0] == pytest.approx(expected)
 
-    def test_next_qdr_sentinel_on_last_waypoint(
+    def test_last_waypoint_has_no_next_leg(
         self, runtime: MiniSky, step_until: StepUntil, route: Route
     ) -> None:
         step_until(lambda: route.iactwp == len(self.WPTS) - 1, max_steps=600)
-        assert runtime.traffic.actwp.next_qdr[0] == -999.0
+        assert route.getnextleg() is None
+        assert route.getnextqdr() is None
 
     def test_nextturn_data_tracks_upcoming_flyturn(
         self, runtime: MiniSky, run_cmd: RunCommand, step_until: StepUntil, aircraft: str

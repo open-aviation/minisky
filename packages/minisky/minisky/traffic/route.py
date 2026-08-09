@@ -30,6 +30,7 @@ from minisky.command import (
     CommandParseContext,
     CoordinateWaypoint,
     Keyword,
+    LatLonDegrees,
     NamedWaypoint,
     Omitted,
     Parsed,
@@ -84,6 +85,25 @@ class NextTurn(NamedTuple):
     waypoint_index: int
 
 
+class AltitudeTarget(NamedTuple):
+    altitude: float
+    """Target altitude [m]."""
+    distance: float
+    """Distance from the active waypoint to the constraint [m]."""
+
+
+class RtaTarget(NamedTuple):
+    time: float
+    """Required arrival time in simulation time [s]."""
+    distance: float
+    """Distance from the active waypoint to the RTA waypoint [m]."""
+
+
+class RouteProfile(NamedTuple):
+    altitude: AltitudeTarget | None = None
+    rta: RtaTarget | None = None
+
+
 class Route:
     """Flight plan (route) of a single aircraft: basic FMS functionality.
 
@@ -120,12 +140,7 @@ class Route:
         wpdirfrom (list): Direction of the leg leaving each waypoint [deg].
         wpdirto (list): Direction of the leg to each waypoint [deg].
         wpdistto (list): Length of the leg to each waypoint [nm].
-        wpialt (list): Index of the next waypoint with an altitude
-            constraint.
-        wptoalt (list): Next altitude constraint [m].
-        wpxtoalt (list): Distance to the next altitude constraint [m].
-        wptorta (list): Next time constraint [s].
-        wpxtorta (list): Distance to the next time constraint [m].
+        wpprofile (list): Optional altitude and RTA guidance targets from each waypoint.
 
     Created by: Jacco M. Hoekstra
     """
@@ -178,12 +193,9 @@ class Route:
 
         self.wpdirfrom = []  # [deg] direction leg to wp
         self.wpdirto = []  # [deg] direction leg from wp
+        # TODO(abraham): migrate this to SI!
         self.wpdistto = []  # [nm] leg length to wp
-        self.wpialt = []
-        self.wptoalt = []  # [m] next alt contraint
-        self.wpxtoalt = []  # [m] distance ot next alt constraint
-        self.wptorta = []  # [s] next time constraint
-        self.wpxtorta = []  # [m] distance to next time constaint
+        self.wpprofile: list[RouteProfile] = []
 
     def insert_wpt_data(
         self,
@@ -375,7 +387,9 @@ class Route:
 
         # update qdr and "last waypoint switch" in traffic
         if idx >= 0:
-            self.traffic.actwp.next_qdr[iac] = self.getnextqdr()
+            next_qdr = self.getnextqdr()
+            # NOTE(abraham): keeping legacy for ActiveWaypoint
+            self.traffic.actwp.next_qdr[iac] = -999.0 if next_qdr is None else next_qdr
             self.traffic.actwp.swlastwp[iac] = self.iactwp == n_wpt - 1
 
         # Update waypoints
@@ -401,41 +415,28 @@ class Route:
                 )
         return None
 
-    # TODO(abraham): split this large transition record into constraints, turn,
-    # and next-leg records
-    # TODO(abraham): replace -999.0 sentinels with explicit optional/validity state (see issue #40)
     class WaypointTransition(NamedTuple):
-        latitude: float
-        """Active waypoint latitude [deg]."""
-        longitude: float
-        """Active waypoint longitude [deg]."""
-        altitude: float | None
-        """Optional altitude constraint [m]."""
+        """Guidance state produced when a route activates its next waypoint."""
+
+        position: LatLonDegrees
+        """Active waypoint position [deg]."""
         speed: float | None
         """Optional speed constraint, calibrated airspeed [m/s] or Mach number [-]."""
-        distance_to_altitude: float
-        """Distance to the next altitude constraint [m]."""
-        next_altitude: float
-        """Next altitude constraint [m]."""
-        distance_to_rta: float
-        """Distance to the next required time of arrival [m]."""
-        next_rta: float
-        """Next required time of arrival [s]."""
+        profile: RouteProfile
+        """Altitude and RTA guidance targets ahead of the active waypoint."""
         lnav_enabled: bool
         """Whether lateral navigation remains enabled."""
         fly_by: bool
         """Whether the waypoint uses fly-by switching."""
         turn: TurnParameters | None
         """Fly-turn parameters, or None when this is not a fly-turn waypoint."""
-        next_leg_latitude: float
-        """Next-leg endpoint latitude [deg], or -999.0 when there is no next leg."""
-        next_leg_longitude: float
-        """Next-leg endpoint longitude [deg], or -999.0 when there is no next leg."""
+        next_leg: LatLonDegrees | None
+        """Endpoint of the leg after the active waypoint, or None when there is no next leg."""
         last_waypoint: bool
         """Whether this is the final waypoint."""
 
     def getnextwp(self) -> WaypointTransition:
-        """Activate the next waypoint in the route and return its data.
+        """Activate the next waypoint in the route and return its guidance state.
 
         Called by the autopilot when the active waypoint has been passed.
         Advances iactwp (unless the last waypoint was reached, in which case
@@ -444,20 +445,13 @@ class Route:
         deceleration plus deletion of the aircraft are scheduled via the
         stack.
         """
-
         n_wpt = len(self.wpname)
 
         if self.flag_landed_runway:
             # when landing, LNAV is switched off
             lnavon = False
 
-            # no further waypoint
-            nextleglat = -999.0
-            nextleglon = -999.0
-
-            # and the aircraft just needs a fixed heading to
-            # remain on the runway
-            # syntax: HDG acid,hdg (deg,True)
+            # no further waypoint; the aircraft only needs a fixed runway heading
             name = self.wpname[self.iactwp]
 
             # Change RW06,RWY18C,RWY24001 to resp. 06,18C,24
@@ -483,23 +477,15 @@ class Route:
             # delete aircraft
             self.traffic.stack_command("DELAY " + "42 " + "DEL " + str(self.acid))
 
-            swlastwp = self.iactwp == n_wpt - 1
-
             return self.WaypointTransition(
-                self.wplat[self.iactwp],
-                self.wplon[self.iactwp],
-                self.wpalt[self.iactwp],
+                LatLonDegrees(self.wplat[self.iactwp], self.wplon[self.iactwp]),
                 self.wpspd[self.iactwp],
-                self.wpxtoalt[self.iactwp],
-                self.wptoalt[self.iactwp],
-                self.wpxtorta[self.iactwp],
-                self.wptorta[self.iactwp],
+                self.wpprofile[self.iactwp],
                 lnavon,
                 self.wpflyby[self.iactwp],
                 self.wpturn[self.iactwp],
-                nextleglat,
-                nextleglon,
-                swlastwp,
+                None,
+                self.iactwp == n_wpt - 1,
             )
 
         # Switch LNAV off when last waypoint has been passed
@@ -515,12 +501,7 @@ class Route:
         # Endpoint of the leg after the new active waypoint; the autopilot
         # computes the next-leg bearings for all switching aircraft in one
         # vectorised qdrdist call (see wppassingcheck).
-        if -1 < self.iactwp < n_wpt - 1:
-            nextleglat = self.wplat[self.iactwp + 1]
-            nextleglon = self.wplon[self.iactwp + 1]
-        else:
-            nextleglat = -999.0
-            nextleglon = -999.0
+        next_leg = self.getnextleg()
 
         # in case that there is a runway, the aircraft should remain on it
         # instead of deviating to the airport centre
@@ -533,22 +514,14 @@ class Route:
         ):
             self.flag_landed_runway = True
 
-        # print ("getnextwp:",self.wpname[self.iactwp],"   torta = ",self.wptorta[self.iactwp])
-
         return self.WaypointTransition(
-            self.wplat[self.iactwp],
-            self.wplon[self.iactwp],
-            self.wpalt[self.iactwp],
+            LatLonDegrees(self.wplat[self.iactwp], self.wplon[self.iactwp]),
             self.wpspd[self.iactwp],
-            self.wpxtoalt[self.iactwp],
-            self.wptoalt[self.iactwp],
-            self.wpxtorta[self.iactwp],
-            self.wptorta[self.iactwp],
+            self.wpprofile[self.iactwp],
             lnavon,
             self.wpflyby[self.iactwp],
             self.wpturn[self.iactwp],
-            nextleglat,
-            nextleglon,
+            next_leg,
             swlastwp,
         )
 
@@ -585,9 +558,8 @@ class Route:
         care of ToD and ToC logic while flying using current speed.
 
         Recomputes, per waypoint: leg directions [deg] and lengths [nm]
-        (wpdirfrom, wpdirto, wpdistto), the next altitude constraint and
-        distance to it (wptoalt [m], wpxtoalt [m]), and the next time
-        constraint and distance to it (wptorta [s], wpxtorta [m]).
+        (wpdirfrom, wpdirto, wpdistto), plus typed altitude and RTA guidance
+        targets in wpprofile.
         """
 
         # Direction to waypoint
@@ -603,23 +575,7 @@ class Route:
         # [nm] Distance of leg to this waypoint in nm
         self.wpdistto = n_wpt * [0.0]
 
-        # wp index of next alttud constraint
-        self.wpialt = n_wpt * [-1]
-
-        # [m] next alt contraint
-        self.wptoalt = n_wpt * [-999.0]
-
-        # [m] dist to next alt constraint, default 1.0 to avoid division by zero
-        self.wpxtoalt = n_wpt * [1.0]
-
-        # wp index of next time constraint
-        self.wpirta = n_wpt * [-1]
-
-        # [s] next time constraint
-        self.wptorta = n_wpt * [-999.0]
-
-        # [m] dist to next time constraint, default 1.0 to avoid division by zero
-        self.wpxtorta = n_wpt * [1.0]
+        self.wpprofile = [RouteProfile() for _ in range(n_wpt)]
 
         # No waypoints: make empty variables to be safe and return: nothing to do
         if n_wpt == 0:
@@ -633,13 +589,13 @@ class Route:
                 self.wplat[i], self.wplon[i], self.wplat[i + 1], self.wplon[i + 1]
             )
             self.wpdirfrom[i] = float(qdr)  # [deg]
-            self.wpdistto[i + 1] = float(dist)  # [nm]  distto is in nautical miles
+            self.wpdistto[i + 1] = float(dist)  # [nm] distto is in nautical miles
 
         # Also add "from direction" as to directions so no need to shift for actwpdata
         # direction to will be overwritten in actwpdata in case of a direct to
         # Add current pos to first waypoint as default value for direction to 1st waypoint
         iac = self.traffic.idx(self.acid)
-        qdr, dist = geo.qdrdist(
+        qdr, _dist = geo.qdrdist(
             self.traffic.lat[iac], self.traffic.lon[iac], self.wplat[0], self.wplon[0]
         )
         self.wpdirto = [qdr, *self.wpdirfrom[0:-1]]  # [deg] Direction to waypoints
@@ -649,76 +605,60 @@ class Route:
             self.wpdirfrom[-1] = self.wpdirfrom[-2]
 
         # Calculate longitudinal leg data
-        # VNAV: calc next altitude constraint: index, altitude and distance to it
-        ialt = -1  # index to waypoint with next altitude constraint
-        toalt = -999.0  # value of next altitude constraint
-        xtoalt = 0.0  # distance to next altitude constraint from this wp
+        # VNAV: calc next altitude constraint and distance to it
+        altitude_target: AltitudeTarget | None = None
         for i in range(n_wpt - 1, -1, -1):
-            # waypoint with altitude constraint (dest of al specified)
+            # waypoint with altitude constraint (dest of all specified)
             if self.wptype[i] == Route.dest:
-                ialt = i
-                toalt = 0.0
-                xtoalt = 0.0  # [m]
-
+                altitude_target = AltitudeTarget(0.0, 0.0)
             elif (altitude := self.wpalt[i]) is not None:
-                ialt = i
-                toalt = altitude
-                xtoalt = 0.0  # [m]
-
-            # waypoint with no altitude constraint:keep counting
+                altitude_target = AltitudeTarget(altitude, 0.0)
+            # waypoint with no altitude constraint: keep counting
+            elif altitude_target is not None and i != n_wpt - 1:
+                altitude_target = AltitudeTarget(
+                    altitude_target.altitude,
+                    altitude_target.distance + self.wpdistto[i + 1] * nm,
+                )
             else:
-                # [m] xtoalt is in meters!
-                xtoalt = xtoalt + self.wpdistto[i + 1] * nm if i != n_wpt - 1 else 0.0
+                altitude_target = None
+            self.wpprofile[i] = RouteProfile(altitude=altitude_target)
 
-            self.wpialt[i] = ialt
-            self.wptoalt[i] = toalt  # [m]
-            self.wpxtoalt[i] = xtoalt  # [m]
-
-        # RTA: calc next rta constraint: index, altitude and distance to it
-        # If any RTA.
-        if any(rta is not None for rta in self.wprta):
-            # print("Yes, I found RTAs")
-            irta = -1  # index of wp
-            torta = -999.0  # next rta value
-            xtorta = 0.0  # distance to next rta
-            for i in range(n_wpt - 1, -1, -1):
-                # waypoint with rta: reset counter, update rts
-                if (rta := self.wprta[i]) is not None:
-                    irta = i
-                    torta = rta
-                    xtorta = 0.0  # [m]
-
-                # waypoint with no altitude constraint:keep counting
+        # RTA: calc next rta constraint and distance to it
+        rta_target: RtaTarget | None = None
+        for i in range(n_wpt - 1, -1, -1):
+            # waypoint with rta: reset counter, update target
+            if (rta := self.wprta[i]) is not None:
+                rta_target = RtaTarget(rta, 0.0)
+            elif rta_target is not None and i != n_wpt - 1:
+                # No speed or rta constraint: add to distance
+                if (speed := self.wpspd[i]) is None:
+                    rta_target = RtaTarget(
+                        rta_target.time,
+                        rta_target.distance + self.wpdistto[i + 1] * nm,
+                    )
                 else:
-                    if i != n_wpt - 1:
-                        # No speed or rta constraint: add to xtorta
-                        if (speed := self.wpspd[i]) is None:
-                            xtorta = xtorta + self.wpdistto[i + 1] * nm  # [m] xtoalt is in meters!
-                        else:
-                            # speed constraint on this leg: shift torta to account for this
-                            # altitude unknown
-                            # TODO: current a/c altitude would be better guess, but not accessible here
-                            # as we do not know aircraft index for this route.
-                            # Default to 10000 ft to minimize errors, when no alt constraints
-                            # are present
-                            alt = toalt if self.wptoalt[i] > 0.0 else 10000.0 * ft
-                            legtas = casormach2tas(speed, alt, self.traffic.casmach_threshold)
-                            # TODO: account for wind at this position vy adding wind vectors to waypoints?
+                    # speed constraint on this leg: shift RTA time to account for this
+                    # altitude unknown; use the next altitude constraint for this waypoint
+                    # or default to 10000 ft when no altitude constraint is present
+                    altitude_target = self.wpprofile[i].altitude
+                    altitude = (
+                        altitude_target.altitude
+                        if altitude_target is not None and altitude_target.altitude > 0.0
+                        else 10000.0 * ft
+                    )
+                    legtas = casormach2tas(speed, altitude, self.traffic.casmach_threshold)
+                    # TODO(abraham): account for wind at this position by adding wind vectors to waypoints?
 
-                            # xtorta stays the same! This leg will not be available for RTA scheduling, so distance
-                            # is not in xtorta. Therefore we need to subtract legtime to ignore this leg for the RTA
-                            # scheduling
-                            legtime = self.wpdistto[i + 1] / legtas
-                            torta = torta - legtime
-                    else:
-                        xtorta = 0.0
-                        torta = -999.0
+                    # This fixed-speed leg is excluded from RTA distance, so subtract its
+                    # travel time from the target time instead.
+                    # FIXME(abraham): BlueSky f352d73 (2019-07-14) computes this leg time
+                    # from nautical miles / m/s, missing the nm conversion.
+                    legtime = self.wpdistto[i + 1] / legtas
+                    rta_target = RtaTarget(rta_target.time - legtime, rta_target.distance)
+            else:
+                rta_target = None
 
-                self.wpirta[i] = irta
-                self.wptorta[i] = torta  # [s]
-                self.wpxtorta[i] = xtorta  # [m]
-            # print("wpxtorta=",self.wpxtorta)
-            # print("wptorta=", self.wptorta)
+            self.wpprofile[i] = self.wpprofile[i]._replace(rta=rta_target)
 
     def findact(self, i: int) -> int:
         """Find the best default active waypoint for an aircraft.
@@ -776,23 +716,25 @@ class Route:
 
         return int(iwpnear)
 
-    def getnextqdr(self):
-        """Return the bearing of the leg after the active waypoint [deg].
-
-        Returns -999.0 when there is no next leg (no active waypoint or the
-        active waypoint is the last one).
-        """
-        # get qdr for next leg
+    def getnextleg(self) -> LatLonDegrees | None:
+        """Return the endpoint of the leg after the active waypoint."""
         if -1 < self.iactwp < len(self.wpname) - 1:
-            nextqdr, _dist = geo.qdrdist(
-                self.wplat[self.iactwp],
-                self.wplon[self.iactwp],
-                self.wplat[self.iactwp + 1],
-                self.wplon[self.iactwp + 1],
-            )
-        else:
-            nextqdr = -999.0
-        return nextqdr
+            return LatLonDegrees(self.wplat[self.iactwp + 1], self.wplon[self.iactwp + 1])
+        return None
+
+    def getnextqdr(self) -> float | None:
+        """Return the bearing of the leg after the active waypoint [deg]."""
+        # get qdr for next leg
+        next_leg = self.getnextleg()
+        if next_leg is None:
+            return None
+        nextqdr, _dist = geo.qdrdist(
+            self.wplat[self.iactwp],
+            self.wplon[self.iactwp],
+            next_leg.lat,
+            next_leg.lon,
+        )
+        return float(nextqdr)
 
 
 # ---- following are functions managing the routes ----
@@ -1291,20 +1233,17 @@ def direct(traffic: Traffic, acidx: int, wpname: str) -> bool:
     # Do calculation for VNAV
     acrte.calcfp()
 
-    traffic.actwp.xtoalt[acidx] = acrte.wpxtoalt[wpidx]
-    traffic.actwp.nextaltco[acidx] = acrte.wptoalt[wpidx]
-
-    traffic.actwp.torta[acidx] = acrte.wptorta[wpidx]  # available for active RTA-guidance
-    traffic.actwp.xtorta[acidx] = acrte.wpxtorta[wpidx]  # available for active RTA-guidance
+    profile = acrte.wpprofile[wpidx]
+    # NOTE(abraham): keeping legacy for ActiveWaypoint
+    traffic.actwp.xtoalt[acidx] = 0.0 if profile.altitude is None else profile.altitude.distance
+    traffic.actwp.nextaltco[acidx] = (
+        -999.0 if profile.altitude is None else profile.altitude.altitude
+    )
+    traffic.actwp.torta[acidx] = -999.0 if profile.rta is None else profile.rta.time
+    traffic.actwp.xtorta[acidx] = 0.0 if profile.rta is None else profile.rta.distance
 
     # VNAV calculations like V/S and speed for RTA
-    traffic.ap.ComputeVNAV(
-        acidx,
-        acrte.wptoalt[wpidx],
-        acrte.wpxtoalt[wpidx],
-        acrte.wptorta[wpidx],
-        acrte.wpxtorta[wpidx],
-    )
+    traffic.ap.ComputeVNAV(acidx, profile)
 
     # If there is a speed specified, process it
     if (speed := acrte.wpspd[wpidx]) is not None:
