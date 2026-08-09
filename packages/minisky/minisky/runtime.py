@@ -17,8 +17,11 @@ from minisky.streaming import StreamHub, build_snapshot
 from minisky.tools.areafilter import AreaFilter
 from minisky.tools.navdata import Navdatabase
 from minisky.traffic import Traffic
+from minisky.traffic.activewpdata import ActiveWaypoint
+from minisky.traffic.aporasas import APorASAS
 from minisky.traffic.asas import MVP, ConflictDetection, ConflictResolution
 from minisky.traffic.autopilot import Autopilot
+from minisky.traffic.kinematics import Kinematics
 from minisky.traffic.performance.perfoap import OpenAP
 
 
@@ -62,7 +65,15 @@ class MiniSky:
         )
         self.replaceables = ReplaceableManager(
             self.traffic,
-            bases=(Autopilot, ConflictDetection, ConflictResolution, OpenAP),
+            bases=(
+                ActiveWaypoint,
+                APorASAS,
+                Autopilot,
+                ConflictDetection,
+                ConflictResolution,
+                Kinematics,
+                OpenAP,
+            ),
             core=(MVP,),
         )
         self.plugins = PluginManager(

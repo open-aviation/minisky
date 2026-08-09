@@ -26,19 +26,14 @@ from minisky.result import Err, Ok, Result
 from minisky.tools import geo
 from minisky.tools.aero import (
     DEFAULT_CASMACH_THRESHOLD,
-    Rearth,
     casormach,
     casormach2tas,
-    fpm,
     ft,
-    g0,
     kts,
     nm,
     tas2cas,
     vatmos,
     vcasormach,
-    vtas2cas,
-    vtas2mach,
 )
 from minisky.tools.areafilter import AreaFilter
 from minisky.tools.convert import latlon2txt
@@ -48,6 +43,7 @@ from .activewpdata import ActiveWaypoint
 from .aporasas import APorASAS
 from .autopilot import Autopilot
 from .conditional import Condition
+from .kinematics import Kinematics
 from .performance.perfoap import OpenAP
 from .trafficgroups import TrafficGroups
 from .trails import Trails
@@ -97,7 +93,6 @@ class Traffic(TrafficArrays):
         cas (ndarray): Calibrated airspeed [m/s].
         M (ndarray): Mach number [-].
         vs (ndarray): Vertical speed [m/s].
-        ax (ndarray): Current longitudinal acceleration [m/s2].
         p (ndarray): Ambient air pressure [Pa].
         rho (ndarray): Ambient air density [kg/m3].
         Temp (ndarray): Ambient air temperature [K].
@@ -110,7 +105,6 @@ class Traffic(TrafficArrays):
         swlnav (ndarray): Bool switch: LNAV (lateral FMS guidance) on/off.
         swvnav (ndarray): Bool switch: VNAV (vertical FMS guidance) on/off.
         swvnavspd (ndarray): Bool switch: VNAV speed guidance on/off.
-        swhdgsel (ndarray): Bool switch: True while aircraft is turning.
         swats (ndarray): Bool switch: autothrottle on/off.
         thr (ndarray): Throttle setting [0.0-1.0]; negative = invalid/auto.
         work (ndarray): Work done by the engines during the flight [J].
@@ -126,6 +120,8 @@ class Traffic(TrafficArrays):
         cd (ConflictDetection): Conflict detection.
         cr (ConflictResolution): Conflict resolution.
         perf (OpenAP): Aircraft performance model.
+        kinematics (Kinematics): Flight-state integration (airspeed, heading,
+            vertical speed, ground speed and position).
         trails (Trails): Radar-display trails.
         groups (TrafficGroups): Aircraft group administration.
 
@@ -191,9 +187,6 @@ class Traffic(TrafficArrays):
             self.M = np.array([])  # mach number
             self.vs = np.array([])  # vertical speed [m/s]
 
-            # Acceleration
-            self.ax = np.array([])  # [m/s2] current longitudinal acceleration
-
             # Atmosphere
             self.p = np.array([])  # air pressure [N/m2]
             self.rho = np.array([])  # air density [kg/m3]
@@ -224,12 +217,10 @@ class Traffic(TrafficArrays):
             self.trails = Trails(self, get_simulation)
             self.actwp = ActiveWaypoint(self)
             self.perf = OpenAP(self)
+            self.kinematics = Kinematics(self, get_simulation)
 
             # Group Logic
             self.groups = TrafficGroups(self, areas)
-
-            # Traffic autopilot data
-            self.swhdgsel = np.array([], dtype=bool)  # determines whether aircraft is turning
 
             # Traffic autothrottle settings
             self.swats = np.array(
@@ -661,13 +652,11 @@ class Traffic(TrafficArrays):
 
         # ---------- Limit commanded speeds based on performance ------------------------------
         self.aporasas.tas, self.aporasas.vs, self.aporasas.alt = self.perf.limits(
-            self.aporasas.tas, self.aporasas.vs, self.aporasas.alt, self.ax
+            self.aporasas.tas, self.aporasas.vs, self.aporasas.alt, self.kinematics.ax
         )
 
         # ---------- Kinematics --------------------------------
-        self.update_airspeed()
-        self.update_groundspeed()
-        self.update_pos()
+        self.kinematics.update()
 
         # ---------- Simulate Turbulence -----------------------
         self.turbulence.update()
@@ -683,130 +672,6 @@ class Traffic(TrafficArrays):
         # Conflict detection and resolution
         self.cd.update(self, self)
         self.cr.update(self.cd, self, self)
-
-    def update_airspeed(self) -> None:
-        """Integrate true airspeed, heading and vertical speed over one step.
-
-        Accelerates or decelerates towards the commanded TAS using the
-        performance-limited longitudinal acceleration, turns towards the
-        commanded heading with a turn rate that follows from the bank angle
-        (commanded turn bank or default bank limit), and updates the vertical
-        speed for the altitude select/capture/hold autopilot logic. Also
-        refreshes the derived CAS and Mach values.
-        """
-        # Compute horizontal acceleration
-        delta_spd = self.aporasas.tas - self.tas
-        need_ax = np.abs(delta_spd) > np.abs(self.simulation.simdt * self.perf.axmax)
-        self.ax = need_ax * np.sign(delta_spd) * self.perf.axmax
-        # Update velocities
-        self.tas = np.where(need_ax, self.tas + self.ax * self.simulation.simdt, self.aporasas.tas)
-        self.cas = vtas2cas(self.tas, self.alt)
-        self.M = vtas2mach(self.tas, self.alt)
-
-        # Turning bank triangle
-        # tan phi = a centrigugal/a grav = omega^2 * R / g = omega * V /g
-        # => omega = (g tan phi)/V
-        turnrate = np.degrees(
-            g0
-            * np.tan(
-                np.where(
-                    self.ap.turnphi > self.eps * self.eps,
-                    self.ap.turnphi,
-                    self.ap.bankdef,
-                )
-            )
-            / np.maximum(self.tas, self.eps)
-        )
-        delhdg = (self.aporasas.hdg - self.hdg + 180) % 360 - 180  # [deg]
-        self.swhdgsel = np.abs(delhdg) > np.abs(self.simulation.simdt * turnrate)
-
-        # Update heading
-        self.hdg = (
-            np.where(
-                self.swhdgsel,
-                self.hdg + self.simulation.simdt * turnrate * np.sign(delhdg),
-                self.aporasas.hdg,
-            )
-            % 360.0
-        )
-
-        # Update vertical speed (alt select, capture and hold autopilot mode)
-        delta_alt = self.aporasas.alt - self.alt
-        # Old dead band version:
-        #        self.swaltsel = np.abs(delta_alt) > np.maximum(
-        #            10 * ft, np.abs(2 * self.simulation.simdt * self.vs))
-
-        # Update version: time based engage of altitude capture (to adapt for UAV vs airliner scale)
-        self.swaltsel = np.abs(delta_alt) > 1.05 * np.maximum(
-            np.abs(self.simulation.simdt * self.aporasas.vs),
-            np.abs(self.simulation.simdt * self.vs),
-        )
-        target_vs = self.swaltsel * np.sign(delta_alt) * np.abs(self.aporasas.vs)
-        delta_vs = target_vs - self.vs
-        # print(delta_vs / fpm)
-        need_az = np.abs(delta_vs) > 300 * fpm  # small threshold
-        self.az = need_az * np.sign(delta_vs) * (300 * fpm)  # fixed vertical acc approx 1.6 m/s^2
-        self.vs = np.where(need_az, self.vs + self.az * self.simulation.simdt, target_vs)
-        self.vs = np.where(np.isfinite(self.vs), self.vs, 0)  # fix vs nan issue
-
-    def update_groundspeed(self) -> None:
-        """Compute ground speed and track from heading, airspeed and wind.
-
-        Without wind, ground speed equals TAS and track equals heading. With
-        a wind field defined, the wind vector at each aircraft position is
-        added to the airspeed vector (only when airborne, above 50 ft). Also
-        accumulates the work done by the engines [J] along the flown path.
-        """
-        # Compute ground speed and track from heading, airspeed and wind
-        if self.wind.winddim == 0:  # no wind
-            self.gsnorth = self.tas * np.cos(np.radians(self.hdg))
-            self.gseast = self.tas * np.sin(np.radians(self.hdg))
-
-            self.gs = self.tas
-            self.trk = self.hdg
-            self.windnorth[:], self.windeast[:] = 0.0, 0.0
-
-        else:
-            applywind = self.alt > 50.0 * ft  # Only apply wind when airborne
-
-            vnwnd, vewnd = self.wind.getdata(self.lat, self.lon, self.alt)
-            self.windnorth[:], self.windeast[:] = vnwnd, vewnd
-            self.gsnorth = self.tas * np.cos(np.radians(self.hdg)) + self.windnorth * applywind
-            self.gseast = self.tas * np.sin(np.radians(self.hdg)) + self.windeast * applywind
-
-            self.gs = np.logical_not(applywind) * self.tas + applywind * np.sqrt(
-                self.gsnorth**2 + self.gseast**2
-            )
-
-            self.trk = (
-                np.logical_not(applywind) * self.hdg
-                + applywind * np.degrees(np.arctan2(self.gseast, self.gsnorth)) % 360.0
-            )
-
-        self.work += (
-            self.perf.thrust
-            * self.simulation.simdt
-            * np.sqrt(self.gs * self.gs + self.vs * self.vs)
-        )
-
-    def update_pos(self) -> None:
-        """Integrate altitude and lat/lon position over one time step.
-
-        Altitude follows the vertical speed while the altitude-select mode is
-        engaged, and snaps to the commanded altitude otherwise. Latitude and
-        longitude are advanced with the ground speed components using a
-        spherical-Earth approximation, and the flown distance is accumulated.
-        """
-        # Update position
-        self.alt = np.where(
-            self.swaltsel,
-            np.round(self.alt + self.vs * self.simulation.simdt, 6),
-            self.aporasas.alt,
-        )
-        self.lat = self.lat + np.degrees(self.simulation.simdt * self.gsnorth / Rearth)
-        self.coslat = np.cos(np.deg2rad(self.lat))
-        self.lon = self.lon + np.degrees(self.simulation.simdt * self.gseast / self.coslat / Rearth)
-        self.distflown += self.gs * self.simulation.simdt
 
     @overload
     def idx(self, callsign: str) -> int: ...

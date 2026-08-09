@@ -16,6 +16,7 @@ testpaths = [
     "packages/minisky/tests",
     "packages/minisky-example/tests",
     "packages/minisky-example-customautopilot/tests",
+    "packages/minisky-multicopter/tests",
     "packages/minisky-tangram/tests",
 ]
 pythonpath = [".", "packages/minisky"]
@@ -40,6 +41,7 @@ extend-select = [
 include = [
     "packages/minisky/minisky",
     "packages/minisky-example*/src",
+    "packages/minisky-multicopter/src",
     "packages/minisky-tangram/src",
     "packages/tangram-minisky/src",
     "packages/*/tests",
@@ -59,6 +61,7 @@ extraPaths = [
     "packages/minisky",
     "packages/minisky-example/src",
     "packages/minisky-example-customautopilot/src",
+    "packages/minisky-multicopter/src",
     "packages/minisky-tangram/src",
     "packages/tangram-minisky/src",
 ]

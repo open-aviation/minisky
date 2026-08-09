@@ -116,6 +116,13 @@ subsystems that act on it each timestep:
 
 - **Autopilot / FMS** ([`autopilot.py`](api/traffic.md)) — selected altitude/speed/heading,
   LNAV/VNAV logic following a [`Route`][minisky.traffic.route.Route] of waypoints.
+- **Kinematics** ([`Kinematics`][minisky.traffic.kinematics.Kinematics], `runtime.traffic.kinematics`) —
+  the flight integration: accelerate towards the commanded airspeed within the
+  performance limits, turn towards the commanded heading at the bank-angle turn
+  rate, combine with wind into a ground-speed vector, and integrate position.
+  It lives in its own first-level entity (rather than on `Traffic` itself) so
+  that alternative flight models can be swapped in — see
+  [replaceable components](#replaceable-components) below.
 - **Conflict detection** (`traffic/asas/detection.py`) — pairwise state-based detection
   within a lookahead time against a protected zone (default 5 NM / 1000 ft, configurable
   in the [config file](guides/configuration.md)). Candidate pairs are pre-selected with a KD-tree on projected
@@ -130,6 +137,37 @@ subsystems that act on it each timestep:
 Units follow the BlueSky convention: internal state is SI (metres, m/s, seconds, degrees),
 while stack commands and scenario files use aviation units (FL/ft, knots, Mach) that the
 argument parsers convert on the way in.
+
+## Replaceable components
+
+The traffic subsystems above are *replaceable*: a subclass can be selected in
+place of the default implementation at runtime, and the live instance is swapped
+immediately (its per-aircraft arrays re-seeded for the current fleet). The
+runtime's [`ReplaceableManager`][minisky.core.trafficarrays.ReplaceableManager]
+registers these base classes:
+
+| Name | Base class | Role |
+| --- | --- | --- |
+| `ACTIVEWAYPOINT` | [`ActiveWaypoint`][minisky.traffic.activewpdata.ActiveWaypoint] | Active-leg data and waypoint-capture criterion |
+| `APORASAS` | [`APorASAS`][minisky.traffic.aporasas.APorASAS] | Pilot logic selecting between autopilot and resolution commands |
+| `AUTOPILOT` | [`Autopilot`][minisky.traffic.autopilot.Autopilot] | FMS / LNAV / VNAV guidance |
+| `CONFLICTDETECTION` | `ConflictDetection` | Pairwise conflict detection |
+| `CONFLICTRESOLUTION` | `ConflictResolution` | Conflict resolution (the core registers `MVP`) |
+| `KINEMATICS` | [`Kinematics`][minisky.traffic.kinematics.Kinematics] | Flight integration |
+| `OPENAP` | [`OpenAP`][minisky.traffic.performance.perfoap.OpenAP] | Aircraft performance |
+
+Select an implementation with the `SELECTIMPL` stack command
+(`SELECTIMPL AUTOPILOT MYAUTOPILOT`; without arguments it lists the
+alternatives), or programmatically through
+`runtime.traffic.select_implementation`. `RESET` reverts every replaceable to
+its default implementation.
+
+Plugins provide implementations by decorating a subclass with
+[`@plugin.replacement`][minisky.plugin.plugin_decorators.replacement] and
+declaring it when the build finishes; such replacements are local to the
+runtime that loaded the plugin. The
+[multicopter plugin](guides/multicopters.md) is a worked example: it registers
+subclasses of five of these bases and keeps them selected from its hooks.
 
 ## I/O: how output gets back to you
 

@@ -316,7 +316,8 @@ class OpenAP(TrafficArrays):
 
         # ----- compute net thrust -----
         self.thrust[idx_fixwing] = (
-            self.drag[idx_fixwing] + self.mass[idx_fixwing] * self.traffic.ax[idx_fixwing]
+            self.drag[idx_fixwing]
+            + self.mass[idx_fixwing] * self.traffic.kinematics.ax[idx_fixwing]
         )
 
         # ----- compute fuel flow -----
