@@ -122,9 +122,7 @@ BATT DRONE1 -> BATT DRONE1: 50%, drawing 1022 W, endurance 18 min
 
 The absolute forward-flight power is approximate (momentum-theory shape, not
 measured propeller data), but hover figures and the qualitative trends are
-sound — hover endurance for the MAVIC comes out around 28 minutes. A
-measured-data upgrade path is sketched in the plan document
-(`docs/multicopter-plan.md`).
+sound — hover endurance for the MAVIC comes out around 28 minutes.
 
 ## Adding a new multicopter type
 

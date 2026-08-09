@@ -9,21 +9,21 @@ Everything is implemented as replaceable subclasses of core entities, which
 the plugin registers on load and keeps selected through its hooks (the first
 simulation step after loading, and every reset):
 
-- ``KINEMATICS``      -> :class:`MulticopterKinematics` — yaw-rate-limited
+- `KINEMATICS`      -> `MulticopterKinematics` — yaw-rate-limited
   heading, track-driven velocity vector.
-- ``APORASAS``        -> :class:`MulticopterAPorASAS` — no track-to-heading
+- `APORASAS`        -> `MulticopterAPorASAS` — no track-to-heading
   coupling for multicopter rows.
-- ``AUTOPILOT``       -> :class:`MulticopterAutopilot` — HOVER primitive,
+- `AUTOPILOT`       -> `MulticopterAutopilot` — HOVER primitive,
   HDG-yaws-the-nose semantics, fly-over route defaults.
-- ``ACTIVEWAYPOINT``  -> :class:`MulticopterActiveWaypoint` — fixed waypoint
+- `ACTIVEWAYPOINT`  -> `MulticopterActiveWaypoint` — fixed waypoint
   capture radius (the bank-angle turn distance degenerates at hover speeds).
-- ``OPENAP``          -> :class:`MulticopterPerf` — electric performance:
+- `OPENAP`          -> `MulticopterPerf` — electric performance:
   required thrust, momentum-theory power, battery state of charge with
   envelope feedback at low charge.
 
 Fixed-wing aircraft in the same simulation are untouched: every override
-calls ``super()`` and adjusts only the multicopter rows. Helicopters are out
-of scope — membership is a typecode set, not ``LIFT_ROTOR``.
+calls `super()` and adjusts only the multicopter rows. Helicopters are out
+of scope — membership is a typecode set, not `LIFT_ROTOR`.
 
 Stack commands: MCOPT, YAW, YAWRATE, HOVER, BATT.
 """
