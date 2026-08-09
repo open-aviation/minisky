@@ -6,11 +6,12 @@ to nothing at creeping speeds, and a hovering aircraft sitting on top of its
 waypoint would never switch at all. Multicopter rows use a fixed capture
 radius instead.
 
-This must live in an :class:`ActiveWaypoint` subclass (selected with
-``SELECTIMPL ACTIVEWAYPOINT MULTICOPTERACTIVEWAYPOINT``) because
-:meth:`ActiveWaypoint.reached` recomputes ``turndist`` from the bank-angle
-formula every step — clamping it from the autopilot update would be
-overwritten before it is ever used.
+This must live in an
+[`ActiveWaypoint`][minisky.traffic.activewpdata.ActiveWaypoint] subclass
+(selected with `SELECTIMPL ACTIVEWAYPOINT MULTICOPTERACTIVEWAYPOINT`)
+because [`ActiveWaypoint.reached`][minisky.traffic.activewpdata.ActiveWaypoint.reached]
+recomputes `turndist` from the bank-angle formula every step — clamping it
+from the autopilot update would be overwritten before it is ever used.
 """
 
 from __future__ import annotations

@@ -2,12 +2,12 @@
 
 Holds the plugin-owned per-aircraft arrays that mark which aircraft are
 multicopters and carry their decoupled body heading and yaw rate, plus the
-stack commands that read and write them (``MCOPT``, ``YAW``, ``YAWRATE``,
-``HOVER``, ``BATT``) and the hooks that keep the multicopter implementations selected
-(on the first simulation step after loading, and again after every reset,
-which reverts all replaceables to their core defaults).
+stack commands that read and write them (`MCOPT`, `YAW`, `YAWRATE`,
+`HOVER`, `BATT`) and the hooks that keep the multicopter implementations
+selected (on the first simulation step after loading, and again after every
+reset, which reverts all replaceables to their core defaults).
 
-Membership is deliberately *not* ``traf.perf.lifttype == LIFT_ROTOR``: that
+Membership is deliberately *not* `traf.perf.lifttype == LIFT_ROTOR`: that
 set also contains the EC35, a crewed helicopter, which this plugin does not
 model. It is a fixed typecode set instead, overridable per aircraft.
 """
@@ -57,7 +57,7 @@ IMPLEMENTATIONS = (
 def get_multicopter(traffic: Traffic) -> Multicopter | None:
     """Return the Multicopter entity attached to a traffic tree, if any.
 
-    The entity is mounted by the plugin build as a child node of ``traffic``.
+    The entity is mounted by the plugin build as a child node of `traffic`.
     The replaceable subclasses use this lookup so that, when one of them is
     selected without the plugin loaded, they degrade to base behaviour
     instead of crashing.
@@ -116,8 +116,8 @@ class Multicopter(plugin_api.Entity):
     def select_implementations(self) -> None:
         """Swap the multicopter implementations onto the owning traffic.
 
-        Equivalent to issuing ``SELECTIMPL <BASE> <IMPL>`` for each entry of
-        :data:`IMPLEMENTATIONS`; replaces the live instance immediately.
+        Equivalent to issuing `SELECTIMPL <BASE> <IMPL>` for each entry of
+        `IMPLEMENTATIONS`; replaces the live instance immediately.
         """
         for basename, implname in IMPLEMENTATIONS:
             result = self.traffic.select_implementation(basename, implname)
@@ -131,7 +131,7 @@ class Multicopter(plugin_api.Entity):
 
         Replacements are installed when the plugin loads but can only be
         selected once the plugin is published, so the initial selection
-        happens here. A manual ``SELECTIMPL`` afterwards is respected until
+        happens here. A manual `SELECTIMPL` afterwards is respected until
         the next reset.
         """
         if not self._selected:

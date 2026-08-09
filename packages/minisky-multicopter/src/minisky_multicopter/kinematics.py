@@ -1,12 +1,12 @@
 """Multicopter flight integration.
 
-Replaces the bank-to-turn kinematics of the core :class:`Kinematics` entity
-for multicopter rows: heading slews at a fixed yaw rate (valid at zero
-airspeed, so hover-yaw works), and the velocity vector follows the
-*commanded track* rather than the heading, so track and heading are
-decoupled.
+Replaces the bank-to-turn kinematics of the core
+[`Kinematics`][minisky.traffic.kinematics.Kinematics] entity for multicopter
+rows: heading slews at a fixed yaw rate (valid at zero airspeed, so
+hover-yaw works), and the velocity vector follows the *commanded track*
+rather than the heading, so track and heading are decoupled.
 
-Selected with ``SELECTIMPL KINEMATICS MULTICOPTERKINEMATICS``; fixed-wing
+Selected with `SELECTIMPL KINEMATICS MULTICOPTERKINEMATICS`; fixed-wing
 rows keep the base-class behaviour untouched.
 """
 
@@ -24,10 +24,10 @@ from minisky_multicopter.entity import get_multicopter
 class MulticopterKinematics(Kinematics):
     """Yaw-rate-limited, track-driven integration for multicopter rows.
 
-    Only :meth:`update_airspeed` and :meth:`update_groundspeed` are
-    overridden; the inherited :meth:`Kinematics.update` still runs a single
-    :meth:`Kinematics.update_pos` pass afterwards, so position is integrated
-    exactly once from the corrected velocity.
+    Only `update_airspeed` and `update_groundspeed` are overridden; the
+    inherited [`Kinematics.update`][minisky.traffic.kinematics.Kinematics.update]
+    still runs a single `update_pos` pass afterwards, so position is
+    integrated exactly once from the corrected velocity.
     """
 
     def update_airspeed(self) -> None:
@@ -64,7 +64,7 @@ class MulticopterKinematics(Kinematics):
 
         Runs the base implementation for the whole fleet, then rebuilds the
         ground-speed components of multicopter rows from the *commanded
-        track* (``traf.aporasas.trk``) plus wind, and derives ``gs``/``trk``
+        track* (`traf.aporasas.trk`) plus wind, and derives `gs`/`trk`
         from them: thrust is redirected without rotating the body, and
         course changes have no turn radius.
         """

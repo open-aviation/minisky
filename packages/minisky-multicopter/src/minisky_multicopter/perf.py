@@ -1,24 +1,25 @@
 """Electric performance for multicopters.
 
-Fills the ``# TODO: implement thrust computation for rotor aircraft`` gap in
-the core :class:`OpenAP` model for multicopter rows: required thrust from
-the mass and acceleration, electrical power from a momentum-theory scaling
-anchored to the installed power already shipped in the OpenAP rotor
-coefficients (``engnum * engpower``), and a battery state of charge that is
-integrated each step and feeds back into the flight envelope.
+Fills the `# TODO: implement thrust computation for rotor aircraft` gap in
+the core [`OpenAP`][minisky.traffic.performance.perfoap.OpenAP] model for
+multicopter rows: required thrust from the mass and acceleration, electrical
+power from a momentum-theory scaling anchored to the installed power already
+shipped in the OpenAP rotor coefficients (`engnum * engpower`), and a
+battery state of charge that is integrated each step and feeds back into the
+flight envelope.
 
-Fixed-wing rows keep the ``super()`` behaviour untouched. Selected with
-``SELECTIMPL OPENAP MULTICOPTERPERF`` (the plugin's hooks keep this
-selected, like the other multicopter implementations).
+Fixed-wing rows keep the `super()` behaviour untouched. Selected with
+`SELECTIMPL OPENAP MULTICOPTERPERF` (the plugin's hooks keep this selected,
+like the other multicopter implementations).
 
-The only data the shipped rotor ``aircraft.json`` lacks is battery capacity
-(``mfc`` is 0 for every rotor type), supplied by the small per-typecode
+The only data the shipped rotor `aircraft.json` lacks is battery capacity
+(`mfc` is 0 for every rotor type), supplied by the small per-typecode
 spec-sheet constants dict below; types without a public pack spec get an
-energy derived from their ``d_range_max`` at cruise speed. No PyThrust
-anywhere: a measured-prop-data upgrade is future work (see the plan doc).
+energy derived from their `d_range_max` at cruise speed. No PyThrust
+anywhere: a measured-prop-data upgrade is future work.
 
 Fidelity caveat: the power curve is momentum-theory shape
-(``P = P_max * (T / T_max) ** 1.5``), not measured prop data, so absolute
+(`P = P_max * (T / T_max) ** 1.5`), not measured prop data, so absolute
 forward-flight power is approximate and there is no terminal-voltage or
 current modelling — the envelope feedback is keyed on state of charge
 directly. Hover figures and the qualitative trends (power against thrust,
@@ -90,7 +91,7 @@ class MulticopterPerf(OpenAP):
         soc (ndarray): Battery state of charge [0-1].
         capacity (ndarray): Usable pack energy [J]; 0 = no battery model.
         power (ndarray): Current electrical power draw [W] — the electric
-            analogue of ``fuelflow``.
+            analogue of `fuelflow`.
         twr (ndarray): Thrust-to-weight ratio at maximum thrust [-].
         cds (ndarray): Flat-plate parasite drag area [m2].
     """
@@ -141,12 +142,13 @@ class MulticopterPerf(OpenAP):
     def _range_derived_wh(ac: dict, cds: q.AreaM2[float], twr: float) -> q.EnergyWh[float]:
         """Derive the pack energy of an unlisted type from its range [Wh].
 
-        Energy to fly the ``d_range_max`` of the OpenAP rotor entry at
+        Energy to fly the `d_range_max` of the OpenAP rotor entry at
         cruise speed (a fixed fraction of the envelope maximum), evaluated
         with the same momentum-theory power model used at runtime.
 
         Args:
             ac: OpenAP rotor `aircraft.json` entry for the typecode.
+            cds: Flat-plate parasite drag area.
             twr: Thrust-to-weight ratio at maximum thrust.
         """
         envelop = ac["envelop"]
@@ -166,9 +168,9 @@ class MulticopterPerf(OpenAP):
         """Return the thrust each aircraft would need as a multicopter [N].
 
         The thrust vector supports the weight — including any vertical
-        acceleration, ``m * sqrt(g^2 + az^2)`` — while its horizontal
+        acceleration, `m * sqrt(g^2 + az^2)` — while its horizontal
         component overcomes the flat-plate parasite drag of translation,
-        ``0.5 * rho * v^2 * CdS``. Meaningful for multicopter rows (other
+        `0.5 * rho * v^2 * CdS`. Meaningful for multicopter rows (other
         rows have a zero drag area).
         """
         traf = self.traffic
@@ -183,7 +185,7 @@ class MulticopterPerf(OpenAP):
         After the base update, computes the thrust each multicopter needs to
         support its weight and overcome parasite drag, derives the
         electrical power from the momentum-theory scaling
-        ``P = P_max * (T / T_max) ** 1.5`` anchored to the installed power,
+        `P = P_max * (T / T_max) ** 1.5` anchored to the installed power,
         and integrates the battery state of charge as an ideal energy tank.
 
         """
@@ -241,7 +243,7 @@ class MulticopterPerf(OpenAP):
     def batt(self, idx: int) -> Result[str, str]:
         """Report battery state of charge, power draw and endurance.
 
-        Backs the ``BATT`` stack command declared on the Multicopter entity,
+        Backs the `BATT` stack command declared on the Multicopter entity,
         which delegates here at call time so the command survives the
         performance instance being swapped on reset.
 

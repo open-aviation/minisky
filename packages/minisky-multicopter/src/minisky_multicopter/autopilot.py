@@ -1,19 +1,20 @@
 """Multicopter mission autopilot.
 
-A thin subclass of the core :class:`Autopilot`: LNAV already emits a *track*
-command, which is exactly what the decoupled multicopter kinematics
+A thin subclass of the core
+[`Autopilot`][minisky.traffic.autopilot.Autopilot]: LNAV already emits a
+*track* command, which is exactly what the decoupled multicopter kinematics
 consumes, so no guidance rewrite is needed. What the stock FMS cannot
-express is added here — the ``HOVER`` primitive, rerouted ``HDG`` semantics
+express is added here — the `HOVER` primitive, rerouted `HDG` semantics
 (nose only), and fly-over route defaults. The fixed waypoint capture radius
-lives in :class:`~minisky_multicopter.activewp.MulticopterActiveWaypoint`.
+lives in `MulticopterActiveWaypoint` (see `minisky_multicopter.activewp`).
 
-``HOVER`` is deliberately composable rather than a scripted manoeuvre: it
+`HOVER` is deliberately composable rather than a scripted manoeuvre: it
 brakes to a stop and holds position, optionally at a commanded altitude, and
 hands control back to the route after the optional hold time. Anything more
 elaborate (a delivery profile, say) is written in the scenario from
-``HOVER``, ``ALT`` and ``LNAV`` commands.
+`HOVER`, `ALT` and `LNAV` commands.
 
-Selected with ``SELECTIMPL AUTOPILOT MULTICOPTERAUTOPILOT``.
+Selected with `SELECTIMPL AUTOPILOT MULTICOPTERAUTOPILOT`.
 """
 
 from __future__ import annotations
@@ -135,7 +136,7 @@ class MulticopterAutopilot(Autopilot):
     def selhdgcmd(self, idx: AcIdSelection, hdg: HeadingDeg) -> Result[str, str]:
         """Select the autopilot heading; for multicopters, yaw the nose only.
 
-        For multicopter rows the HDG stack command is an alias of ``YAW``:
+        For multicopter rows the HDG stack command is an alias of `YAW`:
         it rotates the body without touching the track, and LNAV stays
         engaged — the velocity vector keeps following the FMS or conflict
         resolution. Other aircraft keep the stock behaviour.
@@ -172,9 +173,9 @@ class MulticopterAutopilot(Autopilot):
     ) -> Result[str, str]:
         """Hold position, optionally for a fixed time at a given altitude.
 
-        Backs the ``HOVER`` stack command declared on the Multicopter
-        entity, which delegates here at call time so the command survives
-        the autopilot instance being swapped on reset.
+        Backs the `HOVER` stack command declared on the Multicopter entity,
+        which delegates here at call time so the command survives the
+        autopilot instance being swapped on reset.
 
         Args:
             idx: Aircraft index.
