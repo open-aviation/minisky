@@ -30,7 +30,7 @@ from minisky.core import TrafficArrays
 from minisky.result import Err, Ok, Result
 
 if TYPE_CHECKING:
-    from minisky.tools.areafilter import Shapes
+    from minisky.tools.shapes import Shapes
     from minisky.traffic.traffic import Traffic
 
 

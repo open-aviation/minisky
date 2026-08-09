@@ -16,11 +16,11 @@ Great-circle distances, bearings, and coordinate calculations.
 
 ::: minisky.tools.geo
 
-## Area filter
+## Shapes
 
-Named geographic areas (boxes, circles, polygons) used by area-based commands.
+Named geographic areas (boxes, circles, polygons) and graphical lines.
 
-::: minisky.tools.areafilter
+::: minisky.tools.shapes
 
 ## Navigation database
 

@@ -61,8 +61,8 @@ from minisky.tools.aero import (
     vatmos,
     vcasormach,
 )
-from minisky.tools.areafilter import Shapes
 from minisky.tools.convert import latlon2txt
+from minisky.tools.shapes import Shapes
 from minisky.traffic.asas import ConflictDetection, ConflictResolution
 
 from .activewpdata import ActiveWaypoint

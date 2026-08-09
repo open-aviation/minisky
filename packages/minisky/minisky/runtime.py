@@ -14,9 +14,9 @@ from minisky.plugin import PluginManager
 from minisky.simulation import ConsoleIO, Runner, Simulation, SimulationState
 from minisky.stack import CommandStack
 from minisky.streaming import StreamHub, build_snapshot
-from minisky.tools.areafilter import Shapes
 from minisky.tools.geo_commands import GeoCommands
 from minisky.tools.navdata import Navdatabase
+from minisky.tools.shapes import Shapes
 from minisky.traffic import Traffic
 from minisky.traffic.activewpdata import ActiveWaypoint
 from minisky.traffic.aporasas import APorASAS

@@ -62,8 +62,8 @@ if TYPE_CHECKING:
     from minisky.core.varexplorer import VariableExplorer
     from minisky.plugin import PluginManager
     from minisky.simulation import ConsoleIO, Runner, Simulation
-    from minisky.tools.areafilter import Shapes
     from minisky.tools.navdata import Navdatabase
+    from minisky.tools.shapes import Shapes
     from minisky.traffic import Traffic
 
 

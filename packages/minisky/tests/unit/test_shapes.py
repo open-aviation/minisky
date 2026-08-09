@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 from minisky.command import LatLonDegrees
-from minisky.tools.areafilter import Box, Circle, HasArea, Poly, Shapes
+from minisky.tools.shapes import Box, Circle, HasArea, Poly, Shapes
 
 
 def contains(shape: HasArea, lat: float, lon: float, alt: float = 0.0) -> bool:
@@ -29,9 +29,11 @@ def test_mutually_exclusive_shape_names() -> None:
     assert "A" in shapes.areas
     assert "A" not in shapes.lines
 
+
 #
 # see issue #32 / PR #42
 #
+
 
 def test_box_containment_includes_altitude_bounds() -> None:
     box = Box("B", [52.0, 4.0, 53.0, 5.0], top=3000.0, bottom=1000.0)

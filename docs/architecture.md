@@ -16,7 +16,7 @@ Constructing `MiniSky` creates an independent object graph:
 | [`runtime.navigation`][minisky.tools.navdata.Navdatabase] | [`Navdatabase`][minisky.tools.navdata.Navdatabase] | Waypoints, airports, and airways |
 | [`runtime.commands`][minisky.stack.CommandStack] | [`CommandStack`][minisky.stack.CommandStack] | Command registry, queue, and scenario state |
 | [`runtime.plugins`][minisky.plugin.plugin.PluginManager] | [`PluginManager`][minisky.plugin.plugin.PluginManager] | Plugin declarations, hooks, and lifespans |
-| `runtime.areas` | [`AreaFilter`][minisky.tools.areafilter.AreaFilter] | Named geographic areas |
+| `runtime.shapes` | [`Shapes`][minisky.tools.shapes.Shapes] | Named geographic areas and graphical lines |
 | `runtime.variables` | [`VariableExplorer`][minisky.core.varexplorer.VariableExplorer] | Runtime data inspection |
 | `runtime.streaming` | `StreamHub` | Rate-capped snapshot fan-out |
 
