@@ -388,8 +388,7 @@ class Route:
         # update qdr and "last waypoint switch" in traffic
         if idx >= 0:
             next_qdr = self.getnextqdr()
-            # NOTE(abraham): keeping legacy for ActiveWaypoint
-            self.traffic.actwp.next_qdr[iac] = -999.0 if next_qdr is None else next_qdr
+            self.traffic.actwp.next_qdr[iac] = np.ma.masked if next_qdr is None else next_qdr
             self.traffic.actwp.swlastwp[iac] = self.iactwp == n_wpt - 1
 
         # Update waypoints
@@ -1198,33 +1197,38 @@ def direct(traffic: Traffic, acidx: int, wpname: str) -> bool:
     turn = acrte.wpturn[wpidx]
     traffic.actwp.flyturn[acidx] = turn is not None
     geometry = None if turn is None else turn.geometry
-    # NOTE(abraham): keeping legacy for ActiveWaypoint
-    traffic.actwp.turnrad[acidx] = geometry.radius if isinstance(geometry, TurnRadius) else -999.0
-    traffic.actwp.turnspd[acidx] = -999.0 if turn is None or turn.speed is None else turn.speed
+    traffic.actwp.turnrad[acidx] = (
+        geometry.radius if isinstance(geometry, TurnRadius) else np.ma.masked
+    )
+    traffic.actwp.turnspd[acidx] = (
+        np.ma.masked if turn is None or turn.speed is None else turn.speed
+    )
     traffic.actwp.turnhdgr[acidx] = (
-        geometry.heading_rate if isinstance(geometry, TurnHeadingRate) else -999.0
+        geometry.heading_rate if isinstance(geometry, TurnHeadingRate) else np.ma.masked
     )
 
     next_turn = acrte.getnextturnwp()
     if next_turn is None:
-        traffic.actwp.nextturnlat[acidx] = 0.0
-        traffic.actwp.nextturnlon[acidx] = 0.0
-        traffic.actwp.nextturnspd[acidx] = -999.0
-        traffic.actwp.nextturnrad[acidx] = -999.0
-        traffic.actwp.nextturnhdgr[acidx] = -999.0
-        traffic.actwp.nextturnidx[acidx] = -999.0
+        traffic.actwp.nextturnlat[acidx] = np.ma.masked
+        traffic.actwp.nextturnlon[acidx] = np.ma.masked
+        traffic.actwp.nextturnspd[acidx] = np.ma.masked
+        traffic.actwp.nextturnrad[acidx] = np.ma.masked
+        traffic.actwp.nextturnhdgr[acidx] = np.ma.masked
+        traffic.actwp.nextturnidx[acidx] = np.ma.masked
     else:
         traffic.actwp.nextturnlat[acidx] = next_turn.latitude
         traffic.actwp.nextturnlon[acidx] = next_turn.longitude
         traffic.actwp.nextturnspd[acidx] = (
-            -999.0 if next_turn.turn.speed is None else next_turn.turn.speed
+            np.ma.masked if next_turn.turn.speed is None else next_turn.turn.speed
         )
         next_geometry = next_turn.turn.geometry
         traffic.actwp.nextturnrad[acidx] = (
-            next_geometry.radius if isinstance(next_geometry, TurnRadius) else -999.0
+            next_geometry.radius if isinstance(next_geometry, TurnRadius) else np.ma.masked
         )
         traffic.actwp.nextturnhdgr[acidx] = (
-            next_geometry.heading_rate if isinstance(next_geometry, TurnHeadingRate) else -999.0
+            next_geometry.heading_rate
+            if isinstance(next_geometry, TurnHeadingRate)
+            else np.ma.masked
         )
         traffic.actwp.nextturnidx[acidx] = next_turn.waypoint_index
 
@@ -1234,13 +1238,19 @@ def direct(traffic: Traffic, acidx: int, wpname: str) -> bool:
     acrte.calcfp()
 
     profile = acrte.wpprofile[wpidx]
-    # NOTE(abraham): keeping legacy for ActiveWaypoint
-    traffic.actwp.xtoalt[acidx] = 0.0 if profile.altitude is None else profile.altitude.distance
-    traffic.actwp.nextaltco[acidx] = (
-        -999.0 if profile.altitude is None else profile.altitude.altitude
-    )
-    traffic.actwp.torta[acidx] = -999.0 if profile.rta is None else profile.rta.time
-    traffic.actwp.xtorta[acidx] = 0.0 if profile.rta is None else profile.rta.distance
+    if profile.altitude is None:
+        traffic.actwp.nextaltco[acidx] = np.ma.masked
+        traffic.actwp.xtoalt[acidx] = np.ma.masked
+    else:
+        traffic.actwp.nextaltco[acidx] = profile.altitude.altitude
+        traffic.actwp.xtoalt[acidx] = profile.altitude.distance
+
+    if profile.rta is None:
+        traffic.actwp.torta[acidx] = np.ma.masked
+        traffic.actwp.xtorta[acidx] = np.ma.masked
+    else:
+        traffic.actwp.torta[acidx] = profile.rta.time
+        traffic.actwp.xtorta[acidx] = profile.rta.distance
 
     # VNAV calculations like V/S and speed for RTA
     traffic.ap.ComputeVNAV(acidx, profile)
@@ -1258,7 +1268,7 @@ def direct(traffic: Traffic, acidx: int, wpname: str) -> bool:
 
     # No speed specified for next leg
     else:
-        traffic.actwp.nextspd[acidx] = -999.0
+        traffic.actwp.nextspd[acidx] = np.ma.masked
 
     qdr_, dist_ = geo.qdrdist(
         traffic.lat[acidx],
@@ -1412,8 +1422,8 @@ def delrte(traffic: Traffic, acidx: int) -> Result[str, str]:
     traffic.swlnav[acidx] = False
     traffic.swvnav[acidx] = False
     traffic.swvnavspd[acidx] = False
-    traffic.actwp.torta[acidx] = -999.0
-    traffic.actwp.xtorta[acidx] = 0.0
+    traffic.actwp.torta[acidx] = np.ma.masked
+    traffic.actwp.xtorta[acidx] = np.ma.masked
 
     return Ok("")
 
