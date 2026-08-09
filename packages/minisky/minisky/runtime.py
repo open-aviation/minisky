@@ -14,7 +14,7 @@ from minisky.plugin import PluginManager
 from minisky.simulation import ConsoleIO, Runner, Simulation, SimulationState
 from minisky.stack import CommandStack
 from minisky.streaming import StreamHub, build_snapshot
-from minisky.tools.areafilter import AreaFilter
+from minisky.tools.areafilter import Shapes
 from minisky.tools.geo_commands import GeoCommands
 from minisky.tools.navdata import Navdatabase
 from minisky.traffic import Traffic
@@ -51,13 +51,13 @@ class MiniSky:
         self.numpy_random = np.random.RandomState()
         self.console = ConsoleIO(lambda: self.simulation.state == SimulationState.OP)
         self.navigation = Navdatabase(data("navigation"), self.console)
-        self.areas = AreaFilter()
+        self.shapes = Shapes()
         self.variables = VariableExplorer()
         self.traffic = Traffic(
             config=config,
             python_random=self.python_random,
             numpy_random=self.numpy_random,
-            areas=self.areas,
+            shapes=self.shapes,
             navigation=self.navigation,
             console=self.console,
             get_simulation=lambda: self.simulation,
@@ -89,7 +89,7 @@ class MiniSky:
             traffic=self.traffic,
             navigation=self.navigation,
             console=self.console,
-            areas=self.areas,
+            shapes=self.shapes,
             variables=self.variables,
             plugins=self.plugins,
             replaceables=self.replaceables,
@@ -106,7 +106,7 @@ class MiniSky:
             numpy_random=self.numpy_random,
             console=self.console,
             command_stack=self.commands,
-            areas=self.areas,
+            shapes=self.shapes,
             plugins=self.plugins,
             replaceables=self.replaceables,
             stop_runner=self._stop_runner,
@@ -120,7 +120,7 @@ class MiniSky:
             (
                 self.console,
                 self.navigation,
-                self.areas,
+                self.shapes,
                 self.variables,
                 self.traffic,
                 self.traffic.cond,

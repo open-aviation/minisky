@@ -30,7 +30,7 @@ from minisky.core import TrafficArrays
 from minisky.result import Err, Ok, Result
 
 if TYPE_CHECKING:
-    from minisky.tools.areafilter import AreaFilter
+    from minisky.tools.areafilter import Shapes
     from minisky.traffic.traffic import Traffic
 
 
@@ -44,10 +44,10 @@ class TrafficGroups(TrafficArrays):
 
     _ALL_NAMES = frozenset({"*", "ALL"})
 
-    def __init__(self, traffic: Traffic, areas: AreaFilter) -> None:
+    def __init__(self, traffic: Traffic, shapes: Shapes) -> None:
         super().__init__(traffic)
         self.traffic = traffic
-        self.areas = areas
+        self.shapes = shapes
         self.groups: dict[str, int] = {}
         self.allmasks = 0
         with self.settrafarrays():
@@ -55,7 +55,7 @@ class TrafficGroups(TrafficArrays):
 
     def new_implementation(self, implementation: Callable[..., TrafficArrays]) -> TrafficArrays:
         """Construct a replacement with this runtime's traffic and area store."""
-        return implementation(self.traffic, self.areas)
+        return implementation(self.traffic, self.shapes)
 
     def __contains__(self, groupname: str) -> bool:
         """Return whether a stored or virtual group exists."""
@@ -100,7 +100,7 @@ class TrafficGroups(TrafficArrays):
                 case Ok(selection):
                     indices.extend(int(index) for index in selection)
                 case Err(error):
-                    if self.areas.has_area(member):
+                    if member in self.shapes.areas:
                         return Err("Area names cannot be combined with aircraft or groups")
                     return Err(error)
         return Ok(np.unique(np.asarray(indices, dtype=int)))
@@ -132,10 +132,13 @@ class TrafficGroups(TrafficArrays):
         sole_is_selection = sole_member is not None and (
             self.traffic.idx(sole_member) >= 0 or sole_member in self
         )
-        if sole_member is not None and not sole_is_selection and self.areas.has_area(sole_member):
-            inside = self.areas.contains(
-                sole_member, self.traffic.lat, self.traffic.lon, self.traffic.alt
-            )
+        area = (
+            self.shapes.areas.get(sole_member)
+            if sole_member is not None and not sole_is_selection
+            else None
+        )
+        if area is not None:
+            inside = area.contains(self.traffic.lat, self.traffic.lon, self.traffic.alt)
             indices = np.flatnonzero(inside)
         else:
             match self._member_indices(members):

@@ -61,7 +61,7 @@ from minisky.tools.aero import (
     vatmos,
     vcasormach,
 )
-from minisky.tools.areafilter import AreaFilter
+from minisky.tools.areafilter import Shapes
 from minisky.tools.convert import latlon2txt
 from minisky.traffic.asas import ConflictDetection, ConflictResolution
 
@@ -178,7 +178,7 @@ class Traffic(TrafficArrays):
         config: MiniSkyConfig,
         python_random: Random,
         numpy_random: np.random.RandomState,
-        areas: AreaFilter,
+        shapes: Shapes,
         navigation: Navdatabase,
         console: ConsoleIO,
         get_simulation: Callable[[], Simulation],
@@ -189,7 +189,7 @@ class Traffic(TrafficArrays):
         self.config = config
         self.python_random = python_random
         self.numpy_random = numpy_random
-        self.areas = areas
+        self.shapes = shapes
         self.navigation = navigation
         self.console = console
         self._get_simulation = get_simulation
@@ -263,7 +263,7 @@ class Traffic(TrafficArrays):
             self.kinematics = Kinematics(self, get_simulation)
 
             # Group Logic
-            self.groups = TrafficGroups(self, areas)
+            self.groups = TrafficGroups(self, shapes)
 
             # Traffic autothrottle settings
             self.swats = np.array(

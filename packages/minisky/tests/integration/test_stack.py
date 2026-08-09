@@ -193,7 +193,12 @@ class TestTypedGrammar:
         result = runtime.commands.cmddict["BOX"]("TEST N52 E004 N53 E005 FL100 FL200")
         assert isinstance(result, (Ok, Err))
         assert result.is_ok(), result.err()
-        assert runtime.areas.has_area("TEST")
+        assert "TEST" in runtime.shapes.areas
+
+        result = runtime.commands.cmddict["LINE"]("TRACK N52 E004 N53 E005")
+        assert isinstance(result, (Ok, Err))
+        assert result.is_ok(), result.err()
+        assert "TRACK" in runtime.shapes.lines
 
     def test_group_selection_is_kept_for_compatible_commands(
         self, runtime: MiniSky, run_cmd: RunCommand
