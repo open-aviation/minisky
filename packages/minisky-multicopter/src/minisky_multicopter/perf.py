@@ -1,9 +1,9 @@
-"""Electric performance for multicopters.
+r"""Electric performance for multicopters.
 
-Fills the `# TODO: implement thrust computation for rotor aircraft` gap in
-the core [`OpenAP`][minisky.traffic.performance.perfoap.OpenAP] model for
-multicopter rows: required thrust from the mass and acceleration, electrical
-power from a momentum-theory scaling anchored to the installed power already
+Adds the thrust computation the core
+[`OpenAP`][minisky.traffic.performance.perfoap.OpenAP] model lacks for rotor
+aircraft: required thrust from the mass and acceleration, electrical power
+from a momentum-theory scaling anchored to the installed power already
 shipped in the OpenAP rotor coefficients (`engnum * engpower`), and a
 battery state of charge that is integrated each step and feeds back into the
 flight envelope.
@@ -19,7 +19,7 @@ energy derived from their `d_range_max` at cruise speed. No PyThrust
 anywhere: a measured-prop-data upgrade is future work.
 
 Fidelity caveat: the power curve is momentum-theory shape
-(`P = P_max * (T / T_max) ** 1.5`), not measured prop data, so absolute
+($P = P_\text{max} (T / T_\text{max})^{1.5}$), not measured prop data, so absolute
 forward-flight power is approximate and there is no terminal-voltage or
 current modelling — the envelope feedback is keyed on state of charge
 directly. Hover figures and the qualitative trends (power against thrust,
@@ -165,13 +165,13 @@ class MulticopterPerf(OpenAP):
         return q.j_to_wh(power * (d_range / v_cruise))
 
     def required_thrust(self) -> q.ForceN[np.ndarray]:
-        """Return the thrust each aircraft would need as a multicopter [N].
+        r"""Return the thrust each aircraft would need as a multicopter [N].
 
         The thrust vector supports the weight — including any vertical
-        acceleration, `m * sqrt(g^2 + az^2)` — while its horizontal
+        acceleration, $m \sqrt{g^2 + a_z^2}$ — while its horizontal
         component overcomes the flat-plate parasite drag of translation,
-        `0.5 * rho * v^2 * CdS`. Meaningful for multicopter rows (other
-        rows have a zero drag area).
+        $\tfrac{1}{2} \rho v^2 C_D S$. Meaningful for multicopter rows
+        (other rows have a zero drag area).
         """
         traf = self.traffic
         rho = aero.vdensity(traf.alt)
@@ -180,13 +180,14 @@ class MulticopterPerf(OpenAP):
         return np.hypot(lift, drag)
 
     def update(self) -> None:
-        """Update performance, then the electric model for multicopter rows.
+        r"""Update performance, then the electric model for multicopter rows.
 
         After the base update, computes the thrust each multicopter needs to
         support its weight and overcome parasite drag, derives the
         electrical power from the momentum-theory scaling
-        `P = P_max * (T / T_max) ** 1.5` anchored to the installed power,
-        and integrates the battery state of charge as an ideal energy tank.
+        $P = P_\text{max} (T / T_\text{max})^{1.5}$ anchored to the
+        installed power, and integrates the battery state of charge as an
+        ideal energy tank.
 
         """
         super().update()
