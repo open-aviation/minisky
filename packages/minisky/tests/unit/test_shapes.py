@@ -17,7 +17,7 @@ def test_mutually_exclusive_shape_names() -> None:
     first = LatLonDegrees(52.0, 4.0)
     second = LatLonDegrees(53.0, 5.0)
 
-    shapes.define_box_area("A", first, second)
+    shapes.define_box("A", first, second)
     assert "A" in shapes.areas
     assert "A" not in shapes.lines
 
@@ -25,7 +25,7 @@ def test_mutually_exclusive_shape_names() -> None:
     assert "A" not in shapes.areas
     assert "A" in shapes.lines
 
-    shapes.define_box_area("A", first, second)
+    shapes.define_box("A", first, second)
     assert "A" in shapes.areas
     assert "A" not in shapes.lines
 
@@ -36,7 +36,7 @@ def test_mutually_exclusive_shape_names() -> None:
 
 
 def test_box_containment_includes_altitude_bounds() -> None:
-    box = Box("B", [52.0, 4.0, 53.0, 5.0], top=3000.0, bottom=1000.0)
+    box = Box(LatLonDegrees(52.0, 4.0), LatLonDegrees(53.0, 5.0), top=3000.0, bottom=1000.0)
 
     assert contains(box, 52.5, 4.5, 2000.0)
     assert not contains(box, 51.0, 4.5, 2000.0)
@@ -44,14 +44,21 @@ def test_box_containment_includes_altitude_bounds() -> None:
 
 
 def test_circle_near_pole_uses_geographic_distance() -> None:
-    circle = Circle("C", [89.9, 0.0, 100.0])
+    circle = Circle(LatLonDegrees(89.9, 0.0), 100.0)
 
     assert contains(circle, 89.9, 0.0)
     assert not contains(circle, 87.9, 0.0)
 
 
 def test_polygon_contains_points_across_antimeridian() -> None:
-    polygon = Poly("P", [10.0, 170.0, 10.0, -170.0, -10.0, -170.0, -10.0, 170.0])
+    polygon = Poly(
+        (
+            LatLonDegrees(10.0, 170.0),
+            LatLonDegrees(10.0, -170.0),
+            LatLonDegrees(-10.0, -170.0),
+            LatLonDegrees(-10.0, 170.0),
+        )
+    )
 
     assert contains(polygon, 0.0, 179.0)
     assert contains(polygon, 0.0, -179.0)
@@ -60,4 +67,11 @@ def test_polygon_contains_points_across_antimeridian() -> None:
 
 def test_polygon_enclosing_pole_is_rejected() -> None:
     with pytest.raises(ValueError, match="Polygon must not enclose a pole"):
-        Poly("P", [80.0, -135.0, 80.0, -45.0, 80.0, 45.0, 80.0, 135.0])
+        Poly(
+            (
+                LatLonDegrees(80.0, -135.0),
+                LatLonDegrees(80.0, -45.0),
+                LatLonDegrees(80.0, 45.0),
+                LatLonDegrees(80.0, 135.0),
+            )
+        )
