@@ -36,7 +36,7 @@ if TYPE_CHECKING:
     from minisky.plugin import PluginManager
     from minisky.simulation.console import ConsoleIO
     from minisky.stack import CommandStack
-    from minisky.tools.areafilter import AreaFilter
+    from minisky.tools.areafilter import Shapes
     from minisky.tools.navdata import Navdatabase
     from minisky.traffic import Traffic
 
@@ -124,7 +124,7 @@ class Simulation:
         numpy_random: np.random.RandomState,
         console: ConsoleIO,
         command_stack: CommandStack,
-        areas: AreaFilter,
+        shapes: Shapes,
         plugins: PluginManager,
         replaceables: ReplaceableManager,
         stop_runner: Callable[[], None],
@@ -136,7 +136,7 @@ class Simulation:
         self.numpy_random = numpy_random
         self.console = console
         self.commands = command_stack
-        self.areas = areas
+        self.shapes = shapes
         self.plugins = plugins
         self.replaceables = replaceables
         self.stop_runner = stop_runner
@@ -267,7 +267,7 @@ class Simulation:
         self.navigation.reset()
         self.traffic.reset()
         self.commands.reset()
-        self.areas.reset()
+        self.shapes.reset()
         self.console.reset()
         # Reset replaceables (Autopilot, PerfBase, etc.) to defaults
         self.replaceables.reset()

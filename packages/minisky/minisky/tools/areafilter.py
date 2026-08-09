@@ -1,20 +1,9 @@
-"""Area filter module
-
-Defines named geometric shapes - boxes, circles, polygons, and lines - on
-the map, optionally bounded by a top and bottom altitude, and provides
-point-inside-shape tests for (vectors of) aircraft positions. This backs
-the BOX, CIRCLE, POLY, POLYALT, LINE, and POLYLINE stack commands, and is
-used by plugins and traffic logic that need to know which aircraft are
-inside an area. Each `AreaFilter` stores its defined shapes by name.
-
-Boxes and circles are tested directly in geographic coordinates; polygons
-use a planar shapely geometry internally, which is only valid for polygons
-that do not cross the antimeridian or enclose a pole - those are rejected
-at definition time.
-"""
+"""Named geographic areas and graphical lines."""
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from types import MappingProxyType
 from typing import Protocol
 
 import numpy as np
@@ -25,67 +14,28 @@ from minisky.result import Err, Ok, Result
 from minisky.tools.geo import kwikdist
 
 
-class AreaFilter:
-    """Named geometric shapes for a MiniSky runtime."""
+class Shapes:
+    """Own named containable areas and graphical lines."""
 
     def __init__(self) -> None:
-        # Dictionary of all basic shapes (The shape classes defined in this file) by name
-        self.basic_shapes: dict[str, HasArea | Line] = {}
-
-    def has_area(self, areaname: str) -> bool:
-        """Check if area with name 'areaname' exists."""
-        return areaname in self.basic_shapes
-
-    def define_area(
-        self,
-        areaname: str,
-        areatype: str,
-        coordinates: tuple[float, ...] | list[float],
-        top: float = 1e9,
-        bottom: float = -1e9,
-    ) -> Result[str, str]:
-        """Define a new area, or list/inspect existing areas.
-
-        Args:
-            areaname: Name of the area, or "LIST" to list all defined shapes.
-            areatype: Shape type: "BOX", "CIRCLE", "POLY"/"POLYALT", or "LINE".
-            coordinates: Flat sequence of lat/lon pairs [deg]; for a circle:
-                (lat [deg], lon [deg], radius [nm]). When empty, information
-                about the existing area with the given name is returned.
-            top: Top altitude bound [m] (default: effectively unbounded).
-            bottom: Bottom altitude bound [m] (default: effectively unbounded).
-        """
-        if areaname == "LIST":
-            if not self.basic_shapes:
-                return Ok("No shapes are currently defined.")
-            else:
-                return Ok("Currently defined shapes:\n" + ", ".join(self.basic_shapes))
-        if not coordinates:
-            if areaname in self.basic_shapes:
-                return Ok(str(self.basic_shapes[areaname]))
-            else:
-                return Err(f"Unknown shape: {areaname}")
-
-        try:
-            if areatype == "BOX":
-                shape = Box(areaname, coordinates, top, bottom)
-            elif areatype == "CIRCLE":
-                shape = Circle(areaname, coordinates, top, bottom)
-            elif areatype[:4] == "POLY":
-                shape = Poly(areaname, coordinates, top, bottom)
-            elif areatype == "LINE":
-                shape = Line(areaname, coordinates)
-            else:
-                return Err(f"Unknown shape type: {areatype}")
-        except ValueError as e:
-            return Err(str(e))
-
-        self.basic_shapes[areaname] = shape
-        return Ok(f"Created {areatype} {areaname}")
+        self._areas: dict[str, HasArea] = {}
+        self._lines: dict[str, Line] = {}
+        self.areas: Mapping[str, HasArea] = MappingProxyType(self._areas)
+        self.lines: Mapping[str, Line] = MappingProxyType(self._lines)
 
     @staticmethod
     def _coordinates(points: tuple[LatLonDegrees, ...]) -> tuple[float, ...]:
         return tuple(value for point in points for value in (point.lat, point.lon))
+
+    # NOTE: we want area and line names to be mutually exclusive.
+
+    def _store_area(self, name: str, area: HasArea) -> None:
+        self._lines.pop(name, None)
+        self._areas[name] = area
+
+    def _store_line(self, name: str, line: Line) -> None:
+        self._areas.pop(name, None)
+        self._lines[name] = line
 
     @command(name="BOX")
     def define_box_area(
@@ -97,7 +47,8 @@ class AreaFilter:
         bottom: AltM = -1e9,
     ) -> Result[str, str]:
         """Define a box-shaped area from two opposite corners."""
-        return self.define_area(name, "BOX", self._coordinates((first, second)), top, bottom)
+        self._store_area(name, Box(name, self._coordinates((first, second)), top, bottom))
+        return Ok(f"Created BOX {name}")
 
     @command(name="CIRCLE")
     def define_circle_area(
@@ -109,19 +60,25 @@ class AreaFilter:
         bottom: AltM = -1e9,
     ) -> Result[str, str]:
         """Define a circular area from a center and radius in nautical miles."""
-        return self.define_area(
-            name, "CIRCLE", (*self._coordinates((center,)), radius), top, bottom
-        )
+        coordinates = (*self._coordinates((center,)), radius)
+        self._store_area(name, Circle(name, coordinates, top, bottom))
+        return Ok(f"Created CIRCLE {name}")
 
     @command(name="LINE")
-    def define_line_area(self, name: Keyword, start: LatLonDeg, end: LatLonDeg) -> Result[str, str]:
+    def define_line(self, name: Keyword, start: LatLonDeg, end: LatLonDeg) -> Result[str, str]:
         """Draw a line between two positions."""
-        return self.define_area(name, "LINE", self._coordinates((start, end)))
+        self._store_line(name, Line(name, self._coordinates((start, end))))
+        return Ok(f"Created LINE {name}")
 
     @command(name="POLY", aliases=("POLYGON",))
     def define_poly_area(self, name: Keyword, *points: LatLonDeg) -> Result[str, str]:
         """Define a polygon from position vertices."""
-        return self.define_area(name, "POLY", self._coordinates(points))
+        try:
+            area = Poly(name, self._coordinates(points))
+        except ValueError as error:
+            return Err(str(error))
+        self._store_area(name, area)
+        return Ok(f"Created POLY {name}")
 
     @command(name="POLYALT")
     def define_polyalt_area(
@@ -133,50 +90,31 @@ class AreaFilter:
         *additional: LatLonDeg,
     ) -> Result[str, str]:
         """Define a polygon between top and bottom altitudes."""
-        return self.define_area(
-            name, "POLYALT", self._coordinates((first, *additional)), top, bottom
-        )
+        try:
+            area = Poly(name, self._coordinates((first, *additional)), top, bottom)
+        except ValueError as error:
+            return Err(str(error))
+        self._store_area(name, area)
+        return Ok(f"Created POLYALT {name}")
 
     @command(name="POLYLINE", aliases=("LINES", "POLYLINES"))
-    def define_polyline_area(
+    def define_polyline(
         self, name: Keyword, first: LatLonDeg, *additional: LatLonDeg
     ) -> Result[str, str]:
         """Draw a multi-segment line through position vertices."""
-        return self.define_area(name, "LINE", self._coordinates((first, *additional)))
-
-    def contains(
-        self, areaname: str, lat: np.ndarray, lon: np.ndarray, alt: np.ndarray
-    ) -> np.ndarray:
-        """Check if points with coordinates lat, lon, alt are inside area with name 'areaname'.
-
-        Args:
-            areaname: Name of the area to test against.
-            lat: Latitude(s) [deg].
-            lon: Longitude(s) [deg].
-            alt: Altitude(s) [m].
-
-        Returns:
-            Array of booleans, True == Inside. All False when no area with
-            the given name exists, or when the named shape is a line.
-        """
-        area = self.basic_shapes.get(areaname)
-        if area is None or isinstance(area, Line):
-            return np.zeros(len(lat), dtype=bool)
-        return area.contains(lat, lon, alt)
+        self._store_line(name, Line(name, self._coordinates((first, *additional))))
+        return Ok(f"Created POLYLINE {name}")
 
     def reset(self) -> None:
-        """Clear all data."""
-        self.basic_shapes.clear()
+        self._areas.clear()
+        self._lines.clear()
 
-    def deleteArea(self, name: str) -> Result[str, str]:
-        """Delete a previously defined area by name.
-
-        Args:
-            name: Name of the area shape to remove.
-        """
-        if self.basic_shapes.pop(name, None) is not None:
+    def delete(self, name: str) -> Result[str, str]:
+        if self._areas.pop(name, None) is not None:
             return Ok(f"Area {name} deleted.")
-        return Err(f"No area found with name {name}.")
+        if self._lines.pop(name, None) is not None:
+            return Ok(f"Line {name} deleted.")
+        return Err(f"No shape found with name {name}.")
 
 
 def _vrange_str(top: float, bottom: float) -> str:
@@ -221,6 +159,9 @@ class Line:
             f"and end point ({self.coordinates[2]}, {self.coordinates[3]})."
         )
 
+
+# TODO(abraham): stop using sentinels to indicate the lack of top / bottom.
+# see issue #40
 
 class Box(HasArea):
     """A lat/lon-aligned box shape.
@@ -290,9 +231,8 @@ class Poly(HasArea):
     """A polygon shape.
 
     Defined by a sequence of lat/lon vertices [deg] and optional altitude
-    bounds [m]. Containment is tested against a planar shapely polygon in
-    (lat, lon) space, which cannot represent polygons that cross the
-    antimeridian or enclose a pole; those are rejected with ValueError.
+    bounds [m]. Longitudes are unwrapped before planar Shapely containment;
+    polygons that touch or enclose a pole are rejected.
     """
 
     def __init__(self, name: str, coordinates, top: float = 1e9, bottom: float = -1e9) -> None:
@@ -300,22 +240,31 @@ class Poly(HasArea):
         self.coordinates = coordinates
         self.top = np.maximum(bottom, top)
         self.bottom = np.minimum(bottom, top)
-        vertices = np.reshape(coordinates, (-1, 2))
-        # A ring with an edge spanning more than 180 deg of longitude either
-        # crosses the antimeridian or winds around a pole; both are invalid
-        # in the planar (lat, lon) space the containment test runs in.
-        lons = np.append(vertices[:, 1], vertices[0, 1])
-        if np.any(np.abs(np.diff(lons)) > 180.0):
-            raise ValueError(
-                f"Polygon {name} crosses the antimeridian or encloses a pole; "
-                "split it into separate polygons."
-            )
-        self._geom = shapely.Polygon(vertices)
+        vertices = np.asarray(coordinates, dtype=float).reshape((-1, 2))
+        if len(vertices) < 3:
+            raise ValueError("Polygon requires at least three vertices")
+        if np.any(np.isclose(np.abs(vertices[:, 0]), 90.0)):
+            raise ValueError("Polygon must not touch a pole")
+
+        lon = vertices[:, 1]
+        unwrapped_ring = np.unwrap(np.append(lon, lon[0]), period=360.0)
+        if not np.isclose(unwrapped_ring[-1], unwrapped_ring[0]):
+            raise ValueError("Polygon must not enclose a pole")
+        unwrapped_lon = unwrapped_ring[:-1]
+        self._reference_lon = float((unwrapped_lon.min() + unwrapped_lon.max()) * 0.5)
+        self._geom = shapely.Polygon(np.column_stack((vertices[:, 0], unwrapped_lon)))
+        if not shapely.is_valid(self._geom):
+            raise ValueError(f"Invalid polygon: {shapely.is_valid_reason(self._geom)}")
 
     def contains(self, lat: np.ndarray, lon: np.ndarray, alt: np.ndarray) -> np.ndarray:
         """Return whether points (lat [deg], lon [deg], alt [m]) lie inside
         the polygon border and altitude bounds."""
-        return shapely.contains_xy(self._geom, lat, lon) & (self.bottom <= alt) & (alt <= self.top)
+        unwrapped_lon = lon + 360.0 * np.floor((self._reference_lon - lon + 180.0) / 360.0)
+        return (
+            shapely.contains_xy(self._geom, lat, unwrapped_lon)
+            & (self.bottom <= alt)
+            & (alt <= self.top)
+        )
 
     def __str__(self) -> str:
         return (

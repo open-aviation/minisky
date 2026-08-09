@@ -62,7 +62,7 @@ if TYPE_CHECKING:
     from minisky.core.varexplorer import VariableExplorer
     from minisky.plugin import PluginManager
     from minisky.simulation import ConsoleIO, Runner, Simulation
-    from minisky.tools.areafilter import AreaFilter
+    from minisky.tools.areafilter import Shapes
     from minisky.tools.navdata import Navdatabase
     from minisky.traffic import Traffic
 
@@ -260,7 +260,7 @@ class CommandStack:
         traffic: Traffic,
         navigation: Navdatabase,
         console: ConsoleIO,
-        areas: AreaFilter,
+        shapes: Shapes,
         variables: VariableExplorer,
         plugins: PluginManager,
         replaceables: ReplaceableManager,
@@ -271,7 +271,7 @@ class CommandStack:
         self.traffic = traffic
         self.navigation = navigation
         self.console = console
-        self.areas = areas
+        self.shapes = shapes
         self.variables = variables
         self.plugins = plugins
         self.replaceables = replaceables
@@ -500,10 +500,15 @@ class CommandStack:
             self.traffic.wind.clear()
             return Ok("")
 
-        if not stored_group and not exact_aircraft and self.areas.has_area(first):
+        if not stored_group and not exact_aircraft and first in self.shapes.areas:
             if len(targets) != 1:
                 return Err("An area cannot be combined with other DEL targets")
-            return self.areas.deleteArea(first)
+            return self.shapes.delete(first)
+
+        if not stored_group and not exact_aircraft and first in self.shapes.lines:
+            if len(targets) != 1:
+                return Err("A line cannot be combined with other DEL targets")
+            return self.shapes.delete(first)
 
         indices: list[int] = []
         for target_name in targets:
