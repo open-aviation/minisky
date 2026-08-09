@@ -54,7 +54,7 @@ from minisky.tools.aero import (
 from minisky.tools.convert import degto180
 from minisky.tools.position import txt2pos
 
-from .route import Route, direct
+from .route import Route, TurnHeadingRate, TurnRadius, direct
 
 if TYPE_CHECKING:
     from minisky.simulation import Simulation
@@ -313,7 +313,8 @@ class Autopilot(TrafficArrays):
         # scalar waypoint data in rows for the vectorized leg update below.
         idxlast = []  # reached aircraft already at their last waypoint
         idxnext = []  # reached aircraft with a next waypoint to activate
-        wpdata = []  # per aircraft in idxnext: getnextwp() + getnextturnwp() data
+        transitions = []
+        next_turns = []
         for i in self.idxreached:
             # Execute stack commands for the still active waypoint, which we pass now
             self.route[i].runactwpstack()
@@ -322,10 +323,8 @@ class Autopilot(TrafficArrays):
                 # Prevent trying to activate the next waypoint when it was already the last waypoint
                 idxlast.append(i)
             else:
-                # Get next waypoint. [m] note: xtoalt,nextaltco are in meters
-                wpdata.append(
-                    tuple(self.route[i].getnextwp()) + tuple(self.route[i].getnextturnwp())
-                )
+                transitions.append(self.route[i].getnextwp())
+                next_turns.append(self.route[i].getnextturnwp())
                 idxnext.append(i)
 
         # In case of end of route/no more waypoints: switch off LNAV/VNAV
@@ -339,38 +338,119 @@ class Autopilot(TrafficArrays):
         # switched to a new waypoint
         if idxnext:
             nxt = np.array(idxnext)
-            (
-                lat,
-                lon,
-                alt,
-                nextspd,
-                xtoalt,
-                toalt,
-                xtorta,
-                torta,
-                lnavon,
-                flyby,
-                flyturn,
-                turnrad,
-                turnspd,
-                turnhdgr,
-                nextleglat,
-                nextleglon,
-                swlastwp,
-                nextturnlat,
-                nextturnlon,
-                nextturnspd,
-                nextturnrad,
-                nextturnhdgr,
-                nextturnidx,
-            ) = (np.array(col) for col in zip(*wpdata, strict=True))
-            # NOTE(abraham): keeping legacy for ActiveWaypoint
-            alt = np.fromiter((-999.0 if value is None else value for value in alt), dtype=float)
-            nextspd = np.fromiter(
-                (-999.0 if value is None else value for value in nextspd), dtype=float
+            lat = np.fromiter((transition.latitude for transition in transitions), dtype=float)
+            lon = np.fromiter((transition.longitude for transition in transitions), dtype=float)
+            xtoalt = np.fromiter(
+                (transition.distance_to_altitude for transition in transitions), dtype=float
             )
-            lnavon = lnavon.astype(bool)
-            flyturn = flyturn.astype(bool)
+            toalt = np.fromiter(
+                (transition.next_altitude for transition in transitions), dtype=float
+            )
+            xtorta = np.fromiter(
+                (transition.distance_to_rta for transition in transitions), dtype=float
+            )
+            torta = np.fromiter((transition.next_rta for transition in transitions), dtype=float)
+            lnavon = np.fromiter(
+                (transition.lnav_enabled for transition in transitions), dtype=bool
+            )
+            flyby = np.fromiter((transition.fly_by for transition in transitions), dtype=bool)
+            nextleglat = np.fromiter(
+                (transition.next_leg_latitude for transition in transitions), dtype=float
+            )
+            nextleglon = np.fromiter(
+                (transition.next_leg_longitude for transition in transitions), dtype=float
+            )
+            swlastwp = np.fromiter(
+                (transition.last_waypoint for transition in transitions), dtype=bool
+            )
+
+            # NOTE(abraham): keeping legacy for ActiveWaypoint
+            alt = np.fromiter(
+                (
+                    -999.0 if transition.altitude is None else transition.altitude
+                    for transition in transitions
+                ),
+                dtype=float,
+            )
+            nextspd = np.fromiter(
+                (
+                    -999.0 if transition.speed is None else transition.speed
+                    for transition in transitions
+                ),
+                dtype=float,
+            )
+            flyturn = np.fromiter(
+                (transition.turn is not None for transition in transitions), dtype=bool
+            )
+            turnrad = np.fromiter(
+                (
+                    geometry.radius
+                    if isinstance(
+                        geometry := None if transition.turn is None else transition.turn.geometry,
+                        TurnRadius,
+                    )
+                    else -999.0
+                    for transition in transitions
+                ),
+                dtype=float,
+            )
+            turnspd = np.fromiter(
+                (
+                    -999.0
+                    if transition.turn is None or transition.turn.speed is None
+                    else transition.turn.speed
+                    for transition in transitions
+                ),
+                dtype=float,
+            )
+            turnhdgr = np.fromiter(
+                (
+                    geometry.heading_rate
+                    if isinstance(
+                        geometry := None if transition.turn is None else transition.turn.geometry,
+                        TurnHeadingRate,
+                    )
+                    else -999.0
+                    for transition in transitions
+                ),
+                dtype=float,
+            )
+            nextturnlat = np.fromiter(
+                (0.0 if turn is None else turn.latitude for turn in next_turns), dtype=float
+            )
+            nextturnlon = np.fromiter(
+                (0.0 if turn is None else turn.longitude for turn in next_turns), dtype=float
+            )
+            nextturnspd = np.fromiter(
+                (
+                    -999.0 if turn is None or turn.turn.speed is None else turn.turn.speed
+                    for turn in next_turns
+                ),
+                dtype=float,
+            )
+            nextturnrad = np.fromiter(
+                (
+                    geometry.radius
+                    if turn is not None and isinstance(geometry := turn.turn.geometry, TurnRadius)
+                    else -999.0
+                    for turn in next_turns
+                ),
+                dtype=float,
+            )
+            nextturnhdgr = np.fromiter(
+                (
+                    geometry.heading_rate
+                    if turn is not None
+                    and isinstance(geometry := turn.turn.geometry, TurnHeadingRate)
+                    else -999.0
+                    for turn in next_turns
+                ),
+                dtype=float,
+            )
+            nextturnidx = np.fromiter(
+                (-999.0 if turn is None else turn.waypoint_index for turn in next_turns),
+                dtype=float,
+            )
 
             # Bearing of the leg after the new active waypoint, batched over
             # all switching aircraft (-999.0 sentinel when there is no next
