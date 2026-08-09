@@ -31,6 +31,9 @@ class TestAddwpt:
         assert len(route.wpname) == 1
         assert route.wplat[0] == pytest.approx(52.5)
         assert route.wplon[0] == pytest.approx(5.0)
+        assert route.wpalt[0] is None
+        assert route.wpspd[0] is None
+        assert route.wprta[0] is None
         assert route.iactwp == 0
         assert runtime.traffic.swlnav[0]
 

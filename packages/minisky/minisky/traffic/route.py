@@ -79,10 +79,9 @@ class Route:
             calcwp, runway).
         wplat (list): Waypoint latitudes [deg].
         wplon (list): Waypoint longitudes [deg].
-        wpalt (list): Altitude constraints [m] (negative = not specified).
-        wpspd (list): Speed constraints, CAS [m/s] or Mach [-]
-            (negative = not specified).
-        wprta (list): Required times of arrival [s] (negative = none).
+        wpalt (list): Optional altitude constraints [m].
+        wpspd (list): Optional speed constraints, CAS [m/s] or Mach [-].
+        wprta (list): Optional required times of arrival [s].
         wpflyby (list): Fly-by (True) / fly-over (False) switch.
         wpflyturn (list): Fly-turn switch (use specified turn parameters).
         wpturnrad (list): Turn radius per waypoint (<0 = not specified).
@@ -131,9 +130,9 @@ class Route:
         self.wptype = []  # List of waypoint types
         self.wplat = []  # List of waypoint latitudes
         self.wplon = []  # List of waypoint longitudes
-        self.wpalt = []  # [m] negative value means not specified
-        self.wpspd = []  # [m/s] negative value means not specified
-        self.wprta = []  # [m/s] negative value means not specified
+        self.wpalt: list[float | None] = []  # [m]
+        self.wpspd: list[float | None] = []  # [m/s] CAS or Mach
+        self.wprta: list[float | None] = []  # [s]
         self.wpflyby = []  # Flyby (True)/flyover(False) switch
         self.wpstack = []  # Stack with command execured when passing this waypoint
 
@@ -182,8 +181,8 @@ class Route:
         wplat: float,
         wplon: float,
         wptype: int,
-        wpalt: float,
-        wpspd: float,
+        wpalt: float | None,
+        wpspd: float | None,
     ) -> None:
         """Insert a new waypoint record at a given index in the route.
 
@@ -197,9 +196,8 @@ class Route:
             wplat: Waypoint latitude [deg].
             wplon: Waypoint longitude [deg].
             wptype: Waypoint type (see the Route class constants).
-            wpalt: Altitude constraint [m] (negative = not specified).
-            wpspd: Speed constraint, CAS [m/s] or Mach [-]
-                (negative = not specified).
+            wpalt: Optional altitude constraint [m].
+            wpspd: Optional speed constraint, CAS [m/s] or Mach [-].
         """
 
         self.wpname.insert(wpidx, wpname)
@@ -213,7 +211,7 @@ class Route:
         self.wpturnrad.insert(wpidx, self.turnrad)
         self.wpturnspd.insert(wpidx, self.turnspd)
         self.wpturnhdgr.insert(wpidx, self.turnhdgr)
-        self.wprta.insert(wpidx, -999.0)  # initially no RTA
+        self.wprta.insert(wpidx, None)
         self.wpstack.insert(wpidx, [])
 
     def add_waypoint(
@@ -223,8 +221,8 @@ class Route:
         wptype: int,
         lat: float,
         lon: float,
-        alt: float = -999.0,
-        spd: float = -999.0,
+        alt: float | None = None,
+        spd: float | None = None,
         afterwp: str = "",
         beforewp: str = "",
     ) -> int:
@@ -245,9 +243,8 @@ class Route:
             wptype: Waypoint type (see the Route class constants).
             lat: Waypoint latitude [deg].
             lon: Waypoint longitude [deg].
-            alt: Altitude constraint [m] (negative = not specified).
-            spd: Speed constraint, CAS [m/s] or Mach [-]
-                (negative = not specified).
+            alt: Optional altitude constraint [m].
+            spd: Optional speed constraint, CAS [m/s] or Mach [-].
             afterwp: Optional name of the waypoint after which to insert.
             beforewp: Optional name of the waypoint before which to insert.
 
@@ -259,6 +256,7 @@ class Route:
         n_wpt = len(self.wplat)
 
         name = name.upper().strip()
+        spd = None if spd is None or spd <= 0.0 else spd
 
         wplat = (lat + 90.0) % 180.0 - 90.0
         wplon = (lon + 180.0) % 360.0 - 180.0
@@ -280,8 +278,8 @@ class Route:
                     wplat = self.navigation.aptlat[i]
                     wplon = self.navigation.aptlon[i]
 
-            if not orig and alt < 0:
-                alt = 0
+            if not orig and alt is None:
+                alt = 0.0
 
             # Overwrite existing origin/dest
             if n_wpt > 0 and self.wptype[wpidx] == wptype:
@@ -297,7 +295,7 @@ class Route:
                 self.wpturnrad[wpidx] = self.turnrad
                 self.wpturnspd[wpidx] = self.turnspd
                 self.wpturnhdgr[wpidx] = self.turnhdgr
-                self.wprta[wpidx] = -999.0  # initially no RTA
+                self.wprta[wpidx] = None
                 self.wpstack[wpidx] = []
 
             # Or add before first waypoint/append to end
@@ -424,10 +422,10 @@ class Route:
         """Active waypoint latitude [deg]."""
         longitude: float
         """Active waypoint longitude [deg]."""
-        altitude: float
-        """Altitude constraint [m]."""
-        speed: float
-        """Speed constraint, calibrated airspeed [m/s] or Mach number [-]."""
+        altitude: float | None
+        """Optional altitude constraint [m]."""
+        speed: float | None
+        """Optional speed constraint, calibrated airspeed [m/s] or Mach number [-]."""
         distance_to_altitude: float
         """Distance to the next altitude constraint [m]."""
         next_altitude: float
@@ -596,8 +594,8 @@ class Route:
         self.wpname.insert(i, name)
         self.wplat.insert(i, 0.0)
         self.wplon.insert(i, 0.0)
-        self.wpalt.insert(i, -999.0)
-        self.wpspd.insert(i, -999.0)
+        self.wpalt.insert(i, None)
+        self.wpspd.insert(i, None)
         self.wptype.insert(i, Route.calcwp)
 
     def calcfp(self) -> None:
@@ -687,9 +685,9 @@ class Route:
                 toalt = 0.0
                 xtoalt = 0.0  # [m]
 
-            elif self.wpalt[i] >= 0:
+            elif (altitude := self.wpalt[i]) is not None:
                 ialt = i
-                toalt = self.wpalt[i]
+                toalt = altitude
                 xtoalt = 0.0  # [m]
 
             # waypoint with no altitude constraint:keep counting
@@ -703,23 +701,23 @@ class Route:
 
         # RTA: calc next rta constraint: index, altitude and distance to it
         # If any RTA.
-        if any(np.array(self.wprta) >= 0.0):
+        if any(rta is not None for rta in self.wprta):
             # print("Yes, I found RTAs")
             irta = -1  # index of wp
             torta = -999.0  # next rta value
             xtorta = 0.0  # distance to next rta
             for i in range(n_wpt - 1, -1, -1):
                 # waypoint with rta: reset counter, update rts
-                if self.wprta[i] >= 0:
+                if (rta := self.wprta[i]) is not None:
                     irta = i
-                    torta = self.wprta[i]
+                    torta = rta
                     xtorta = 0.0  # [m]
 
                 # waypoint with no altitude constraint:keep counting
                 else:
                     if i != n_wpt - 1:
                         # No speed or rta constraint: add to xtorta
-                        if self.wpspd[i] <= 0.0:
+                        if (speed := self.wpspd[i]) is None:
                             xtorta = xtorta + self.wpdistto[i + 1] * nm  # [m] xtoalt is in meters!
                         else:
                             # speed constraint on this leg: shift torta to account for this
@@ -729,9 +727,7 @@ class Route:
                             # Default to 10000 ft to minimize errors, when no alt constraints
                             # are present
                             alt = toalt if self.wptoalt[i] > 0.0 else 10000.0 * ft
-                            legtas = casormach2tas(
-                                self.wpspd[i], alt, self.traffic.casmach_threshold
-                            )
+                            legtas = casormach2tas(speed, alt, self.traffic.casmach_threshold)
                             # TODO: account for wind at this position vy adding wind vectors to waypoints?
 
                             # xtorta stays the same! This leg will not be available for RTA scheduling, so distance
@@ -1031,7 +1027,7 @@ def _add_takeoff_waypoint(
         afterwp = acrte.wpname[0]
 
     name = f"T/O-{callsign}"
-    wpidx = acrte.add_waypoint(acidx, name, Route.wplatlon, lat, lon, -999.0, -999.0, afterwp, "")
+    wpidx = acrte.add_waypoint(acidx, name, Route.wplatlon, lat, lon, None, None, afterwp, "")
     acrte.calcfp()
     if wpidx < 0:
         return Err(f"Waypoint {name} not added.")
@@ -1075,9 +1071,8 @@ def _add_route_waypoint(
             reflat = acrte.wplat[-2]
             reflon = acrte.wplon[-2]
 
-    # Default altitude, speed and afterwp
-    alt = -999.0
-    spd = -999.0
+    alt = altitude
+    spd = speed
     afterwp = ""
     beforewp = ""
 
@@ -1107,11 +1102,6 @@ def _add_route_waypoint(
                         wptype = Route.wplatlon
                 case Err():
                     return Err("Waypoint " + name + " not found.")
-
-    if altitude is not None:
-        alt = altitude
-    if speed is not None:
-        spd = speed
 
     match insertion:
         case InsertAfter(anchor):
@@ -1234,17 +1224,19 @@ def _format_at_query(acrte: Route, wpidx: int, atwp: str, query: AtQuery) -> str
     text = f"{atwp} : "
 
     if show_altitude:
-        if acrte.wpalt[wpidx] < 0:
+        altitude = acrte.wpalt[wpidx]
+        if altitude is None:
             text += "-----"
-        elif acrte.wpalt[wpidx] > 4500 * ft:
-            text += f"FL{round(acrte.wpalt[wpidx] / (100.0 * ft))}"
+        elif altitude > 4500 * ft:
+            text += f"FL{round(altitude / (100.0 * ft))}"
         else:
-            text += str(round(acrte.wpalt[wpidx] / ft))
+            text += str(round(altitude / ft))
         if show_speed:
             text += "/"
 
     if show_speed:
-        text += "---" if acrte.wpspd[wpidx] < 0 else str(round(acrte.wpspd[wpidx] / kts))
+        speed = acrte.wpspd[wpidx]
+        text += "---" if speed is None else str(round(speed / kts))
 
     if show_altitude and show_speed:
         if acrte.wptype[wpidx] == Route.orig:
@@ -1318,13 +1310,12 @@ def direct(traffic: Traffic, acidx: int, wpname: str) -> bool:
     )
 
     # If there is a speed specified, process it
-    if acrte.wpspd[wpidx] > 0.0:
-        # Set target speed for autopilot
-
-        alt = traffic.alt[acidx] if acrte.wpalt[wpidx] < 0.0 else acrte.wpalt[wpidx]
+    if (speed := acrte.wpspd[wpidx]) is not None:
+        altitude = acrte.wpalt[wpidx]
+        alt = traffic.alt[acidx] if altitude is None else altitude
 
         # Check for valid Mach or CAS
-        cas = mach2cas(acrte.wpspd[wpidx], alt) if acrte.wpspd[wpidx] < 2.0 else acrte.wpspd[wpidx]
+        cas = mach2cas(speed, alt) if speed < 2.0 else speed
 
         # Save it for next leg
         traffic.actwp.nextspd[acidx] = cas
@@ -1430,23 +1421,23 @@ def listrte(traffic: Traffic, acidx: int, ipagetxt: str = "0") -> Result[None, s
                 txt = " " + acrte.wpname[i] + " : "
 
             # Altitude
-            if acrte.wpalt[i] < 0:
+            altitude = acrte.wpalt[i]
+            if altitude is None:
                 txt += "-----/"
-
-            elif acrte.wpalt[i] > 4500 * ft:
-                fl = round(acrte.wpalt[i] / (100.0 * ft))
+            elif altitude > 4500 * ft:
+                fl = round(altitude / (100.0 * ft))
                 txt += "FL" + str(fl) + "/"
-
             else:
-                txt += str(round(acrte.wpalt[i] / ft)) + "/"
+                txt += str(round(altitude / ft)) + "/"
 
             # Speed
-            if acrte.wpspd[i] < 0.0:
+            speed = acrte.wpspd[i]
+            if speed is None:
                 txt += "---"
-            elif acrte.wpspd[i] > 2.0:
-                txt += str(round(acrte.wpspd[i] / kts))
+            elif speed > 2.0:
+                txt += str(round(speed / kts))
             else:
-                txt += "M" + str(acrte.wpspd[i])
+                txt += "M" + str(speed)
 
             # Type: orig, dest, C = flyby, | = flyover, U = flyturn
             if acrte.wptype[i] == Route.orig:
@@ -1759,7 +1750,7 @@ class RouteCommands:
         if isinstance(target_result := _at_waypoint(self.traffic, acidx, atwp), Err):
             return target_result
         target = target_result.ok()
-        target.route.wpspd[target.index] = value
+        target.route.wpspd[target.index] = None if value <= 0.0 else value
         return _finish_at_mutation(self.traffic, acidx, target)
 
     @command(name="AT")
@@ -1772,8 +1763,8 @@ class RouteCommands:
         target = target_result.ok()
         altitude = constraints.altitude
         speed = constraints.speed
-        target.route.wpalt[target.index] = -999.0 if altitude is None else altitude
-        target.route.wpspd[target.index] = -999.0 if speed is None else speed
+        target.route.wpalt[target.index] = altitude
+        target.route.wpspd[target.index] = None if speed is None or speed <= 0.0 else speed
         return _finish_at_mutation(self.traffic, acidx, target)
 
     @command(name="AT")
@@ -1788,7 +1779,7 @@ class RouteCommands:
         if isinstance(target_result := _at_waypoint(self.traffic, acidx, atwp), Err):
             return target_result
         target = target_result.ok()
-        target.route.wpalt[target.index] = -999.0
+        target.route.wpalt[target.index] = None
         return _finish_at_mutation(self.traffic, acidx, target)
 
     @command(name="AT")
@@ -1803,7 +1794,7 @@ class RouteCommands:
         if isinstance(target_result := _at_waypoint(self.traffic, acidx, atwp), Err):
             return target_result
         target = target_result.ok()
-        target.route.wpspd[target.index] = -999.0
+        target.route.wpspd[target.index] = None
         return _finish_at_mutation(self.traffic, acidx, target)
 
     @command(name="AT")
@@ -1818,8 +1809,8 @@ class RouteCommands:
         if isinstance(target_result := _at_waypoint(self.traffic, acidx, atwp), Err):
             return target_result
         target = target_result.ok()
-        target.route.wpalt[target.index] = -999.0
-        target.route.wpspd[target.index] = -999.0
+        target.route.wpalt[target.index] = None
+        target.route.wpspd[target.index] = None
         return _finish_at_mutation(self.traffic, acidx, target)
 
     @command(name="AT")
@@ -1834,8 +1825,8 @@ class RouteCommands:
         if isinstance(target_result := _at_waypoint(self.traffic, acidx, atwp), Err):
             return target_result
         target = target_result.ok()
-        target.route.wpalt[target.index] = -999.0
-        target.route.wpspd[target.index] = -999.0
+        target.route.wpalt[target.index] = None
+        target.route.wpspd[target.index] = None
         target.route.wpstack[target.index] = []
         return _finish_at_mutation(self.traffic, acidx, target)
 

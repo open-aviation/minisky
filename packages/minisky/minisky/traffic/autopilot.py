@@ -364,6 +364,11 @@ class Autopilot(TrafficArrays):
                 nextturnhdgr,
                 nextturnidx,
             ) = (np.array(col) for col in zip(*wpdata, strict=True))
+            # NOTE(abraham): keeping legacy for ActiveWaypoint
+            alt = np.fromiter((-999.0 if value is None else value for value in alt), dtype=float)
+            nextspd = np.fromiter(
+                (-999.0 if value is None else value for value in nextspd), dtype=float
+            )
             lnavon = lnavon.astype(bool)
             flyturn = flyturn.astype(bool)
 
@@ -495,7 +500,7 @@ class Autopilot(TrafficArrays):
         ]:
             iac = int(iac)
             iwp = self.route[iac].iactwp
-            if self.route[iac].wprta[iwp] > -99.0:
+            if self.route[iac].wprta[iwp] is not None:
                 # For all aircraft flying to an RTA waypoint, recalculate speed more often
                 dist2go4rta = (
                     geo.kwikdist(
@@ -1124,18 +1129,12 @@ class Autopilot(TrafficArrays):
         if isinstance(position := _resolve_waypoint(self.traffic, acidx, route, waypoint), Err):
             return Err("DEST: " + position.err())
         coordinates = position.ok()
-        # Check if a speed constraint was given at destination
-        dest_spd = -999 if casmach is None else casmach
         self.dest[acidx] = wpname
         iwp = route.add_waypoint(
-            acidx, self.dest[acidx], route.dest, coordinates.lat, coordinates.lon, 0.0, dest_spd
+            acidx, self.dest[acidx], route.dest, coordinates.lat, coordinates.lon, 0.0, casmach
         )
         # If only waypoint: activate
         if (iwp == 0) or (self.orig[acidx] != "" and len(route.wpname) == 2):
-            self.traffic.actwp.lat[acidx] = route.wplat[iwp]
-            self.traffic.actwp.lon[acidx] = route.wplon[iwp]
-            self.traffic.actwp.nextaltco[acidx] = route.wpalt[iwp]
-            self.traffic.actwp.spd[acidx] = route.wpspd[iwp]
             self.traffic.swlnav[acidx] = True
             self.traffic.swvnav[acidx] = True
             route.iactwp = iwp
