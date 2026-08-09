@@ -43,6 +43,7 @@ from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from minisky import MiniSky
+from minisky.command import format_command_form
 from minisky.result import Err, Ok, Result
 from minisky.tools import aero
 
@@ -222,16 +223,19 @@ async def stack(cmd: str, runtime: Runtime) -> dict[str, Any]:
 
 
 def commands(runtime: Runtime) -> dict[str, str]:
-    """Return the command dictionary as `{name: brief usage}`.
-
-    Deduplicates aliases, which share a [`Command`][minisky.stack.Command]
-    object, and reports each command under its canonical name so a console or
-    autocomplete client can list the available commands and their usage.
-    """
-    seen: dict[str, str] = {}
-    for cmdobj in dict.fromkeys(runtime.commands.cmddict.values()):
-        seen[cmdobj.name] = cmdobj.brief
-    return dict(sorted(seen.items()))
+    """Return canonical command names and their textual forms."""
+    unique = dict.fromkeys(runtime.commands.cmddict.values())
+    return dict(
+        sorted(
+            (
+                command.name,
+                "\n".join(
+                    format_command_form(command.name, form.parameters) for form in command.forms
+                ),
+            )
+            for command in unique
+        )
+    )
 
 
 async def stream(websocket: WebSocket) -> None:

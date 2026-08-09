@@ -58,7 +58,8 @@ You can use `self.traffic` after the plugin has loaded. Do not use it in `__init
 
 ## Add a command
 
-Plugin commands use the same typed parser contracts as core commands. See the [stack command reference](../reference/commands.md) for command syntax.
+See [commands](./commands.md)
+
 
 ## Add simulation hooks
 
@@ -67,12 +68,10 @@ Use [`@plugin.hook`][minisky.plugin.plugin_decorators.hook] for work tied to the
 ```python
 class Component:
     @plugin_api.hook("preupdate")
-    def before_traffic(self) -> None:
-        ...
+    def before_traffic(self) -> None: ...
 
     @plugin_api.hook("update", interval=2.0)
-    def every_two_seconds(self, dt: float) -> None:
-        ...
+    def every_two_seconds(self, dt: float) -> None: ...
 ```
 
 Available phases are `preupdate`, `update`, `reset`, and `hold`. Intervals use simulated seconds. A hook must be synchronous; if it raises an exception, MiniSky disables that hook and continues running the others.
@@ -124,7 +123,7 @@ async with MiniSky(config=config) as runtime:
     await runtime.run()
 ```
 
-To load only one installed plugin, call `load()` with its plugin ID:
+To load a single installed plugin, call `load()` with its plugin ID:
 
 ```python
 from minisky import Err, Ok

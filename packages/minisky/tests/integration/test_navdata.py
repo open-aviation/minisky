@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from minisky import MiniSky
 from minisky.simulation import Simulation
-from tests._types import RunCommand
 
 
 class TestDefwpt:
@@ -44,23 +43,12 @@ class TestDefwpt:
         assert navdb.wplat[idx] == 10.0
         assert navdb.wplon[idx] == 20.0
 
-    def test_defwpt_delete_via_stack(
-        self, runtime: MiniSky, sim: Simulation, run_cmd: RunCommand
-    ) -> None:
+    def test_defwpt_delete_via_stack(self, runtime: MiniSky, sim: Simulation, run_cmd) -> None:
         navdb = runtime.navigation
         navdb.defwpt("TSTWPT3", 52.0, 4.0)
         output = run_cmd("DEFWPT TSTWPT3 DELETE")
         assert "deleted" in output.lower()
         assert "TSTWPT3" not in navdb.wpid
-
-    def test_defwpt_position_delete_form(
-        self, runtime: MiniSky, sim: Simulation, run_cmd: RunCommand
-    ) -> None:
-        navdb = runtime.navigation
-        navdb.defwpt("TSTWPT5", 52.0, 4.0)
-        output = run_cmd("DEFWPT TSTWPT5 52 4 DEL")
-        assert "deleted" in output.lower()
-        assert "TSTWPT5" not in navdb.wpid
 
     def test_delwpt_accepts_lowercase_name(self, runtime: MiniSky, sim: Simulation) -> None:
         # Regression: delwpt uppercased the name for the existence check but

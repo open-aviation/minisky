@@ -8,9 +8,11 @@ a plugin—enters as a line of text such as
 
 Each available command is represented by a [Command][minisky.stack.Command] object, which
 couples the command name to the Python function that implements it and to
-the argument parsers that convert argument text into typed values. The base
-command set is defined in `minisky.stack.commands` and registered by
-[`CommandStack.init`][minisky.stack.CommandStack.init].
+the argument parsers that convert argument text into typed values.
+Core and plugin callbacks declare commands directly with
+[`@command`][minisky.command.command]. The runtime composition root mounts
+declarations from its explicitly owned core components; plugins use the same
+declaration and preparation path with a separate load and unload lifecycle.
 
 Each `CommandStack` owns a runtime's command registry, pending command
 queue, scenario buffer, and sender state.
@@ -26,34 +28,34 @@ from __future__ import annotations
 import asyncio
 import inspect
 import traceback
-from collections.abc import Awaitable, Callable, Iterator
+from collections.abc import Awaitable, Callable, Iterable, Iterator
 from contextlib import suppress
 from dataclasses import dataclass
 from functools import partial
 from io import StringIO
 from pathlib import Path
 from threading import Lock
-from typing import TYPE_CHECKING, Any, NamedTuple, TypeAlias
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
 from minisky.command import (
     ArgumentIssue,
-    BoundCommand,
     CommandParseContext,
+    Keyword,
+    Parameter,
     SourceSpan,
     Text,
     TimeS,
     command,
     compile_parameter,
     declared_commands,
+    format_command_form,
     next_argument,
     split_commands,
 )
-from minisky.command import Parameter as TypedParameter
+from minisky.identifiers import normalize_command_name
 from minisky.result import Err, Ok, Result
-from minisky.stack import argparser, commands
-from minisky.stack.argparser import ArgumentError, Parameter, Txt, getnextarg
 
 if TYPE_CHECKING:
     from minisky.core.trafficarrays import ReplaceableManager
@@ -65,247 +67,39 @@ if TYPE_CHECKING:
     from minisky.traffic import Traffic
 
 
-class Command:
-    """Stack command object.
-
-    A Command wraps a Python callback function and makes it available as a
-    text command in the simulator. It stores the command name, help texts,
-    and aliases, and builds a list of Parameter objects that convert the
-    raw argument text of a command line into typed Python arguments for
-    the callback. Calling a Command instance with an argument string parses
-    the arguments and executes the callback.
-
-    Attributes:
-        name: Command name in upper case (e.g., "CRE").
-        help: Full help text shown by the HELP command.
-        brief: Brief usage text (command name plus argument list).
-        aliases: Tuple of alternative names for this command.
-        callback: The function that implements this command.
-        argument_parser: Runtime-owned argument parser used by the command.
-        params: List of Parameter objects used to parse arguments.
-        valid: False when the callback is an unbound class/instance method.
-    """
-
-    def __init__(
-        self,
-        func: Callable[..., Any],
-        name: str = "",
-        *,
-        argument_parser: argparser.ArgumentParser,
-        **kwargs: Any,
-    ) -> None:
-        self.argument_parser = argument_parser
-        self.name = name
-        self.help = inspect.cleandoc(kwargs.get("help", ""))
-        self.brief = kwargs.get("brief", "")
-        self.aliases = kwargs.get("aliases", ())
-        self.impl = ""
-        self.valid = True
-        self.arguments = self._get_arguments(kwargs.get("arguments", ""))
-        self.params = []
-        self.callback = func
-
-    def __call__(self, argstring: str) -> Result[str, str] | Awaitable[Result[str, str]]:
-        """Parse arguments and execute the callback."""
-        args: list[Any] = []
-        param = None
-        # Use callback-specified parameter parsers to generate param list from strings
-        for param in self.params:
-            result = param(argstring)
-            argstring = result[-1]
-            args.extend(result[:-1])
-
-        # Parse repeating final args
-        while argstring:
-            if param is None or not param.gobble:
-                msg = f"{self.name} takes {len(self.params)} argument"
-                if len(self.params) > 1:
-                    msg += "s"
-                count = len(self.params)
-                while argstring:
-                    _, argstring = getnextarg(argstring)
-                    count += 1
-                raise ArgumentError(f"{msg}, but {count} were given")
-            result = param(argstring)
-            argstring = result[-1]
-            args.extend(result[:-1])
-
-        result = self.callback(*args)
-        if inspect.isawaitable(result):
-            return self._await_result(result)
-        return self._result(result)
-
-    @staticmethod
-    async def _await_result(result: Awaitable[Any]) -> Result[str, str]:
-        return Command._result(await result)
-
-    @staticmethod
-    def _result(result: Any) -> Result[str, str]:
-        if isinstance(result, (Ok, Err)):
-            return result
-        if result is None:
-            return Ok("")
-        if isinstance(result, (tuple, list)):
-            if len(result) > 1:
-                text = str(result[1])
-                return Ok(text) if bool(result[0]) else Err(text)
-            if len(result) == 1:
-                result = result[0]
-        return Ok("") if bool(result) else Err("")
-
-    def __repr__(self) -> str:
-        if self.valid:
-            return f"<Stack Command {self.name}, callback={self.callback}>"
-        return f"<Stack Command {self.name} (invalid), callback=unbound method {self.callback}"
-
-    @property
-    def callback(self):
-        """Callback pointing to the actual function that implements this
-        stack command.
-        """
-        return self._callback
-
-    @callback.setter
-    def callback(self, function):
-        self._callback = function
-        source = function.func if isinstance(function, partial) else function
-        self._callback_source = inspect.unwrap(source)
-        try:
-            # eval_str resolves stringified hints (from __future__ import annotations)
-            # to the actual objects, so Annotated aliases are recognised either way
-            spec = inspect.signature(function, eval_str=True)
-        except NameError:
-            # legacy style: parser-DSL strings ("alt", "wpt") as annotations
-            spec = inspect.signature(function)
-        # Check if this is an unbound class/instance method
-        self.valid = spec.parameters.get("self") is None and spec.parameters.get("cls") is None
-
-        if self.valid:
-            # Store implementation origin if this is a bound (class or object) method
-            if not self.impl and inspect.ismethod(self._callback_source):
-                if inspect.isclass(self._callback_source.__self__):
-                    self.impl = self._callback_source.__self__.__name__
-                else:
-                    self.impl = self._callback_source.__self__.__class__.__name__
-
-            self.brief = self.brief or (self.name + " " + ",".join(spec.parameters))
-            self.help = self.help or inspect.cleandoc(inspect.getdoc(self._callback_source) or "")
-            paramspecs = list(filter(Parameter.canwrap, spec.parameters.values()))
-            if self.arguments:
-                self.params = []
-                pos = 0
-                for annot, isopt in self.arguments:
-                    if annot == "...":
-                        if paramspecs[-1].kind != paramspecs[-1].VAR_POSITIONAL:
-                            raise IndexError(
-                                "Repeating arguments (...) given for function"
-                                " not ending in starred (variable-length) argument"
-                            )
-                        self.params[-1].gobble = True
-                        break
-
-                    param = self.argument_parser.parameter(paramspecs[pos], annot, isopt)
-                    if param:
-                        pos = min(pos + param.size(), len(paramspecs) - 1)
-                        self.params.append(param)
-                if (
-                    len(self.params) > len(paramspecs)
-                    and paramspecs[-1].kind != paramspecs[-1].VAR_POSITIONAL
-                ):
-                    raise IndexError(
-                        f"More arguments given than function "
-                        f"{self._callback_source.__name__} has arguments."
-                    )
-            else:
-                self.params = [
-                    parameter
-                    for spec in paramspecs
-                    if (parameter := self.argument_parser.parameter(spec))
-                ]
-
-    def helptext(self, subcmd: str = "") -> str:
-        """Return complete help text."""
-        msg = f"{self.help}\nUsage:\n{self.brief}"
-        if self.aliases:
-            msg += "\nCommand aliases: " + ",".join(self.aliases)
-        if self._callback_source.__name__ == "<lambda>":
-            msg += "\nAnonymous (lambda) function, implemented in "
-        else:
-            msg += f"\nFunction {self._callback_source.__name__}(), implemented in "
-        if hasattr(self._callback_source, "__code__"):
-            fname = self._callback_source.__code__.co_filename
-            fname_stripped = fname.replace(str(Path.cwd()), "").lstrip("/")
-            firstline = self._callback_source.__code__.co_firstlineno
-            msg += f"{fname_stripped} on line {firstline}"
-        else:
-            msg += f"module {self._callback_source.__module__}"
-
-        return msg
-
-    def brieftext(self) -> str:
-        """Return the brief usage text."""
-        return self.brief
-
-    class ArgumentSpec(NamedTuple):
-        annotation: str
-        """Parser annotation."""
-        optional: bool
-        """Whether the argument may be omitted."""
-
-    def _get_arguments(
-        self, arguments: str | list[ArgumentSpec] | tuple[ArgumentSpec, ...]
-    ) -> tuple[ArgumentSpec, ...]:
-        """Get arguments from string, or typed argument specifications."""
-        if isinstance(arguments, (tuple, list)):
-            return tuple(arguments)
-        # Assume it is a comma-separated string
-        argtypes: list[Command.ArgumentSpec] = []
-
-        # Process and reduce annotation string from left to right
-        # First cut at square brackets, then take separate argument types
-        while arguments:
-            opt = arguments[0] == "["
-            cut = (
-                arguments.find("]")
-                if opt
-                else arguments.find("[")
-                if "[" in arguments
-                else len(arguments)
-            )
-
-            types = [t.strip() for t in arguments[:cut].strip("[,] ").split(",")]
-            argtypes.extend(self.ArgumentSpec(t, opt or t == "...") for t in types if t)
-            arguments = arguments[cut:].lstrip(",]")
-
-        return tuple(argtypes)
-
-
 @dataclass(frozen=True, slots=True)
-class TypedCommandForm:
-    callback: Callable[..., Any]
-    source: Callable[..., Any]
-    parameters: tuple[TypedParameter, ...]
+class CommandForm:
+    """An independently typed callback form of a public stack command."""
+
+    callback: Callable[..., object]
+    parameters: tuple[Parameter, ...]
     help: str
 
 
 @dataclass(frozen=True, slots=True)
-class _TypedCommandCall:
-    form: TypedCommandForm
+class _CommandCall:
+    form: CommandForm
     arguments: tuple[object, ...]
 
 
 @dataclass(frozen=True, slots=True)
-class TypedCommand:
+class Command:
+    """A public stack command containing typed syntax forms.
+
+    Same-name forms use strict left-to-right choice, matching Pydantic's
+    `union_mode="left_to_right"` selection rule: the first form whose entire
+    argument list parses wins. We do not implement Pydantic's smart-union
+    scoring or its multi-error tree.
+    """
+
     name: str
     aliases: tuple[str, ...]
-    forms: tuple[TypedCommandForm, ...]
+    forms: tuple[CommandForm, ...]
     parse_context: CommandParseContext
 
     def __post_init__(self) -> None:
         if not self.forms:
-            raise ValueError(f"typed command {self.name} has no forms")
-        if len(self.names) != len(set(self.names)):
-            raise ValueError(f"command {self.name} repeats an alias")
+            raise ValueError(f"command {self.name} has no forms")
 
     def __call__(
         self, argstring: str
@@ -318,9 +112,31 @@ class TypedCommand:
             return self._await_result(result)
         return self._result(result)
 
+    def parse_arguments(self, argstring: str) -> Result[tuple[object, ...], ArgumentIssue]:
+        """Parse arguments using the first command form that accepts them."""
+        if isinstance(resolved := self._resolve(argstring), Err):
+            return resolved
+        return Ok(resolved.ok().arguments)
+
+    def _resolve(self, argstring: str) -> Result[_CommandCall, ArgumentIssue]:
+        source = self.name + (f" {argstring}" if argstring else "")
+        argument_offset = len(self.name) + (1 if argstring else 0)
+        failure: ArgumentIssue | None = None
+
+        # match Pydantic's left-to-right union rule: first complete parse wins.
+        # we dont use its "smart" algorithm for simplicity
+        for form in self.forms:
+            parsed = _parse_form(form, argstring, self.parse_context, source, argument_offset)
+            if isinstance(parsed, Ok):
+                return Ok(_CommandCall(form, parsed.ok()))
+            failure = parsed.err()
+
+        assert failure is not None
+        return Err(failure)
+
     @staticmethod
     async def _await_result(result: Awaitable[object]) -> Result[str, str]:
-        return TypedCommand._result(await result)
+        return Command._result(await result)
 
     @staticmethod
     def _result(result: object) -> Result[str, str]:
@@ -339,88 +155,43 @@ class TypedCommand:
             "help: replace legacy (bool, text) returns with Ok(text) or Err(text)"
         )
 
-    def _resolve(self, argstring: str) -> Result[_TypedCommandCall, ArgumentIssue]:
-        source_text = self.name + (f" {argstring}" if argstring else "")
-        argument_offset = len(self.name) + (1 if argstring else 0)
-        failure: ArgumentIssue | None = None
-        for form in self.forms:
-            parsed = _parse_typed_form(
-                form, argstring, self.parse_context, source_text, argument_offset
-            )
-            if isinstance(parsed, Ok):
-                return Ok(_TypedCommandCall(form, parsed.ok()))
-            failure = parsed.err()
-
-        # TODO(abraham): keep the last form failure for now; richer error aggregation can wait.
-        assert failure is not None
-        return Err(failure)
-
-    def merge(self, other: TypedCommand) -> TypedCommand:
-        if self.name != other.name:
-            raise ValueError(f"cannot merge commands {self.name} and {other.name}")
-        aliases = tuple(dict.fromkeys((*self.aliases, *other.aliases)))
-        return TypedCommand(self.name, aliases, (*self.forms, *other.forms), self.parse_context)
-
     @property
     def names(self) -> tuple[str, ...]:
         return (self.name, *self.aliases)
 
-    @property
-    def callback(self) -> Callable[..., Any]:
-        return self.forms[0].callback
 
-    @property
-    def params(self) -> tuple[TypedParameter, ...]:
-        return self.forms[0].parameters
-
-    @property
-    def help(self) -> str:
-        return "\n\n".join(form.help for form in self.forms if form.help)
-
-    @property
-    def brief(self) -> str:
-        return "\n".join(self._form_brief(form) for form in self.forms)
-
-    @property
-    def _callback_source(self) -> Callable[..., Any]:
-        # temp legacy help-table adapter
-        return self.forms[0].source
-
-    def brieftext(self) -> str:
-        return self.brief
-
-    def helptext(self, _subcmd: str = "") -> str:
-        sections = []
-        for form in self.forms:
-            usage = f"Usage:\n{self._form_brief(form)}"
-            sections.append(f"{form.help}\n{usage}" if form.help else usage)
-        message = "\n\n".join(sections)
-        if self.aliases:
-            message += "\nCommand aliases: " + ",".join(self.aliases)
-        return message
-
-    def _form_brief(self, form: TypedCommandForm) -> str:
-        suffix = ",".join(str(parameter) for parameter in form.parameters)
-        return f"{self.name} {suffix}" if suffix else self.name
+def _format_command_usage(command: Command) -> str:
+    return "\n".join(format_command_form(command.name, form.parameters) for form in command.forms)
 
 
-def _parse_typed_form(
-    form: TypedCommandForm,
+def _format_command_help(command: Command) -> str:
+    sections = []
+    for form in command.forms:
+        usage = f"Usage:\n{format_command_form(command.name, form.parameters)}"
+        sections.append(f"{form.help}\n{usage}" if form.help else usage)
+    message = "\n\n".join(sections)
+    if command.aliases:
+        message += f"\nCommand aliases: {','.join(command.aliases)}"
+    return message
+
+
+def _parse_form(
+    form: CommandForm,
     argstring: str,
     context: CommandParseContext,
-    source_text: str,
+    source: str,
     argument_offset: int,
 ) -> Result[tuple[object, ...], ArgumentIssue]:
     arguments: list[object] = []
     remainder = argstring
     for parameter in form.parameters:
         offset = argument_offset + len(argstring) - len(remainder)
-        parsed = parameter.parse(context, remainder, source_text=source_text, offset=offset)
-        if isinstance(parsed, Err):
-            return parsed
-        value = parsed.ok()
-        arguments.extend(value.values)
-        remainder = value.remainder
+        result = parameter.parse(context, remainder, source_text=source, offset=offset)
+        if isinstance(result, Err):
+            return result
+        parsed = result.ok()
+        arguments.extend(parsed.values)
+        remainder = parsed.remainder
 
     if remainder:
         offset = argument_offset + len(argstring) - len(remainder)
@@ -431,20 +202,17 @@ def _parse_typed_form(
             token = token_result.ok()
             issue = ArgumentIssue.expected("the end of the command", token.value, token.span)
         return Err(
-            issue.at_argument("extra", source_text, offset, SourceSpan(0, max(1, len(remainder))))
+            issue.at_argument("extra", source, offset, SourceSpan(0, max(1, len(remainder))))
         )
     return Ok(tuple(arguments))
 
 
-CommandEntry: TypeAlias = Command | TypedCommand
-
-
 @dataclass(frozen=True, slots=True)
-class PreparedCommand:
-    """A parsed command ready for registry installation."""
+class QueuedCommand:
+    """A queued command line paired with its optional sender route."""
 
-    command: CommandEntry
-    names: tuple[str, ...]
+    text: str
+    sender_id: bytes | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -467,7 +235,7 @@ class _PendingCommand:
     task: asyncio.Future[Result[str, str]]
     name: str
     argstring: str
-    command: CommandEntry
+    command: Command
 
 
 class CommandStack:
@@ -481,11 +249,10 @@ class CommandStack:
     Attributes:
         cmddict: Mapping of command names and aliases to [Command][minisky.stack.Command] objects.
         current: Command line currently being processed.
-        cmdstack: List of `(cmdline, sender route)` tuples awaiting processing.
+        cmdstack: Typed queued commands awaiting processing.
         scenname: Name of the currently loaded scenario.
         scenario_commands: Scheduled scenario commands, each carrying its timestamp.
         sender_rte: Network route to the sender of the current command.
-        argument_parser: Runtime-owned parser registry and reference data.
     """
 
     def __init__(
@@ -509,13 +276,12 @@ class CommandStack:
         self.plugins = plugins
         self.replaceables = replaceables
         self.parse_context = CommandParseContext(traffic, navigation)
-        self.argument_parser = argparser.ArgumentParser(traffic, navigation, console)
         self._get_simulation = get_simulation
         self._get_runner = get_runner
         # TODO(abraham): package bundled scenarios inside minisky and resolve
         # them with importlib.resources for wheel installs.
         self.scenario_root = scenario_root or Path(__file__).parent.parent.parent
-        self.cmddict: dict[str, CommandEntry] = {}
+        self.cmddict: dict[str, Command] = {}
         self._queue_lock = Lock()
         self._pending_command: _PendingCommand | None = None
         self._reset_state()
@@ -528,56 +294,32 @@ class CommandStack:
     def runner(self) -> Runner:
         return self._get_runner()
 
-    # TODO(abraham): derive stack parsers from Annotated[...] metadata and remove
-    # the arguments DSL.
     def prepare_command(
         self,
         func: Callable[..., Any],
         *,
         name: str = "",
         aliases: tuple[str, ...] = (),
-        arguments: str = "",
-        brief: str = "",
         help_text: str = "",
-    ) -> PreparedCommand:
-        """Construct and parse a command without registering it."""
-        callback = func.__func__ if isinstance(func, (staticmethod, classmethod)) else func
-        callback = self.replaceables.bind_callback(callback)
-        command_name = (name or callback.__name__).upper()
-        alias_names = tuple(alias.upper() for alias in aliases)
-        names = (command_name, *alias_names)
-        if len(names) != len(set(names)):
-            raise ValueError(f"command {command_name} repeats an alias")
-        command_obj = Command(
-            callback,
-            name=command_name,
-            argument_parser=self.argument_parser,
-            aliases=alias_names,
-            arguments=arguments,
-            brief=brief,
-            help=help_text,
+        source: Callable[..., Any] | None = None,
+    ) -> Command:
+        """Compile a command from its callback signature without registering it."""
+        raw_callback = func.__func__ if isinstance(func, (staticmethod, classmethod)) else func
+        source_func = (
+            source
+            if source is not None
+            else raw_callback.func
+            if isinstance(raw_callback, partial)
+            else inspect.unwrap(raw_callback)
         )
-        return PreparedCommand(command_obj, names)
-
-    def prepare_component(self, component: object) -> tuple[PreparedCommand, ...]:
-        """Compile and merge typed declarations from one runtime-owned component."""
-        merged: dict[str, TypedCommand] = {}
-        order: list[str] = []
-        for bound in declared_commands(component):
-            command_obj = self._prepare_declared_command(bound)
-            previous = merged.get(bound.name)
-            if previous is None:
-                merged[bound.name] = command_obj
-                order.append(bound.name)
-                continue
-            merged[bound.name] = previous.merge(command_obj)
-
-        return tuple(PreparedCommand(merged[name], merged[name].names) for name in order)
-
-    def _prepare_declared_command(self, bound: BoundCommand) -> TypedCommand:
-        callback = self.replaceables.bind_callback(bound.callback)
-        annotations = inspect.get_annotations(bound.source, eval_str=True)
-        signature = inspect.signature(callback, eval_str=False)
+        callback = self.replaceables.bind_callback(raw_callback)
+        command_name = normalize_command_name(name or source_func.__name__)
+        alias_names = tuple(normalize_command_name(alias) for alias in aliases)
+        try:
+            signature = inspect.signature(callback, eval_str=False)
+        except TypeError as exc:
+            raise TypeError(f"cannot inspect command {command_name}") from exc
+        annotations = inspect.get_annotations(source_func, eval_str=True)
         signature = signature.replace(
             parameters=[
                 parameter.replace(annotation=annotations.get(parameter.name, parameter.annotation))
@@ -585,50 +327,110 @@ class CommandStack:
             ]
         )
         if "self" in signature.parameters or "cls" in signature.parameters:
-            raise TypeError(f"typed command {bound.name} is not bound")
-
-        parameters: list[TypedParameter] = []
+            raise TypeError(f"command {command_name} is not bound")
         for parameter in signature.parameters.values():
             if parameter.kind is inspect.Parameter.VAR_KEYWORD:
-                raise TypeError(f"typed command {bound.name} cannot accept **{parameter.name}")
-            if parameter.kind is inspect.Parameter.KEYWORD_ONLY:
-                if parameter.default is inspect.Parameter.empty:
-                    raise TypeError(
-                        f"typed command {bound.name} has required keyword-only argument {parameter.name}"
-                    )
-                continue
-            parameters.append(compile_parameter(parameter))
-
-        form = TypedCommandForm(
-            callback=callback,
-            source=bound.source,
-            parameters=tuple(parameters),
-            help=bound.help,
+                raise TypeError(f"command {command_name} cannot accept **{parameter.name}")
+            if (
+                parameter.kind is inspect.Parameter.KEYWORD_ONLY
+                and parameter.default is inspect.Parameter.empty
+            ):
+                raise TypeError(
+                    f"command {command_name} has required keyword-only argument {parameter.name}"
+                )
+        # Optional keyword-only arguments are implementation controls, such as
+        # ConsoleIO.echo(flag=...). They keep their Python defaults and are not
+        # part of the positional BlueSky command grammar.
+        command_parameters = tuple(
+            parameter
+            for parameter in signature.parameters.values()
+            if parameter.kind is not inspect.Parameter.KEYWORD_ONLY
         )
-        return TypedCommand(bound.name, bound.aliases, (form,), self.parse_context)
+        parameters = tuple(compile_parameter(parameter) for parameter in command_parameters)
+        form = CommandForm(
+            callback=callback,
+            parameters=parameters,
+            help=inspect.cleandoc(help_text or inspect.getdoc(source_func) or ""),
+        )
+        command = Command(
+            name=command_name,
+            aliases=alias_names,
+            forms=(form,),
+            parse_context=self.parse_context,
+        )
+        if len(command.names) != len(set(command.names)):
+            raise ValueError(f"command {command_name} repeats an alias")
+        return command
 
-    def validate_commands(self, commands: tuple[PreparedCommand, ...]) -> None:
+    def prepare_component(self, component: object) -> tuple[Command, ...]:
+        """Compile and coalesce every command declared by a component instance."""
+        prepared = tuple(
+            self.prepare_command(
+                bound.callback,
+                name=bound.name,
+                aliases=bound.aliases,
+                help_text=bound.help,
+                source=bound.source,
+            )
+            for bound in declared_commands(component)
+        )
+        return self.merge_commands(prepared)
+
+    def merge_commands(self, commands: tuple[Command, ...]) -> tuple[Command, ...]:
+        """Coalesce same-name declarations in declaration order."""
+        merged: dict[str, Command] = {}
+        order: list[str] = []
+        for command_obj in commands:
+            previous = merged.get(command_obj.name)
+            if previous is None:
+                merged[command_obj.name] = command_obj
+                order.append(command_obj.name)
+                continue
+            aliases = tuple(dict.fromkeys((*previous.aliases, *command_obj.aliases)))
+            merged[command_obj.name] = Command(
+                name=command_obj.name,
+                aliases=aliases,
+                forms=(*previous.forms, *command_obj.forms),
+                parse_context=self.parse_context,
+            )
+        return tuple(merged[name] for name in order)
+
+    def mount_components(self, components: Iterable[object]) -> tuple[Command, ...]:
+        """Prepare and install commands from provider components."""
+        prepared = tuple(
+            command for component in components for command in self.prepare_component(component)
+        )
+        # same-name overloads belong to a provider; duplicate providers are errors.
+        self.validate_commands(prepared)
+        self.install_commands(prepared)
+        return prepared
+
+    def mount_component(self, component: object) -> tuple[Command, ...]:
+        """Install commands from a component after runtime initialization."""
+        return self.mount_components((component,))
+
+    def validate_commands(self, commands: tuple[Command, ...]) -> None:
         """Reject command names already used by this stack or the same batch."""
         seen: set[str] = set()
-        for prepared in commands:
-            for name in prepared.names:
+        for command_obj in commands:
+            for name in command_obj.names:
                 if name in seen:
                     raise ValueError(f"command name repeated in batch: {name}")
                 if name in self.cmddict:
                     raise ValueError(f"command already registered: {name}")
                 seen.add(name)
 
-    def install_commands(self, commands: tuple[PreparedCommand, ...]) -> None:
+    def install_commands(self, commands: tuple[Command, ...]) -> None:
         """Install commands that were already constructed and validated."""
-        for prepared in commands:
-            for name in prepared.names:
-                self.cmddict[name] = prepared.command
+        for command_obj in commands:
+            for name in command_obj.names:
+                self.cmddict[name] = command_obj
 
-    def remove_commands(self, commands: tuple[PreparedCommand, ...]) -> None:
+    def remove_commands(self, commands: tuple[Command, ...]) -> None:
         """Remove command names only while they still refer to the same object."""
-        for prepared in commands:
-            for name in prepared.names:
-                if self.cmddict.get(name) is prepared.command:
+        for command_obj in commands:
+            for name in command_obj.names:
+                if self.cmddict.get(name) is command_obj:
                     del self.cmddict[name]
 
     def _reset_state(self) -> None:
@@ -636,7 +438,7 @@ class CommandStack:
         # Stack data
         self.current = ""
         with self._queue_lock:
-            self.cmdstack: list[tuple[str, bytes | None]] = []
+            self.cmdstack: list[QueuedCommand] = []
         pending, self._pending_command = self._pending_command, None
         if pending is not None and not pending.task.done():
             pending.task.cancel()
@@ -649,84 +451,93 @@ class CommandStack:
         # Current command details
         self.sender_rte: bytes | None = None
 
-    def _take_commands(self) -> list[tuple[str, bytes | None]]:
-        """Detach the current queue while preserving each command's sender."""
+    def _take_commands(self) -> list[QueuedCommand]:
+        """Detach the current queue while preserving each command's sender.
+
+        Commands stacked while the detached batch is executing remain in the
+        live queue and run on the next simulation step.
+        """
         with self._queue_lock:
             pending, self.cmdstack = self.cmdstack, []
         return pending
 
     def commands(self) -> Iterator[str]:
         """Iterate over the command lines pending for this simulation step."""
-        for current, sender in self._take_commands():
-            self.current = current
-            self.sender_rte = sender
-            yield current
+        for queued in self._take_commands():
+            self.current = queued.text
+            self.sender_rte = queued.sender_id
+            yield queued.text
 
-    def init(self) -> None:
-        """Prepare, validate, and install the base stack commands."""
-        catalog = commands.get_commands(self)
-        legacy = tuple(
-            self.prepare_command(
-                definition.callback,
-                name=name,
-                aliases=catalog.aliases.get(name, ()),
-                arguments=definition.arguments,
-                brief=definition.brief,
-                help_text=definition.help,
-            )
-            for name, definition in catalog.definitions.items()
-        )
-        prepared = (
-            *legacy,
-            *self.prepare_component(self.console),
-            *self.prepare_component(self.navigation),
-            *self.prepare_component(self.areas),
-            *self.prepare_component(self),
-            *self.prepare_component(self.traffic),
-            *self.prepare_component(self.traffic.ap),
-            *self.prepare_component(self.traffic.cond),
-            *self.prepare_component(self.traffic.wind),
-            *self.prepare_component(self.traffic.cd),
-            *self.prepare_component(self.traffic.cr),
-            *self.prepare_component(self.variables),
-            *self.prepare_component(self.simulation),
-            *self.prepare_component(self.runner),
-        )
-        self.validate_commands(prepared)
-        self.install_commands(prepared)
+    @command(name="DEL", aliases=("DELETE",))
+    def delete_element(self, target: Keyword, *additional_targets: Keyword) -> Result[str, str]:
+        """Delete an element (aircraft, wind field, area shape, or group).
 
-    def delete_element(self, *arg: Any) -> Any:
-        """DEL: Delete an element (aircraft, wind field, area shape, or group).
+            DEL = "DEL" ( "WIND" | area-name | group-name
+                          | selection { selection } ) ;
+            selection = aircraft-id | group-name | "*" | "ALL" ;
 
-        Dispatches based on the first argument: the string "WIND" clears the
-        wind field, any other string deletes the area with that name, a traffic
-        group object deletes that group, and anything else is treated as
-        aircraft indices to delete.
-
-        Args:
-            *arg: Element(s) to delete: "WIND", an area name, a traffic group,
-                or one or more aircraft indices.
-
-        Returns:
-            The result of the dispatched delete function.
+        A sole stored group deletes its member aircraft and releases the group,
+        matching BlueSky. In a multi-selection form a group expands to aircraft
+        but the group definition remains.
         """
-        if isinstance(arg[0], str) and arg[0] == "WIND":
-            return self.traffic.wind.clear()
-        elif isinstance(arg[0], str):
-            return self.areas.deleteArea(arg[0])
-        elif hasattr(arg[0], "groupname"):
-            return self.traffic.groups.delgroup(arg[0])
-        else:
-            return self.traffic.delete(np.array(arg))
+        targets = (target, *additional_targets)
+        first = target
+        stored_group = first in self.traffic.groups.groups
+        exact_aircraft = first not in {"*", "ALL"} and self.traffic.idx(first) >= 0
+
+        # bluesky's `acid/txt` parser resolves stored groups before aircraft and
+        # only falls back to text targets such as WIND or area names afterwards.
+        if len(targets) == 1 and stored_group:
+            match self.traffic.groups.delete_group(first):
+                case Ok():
+                    return Ok("")
+                case Err(error):
+                    return Err(error)
+
+        if first == "WIND" and not stored_group and not exact_aircraft:
+            if len(targets) != 1:
+                return Err("DEL WIND does not accept additional targets")
+            self.traffic.wind.clear()
+            return Ok("")
+
+        if not stored_group and not exact_aircraft and self.areas.has_area(first):
+            if len(targets) != 1:
+                return Err("An area cannot be combined with other DEL targets")
+            return self.areas.deleteArea(first)
+
+        indices: list[int] = []
+        for target_name in targets:
+            if target_name in {"*", "ALL"}:
+                match self.traffic.groups.listgroup(target_name):
+                    case Ok(group):
+                        indices.extend(int(value) for value in group)
+                    case Err(error):
+                        return Err(error)
+                continue
+
+            if target_name in self.traffic.groups:
+                match self.traffic.groups.listgroup(target_name):
+                    case Ok(group):
+                        indices.extend(int(value) for value in group)
+                    case Err(error):
+                        return Err(error)
+                continue
+            index = self.traffic.idx(target_name)
+            if index >= 0:
+                indices.append(index)
+                continue
+            return Err(f"Unknown aircraft, group, area, or DEL target: {target_name}")
+
+        if indices:
+            self.traffic.delete(np.unique(np.asarray(indices, dtype=int)))
+        return Ok("")
 
     def reset(self) -> None:
         """Reset the stack.
 
-        Clears the command queue and buffered scenario data, and resets the
-        argument-parser reference data (position, heading, speed).
+        Clears the command queue and buffered scenario data.
         """
         self._reset_state()
-        self.argument_parser.reset()
 
     def process(self) -> bool:
         """Process commands until an awaitable callback owns the stack."""
@@ -738,19 +549,28 @@ class CommandStack:
 
         # Process stack of commands
         pending = self._take_commands()
-        for index, (cmdline, sender_id) in enumerate(pending):
+        for index, queued in enumerate(pending):
+            cmdline = queued.text
             self.current = cmdline
-            self.sender_rte = sender_id
-            # Get first argument from command line and check if it's a command
-            cmd, argstring = argparser.getnextarg(cmdline)
+            self.sender_rte = queued.sender_id
+            # Get first argument from command line and check if it's a command.
+            if isinstance(parsed_result := next_argument(cmdline), Err):
+                self.console.echo(f"error: {parsed_result.err()}")
+                continue
+            parsed = parsed_result.ok()
+            cmd = parsed.value
+            argstring = parsed.remainder
             cmdu = cmd.upper()
             cmdobj = self.cmddict.get(cmdu)
 
-            # If no function is found for 'cmd', check if cmd is actually an aircraft id
+            # BlueSky shorthand permits `CALLSIGN COMMAND ...`.
             if not cmdobj and cmdu in self.traffic.callsign:
-                cmd, argstring = argparser.getnextarg(argstring)
-                argstring = cmdu + " " + argstring
-                # When no other args are parsed, command is POS
+                if isinstance(parsed_result := next_argument(argstring), Err):
+                    self.console.echo(f"error: {parsed_result.err()}")
+                    continue
+                parsed = parsed_result.ok()
+                cmd = parsed.value
+                argstring = f"{cmdu} {parsed.remainder}"
                 cmdu = cmd.upper() if cmd else "POS"
                 cmdobj = self.cmddict.get(cmdu)
 
@@ -765,10 +585,6 @@ class CommandStack:
 
             try:
                 result = cmdobj(argstring)
-            except argparser.ArgumentError as exc:
-                header = "" if not argstring else exc.args[0] if exc.args else "Argument error."
-                self.console.echo(f"{header}\nUsage:\n{cmdobj.brieftext()}")
-                continue
             except Exception as exc:  # ruff: ignore[BLE001] commands are arbitrary callbacks
                 self._echo_command_exception(cmdu, argstring, exc)
                 continue
@@ -810,24 +626,24 @@ class CommandStack:
             self._echo_command_result(pending.command, pending.argstring, result)
         return True
 
-    def _prepend_commands(self, commands: list[tuple[str, bytes | None]]) -> None:
+    def _prepend_commands(self, commands: list[QueuedCommand]) -> None:
         if not commands:
             return
         with self._queue_lock:
             self.cmdstack[0:0] = commands
 
     def _echo_command_result(
-        self, command_obj: CommandEntry, argstring: str, result: Result[str, str | ArgumentIssue]
+        self, command_obj: Command, argstring: str, result: Result[str, str | ArgumentIssue]
     ) -> None:
-        match result:
-            case Ok(text):
-                pass
-            case Err(error):
-                text = str(error)
-                if not argstring:
-                    text = text or command_obj.brieftext()
-                else:
-                    text = f"Error: {text or command_obj.brieftext()}"
+        if isinstance(result, Ok):
+            text = result.ok()
+        else:
+            if isinstance(error := result.err(), ArgumentIssue):
+                text = f"Error: {error}\nUsage:\n{_format_command_usage(command_obj)}"
+            elif not argstring:
+                text = error or _format_command_usage(command_obj)
+            else:
+                text = f"Error: {error or _format_command_usage(command_obj)}"
         if text:
             self.console.echo(text)
 
@@ -1012,48 +828,20 @@ class CommandStack:
         """
         return self.schedule(self.simulation.simt + time, cmdline)
 
-    def showhelp(self, cmd: Txt = "", subcmd: Txt = "") -> Result[str, str]:
-        """HELP: Display general help text or help text for a specific command,
-        or dump command reference in file when command is >filename.
+    @command(name="HELP", aliases=("?",))
+    def help_overview(self) -> Result[str, str]:
+        """Show help for the HELP command."""
+        return Ok(_format_command_help(self.cmddict["HELP"]))
 
-        Args:
-            cmd: Command name to display help for, or ">filename" to write a
-                tab-delimited command reference for all commands to a file
-                in the docs directory.
-            subcmd: Optional subcommand to display help for.
-        """
+    @command(name="HELP")
+    def show_help(self, cmd: Keyword) -> Result[str, str]:
+        """Show help for a command."""
+        cmdobj = self.cmddict.get(cmd)
+        if cmdobj is None:
+            return Err(f"HELP: Unknown command: {cmd}")
+        return Ok(_format_command_help(cmdobj))
 
-        # Check if help is asked for a specific command
-        cmdobj = self.cmddict.get(cmd or "HELP")
-        if cmdobj:
-            return Ok(cmdobj.helptext(subcmd))
-
-        # Write command reference to tab-delimited text file
-        if cmd[0] == ">":
-            # Get filename
-            fname = "./docs/" + cmd[1:] if len(cmd) > 1 else "./docs/minisky-commands.txt"
-
-            # Get unique set of commands
-            cmdobjs = set(self.cmddict.values())
-            table = []  # for alphabetical sort use a table
-
-            # Get info for all commands
-            for obj in cmdobjs:
-                funcname = obj._callback_source.__name__.replace("<", "").replace(">", "")
-                args = ",".join(str(p) for p in obj.params)
-                syn = ",".join(obj.aliases)
-                line = f"{obj.name}\t{obj.help}\t{obj.brief}\t{args}\t{funcname}\t{syn}"
-                table.append(line)
-
-            # Sort & write table
-            table.sort()
-            with Path(fname).open("w") as f:
-                # Header of first table
-                f.write("Command\tDescription\tUsage\tArgument types\tFunction\tSynonyms\n")
-                f.write("\n".join(table))
-            return Ok("Writing command reference in " + fname)
-
-        return Err("HELP: Unknown command: " + cmd)
+    # NOTE: we do not support writing the command reference to a file
 
     def checkscen(self) -> None:
         """Check if commands from the scenario buffer need to be stacked.
@@ -1077,7 +865,7 @@ class CommandStack:
         del self.scenario_commands[:index]
 
     def stack(self, *cmdlines: str, sender_id: bytes | None = None) -> None:
-        """Stack one or more commands separated by ";".
+        """Stack commands separated by ";".
 
         The queued commands are executed on the next call to process().
 
@@ -1086,7 +874,7 @@ class CommandStack:
                 commands separated by ";".
             sender_id: Optional network route/id of the command sender.
         """
-        queued: list[tuple[str, bytes | None]] = []
+        queued: list[QueuedCommand] = []
         for cmdline in cmdlines:
             text = cmdline.strip()
             if not text:
@@ -1094,7 +882,7 @@ class CommandStack:
             if isinstance(result := split_commands(text), Err):
                 self.console.echo(f"error: {result.err()}")
                 continue
-            queued.extend((line, sender_id) for line in result.ok())
+            queued.extend(QueuedCommand(line, sender_id) for line in result.ok())
         with self._queue_lock:
             self.cmdstack.extend(queued)
 

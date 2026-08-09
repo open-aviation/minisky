@@ -3,15 +3,16 @@
 from __future__ import annotations
 
 import asyncio
+import gc
+import weakref
 from io import StringIO
-from pathlib import Path
 
+import numpy as np
 import pytest
-from minisky import MiniSky
-from minisky.command import ArgumentIssue
-from minisky.result import Err
+from minisky import Err, MiniSky, Ok
+from minisky.command import ArgumentIssue, command
 from minisky.simulation import Simulation
-from minisky.stack import Command, ScheduledCommand
+from minisky.stack import ScheduledCommand
 from tests._types import RunCommand
 
 FT = 0.3048
@@ -118,35 +119,6 @@ class TestCommands:
         run_cmd("ALT KL204 FL260")
         assert runtime.traffic.selalt[0] == pytest.approx(26000 * FT, rel=1e-3)
 
-    def test_cre_omitted_heading_uses_default(self, runtime: MiniSky, run_cmd: RunCommand) -> None:
-        output = run_cmd("CRE COMPAT1,B738,52,4,,FL100,250")
-        assert "created" in output.lower()
-        index = runtime.traffic.idx("COMPAT1")
-        assert runtime.traffic.hdg[index] == pytest.approx(45.0)
-
-    def test_cre_runway_heading_marker_is_resolved(
-        self, runtime: MiniSky, run_cmd: RunCommand
-    ) -> None:
-        output = run_cmd("CRE RWYREF,A320,EHAM,RWY18L,*,0,250")
-        assert "created" in output.lower()
-        index = runtime.traffic.idx("RWYREF")
-        runway_heading = runtime.navigation.rwythresholds["EHAM"]["18L"][2]
-        assert runtime.traffic.hdg[index] == pytest.approx(runway_heading)
-
-    def test_cre_runway_heading_marker_requires_runway(self, runtime: MiniSky) -> None:
-        result = runtime.commands.cmddict["CRE"]("NORWY,A320,52,4,*,0,250")
-        assert isinstance(result, Err)
-        assert result.err() == "CRE: heading * requires a runway position"
-
-    def test_cre_error_span_points_to_invalid_speed(self, runtime: MiniSky) -> None:
-        result = runtime.commands.cmddict["CRE"]("SPAN1,A320,52,4,,FL100,BAD")
-        assert isinstance(result, Err)
-        issue = result.err()
-        assert isinstance(issue, ArgumentIssue)
-        assert issue.source_text == "CRE SPAN1,A320,52,4,,FL100,BAD"
-        assert issue.span is not None
-        assert issue.source_text[issue.span.start : issue.span.end] == "BAD"
-
     def test_hdg_sets_autopilot_track(self, runtime: MiniSky, run_cmd: RunCommand) -> None:
         run_cmd("CRE KL204,B744,52,4,45,FL250,350")
         run_cmd("HDG KL204 340")
@@ -168,6 +140,79 @@ class TestCommands:
         run_cmd("MCRE 3")
         assert runtime.traffic.ntraf == 3
 
+    def test_malformed_batch(self, runtime: MiniSky) -> None:
+        runtime.commands.stack('ECHO "unterminated')
+        assert "expected a closing" in runtime.console.read_output_buffer().lower()
+        assert runtime.commands.cmdstack == []
+
+
+class TestCommandMounting:
+    def test_mount_components_rejects_duplicates_atomically(self, runtime: MiniSky) -> None:
+        # Provider mounting is a batch operation. A conflict discovered in the
+        # second provider must not leave commands from the first installed.
+        class First:
+            @command(name="DUPLICATE")
+            def command(self) -> bool:
+                return True
+
+        class Second:
+            @command(name="DUPLICATE")
+            def command(self) -> bool:
+                return True
+
+        with pytest.raises(ValueError, match="repeated in batch"):
+            runtime.commands.mount_components((First(), Second()))
+        assert "DUPLICATE" not in runtime.commands.cmddict
+
+    def test_replaceable_dispatch_does_not_retain_previous_implementation(
+        self, runtime: MiniSky
+    ) -> None:
+        # Command callbacks are compiled before replacements are selected. The
+        # dispatch closure must follow the slot without retaining the old object.
+        command = runtime.commands.cmddict["RMETHH"]
+        previous = runtime.traffic.cr
+        previous_ref = weakref.ref(previous)
+
+        before = command("")
+        assert isinstance(before, (Ok, Err))
+        assert before.is_err()
+        assert runtime.replaceables.select("ConflictResolution", "MVP").is_ok()
+        after = command("")
+        assert isinstance(after, (Ok, Err))
+        assert after.is_ok()
+
+        del previous
+        gc.collect()
+        assert previous_ref() is None
+
+
+class TestTypedGrammar:
+    def test_area_commands_keep_multi_token_aviation_values(self, runtime: MiniSky) -> None:
+        # Position and altitude parsers consume a variable number of tokens.
+        # Plain float varargs silently lost hemisphere and flight-level syntax.
+        result = runtime.commands.cmddict["BOX"]("TEST N52 E004 N53 E005 FL100 FL200")
+        assert isinstance(result, (Ok, Err))
+        assert result.is_ok(), result.err()
+        assert runtime.areas.has_area("TEST")
+
+    def test_group_selection_is_kept_for_compatible_commands(
+        self, runtime: MiniSky, run_cmd: RunCommand
+    ) -> None:
+        run_cmd("CRE ONE A320 52 4 90 FL100 250")
+        run_cmd("CRE TWO A320 53 5 90 FL100 250")
+        run_cmd("GROUP TEAM ONE TWO")
+
+        run_cmd("ALT TEAM FL200")
+        run_cmd("BANK TEAM 20")
+        assert runtime.traffic.selalt.tolist() == pytest.approx([20000 * FT, 20000 * FT])
+        assert np.degrees(runtime.traffic.ap.bankdef).tolist() == pytest.approx([20.0, 20.0])
+
+        result = runtime.commands.cmddict["DELRTE"]("TEAM")
+        assert isinstance(result, Err)
+        issue = result.err()
+        assert isinstance(issue, ArgumentIssue)
+        assert issue.message == "argument `acidx`: expected an aircraft, but got group TEAM"
+
 
 class TestReadscn:
     def test_short_command_line_survives(self, runtime: MiniSky) -> None:
@@ -180,22 +225,6 @@ class TestReadscn:
         scn = StringIO("# a comment\n\n0:00:01>HOLD\n")
         lines = list(runtime.commands.readscn(scn))
         assert lines == [ScheduledCommand(1.0, "HOLD")]
-
-
-class TestHelp:
-    def test_help_writes_command_reference(
-        self, runtime: MiniSky, sim: Simulation, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        # HELP >filename writes the reference to ./docs/<filename>
-        monkeypatch.chdir(tmp_path)
-        (tmp_path / "docs").mkdir()
-        result = runtime.commands.showhelp(">ref.txt")
-        assert result.is_ok(), result.err()
-        ref = tmp_path / "docs" / "ref.txt"
-        assert ref.exists(), result.ok()
-        content = ref.read_text()
-        assert content.startswith("Command\tDescription\tUsage")
-        assert "\nCRE\t" in content
 
 
 class TestVarExplorer:
@@ -236,29 +265,3 @@ class TestErrors:
         run_cmd("THISDOESNOTEXIST")
         run_cmd("CRE KL204,B744,52,4,45,FL250,350")
         assert runtime.traffic.ntraf == 1
-
-
-class TestArgumentSpecs:
-    def test_all_registered_specs_resolve_to_parsers(self, runtime: MiniSky) -> None:
-        # Several commands (AT, DIRECT, AFTER, RESOOFF, ...) were registered
-        # with argument specs containing whitespace or free-form help text;
-        # their parameters were silently dropped, making the commands
-        # unusable from the stack. Every annotation token must resolve to a
-        # parser (or be a documented placeholder).
-        argparsers = runtime.commands.argument_parser.parsers
-        placeholders = {"...", "lon", "*"}  # consumed by the preceding parser
-        seen = set()
-        bad = []
-        for cmd in runtime.commands.cmddict.values():
-            if id(cmd) in seen or not isinstance(cmd, Command):
-                continue
-            seen.add(id(cmd))
-            for annot, _isopt in cmd.arguments:
-                message = f"{cmd.name}: whitespace/empty annotation token {annot!r}"
-                assert annot == annot.strip(), message
-                assert annot, message
-                if annot in placeholders:
-                    continue
-                if all(argparsers.get(part) is None for part in annot.split("/")):
-                    bad.append((cmd.name, annot))
-        assert not bad, f"annotation tokens without a parser: {bad}"

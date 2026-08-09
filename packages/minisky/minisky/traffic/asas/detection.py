@@ -29,6 +29,7 @@ from scipy.spatial import KDTree
 from minisky.command import (
     AcIdSelection,
     NonNegativeFiniteFloat,
+    OnOff,
     TimeS,
     aircraft_indices,
     command,
@@ -36,7 +37,6 @@ from minisky.command import (
 from minisky.core.config import MiniSkyConfig
 from minisky.core.trafficarrays import TrafficArrays
 from minisky.result import Ok, Result
-from minisky.stack.argparser import Txt
 from minisky.tools.aero import ft, nm
 
 if TYPE_CHECKING:
@@ -240,26 +240,23 @@ class ConflictDetection(TrafficArrays):
         self.global_rpz = self.global_hpz = True
         self.global_dtlook = self.global_dtnolook = True
 
-    def switch(self, name: Txt = "ON") -> Result[str, str]:
-        """Turn Conflict Detection (CD) ON / OFF.
-
-        Switching off also clears the current conflict database.
-
-        Args:
-            name (str): Either "ON" or "OFF".
-
-        Raises:
-            AssertionError: If `name` is not "ON" or "OFF".
-        """
-        assert name in ["ON", "OFF"], f"Invalid CD method: {name}"
-
-        if name == "OFF":
+    def _set_detection(self, enabled: bool) -> Result[str, str]:
+        if not enabled:
             self.clearconfdb()
             self.activate = False
             return Ok("Conflict Detection turned off.")
-
         self.activate = True
         return Ok("Conflict Detection is on.")
+
+    @command(name="ASAS", aliases=("CD", "CDMETHOD"))
+    def enable_detection(self) -> Result[str, str]:
+        """Enable conflict detection."""
+        return self._set_detection(True)
+
+    @command(name="ASAS")
+    def set_detection(self, enabled: OnOff) -> Result[str, str]:
+        """Enable or disable conflict detection."""
+        return self._set_detection(enabled)
 
     @command(name="ZONER", aliases=("PZR", "RPZ", "PZRADIUS"))
     def protected_zone_radius(self) -> Result[str, str]:
@@ -275,7 +272,7 @@ class ConflictDetection(TrafficArrays):
         self.rpz_def = radius * nm
         if self.global_rpz:
             self.rpz[:] = self.rpz_def
-        # Adjust factors for reso zone if those were set with an absolute value
+        # Preserve an absolute resolution zone if it was configured before the detection zone changed.
         if not self.traffic.cr.resorrelative:
             self.stack_command(f"RSZONER {self.traffic.cr.resofach * oldradius / nm}")
         return Ok(f"Setting default PZ radius to {radius} NM")

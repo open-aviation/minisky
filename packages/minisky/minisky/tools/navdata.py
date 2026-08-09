@@ -214,10 +214,10 @@ class Navdatabase:
     def describe_waypoint(self, name: str) -> Result[str, str]:
         """Describe a waypoint or report that its name is available."""
         normalized = name.upper()
-        reflat, reflon = self.console.getviewctr()
+        center = self.console.getviewctr()
         if normalized not in self.wpid:
             return Ok(f"Waypoint {normalized} does not yet exist.")
-        index = self.getwpidx(normalized, reflat, reflon)
+        index = self.getwpidx(normalized, center.lat, center.lon)
         description = f"{self.wpid[index]} : {self.wplat[index]},{self.wplon[index]}"
         if self.wptype[index]:
             description += f"  {self.wptype[index]}"
@@ -260,7 +260,7 @@ class Navdatabase:
             name: Waypoint name.
         """
         if self.wpid.count(name.upper()) <= 0:
-            return Err("Waypoint " + name.upper() + " does not exist.")
+            return Err(f"Waypoint {name.upper()} does not exist.")
 
         idx = len(self.wpid) - self.wpid[::-1].index(name.upper()) - 1  # Search from back of list
 

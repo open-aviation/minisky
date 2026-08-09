@@ -16,24 +16,30 @@ commands (ALT, VS, HDG, SPD, DEST, ORIG, LNAV, VNAV, SWTOC, SWTOD).
 
 from __future__ import annotations
 
-from collections.abc import Callable, Collection
+from collections.abc import Callable
 from math import sqrt
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
 from minisky.command import (
+    AcId,
     AcIdSelection,
     AltM,
+    CoordinateWaypoint,
     HeadingDeg,
+    LatLonDegrees,
     MagneticHeadingDeg,
+    NamedWaypoint,
+    OnOff,
     SpeedMpsOrMach,
     VspdMps,
+    WaypointSpec,
+    Wpt,
     command,
 )
 from minisky.core.trafficarrays import TrafficArrays
 from minisky.result import Err, Ok, Result
-from minisky.stack.argparser import Acid, OnOff, Spd, Wpt
 from minisky.tools import geo
 from minisky.tools.aero import (
     fpm,
@@ -53,6 +59,44 @@ from .route import Route, direct
 if TYPE_CHECKING:
     from minisky.simulation import Simulation
     from minisky.traffic import Traffic
+
+
+def _waypoint_name(waypoint: WaypointSpec) -> str:
+    match waypoint:
+        case NamedWaypoint(name):
+            return name
+        case CoordinateWaypoint(_, source):
+            return source
+
+
+def _resolve_waypoint(
+    traffic: Traffic, acidx: int, route: Route, waypoint: WaypointSpec
+) -> Result[LatLonDegrees, str]:
+    if isinstance(waypoint, CoordinateWaypoint):
+        return Ok(waypoint.coordinates)
+
+    name = waypoint.name
+    apidx = traffic.navigation.getaptidx(name)
+    if apidx >= 0:
+        return Ok(
+            LatLonDegrees(
+                float(traffic.navigation.aptlat[apidx]),
+                float(traffic.navigation.aptlon[apidx]),
+            )
+        )
+
+    if route.wpname:
+        reflat = float(route.wplat[-1])
+        reflon = float(route.wplon[-1])
+    else:
+        reflat = float(traffic.lat[acidx])
+        reflon = float(traffic.lon[acidx])
+
+    match txt2pos(name, reflat, reflon, traffic.navigation, traffic):
+        case Ok(position):
+            return Ok(LatLonDegrees(float(position.lat), float(position.lon)))
+        case Err():
+            return Err(f"Position {name} not found.")
 
 
 class Autopilot(TrafficArrays):
@@ -691,7 +735,7 @@ class Autopilot(TrafficArrays):
 
     def ComputeVNAV(self, idx: int, toalt: Any, xtoalt: Any, torta: Any, xtorta: Any) -> None:
         """
-        This function to do VNAV (and RTA) calculations is only called only once per leg for one aircraft idx.
+        This function to do VNAV (and RTA) calculations is only called only once per leg for an aircraft index.
         If:
          - switching to next waypoint
          - when VNAV is activated
@@ -965,16 +1009,15 @@ class Autopilot(TrafficArrays):
         if vspd:
             self.traffic.selvs[idx] = vspd
         else:
-            idxarr = idx if isinstance(idx, np.ndarray) else np.array([idx])
-            delalt = alt - self.traffic.alt[idxarr]
+            delalt = alt - self.traffic.alt[idx]
             # Check for VS with opposite sign => use default vs
             # by setting autopilot vs to zero
             oppositevs = np.logical_and(
-                self.traffic.selvs[idxarr] * delalt < 0.0,
-                abs(self.traffic.selvs[idxarr]) > 0.01,
+                self.traffic.selvs[idx] * delalt < 0.0,
+                abs(self.traffic.selvs[idx]) > 0.01,
             )
 
-            self.traffic.selvs[idxarr[oppositevs]] = 0.0
+            self.traffic.selvs[idx[oppositevs]] = 0.0
         return Ok(f"altitude set to {alt / ft} ft")
 
     @command(name="VS")
@@ -1003,9 +1046,10 @@ class Autopilot(TrafficArrays):
         LNAV for this aircraft.
 
         Args:
-            idx: Aircraft indices.
-            hdg: Selected true or magnetic heading.
+            idx: Aircraft index.
+            hdg: Selected heading [deg].
         """
+
         resolved_hdg: float | np.ndarray[Any, Any]
         if isinstance(hdg, MagneticHeadingDeg):
             resolved_hdg = np.fromiter(
@@ -1025,6 +1069,8 @@ class Autopilot(TrafficArrays):
                 self.traffic.lat[idx], self.traffic.lon[idx], self.traffic.alt[idx]
             )
             wind_track = np.degrees(np.arctan2(taseast + wind_east, tasnorth + wind_north)) % 360.0
+            # Above 50ft: compute track based on wind
+            # Below 50ft: track equals heading
             self.trk[idx] = np.where(self.traffic.alt[idx] > 50.0 * ft, wind_track, resolved_hdg)
         else:
             self.trk[idx] = resolved_hdg
@@ -1044,7 +1090,7 @@ class Autopilot(TrafficArrays):
         depends on the position relative to the crossover altitude.
 
         Args:
-            idx: Aircraft indices.
+            idx: Aircraft index.
             casmach: Selected speed: CAS [m/s] or Mach [-] (values above 1.0
                 are interpreted as CAS; stack input in kts or Mach).
         """
@@ -1063,67 +1109,33 @@ class Autopilot(TrafficArrays):
 
         return Ok(msg)
 
-    def setdest(
-        self, acidx: Acid, wpname: Wpt | None = None, casmach: Spd | None = None
+    @command(name="DEST")
+    def show_destination(self, acidx: AcId) -> Result[str, str]:
+        """Show the destination of an aircraft."""
+        return Ok(f"DEST {self.traffic.callsign[acidx]}: {self.dest[acidx]}")
+
+    @command(name="DEST")
+    def set_destination(
+        self, acidx: AcId, waypoint: Wpt, casmach: SpeedMpsOrMach | None = None
     ) -> Result[str, str]:
-        """Set (or show) the destination of an aircraft.
-
-        Implements the DEST stack command: `DEST acid, latlon/airport`.
-        The destination is looked up in the airport database (or parsed as a
-        position) and appended to the route as its final waypoint. If it is
-        the only route waypoint it is immediately activated, engaging LNAV
-        and VNAV.
-
-        Args:
-            acidx: Aircraft index.
-            wpname: Airport identifier or position text; when omitted, the
-                current destination is reported.
-            casmach: Optional speed constraint at the destination, CAS [m/s]
-                or Mach [-].
-        """
-        if wpname is None:
-            return Ok("DEST " + self.traffic.callsign[acidx] + ": " + self.dest[acidx])
-
+        """Set the destination of an aircraft, with an optional speed constraint."""
         route = self.route[acidx]
-
-        apidx = self.navigation.getaptidx(wpname)
-        if apidx < 0:
-            if len(route.wpname) > 0:
-                reflat = route.wplat[-1]
-                reflon = route.wplon[-1]
-            else:
-                reflat = self.traffic.lat[acidx]
-                reflon = self.traffic.lon[acidx]
-
-            match txt2pos(
-                wpname,
-                float(reflat),
-                float(reflon),
-                self.navigation,
-                self.traffic,
-            ):
-                case Ok(posobj):
-                    lat = posobj.lat
-                    lon = posobj.lon
-                case Err():
-                    return Err("DEST: Position " + wpname + " not found.")
-
-        else:
-            lat = self.navigation.aptlat[apidx]
-            lon = self.navigation.aptlon[apidx]
-
+        wpname = _waypoint_name(waypoint)
+        if isinstance(position := _resolve_waypoint(self.traffic, acidx, route, waypoint), Err):
+            return Err("DEST: " + position.err())
+        coordinates = position.ok()
         # Check if a speed constraint was given at destination
         dest_spd = -999 if casmach is None else casmach
-
         self.dest[acidx] = wpname
-        iwp = route.add_waypoint(acidx, self.dest[acidx], route.dest, lat, lon, 0.0, dest_spd)
+        iwp = route.add_waypoint(
+            acidx, self.dest[acidx], route.dest, coordinates.lat, coordinates.lon, 0.0, dest_spd
+        )
         # If only waypoint: activate
         if (iwp == 0) or (self.orig[acidx] != "" and len(route.wpname) == 2):
             self.traffic.actwp.lat[acidx] = route.wplat[iwp]
             self.traffic.actwp.lon[acidx] = route.wplon[iwp]
             self.traffic.actwp.nextaltco[acidx] = route.wpalt[iwp]
             self.traffic.actwp.spd[acidx] = route.wpspd[iwp]
-
             self.traffic.swlnav[acidx] = True
             self.traffic.swvnav[acidx] = True
             route.iactwp = iwp
@@ -1132,259 +1144,140 @@ class Autopilot(TrafficArrays):
         # If not found, say so
         elif iwp < 0:
             return Err("DEST position" + self.dest[acidx] + " not found.")
-
         return Ok(f"destination set to {wpname}")
 
-    def setorig(self, acidx: int, wpname: Wpt | None = None) -> Result[str, str]:
-        """Set (or show) the origin of an aircraft.
+    @command(name="ORIG")
+    def show_origin(self, acidx: AcId) -> Result[str, str]:
+        """Show the origin of an aircraft."""
+        return Ok(f"ORIG {self.traffic.callsign[acidx]}: {self.orig[acidx]}")
 
-        Implements the ORIG stack command: `ORIG acid, latlon/airport`.
-        The origin is stored as the first waypoint of the route; it is
-        bookkeeping only and does not activate guidance.
-
-        Args:
-            acidx: Aircraft index.
-            wpname: Airport identifier or position text; when omitted, the
-                current origin is reported.
-        """
-        if wpname is None:
-            return Ok("ORIG " + self.traffic.callsign[acidx] + ": " + self.orig[acidx])
-
+    @command(name="ORIG")
+    def set_origin(self, acidx: AcId, waypoint: Wpt) -> Result[str, str]:
+        """Set the origin of an aircraft."""
         route = self.route[acidx]
-
-        apidx = self.navigation.getaptidx(wpname)
-
-        if apidx < 0:
-            if len(route.wpname) > 0:
-                reflat = route.wplat[-1]
-                reflon = route.wplon[-1]
-            else:
-                reflat = self.traffic.lat[acidx]
-                reflon = self.traffic.lon[acidx]
-
-            match txt2pos(
-                wpname,
-                float(reflat),
-                float(reflon),
-                self.navigation,
-                self.traffic,
-            ):
-                case Ok(posobj):
-                    lat = posobj.lat
-                    lon = posobj.lon
-                case Err():
-                    return Err("ORIG: Position " + wpname + " not found.")
-
-        else:
-            lat = self.navigation.aptlat[apidx]
-            lon = self.navigation.aptlon[apidx]
+        wpname = _waypoint_name(waypoint)
+        if isinstance(position := _resolve_waypoint(self.traffic, acidx, route, waypoint), Err):
+            return Err("ORIG: " + position.err())
+        coordinates = position.ok()
 
         # Origin: bookkeeping only for now, store in route as origin
         self.orig[acidx] = wpname
         iwp = route.add_waypoint(
-            acidx, self.orig[acidx], route.orig, lat, lon, 0.0, self.traffic.cas[acidx]
+            acidx,
+            self.orig[acidx],
+            route.orig,
+            coordinates.lat,
+            coordinates.lon,
+            0.0,
+            self.traffic.cas[acidx],
         )
         if iwp < 0:
             return Err(self.orig[acidx] + " not found.")
-
         return Ok(f"origin set to {wpname}")
 
-    def setVNAV(self, idx: Any, flag: OnOff | None = None) -> Result[str, str]:
-        """Switch VNAV (vertical FMS guidance) on or off, or show its state.
-
-        Implements the VNAV stack command: `VNAV acid, [ON/OFF]`. VNAV can
-        only be engaged when LNAV is on and a route with waypoints exists;
-        engaging it recalculates the flight plan and the VNAV profile for
-        the active leg. Switching VNAV also switches VNAV speed guidance.
-
-        Args:
-            idx: Aircraft index, collection of indices, or None for all
-                aircraft.
-            flag: True/False to switch on/off; None to report the state.
-        """
-        if not isinstance(idx, Collection):
-            if idx is None:
-                # All aircraft are targeted
-                self.traffic.swvnav = np.array(self.traffic.ntraf * [flag])
-                self.traffic.swvnavspd = np.array(self.traffic.ntraf * [flag])
-                idx = np.arange(self.traffic.ntraf)
-            else:
-                # Prepare for the loop
-                idx = np.array([idx])
-
-        # Set VNAV for all aircraft in idx array
-        output = []
+    @command(name="VNAV")
+    def vnav_status(self, idx: AcIdSelection) -> Result[str, str]:
+        """Show VNAV state for an aircraft or selection."""
+        # BlueSky applies these commands to every aircraft in the resolved selection.
+        output: list[str] = []
         for i in idx:
-            if flag is None:
-                msg = (
-                    self.traffic.callsign[i]
-                    + ": VNAV is "
-                    + ("ON" if self.traffic.swvnav[i] else "OFF")
-                )
-                if not self.traffic.swvnavspd[i]:
-                    msg += " but VNAVSPD is OFF"
-                output.append(msg)
+            msg = f"{self.traffic.callsign[i]}: VNAV is {'ON' if self.traffic.swvnav[i] else 'OFF'}"
+            if not self.traffic.swvnavspd[i]:
+                msg += " but VNAVSPD is OFF"
+            output.append(msg)
+        return Ok("\n".join(output))
 
-            elif flag:
+    @command(name="VNAV")
+    def set_vnav(self, idx: AcIdSelection, flag: OnOff) -> Result[str, str]:
+        """Enable or disable VNAV for an aircraft or selection."""
+        # Keep the per-aircraft checks here: they are runtime state invariants, not syntax dispatch.
+        for i in idx:
+            if flag:
                 if not self.traffic.swlnav[i]:
                     return Err(self.traffic.callsign[i] + ": VNAV ON requires LNAV to be ON")
-
                 route = self.route[i]
-                if len(route.wpname) > 0:
-                    self.traffic.swvnav[i] = True
-                    self.traffic.swvnavspd[i] = True
-                    self.route[i].calcfp()
-                    actwpidx = self.route[i].iactwp
-                    self.ComputeVNAV(
-                        i,
-                        self.route[i].wptoalt[actwpidx],
-                        self.route[i].wpxtoalt[actwpidx],
-                        self.route[i].wptorta[actwpidx],
-                        self.route[i].wpxtorta[actwpidx],
-                    )
-                    self.traffic.actwp.nextaltco[i] = self.route[i].wptoalt[actwpidx]
-
-                else:
+                if not route.wpname:
                     return Err(
                         "VNAV "
                         + self.traffic.callsign[i]
                         + ": no waypoints or destination specified"
                     )
+                self.traffic.swvnav[i] = True
+                self.traffic.swvnavspd[i] = True
+                route.calcfp()
+                actwpidx = route.iactwp
+                self.ComputeVNAV(
+                    i,
+                    route.wptoalt[actwpidx],
+                    route.wpxtoalt[actwpidx],
+                    route.wptorta[actwpidx],
+                    route.wpxtorta[actwpidx],
+                )
+                self.traffic.actwp.nextaltco[i] = route.wptoalt[actwpidx]
             else:
                 self.traffic.swvnav[i] = False
                 self.traffic.swvnavspd[i] = False
-        if flag == None:
-            return Ok("\n".join(output))
-
         return Ok(f"VNAV {'ON' if flag else 'OFF'}")
 
-    def setLNAV(self, idx: Any, flag: OnOff | None = None) -> Result[str, str]:
-        """Switch LNAV (lateral FMS guidance) on or off, or show its state.
+    @command(name="LNAV")
+    def lnav_status(self, idx: AcIdSelection) -> Result[str, str]:
+        """Show LNAV state for an aircraft or selection."""
+        return Ok(
+            "\n".join(
+                f"{self.traffic.callsign[i]}: LNAV is {'ON' if self.traffic.swlnav[i] else 'OFF'}"
+                for i in idx
+            )
+        )
 
-        Implements the LNAV stack command: `LNAV acid, [ON/OFF]`. LNAV can
-        only be engaged when the aircraft has a route; engaging it selects
-        the best waypoint to fly to (see Route.findact()) and issues a
-        direct-to towards it.
-
-        Args:
-            idx: Aircraft index, collection of indices, or None for all
-                aircraft.
-            flag: True/False to switch on/off; None to report the state.
-        """
-        if not isinstance(idx, Collection):
-            if idx is None:
-                # All aircraft are targeted
-                self.traffic.swlnav = np.array(self.traffic.ntraf * [flag])
-                idx = np.arange(self.traffic.ntraf)
-            else:
-                # Prepare for the loop
-                idx = np.array([idx])
-
-        # Set LNAV for all aircraft in idx array
-        output = []
+    @command(name="LNAV")
+    def set_lnav(self, idx: AcIdSelection, flag: OnOff) -> Result[str, str]:
+        """Enable or disable LNAV for an aircraft or selection."""
         for i in idx:
-            if flag is None:
-                output.append(
-                    self.traffic.callsign[i]
-                    + ": LNAV is "
-                    + ("ON" if self.traffic.swlnav[i] else "OFF")
-                )
-
-            elif flag:
+            if flag:
                 route = self.route[i]
-                if len(route.wpname) <= 0:
+                if not route.wpname:
                     return Err(
                         "LNAV "
                         + self.traffic.callsign[i]
                         + ": no waypoints or destination specified"
                     )
-                elif not self.traffic.swlnav[i]:
+                if not self.traffic.swlnav[i]:
                     self.traffic.swlnav[i] = True
                     direct(self.traffic, i, route.wpname[route.findact(i)])
             else:
                 self.traffic.swlnav[i] = False
-        if flag is None:
-            return Ok("\n".join(output))
-
         return Ok(f"LNAV {'ON' if flag else 'OFF'}")
 
-    def setswtoc(self, idx: Any, flag: OnOff | None = None) -> Result[str, str]:
-        """Switch the Top-of-Climb logic on or off, or show its state.
+    @command(name="SWTOC")
+    def swtoc_status(self, idx: AcIdSelection) -> Result[str, str]:
+        """Show Top-of-Climb state for an aircraft or selection."""
+        return Ok(
+            "\n".join(
+                f"{self.traffic.callsign[i]}: SWTOC is {'ON' if self.swtoc[i] else 'OFF'}"
+                for i in idx
+            )
+        )
 
-        Implements the SWTOC stack command: `SWTOC acid, [ON/OFF]`. With
-        ToC logic on (default) the aircraft climbs as early as possible with
-        the default steepness; with it off, the climb angle is chosen to
-        arrive at the altitude constraint exactly at its waypoint.
-
-        Args:
-            idx: Aircraft index, collection of indices, or None for all
-                aircraft.
-            flag: True/False to switch on/off; None to report the state.
-        """
-
-        if not isinstance(idx, Collection):
-            if idx is None:
-                # All aircraft are targeted
-                self.swtoc = np.array(self.traffic.ntraf * [flag])
-                idx = np.arange(self.traffic.ntraf)
-            else:
-                # Prepare for the loop
-                idx = np.array([idx])
-
-        # Set SWTOC for all aircraft in idx array
-        output = []
-        for i in idx:
-            if flag is None:
-                output.append(
-                    self.traffic.callsign[i] + ": SWTOC is " + ("ON" if self.swtoc[i] else "OFF")
-                )
-
-            elif flag:
-                self.swtoc[i] = True
-            else:
-                self.swtoc[i] = False
-        if flag is None:
-            return Ok("\n".join(output))
-
+    @command(name="SWTOC")
+    def set_swtoc(self, idx: AcIdSelection, flag: OnOff) -> Result[str, str]:
+        """Enable or disable Top-of-Climb logic."""
+        self.swtoc[idx] = flag
         return Ok(f"SWTOC {'ON' if flag else 'OFF'}")
 
-    def setswtod(self, idx: Any, flag: OnOff | None = None) -> Result[str, str]:
-        """Switch the Top-of-Descent logic on or off, or show its state.
+    @command(name="SWTOD")
+    def swtod_status(self, idx: AcIdSelection) -> Result[str, str]:
+        """Show Top-of-Descent state for an aircraft or selection."""
+        return Ok(
+            "\n".join(
+                f"{self.traffic.callsign[i]}: SWTOD is {'ON' if self.swtod[i] else 'OFF'}"
+                for i in idx
+            )
+        )
 
-        Implements the SWTOD stack command: `SWTOD acid, [ON/OFF]`. With
-        ToD logic on (default) the aircraft descends as late as possible
-        with the default steepness; with it off, the descent angle is chosen
-        to arrive at the altitude constraint exactly at its waypoint.
-
-        Args:
-            idx: Aircraft index, collection of indices, or None for all
-                aircraft.
-            flag: True/False to switch on/off; None to report the state.
-        """
-        if not isinstance(idx, Collection):
-            if idx is None:
-                # All aircraft are targeted
-                self.swtod = np.array(self.traffic.ntraf * [flag])
-                idx = np.arange(self.traffic.ntraf)
-            else:
-                # Prepare for the loop
-                idx = np.array([idx])
-
-        # Set SWTOD for all aircraft in idx array
-        output = []
-        for i in idx:
-            if flag is None:
-                output.append(
-                    self.traffic.callsign[i] + ": SWTOD is " + ("ON" if self.swtod[i] else "OFF")
-                )
-
-            elif flag:
-                self.swtod[i] = True
-            else:
-                self.swtod[i] = False
-        if flag is None:
-            return Ok("\n".join(output))
-
+    @command(name="SWTOD")
+    def set_swtod(self, idx: AcIdSelection, flag: OnOff) -> Result[str, str]:
+        """Enable or disable Top-of-Descent logic."""
+        self.swtod[idx] = flag
         return Ok(f"SWTOD {'ON' if flag else 'OFF'}")
 
 

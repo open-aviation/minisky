@@ -14,7 +14,7 @@ async def test_replacement_is_runtime_local_and_removed_on_shutdown() -> None:
         assert runtime_a.replaceables.select("AUTOPILOT", "CUSTOMAUTOPILOT").is_err()
         assert runtime_b.replaceables.select("AUTOPILOT", "CUSTOMAUTOPILOT").is_err()
 
-        alt_callback = runtime_a.commands.cmddict["ALT"].callback
+        alt_callback = runtime_a.commands.cmddict["ALT"].forms[0].callback
         result = await runtime_a.plugins.load("CUSTOMAUTOPILOT")
         assert result.is_ok(), result.err()
         assert runtime_a.replaceables.select("AUTOPILOT", "CUSTOMAUTOPILOT").is_ok()
@@ -24,7 +24,7 @@ async def test_replacement_is_runtime_local_and_removed_on_shutdown() -> None:
         await runtime_a.plugins.aclose()
         assert type(runtime_a.traffic.ap) is Autopilot
         assert runtime_a.replaceables.select("AUTOPILOT", "CUSTOMAUTOPILOT").is_err()
-        assert runtime_a.commands.cmddict["ALT"].callback is alt_callback
+        assert runtime_a.commands.cmddict["ALT"].forms[0].callback is alt_callback
     finally:
         await runtime_a.aclose()
         await runtime_b.aclose()

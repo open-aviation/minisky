@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any, NamedTuple
 
 import numpy as np
 
+from minisky.command import AcId, command
 from minisky.core.trafficarrays import TrafficArrays
 from minisky.result import Ok, Result
 from minisky.tools import aero
@@ -539,8 +540,9 @@ class OpenAP(TrafficArrays):
 
         return axmax
 
-    def show_performance(self, acid: int) -> Result[str, str]:
-        """Report the current performance state of one aircraft.
+    @command(name="PERFSTATS", aliases=("PERFINFO", "PERFDATA"))
+    def show_performance(self, acid: AcId) -> Result[str, str]:
+        """Report the current performance state of an aircraft.
 
         Implements the PERFSTATS stack command output: flight phase, thrust,
         drag, fuel flow, speed and vertical-speed envelopes, and ceiling in

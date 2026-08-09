@@ -1,21 +1,31 @@
-# Logic for group commands
 """Aircraft group administration.
 
-Allows aircraft to be grouped so that stack commands can address several
-aircraft at once. Group membership is stored as a 64-bit bitmask per
-aircraft (one bit per group, so up to 64 groups can exist simultaneously),
-which makes membership tests cheap numpy operations. Implements the GROUP
-and UNGROUP stack commands; deleting a whole group is supported through
-the DEL command.
+MiniSky accepts the BlueSky GROUP/UNGROUP scenario spelling, but represents the
+query and mutation forms as separate command overloads before changing traffic state:
+
+    GROUP   = "GROUP" [ group-name [ area-name | selection { selection } ] ] ;
+    UNGROUP = "UNGROUP" group-name selection { selection } ;
+    selection = aircraft-id | group-name | "*" | "ALL" ;
+
+`GROUP` with no arguments lists groups. With only a name it lists that
+group. With members it creates the group when necessary and adds either an
+area's current aircraft or several selections. Area names cannot be mixed
+with selections. `*` and `ALL` are read-only virtual selections containing
+all aircraft.
+
+BlueSky allowed group names to collide with aircraft and areas. MiniSky keeps
+those stores separate and preserves command-specific lookup precedence, while
+keeping group identity separate from its member indices.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any, Self
+from typing import TYPE_CHECKING
 
 import numpy as np
 
+from minisky.command import Keyword, command
 from minisky.core import TrafficArrays
 from minisky.result import Err, Ok, Result
 
@@ -24,155 +34,169 @@ if TYPE_CHECKING:
     from minisky.traffic.traffic import Traffic
 
 
-class GroupArray(np.ndarray):
-    """Numpy index array that carries the name of the group it represents.
-
-    Returned by TrafficGroups.listgroup(); the extra `groupname`
-    attribute allows commands that receive a group argument (such as DEL)
-    to know which group the aircraft indices belong to.
-    """
-
-    # Similar to normal numpy arrays, but with the attribute of a groupname
-    def __new__(cls, *args, groupname: str = "", **kwargs) -> Self:
-        ret = np.array(*args, **kwargs).view(cls)
-        ret.groupname = groupname
-        return ret
-
-
 class TrafficGroups(TrafficArrays):
-    """Administration of aircraft groups using per-aircraft bitmasks.
+    """Runtime-owned groups backed by an unsigned 64-bit mask per aircraft.
 
-    Each group is assigned one bit of a 64-bit mask; an aircraft's
-    `ingroup` value is the OR of the masks of all groups it belongs to.
-    Available as [`runtime.traffic.groups`][minisky.traffic.trafficgroups.TrafficGroups]. The special group
-    name `*` refers to all aircraft in the simulation.
-
-    Attributes:
-        groups (dict): Mapping of group name to its bitmask (int).
-        allmasks (int): OR of all bitmasks currently in use.
-        ingroup (ndarray): Per-aircraft group-membership bitmask (int64).
+    A group receives a bit and each aircraft stores the OR of all groups it
+    belongs to. The representation supports exactly 64 stored groups. Virtual
+    selections `*` and `ALL` consume no bit.
     """
+
+    _ALL_NAMES = frozenset({"*", "ALL"})
 
     def __init__(self, traffic: Traffic, areas: AreaFilter) -> None:
-        # Initialize the groups structure
         super().__init__(traffic)
         self.traffic = traffic
         self.areas = areas
-        self.groups = {}
+        self.groups: dict[str, int] = {}
         self.allmasks = 0
         with self.settrafarrays():
-            self.ingroup = np.array([], dtype=np.int64)
+            self.ingroup = np.array([], dtype=np.uint64)
 
     def new_implementation(self, implementation: Callable[..., TrafficArrays]) -> TrafficArrays:
         """Construct a replacement with this runtime's traffic and area store."""
         return implementation(self.traffic, self.areas)
 
     def __contains__(self, groupname: str) -> bool:
-        """Check whether a group with the given name exists ("*" always does)."""
-        # Check if a group with a name exists
-        return groupname in self.groups or groupname == "*"
+        """Return whether a stored or virtual group exists."""
+        return groupname in self.groups or groupname in self._ALL_NAMES
 
-    def group(self, groupname: str = "", *args: Any) -> Result[str, str]:
-        """Add aircraft to a group, list its members, or list all groups.
+    def reset(self) -> None:
+        """Clear both per-aircraft membership and stored group definitions."""
+        super().reset()
+        self.groups.clear()
+        self.allmasks = 0
 
-        Implements the GROUP stack command. Without arguments the existing
-        groups are listed; with only a group name its members are listed
-        (creating the group when arguments follow). Aircraft can be added
-        by index, or by giving the name of an area/shape, in which case all
-        aircraft currently inside that area are added.
-
-        Args:
-            groupname: Name of the group; empty to list all groups.
-            *args: Aircraft indices, or a single area name.
-        """
-        # Return list of groups if no groupname is given
-        if not groupname:
-            if not self.groups:
-                return Ok("There are currently no traffic groups defined.")
-            else:
-                return Ok("Defined traffic groups:\n" + ", ".join(self.groups))
+    def _allocate_mask(self, groupname: str) -> Result[int, str]:
+        # Get first unused group mask
+        if groupname in self._ALL_NAMES:
+            return Err(f"{groupname} is a reserved all-aircraft selection")
         if len(self.groups) >= 64:
             return Err("Maximum number of 64 groups reached")
-        if groupname not in self.groups:
-            if not args:
-                return Err(f"Group {groupname} doesn't exist")
-            # Get first unused group mask
-            for i in range(64):
-                groupmask = 1 << i
-                if not self.allmasks & groupmask:
-                    self.allmasks |= groupmask
-                    self.groups[groupname] = groupmask
-                    break
+        for bit in range(64):
+            mask = 1 << bit
+            if not self.allmasks & mask:
+                self.groups[groupname] = mask
+                self.allmasks |= mask
+                return Ok(mask)
+        return Err("No free group mask")
 
-        elif not args:
-            match self.listgroup(groupname):
-                case Ok(group):
-                    acnames = np.array(self.traffic.callsign)[group]
-                    return Ok("Aircraft in group {}:\n{}".format(groupname, ", ".join(acnames)))
+    def _selection(self, name: str) -> Result[np.ndarray, str]:
+        """Resolve a formal `selection` using deterministic precedence."""
+        if name in self._ALL_NAMES:
+            return Ok(np.arange(self.traffic.ntraf, dtype=int))
+
+        if name in self.groups:
+            return self.listgroup(name)
+        index = self.traffic.idx(name)
+        if index >= 0:
+            return Ok(np.asarray([index], dtype=int))
+        return Err(f"Aircraft or group {name} not found")
+
+    def _member_indices(self, members: tuple[str, ...]) -> Result[np.ndarray, str]:
+        indices: list[int] = []
+        for member in members:
+            match self._selection(member):
+                case Ok(selection):
+                    indices.extend(int(index) for index in selection)
+                case Err(error):
+                    if self.areas.has_area(member):
+                        return Err("Area names cannot be combined with aircraft or groups")
+                    return Err(error)
+        return Ok(np.unique(np.asarray(indices, dtype=int)))
+
+    @command(name="GROUP")
+    def list_groups(self) -> Result[str, str]:
+        """List all stored traffic groups."""
+        if not self.groups:
+            return Ok("There are currently no traffic groups defined.")
+        return Ok(f"Defined traffic groups:\n{', '.join(self.groups)}")
+
+    @command(name="GROUP")
+    def show_group(self, groupname: Keyword) -> Result[str, str]:
+        """List the aircraft in a traffic group."""
+        match self.listgroup(groupname):
+            case Ok(group):
+                callsigns = np.asarray(self.traffic.callsign)[group]
+                return Ok(f"Aircraft in group {groupname}:\n{', '.join(callsigns)}")
+            case Err(error):
+                return Err(error)
+
+    @command(name="GROUP")
+    def add_to_group(
+        self, groupname: Keyword, first_member: Keyword, *additional_members: Keyword
+    ) -> Result[str, str]:
+        """Create or extend a traffic group from selections or an area."""
+        members = (first_member, *additional_members)
+        sole_member = members[0] if len(members) == 1 else None
+        sole_is_selection = sole_member is not None and (
+            self.traffic.idx(sole_member) >= 0 or sole_member in self
+        )
+        if sole_member is not None and not sole_is_selection and self.areas.has_area(sole_member):
+            inside = self.areas.checkInside(
+                sole_member, self.traffic.lat, self.traffic.lon, self.traffic.alt
+            )
+            indices = np.flatnonzero(inside)
+        else:
+            match self._member_indices(members):
+                case Ok(value):
+                    indices = value
+                case Err(error):
+                    return Err(error)
+
+        # Resolve every member before allocating a group bit.
+        mask = self.groups.get(groupname)
+        if mask is None:
+            match self._allocate_mask(groupname):
+                case Ok(value):
+                    mask = value
                 case Err(error):
                     return Err(error)
 
         # Add aircraft to group
-        if self.areas.has_area(args[0]):
-            inside = self.areas.checkInside(
-                args[0], self.traffic.lat, self.traffic.lon, self.traffic.alt
-            )
-            self.ingroup[inside] |= self.groups[groupname]
-            acnames = np.array(self.traffic.callsign)[inside]
-        else:
-            idx = list(args)
-            self.ingroup[idx] |= self.groups[groupname]
-            acnames = np.array(self.traffic.callsign)[idx]
-        return Ok("Aircraft added to group {}:\n{}".format(groupname, ", ".join(acnames)))
+        self.ingroup[indices] |= np.uint64(mask)
+        callsigns = np.asarray(self.traffic.callsign)[indices]
+        return Ok(f"Aircraft added to group {groupname}:\n{', '.join(callsigns)}")
 
-    def delgroup(self, grouparray: Any) -> None:
-        """Delete a group, and all aircraft in that group.
-
-        Used by the DEL stack command when it is given a group name. The
-        group's bitmask is released for reuse, unless the special group
-        "*" (all aircraft) was given.
-
-        Args:
-            grouparray: GroupArray with the indices of the group members,
-                as returned by listgroup().
-        """
+    def delete_group(self, groupname: str) -> Result[None, str]:
+        """Delete all members and release a stored group name."""
         # Delete all aircraft in the respective group
-        self.traffic.delete(grouparray)
-
-        # Remove the group from the group list
-        if grouparray.groupname != "*":
-            self.allmasks ^= self.groups.pop(grouparray.groupname)
-
-    def ungroup(self, groupname: str, *args: Any) -> Result[None, str]:
-        """Remove members from a group by aircraft index.
-
-        Implements the UNGROUP stack command.
-
-        Args:
-            groupname: Name of the group.
-            *args: Indices of the aircraft to remove from the group.
-
-        Returns:
-            Result: `Ok(None)` after removal, or `Err` when the group is unknown.
-        """
-        groupmask = self.groups.get(groupname, None)
-        if groupmask is None:
+        if groupname in self._ALL_NAMES:
+            return Err("The all-aircraft selection is not a stored group")
+        mask = self.groups.get(groupname)
+        if mask is None:
             return Err(f"Group {groupname} doesn't exist")
-        self.ingroup[list(args)] ^= groupmask
+        match self.listgroup(groupname):
+            case Ok(indices):
+                self.traffic.delete(indices)
+            case Err(error):
+                return Err(error)
+        self.groups.pop(groupname)
+        self.allmasks &= ~mask
         return Ok(None)
 
-    def listgroup(self, groupname: str) -> Result[GroupArray, str]:
-        """Return the aircraft indices of all aircraft in a group.
-
-        When "*" is passed as group name, all aircraft in the simulation
-        are returned.
-
-        Args:
-            groupname: Name of the group, or "*" for all aircraft.
-        """
-        if groupname == "*":
-            return Ok(GroupArray(range(self.traffic.ntraf), groupname="*"))
-        groupmask = self.groups.get(groupname, None)
-        if groupmask is None:
+    @command(name="UNGROUP")
+    def ungroup(
+        self, groupname: Keyword, first_member: Keyword, *additional_members: Keyword
+    ) -> Result[None, str]:
+        """Remove several selections from a stored group."""
+        if groupname in self._ALL_NAMES:
+            return Err("The all-aircraft selection cannot be modified")
+        mask = self.groups.get(groupname)
+        if mask is None:
             return Err(f"Group {groupname} doesn't exist")
-        return Ok(GroupArray(np.where((self.ingroup & groupmask) > 0)[0], groupname=groupname))
+        match self._member_indices((first_member, *additional_members)):
+            case Ok(indices):
+                self.ingroup[indices] &= ~np.uint64(mask)
+                return Ok(None)
+            case Err(error):
+                return Err(error)
+
+    def listgroup(self, groupname: str) -> Result[np.ndarray, str]:
+        """Return member indices for a stored group or the virtual all group."""
+        if groupname in self._ALL_NAMES:
+            return Ok(np.arange(self.traffic.ntraf, dtype=int))
+        mask = self.groups.get(groupname)
+        if mask is None:
+            return Err(f"Group {groupname} doesn't exist")
+        return Ok(np.flatnonzero((self.ingroup & np.uint64(mask)) != 0))

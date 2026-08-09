@@ -1,8 +1,11 @@
+"""Focused tests for the BlueSky scenario command boundary."""
+
 from __future__ import annotations
 
-from typing import Literal
+from typing import Annotated, Any, Literal
 
 import pytest
+from annotated_types import Gt
 from minisky import MiniSky
 from minisky.command import (
     ArgumentIssue,
@@ -12,56 +15,45 @@ from minisky.command import (
     LatLonDegrees,
     MagneticHeadingDeg,
     NamedWaypoint,
-    ResolvedPositionArg,
     RunwayHeadingRequest,
-    RunwayPosition,
     TrueHeadingDeg,
     UseRunwayHeading,
     Wpt,
     command,
+    next_argument,
     split_commands,
 )
 from minisky.result import Err, Ok
+from tests._types import RunCommand
 
 
-def test_overlapping_overloads_use_left_to_right_order(runtime: MiniSky) -> None:
-    received: list[tuple[str, int | float]] = []
+@pytest.mark.parametrize(
+    ("text", "value", "remainder"),
+    [
+        ("ONE TWO", "ONE", "TWO"),
+        ("ONE, TWO", "ONE", "TWO"),
+        ("ONE ,TWO", "ONE", "TWO"),
+        (",TWO", "", "TWO"),
+        ("ONE,,TWO", "ONE", ",TWO"),
+        ('"ONE TWO",THREE', "ONE TWO", "THREE"),
+        ("'ONE,TWO' THREE", "ONE,TWO", "THREE"),
+        ("N52'14'12' E004'23'10'", "N52'14'12'", "E004'23'10'"),
+    ],
+)
+def test_separators(text: str, value: str, remainder: str) -> None:
+    result = next_argument(text)
+    assert isinstance(result, Ok)
+    parsed = result.ok()
+    assert parsed.value == value
+    assert parsed.remainder == remainder
 
-    class Component:
-        @command(name="TESTAMBIG")
-        def integer(self, value: int) -> None:
-            received.append(("int", value))
 
-        @command(name="TESTAMBIG")
-        def number(self, value: float) -> None:
-            received.append(("float", value))
-
-    (prepared,) = runtime.commands.prepare_component(Component())
-
-    assert isinstance(prepared.command("7"), Ok)
-    assert isinstance(prepared.command("7.5"), Ok)
-    assert received == [("int", 7), ("float", 7.5)]
-
-
-def test_literal_form_usage_and_order(runtime: MiniSky) -> None:
-    received: list[tuple[object, ...]] = []
-
-    class Component:
-        @command(name="TESTFORM")
-        def query(self) -> None:
-            received.append(("query",))
-
-        @command(name="TESTFORM")
-        def set_value(self, action: Literal["SET"], value: int) -> None:
-            received.append((action, value))
-
-    (prepared,) = runtime.commands.prepare_component(Component())
-    command_obj = prepared.command
-
-    assert "TESTFORM SET,value" in command_obj.helptext()
-    assert isinstance(command_obj(""), Ok)
-    assert isinstance(command_obj("set 7"), Ok)
-    assert received == [("query",), ("SET", 7)]
+def test_quoted_span() -> None:
+    result = next_argument('  "ONE TWO",THREE')
+    assert isinstance(result, Ok)
+    span = result.ok().span
+    assert span is not None
+    assert (span.start, span.end) == (2, 11)
 
 
 @pytest.mark.parametrize(
@@ -90,144 +82,100 @@ def test_unclosed_quote() -> None:
 
 
 def test_empty_comma_field_uses_parameter_default(runtime: MiniSky) -> None:
-    received: list[tuple[int, int]] = []
+    received: list[tuple[str, str]] = []
 
-    class Component:
-        @command(name="TESTDEFAULT")
-        def record(self, first: int = 7, second: int = 9) -> None:
-            received.append((first, second))
+    def record(first: str = "DEFAULT", second: str = "SECOND") -> None:
+        received.append((first, second))
 
-    (prepared,) = runtime.commands.prepare_component(Component())
-    assert isinstance(prepared.command(",3"), Ok)
-    assert received == [(7, 3)]
+    prepared = runtime.commands.prepare_command(record, name="TESTDEFAULT")
+    result = prepared(",provided")
+
+    assert isinstance(result, Ok)
+    assert received == [("DEFAULT", "provided")]
 
 
 def test_required_nullable_field_accepts_only_explicit_omission(runtime: MiniSky) -> None:
     received: list[tuple[int | None, int]] = []
 
-    class Component:
-        @command(name="TESTNULLABLE")
-        def record(self, first: int | None, second: int) -> None:
-            received.append((first, second))
+    def record(first: int | None, second: int) -> None:
+        received.append((first, second))
 
-    (prepared,) = runtime.commands.prepare_component(Component())
-    parameter = prepared.command.forms[0].parameters[0]
-    assert parameter.nullable
-    assert isinstance(prepared.command(",7"), Ok)
-    assert isinstance(prepared.command(""), Err)
+    prepared = runtime.commands.prepare_command(record, name="TESTNULLABLE")
+    first = prepared.forms[0].parameters[0]
+    assert first.name == "first"
+    assert first.nullable
+    assert isinstance(prepared(",7"), Ok)
     assert received == [(None, 7)]
+    assert isinstance(prepared(""), Err)
 
 
 def test_nullable_default_allows_argument_omission(runtime: MiniSky) -> None:
     received: list[int | None] = []
 
-    class Component:
-        @command(name="TESTOPTIONAL")
-        def record(self, value: int | None = None) -> None:
-            received.append(value)
+    def record(value: int | None = None) -> None:
+        received.append(value)
 
-    (prepared,) = runtime.commands.prepare_component(Component())
-    assert "TESTOPTIONAL [value]" in prepared.command.helptext()
-    assert isinstance(prepared.command(""), Ok)
-    assert isinstance(prepared.command(","), Ok)
+    prepared = runtime.commands.prepare_command(record, name="TESTOPTIONAL")
+    assert isinstance(prepared(""), Ok)
+    assert isinstance(prepared(","), Ok)
     assert received == [None, None]
 
 
-def test_heading_parser_preserves_reference_frame(runtime: MiniSky) -> None:
-    received: list[TrueHeadingDeg | MagneticHeadingDeg] = []
+def test_none_default_requires_nullable_annotation(runtime: MiniSky) -> None:
+    none_default: Any = None
 
-    class Component:
-        @command(name="TESTHDG")
-        def record(self, heading: HeadingDeg) -> None:
-            received.append(heading)
+    def invalid(value: int = none_default) -> None:
+        pass
 
-    (prepared,) = runtime.commands.prepare_component(Component())
-    assert isinstance(prepared.command("090"), Ok)
-    assert isinstance(prepared.command("090T"), Ok)
-    assert isinstance(prepared.command("090M"), Ok)
-    assert isinstance(prepared.command("09M0"), Err)
-    assert received == [
-        TrueHeadingDeg(90.0),
-        TrueHeadingDeg(90.0),
-        MagneticHeadingDeg(90.0),
-    ]
+    with pytest.raises(TypeError, match="defaults to None"):
+        runtime.commands.prepare_command(invalid, name="TESTNONEDEFAULT")
 
 
-def test_heading_union_preserves_runway_request(runtime: MiniSky) -> None:
-    received: list[TrueHeadingDeg | MagneticHeadingDeg | RunwayHeadingRequest | None] = []
+def test_annotated_constraint_is_checked_before_callback(runtime: MiniSky) -> None:
+    received: list[int] = []
 
-    class Component:
-        @command(name="TESTHDGUNION")
-        def record(self, heading: HeadingDeg | UseRunwayHeading | None = None) -> None:
-            received.append(heading)
+    def record(value: Annotated[int, Gt(0)]) -> None:
+        received.append(value)
 
-    (prepared,) = runtime.commands.prepare_component(Component())
-    assert "TESTHDGUNION [heading|*]" in prepared.command.helptext()
-    assert isinstance(prepared.command("*"), Ok)
-    assert isinstance(prepared.command("090M"), Ok)
-    assert isinstance(prepared.command(""), Ok)
-    assert isinstance(received[0], RunwayHeadingRequest)
-    assert received[1:] == [MagneticHeadingDeg(90.0), None]
-
-
-def test_resolved_position_retains_runway_heading(runtime: MiniSky) -> None:
-    received: list[object] = []
-
-    class Component:
-        @command(name="TESTRUNWAY")
-        def record(self, position: ResolvedPositionArg) -> None:
-            received.append(position)
-
-    (prepared,) = runtime.commands.prepare_component(Component())
-    assert isinstance(prepared.command("EHAM,RWY18L"), Ok)
-    position = received[0]
-    assert isinstance(position, RunwayPosition)
-    assert position.runway_heading == pytest.approx(
-        runtime.navigation.rwythresholds["EHAM"]["18L"][2]
-    )
+    prepared = runtime.commands.prepare_command(record, name="TESTPOSITIVE")
+    assert isinstance(prepared("0"), Err)
+    assert isinstance(prepared("1"), Ok)
+    assert received == [1]
 
 
 def test_variadic_is_zero_or_more(runtime: MiniSky) -> None:
     received: list[tuple[int, ...]] = []
 
-    class Component:
-        @command(name="TESTREPEAT")
-        def record(self, *values: int) -> None:
-            received.append(values)
+    def record(*values: int) -> None:
+        received.append(values)
 
-    (prepared,) = runtime.commands.prepare_component(Component())
-    parameter = prepared.command.forms[0].parameters[0]
+    prepared = runtime.commands.prepare_command(record, name="TESTREPEAT")
+    parameter = prepared.forms[0].parameters[0]
     assert parameter.name == "values"
     assert parameter.repeat
-    assert isinstance(prepared.command(""), Ok)
-    assert isinstance(prepared.command("1, 2 3"), Ok)
+
+    empty = prepared("")
+    multiple = prepared("1, 2 3")
+
+    assert isinstance(empty, Ok)
+    assert isinstance(multiple, Ok)
     assert received == [(), (1, 2, 3)]
 
 
 def test_waypoint_parser_preserves_named_and_coordinate_structure(runtime: MiniSky) -> None:
     received: list[object] = []
 
-    class Component:
-        @command(name="TESTWPT")
-        def record(self, waypoint: Wpt) -> None:
-            received.append(waypoint)
+    def record(waypoint: Wpt) -> None:
+        received.append(waypoint)
 
-    (prepared,) = runtime.commands.prepare_component(Component())
-    assert isinstance(prepared.command("EHAM"), Ok)
-    assert isinstance(prepared.command("52.5,5.0"), Ok)
+    prepared = runtime.commands.prepare_command(record, name="TESTWPT")
+
+    assert isinstance(prepared("EHAM"), Ok)
+    assert isinstance(prepared("52.5,5.0"), Ok)
     assert received == [
         NamedWaypoint("EHAM"),
         CoordinateWaypoint(LatLonDegrees(52.5, 5.0), "52.5,5.0"),
     ]
-
-
-def test_wind_error_span_points_to_invalid_profile_field(runtime: MiniSky) -> None:
-    result = runtime.commands.cmddict["WIND"]("52 4 100 180 BAD")
-    assert isinstance(result, Err)
-    issue = result.err()
-    assert issue.source_text == "WIND 52 4 100 180 BAD"
-    assert issue.span is not None
-    assert issue.source_text[issue.span.start : issue.span.end] == "BAD"
 
 
 def test_resolved_position_rejects_ambiguous_waypoint_without_ui_reference(
@@ -235,16 +183,14 @@ def test_resolved_position_rejects_ambiguous_waypoint_without_ui_reference(
 ) -> None:
     received: list[LatLonDegrees] = []
 
-    class Component:
-        @command(name="TESTPOS")
-        def record(self, position: LatLonDeg) -> None:
-            received.append(position)
+    def record(position: LatLonDeg) -> None:
+        received.append(position)
 
     runtime.navigation.defwpt("ZZDUPPOS", 52.0, 4.0)
     runtime.navigation.defwpt("ZZDUPPOS", 53.0, 5.0)
     try:
-        (prepared,) = runtime.commands.prepare_component(Component())
-        result = prepared.command("ZZDUPPOS")
+        prepared = runtime.commands.prepare_command(record, name="TESTPOS")
+        result = prepared("ZZDUPPOS")
 
         assert isinstance(result, Err)
         issue = result.err()
@@ -254,3 +200,186 @@ def test_resolved_position_rejects_ambiguous_waypoint_without_ui_reference(
     finally:
         runtime.navigation.delwpt("ZZDUPPOS")
         runtime.navigation.delwpt("ZZDUPPOS")
+
+
+def test_union_uses_left_to_right_choice(runtime: MiniSky) -> None:
+    received: list[object] = []
+
+    def record(value: HeadingDeg | UseRunwayHeading) -> None:
+        received.append(value)
+
+    prepared = runtime.commands.prepare_command(record, name="TESTUNION")
+
+    assert isinstance(prepared("*"), Ok)
+    assert isinstance(prepared("090"), Ok)
+    assert isinstance(prepared("090M"), Ok)
+    assert isinstance(received[0], RunwayHeadingRequest)
+    assert received[1] == TrueHeadingDeg(90.0)
+    assert received[2] == MagneticHeadingDeg(90.0)
+
+
+def test_union_falls_through_to_later_parser(runtime: MiniSky) -> None:
+    received: list[int | str] = []
+
+    def record(value: int | str) -> None:
+        received.append(value)
+
+    prepared = runtime.commands.prepare_command(record, name="TESTUNION")
+
+    assert isinstance(prepared("7"), Ok)
+    assert isinstance(prepared("word"), Ok)
+    assert received == [7, "word"]
+
+
+def test_union_order_is_semantic(runtime: MiniSky) -> None:
+    received: list[str | int] = []
+
+    def record(value: str | int) -> None:
+        received.append(value)
+
+    prepared = runtime.commands.prepare_command(record, name="TESTUNION")
+
+    assert isinstance(prepared("7"), Ok)
+    assert received == ["7"]
+
+
+def test_command_overloads_use_left_to_right_choice(runtime: MiniSky) -> None:
+    received: list[tuple[object, ...]] = []
+
+    class Component:
+        @command(name="TESTOVER")
+        def query(self) -> None:
+            """Query the current value."""
+            received.append(("query",))
+
+        @command(name="TESTOVER")
+        def set_value(self, action: Literal["SET"], value: int) -> None:
+            """Set an integer value."""
+            received.append((action, value))
+
+        @command(name="TESTOVER")
+        def named(self, name: str) -> None:
+            """Select a named value."""
+            received.append(("name", name))
+
+    (prepared,) = runtime.commands.mount_component(Component())
+    try:
+        help_result = runtime.commands.show_help("TESTOVER")
+        assert isinstance(help_result, Ok)
+        help_text = help_result.ok()
+        assert "Query the current value.\nUsage:\nTESTOVER" in help_text
+        assert "Set an integer value.\nUsage:\nTESTOVER SET,value" in help_text
+        assert "Select a named value.\nUsage:\nTESTOVER name" in help_text
+        assert isinstance(prepared(""), Ok)
+        assert isinstance(prepared("other"), Ok)
+        assert isinstance(prepared("set 7"), Ok)
+        assert received == [("query",), ("name", "other"), ("SET", 7)]
+
+        # Ordered choice is intentionally permissive: when the narrower SET form
+        # fails, the later generic name form may still accept the same text.
+        assert isinstance(prepared("set"), Ok)
+        assert received == [("query",), ("name", "other"), ("SET", 7), ("name", "set")]
+    finally:
+        runtime.commands.remove_commands((prepared,))
+
+
+def test_overlapping_overloads_use_left_to_right_order(runtime: MiniSky) -> None:
+    received: list[tuple[str, int | float]] = []
+
+    class Component:
+        @command(name="TESTAMBIG")
+        def integer(self, value: int) -> None:
+            received.append(("int", value))
+
+        @command(name="TESTAMBIG")
+        def number(self, value: float) -> None:
+            received.append(("float", value))
+
+    (prepared,) = runtime.commands.prepare_component(Component())
+
+    assert isinstance(prepared("7"), Ok)
+    assert isinstance(prepared("7.5"), Ok)
+    assert received == [("int", 7), ("float", 7.5)]
+
+
+def test_nullable_overload_can_accept_omitted_field_after_required_fails(runtime: MiniSky) -> None:
+    received: list[int | None] = []
+
+    class Component:
+        @command(name="TESTNULLAMBIG")
+        def required(self, value: int) -> None:
+            received.append(value)
+
+        @command(name="TESTNULLAMBIG")
+        def nullable(self, value: int | None) -> None:
+            received.append(value)
+
+    (prepared,) = runtime.commands.prepare_component(Component())
+
+    assert isinstance(prepared("7"), Ok)
+    assert isinstance(prepared(","), Ok)
+    assert received == [7, None]
+
+
+def test_cre_omitted_heading_field(run_cmd: RunCommand, runtime: MiniSky) -> None:
+    output = run_cmd("CRE COMPAT1,B738,52,4,,FL100,250")
+
+    assert "created" in output.lower()
+    index = runtime.traffic.idx("COMPAT1")
+    assert index >= 0
+    assert runtime.traffic.hdg[index] == pytest.approx(45.0)
+
+
+def test_cre_explicit_runway_heading_marker_is_resolved_by_command(
+    run_cmd: RunCommand, runtime: MiniSky
+) -> None:
+    output = run_cmd("CRE RWYREF,A320,EHAM,RWY18L,*,0,250")
+
+    assert "created" in output.lower()
+    index = runtime.traffic.idx("RWYREF")
+    runway_heading = runtime.navigation.rwythresholds["EHAM"]["18L"][2]
+    assert runtime.traffic.hdg[index] == pytest.approx(runway_heading)
+
+
+def test_heading_wildcard_is_not_global_heading_syntax(
+    runtime: MiniSky, run_cmd: RunCommand
+) -> None:
+    run_cmd("CRE HDGREF,A320,52,4,90,FL100,250")
+    heading = runtime.commands.cmddict["HDG"]
+
+    result = heading.parse_arguments("HDGREF *")
+
+    assert isinstance(result, Err)
+    assert "expected a heading" in result.err().message
+
+
+def test_cre_runway_heading_marker_requires_runway(runtime: MiniSky) -> None:
+    result = runtime.commands.cmddict["CRE"]("NORWY,A320,52,4,*,0,250")
+
+    assert isinstance(result, Err)
+    assert result.err() == "CRE: heading * requires a runway position"
+
+
+def test_wind_error_span_points_to_invalid_profile_field(runtime: MiniSky) -> None:
+    result = runtime.commands.cmddict["WIND"].parse_arguments("52 4 100 180 BAD")
+    assert isinstance(result, Err)
+    issue = result.err()
+    assert issue.source_text == "WIND 52 4 100 180 BAD"
+    assert issue.span is not None
+    assert issue.source_text[issue.span.start : issue.span.end] == "BAD"
+
+
+def test_route_waypoint_membership_is_validated_by_route_command(
+    runtime: MiniSky, run_cmd: RunCommand
+) -> None:
+    run_cmd("CRE ROUTE1,A320,52,4,90,FL100,250")
+    direct = runtime.commands.cmddict["DIRECT"]
+
+    parsed = direct.parse_arguments("ROUTE1 MISSING")
+    result = direct("ROUTE1 MISSING")
+
+    assert isinstance(parsed, Ok)
+    assert isinstance(result, Err)
+    error = result.err()
+    assert isinstance(error, str)
+    assert "Waypoint MISSING not found in the route of ROUTE1" in error

@@ -11,7 +11,7 @@ from typing import Self
 
 from colorama import Fore, Style
 
-from minisky.command import Text, command
+from minisky.command import LatLonDegrees, Text, command
 
 ConsoleCallback = Callable[[str], None]
 
@@ -113,9 +113,9 @@ class ConsoleIO:
     def _unsubscribe(self, token: int) -> None:
         self._subscribers.pop(token, None)
 
-    def getviewctr(self) -> tuple[float, float]:
+    def getviewctr(self) -> LatLonDegrees:
         """Return the current view center. Stub for non-GUI mode."""
-        return 0.0, 0.0
+        return LatLonDegrees(0.0, 0.0)
 
     def addnavwpt(self, name: str, lat: float, lon: float) -> None:
         """Add a waypoint marker. Stub for non-GUI mode."""

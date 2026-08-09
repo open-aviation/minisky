@@ -62,7 +62,10 @@ Year = Annotated[int, Ge(1)]
 def _clock_time(value: str) -> Result[datetime.time, ArgumentIssue]:
     try:
         parsed = (
-            datetime.datetime.strptime(value, "%H:%M:%S.%f" if "." in value else "%H:%M:%S")
+            datetime.datetime.strptime(
+                value,
+                "%H:%M:%S.%f" if "." in value else "%H:%M:%S"
+            )
             .replace(tzinfo=datetime.UTC)
             .time()
         )
@@ -76,7 +79,7 @@ def _parse_clock_time(_context: CommandParseContext, text: str) -> ParseResult[d
         return result
     token = result.ok()
     if isinstance(clock := _clock_time(token.value), Err):
-        return Err(ArgumentIssue(clock.err().message, token.span))
+        return Err(clock.err().with_span(token.span))
     return Ok(Parsed(clock.ok(), token.remainder, token.span))
 
 
@@ -153,7 +156,7 @@ class Simulation:
         # System time [seconds]
         self.syst: float = 0
 
-        # simulated utc clock time (timezone-aware), set by time/date commands
+        # Simulated UTC clock time (timezone-aware), set by TIME/DATE commands
         self.utc: datetime.datetime = datetime.datetime.now(datetime.UTC)
 
         # Flag indicating running at fixed rate or fast time
@@ -210,8 +213,9 @@ class Simulation:
         self.publish_tick()
         return True
 
+    @command(name="QUIT", aliases=("CLOSE", "END", "EXIT", "Q", "STOP"))
     def stop(self) -> None:
-        """Stop the simulation (stack STOP/QUIT command).
+        """Stop the simulation.
 
         Sets the simulation state to `END` and asks the runner to exit its
         loop. If the runner was configured with
@@ -221,8 +225,9 @@ class Simulation:
         self.state = SimulationState.END
         self.stop_runner()
 
+    @command(name="OP", aliases=("CONTINUE", "RUN", "START"))
     def op(self) -> None:
-        """Set simulation state to OPERATE (stack OP command).
+        """Set simulation state to OPERATE.
 
         Resumes (or starts) advancing simulation time. Also re-anchors the
         system time reference `syst` to the current wall-clock time plus one
@@ -232,8 +237,9 @@ class Simulation:
         self.state = SimulationState.OP
         self.console.echo("Simulation running")
 
+    @command(name="HOLD", aliases=("PAUSE",))
     def hold(self) -> None:
-        """Set simulation state to HOLD (stack HOLD command).
+        """Set simulation state to HOLD.
 
         Pauses the advance of simulation time and triggers the plugin `hold`
         hooks. Stack commands are still processed while holding, so the
@@ -244,6 +250,7 @@ class Simulation:
         self.plugins.hold()
         self.console.echo("Simulation paused")
 
+    @command(name="RESET")
     def reset(self) -> None:
         """Reset all simulation objects (stack RESET command).
 
@@ -306,15 +313,18 @@ class Simulation:
         Returns:
             bool: True if the event was recognized and processed.
         """
+        # Keep track of event processing
         event_processed = False
 
         if eventname == b"STACK":
+            # We received a single stack command. Add it to the existing stack
             if not isinstance(eventdata, str):
                 raise TypeError("STACK event data must be command text")
             self.commands.stack(eventdata, sender_id=sender_rte)
             event_processed = True
 
         elif eventname == b"BATCH":
+            # We are in a batch simulation, and received an entire scenario. Assign it to the stack.
             if not isinstance(eventdata, ScenarioData):
                 raise TypeError("BATCH event data must be ScenarioData")
             self.reset()
@@ -351,7 +361,7 @@ class Simulation:
 
     @command(name="TIME")
     def set_time_value(self, time: ClockTimeArg) -> Result[str, str]:
-        """Set only the time-of-day using the historical 1900-01-01 date."""
+        """Set only the time-of-day, preserving BlueSky's 1900-01-01 date behavior."""
         self.utc = datetime.datetime.combine(datetime.date(1900, 1, 1), time, tzinfo=datetime.UTC)
         return Ok(f"Simulation UTC {self.utc}")
 

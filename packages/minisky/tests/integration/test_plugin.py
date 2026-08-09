@@ -74,8 +74,6 @@ def install(monkeypatch: pytest.MonkeyPatch, *entries: FakeEntryPoint) -> None:
 
 
 @pytest.mark.anyio
-@pytest.mark.anyio
-@pytest.mark.anyio
 async def test_entity_backfill_follows_lifespan_startup(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -156,7 +154,7 @@ async def test_mount_binds_command_to_exact_instance_and_respects_annotation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # plugin parameter names are arbitrary. a parameter named `idx` must keep
-    # its declared integer parser, not become a callsign.
+    # its declared integer parser not become a callsign.
     class Component:
         def __init__(self) -> None:
             self.values: list[int] = []
@@ -263,7 +261,6 @@ async def test_failing_hook_is_disabled_without_disabling_plugin(
 
 
 @pytest.mark.anyio
-@pytest.mark.anyio
 async def test_replacement_arrays_size_existing_traffic(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -275,7 +272,7 @@ async def test_replacement_arrays_size_existing_traffic(
             with self.settrafarrays():
                 self.plugin_value = np.array([])
 
-        def selaltcmd(self, idx: int | np.ndarray, alt: float, vspd: float | None = None):
+        def selaltcmd(self, idx: np.ndarray, alt: float, vspd: float | None = None):
             self.alt_commands += 1
             return super().selaltcmd(idx, alt, vspd)
 
@@ -288,7 +285,7 @@ async def test_replacement_arrays_size_existing_traffic(
         runtime.traffic.cre("KL001", alt=3000.0, spd=150.0)
         result = await runtime.plugins.load("ARRAYS")
         assert result.is_ok(), result.err()
-        alt_callback = runtime.commands.cmddict["ALT"].callback
+        alt_callback = runtime.commands.cmddict["ALT"].forms[0].callback
         assert runtime.replaceables.select("AUTOPILOT", "ARRAYAUTOPILOT").is_ok()
         selected = cast(ArrayAutopilot, runtime.traffic.ap)
         runtime.commands.stack("ALT KL001 FL100")
@@ -296,7 +293,7 @@ async def test_replacement_arrays_size_existing_traffic(
         assert type(selected) is ArrayAutopilot
         assert selected.plugin_value.tolist() == [0.0]
         assert selected.alt_commands == 1
-        assert runtime.commands.cmddict["ALT"].callback is alt_callback
+        assert runtime.commands.cmddict["ALT"].forms[0].callback is alt_callback
     finally:
         await runtime.aclose()
 
