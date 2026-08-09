@@ -32,6 +32,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 from minisky import plugin as plugin_api
+from minisky.result import Err, Ok, Result
 from minisky.tools import aero
 from minisky.traffic.performance.perfoap import OpenAP
 
@@ -232,7 +233,7 @@ class MulticopterPerf(OpenAP):
         vs[low] = np.minimum(vs[low], LOWBATT_VS_FACTOR * self.vsmax[low])
         return self.PerformanceLimits(tas, vs, alt)
 
-    def batt(self, idx: int) -> tuple[bool, str]:
+    def batt(self, idx: int) -> Result[str, str]:
         """Report battery state of charge, power draw and endurance.
 
         Backs the ``BATT`` stack command declared on the Multicopter entity,
@@ -243,11 +244,11 @@ class MulticopterPerf(OpenAP):
             idx: Aircraft index.
 
         Returns:
-            tuple: (success flag, report message).
+            Result containing the report message or an error.
         """
         callsign = self.traffic.callsign[idx]
         if self.capacity[idx] <= 0.0:
-            return False, f"BATT: no battery model for {callsign} ({self.actype[idx]})"
+            return Err(f"BATT: no battery model for {callsign} ({self.actype[idx]})")
 
         soc = self.soc[idx]
         power = self.power[idx]
@@ -257,4 +258,4 @@ class MulticopterPerf(OpenAP):
             endurance = f"endurance {soc * self.capacity[idx] / power / 60.0:.0f} min"
         else:
             endurance = "endurance --"
-        return True, f"BATT {callsign}: {soc:.0%}, drawing {power:.0f} W, {endurance}"
+        return Ok(f"BATT {callsign}: {soc:.0%}, drawing {power:.0f} W, {endurance}")

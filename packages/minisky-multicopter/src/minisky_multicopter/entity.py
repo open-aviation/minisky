@@ -18,6 +18,17 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 from minisky import plugin as plugin_api
+from minisky.plugin import (
+    AcId,
+    AltM,
+    HeadingDeg,
+    MagneticHeadingDeg,
+    OnOff,
+    PositiveFiniteFloat,
+    TimeS,
+)
+from minisky.result import Err, Ok, Result
+from minisky.tools import geo
 
 if TYPE_CHECKING:
     from minisky.traffic import Traffic
@@ -131,8 +142,8 @@ class Multicopter(plugin_api.Entity):
         """
         self.select_implementations()
 
-    @plugin_api.command(arguments="callsign,[onoff]")
-    def mcopt(self, idx: int, flag: bool | None = None) -> tuple[bool, str]:
+    @plugin_api.command
+    def mcopt(self, idx: AcId, flag: OnOff | None = None) -> Result[str, str]:
         """Mark an aircraft as a multicopter (or report its current setting).
 
         Arguments:
@@ -142,7 +153,7 @@ class Multicopter(plugin_api.Entity):
         """
         callsign = self.traffic.callsign[idx]
         if flag is None:
-            return True, f"MCOPT {callsign}: {'ON' if self.ismulticopter[idx] else 'OFF'}"
+            return Ok(f"MCOPT {callsign}: {'ON' if self.ismulticopter[idx] else 'OFF'}")
 
         self.ismulticopter[idx] = flag
         # Multicopters fly point-to-point: newly added waypoints default to
@@ -152,10 +163,10 @@ class Multicopter(plugin_api.Entity):
             # Start with the nose unconstrained, following the track.
             self.selhdg[idx] = self.traffic.hdg[idx]
             self.swselhdg[idx] = False
-        return True, f"MCOPT {callsign}: {'ON' if flag else 'OFF'}"
+        return Ok(f"MCOPT {callsign}: {'ON' if flag else 'OFF'}")
 
-    @plugin_api.command(arguments="callsign,hdg")
-    def yaw(self, idx: int, hdg: float) -> tuple[bool, str]:
+    @plugin_api.command
+    def yaw(self, idx: AcId, hdg: HeadingDeg) -> Result[str, str]:
         """Command the body heading (nose direction) of a multicopter.
 
         The velocity vector keeps following the track command from the FMS
@@ -167,14 +178,18 @@ class Multicopter(plugin_api.Entity):
         """
         if not self.ismulticopter[idx]:
             callsign = self.traffic.callsign[idx]
-            return False, f"YAW: {callsign} is not a multicopter (use MCOPT {callsign} ON)"
+            return Err(f"YAW: {callsign} is not a multicopter (use MCOPT {callsign} ON)")
 
-        self.selhdg[idx] = hdg % 360.0
+        resolved_hdg = hdg.degrees
+        if isinstance(hdg, MagneticHeadingDeg):
+            resolved_hdg += geo.magdec(float(self.traffic.lat[idx]), float(self.traffic.lon[idx]))
+        resolved_hdg %= 360.0
+        self.selhdg[idx] = resolved_hdg
         self.swselhdg[idx] = True
-        return True, f"YAW {self.traffic.callsign[idx]}: nose to {hdg % 360.0:.0f} deg"
+        return Ok(f"YAW {self.traffic.callsign[idx]}: nose to {resolved_hdg:.0f} deg")
 
-    @plugin_api.command(name="YAWRATE", arguments="callsign,[float]")
-    def setyawrate(self, idx: int, yawrate: float | None = None) -> tuple[bool, str]:
+    @plugin_api.command(name="YAWRATE")
+    def setyawrate(self, idx: AcId, yawrate: PositiveFiniteFloat | None = None) -> Result[str, str]:
         """Set or report the maximum yaw rate of a multicopter.
 
         Arguments:
@@ -183,17 +198,18 @@ class Multicopter(plugin_api.Entity):
         """
         callsign = self.traffic.callsign[idx]
         if yawrate is None:
-            return True, f"YAWRATE {callsign}: {self.yawrate[idx]:.0f} deg/s"
-        if yawrate <= 0.0:
-            return False, "YAWRATE: yaw rate must be positive"
+            return Ok(f"YAWRATE {callsign}: {self.yawrate[idx]:.0f} deg/s")
 
         self.yawrate[idx] = yawrate
-        return True, f"YAWRATE {callsign}: {yawrate:.0f} deg/s"
+        return Ok(f"YAWRATE {callsign}: {yawrate:.0f} deg/s")
 
-    @plugin_api.command(arguments="callsign,[time,alt]")
+    @plugin_api.command
     def hover(
-        self, idx: int, duration: float | None = None, alt: float | None = None
-    ) -> tuple[bool, str]:
+        self,
+        idx: AcId,
+        duration: TimeS | None = None,
+        alt: AltM | None = None,
+    ) -> Result[str, str]:
         """Hold position, optionally for a fixed time at a given altitude.
 
         Suspends LNAV/VNAV, commands zero ground speed, and holds the given
@@ -215,11 +231,11 @@ class Multicopter(plugin_api.Entity):
 
         ap = self.traffic.ap
         if not isinstance(ap, MulticopterAutopilot):
-            return False, "HOVER: SELECTIMPL AUTOPILOT MULTICOPTERAUTOPILOT first"
+            return Err("HOVER: SELECTIMPL AUTOPILOT MULTICOPTERAUTOPILOT first")
         return ap.hover(idx, duration, alt)
 
-    @plugin_api.command(arguments="callsign")
-    def batt(self, idx: int) -> tuple[bool, str]:
+    @plugin_api.command
+    def batt(self, idx: AcId) -> Result[str, str]:
         """Report the battery state of charge, power draw and endurance.
 
         Arguments:
@@ -230,8 +246,8 @@ class Multicopter(plugin_api.Entity):
 
         callsign = self.traffic.callsign[idx]
         if not self.ismulticopter[idx]:
-            return False, f"BATT: {callsign} is not a multicopter (use MCOPT {callsign} ON)"
+            return Err(f"BATT: {callsign} is not a multicopter (use MCOPT {callsign} ON)")
         perf = self.traffic.perf
         if not isinstance(perf, MulticopterPerf):
-            return False, "BATT: SELECTIMPL OPENAP MULTICOPTERPERF first"
+            return Err("BATT: SELECTIMPL OPENAP MULTICOPTERPERF first")
         return perf.batt(idx)

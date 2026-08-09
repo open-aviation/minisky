@@ -210,8 +210,13 @@ class ReplaceableManager:
         """Select an implementation for a replaceable class."""
         return self.select(basename, implname)
 
-    def select(self, basename: str, implname: str) -> Result[str, str]:
-        """Select an implementation by normalized public names."""
+    def select(self, basename: str = "", implname: str = "") -> Result[str, str]:
+        """List, describe, or select a replaceable implementation."""
+        if not basename:
+            return self.list_implementations()
+        if not implname:
+            return self.describe_implementations(basename.upper())
+
         base = self._bases.get(basename.upper())
         if base is None:
             return Err(f"Replaceable {basename} not found.")

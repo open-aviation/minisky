@@ -22,8 +22,8 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 from minisky import plugin as plugin_api
+from minisky.plugin import AcIdSelection, HeadingDeg
 from minisky.result import Err, Ok, Result
-from minisky.stack.argparser import Hdg
 from minisky.traffic.autopilot import Autopilot
 
 from minisky_multicopter.entity import MULTICOPTER_TYPES, get_multicopter
@@ -129,27 +129,41 @@ class MulticopterAutopilot(Autopilot):
         traf.swvnav = np.where(expired, self.resumevnav & self.resumelnav, traf.swvnav)
         self.swhover = self.swhover & ~resume
 
-    def selhdgcmd(self, idx: int, hdg: Hdg) -> Result[str, str]:
+    def selhdgcmd(self, idx: AcIdSelection, hdg: HeadingDeg) -> Result[str, str]:
         """Select the autopilot heading; for multicopters, yaw the nose only.
 
-        For a multicopter row the HDG stack command is an alias of ``YAW``:
+        For multicopter rows the HDG stack command is an alias of ``YAW``:
         it rotates the body without touching the track, and LNAV stays
         engaged — the velocity vector keeps following the FMS or conflict
         resolution. Other aircraft keep the stock behaviour.
 
         Args:
-            idx: Aircraft index.
-            hdg: Selected heading [deg].
+            idx: Aircraft indices.
+            hdg: Selected heading.
         """
         mc = get_multicopter(self.traffic)
-        if mc is not None and mc.ismulticopter[idx]:
-            ok, message = mc.yaw(idx, float(hdg))
-            return Ok(message) if ok else Err(message)
-        return super().selhdgcmd(idx, hdg)
+        if mc is None:
+            return super().selhdgcmd(idx, hdg)
+
+        is_multicopter = mc.ismulticopter[idx]
+        if not is_multicopter.any():
+            return super().selhdgcmd(idx, hdg)
+
+        message = "heading set"
+        for acidx in idx[is_multicopter]:
+            result = mc.yaw(int(acidx), hdg)
+            if isinstance(result, Err):
+                return result
+            message = result.ok()
+
+        fixed_wing = idx[~is_multicopter]
+        if fixed_wing.size:
+            return super().selhdgcmd(fixed_wing, hdg)
+        return Ok(message)
 
     def hover(
         self, idx: int, duration: float | None = None, alt: float | None = None
-    ) -> tuple[bool, str]:
+    ) -> Result[str, str]:
         """Hold position, optionally for a fixed time at a given altitude.
 
         Backs the ``HOVER`` stack command declared on the Multicopter
@@ -162,24 +176,26 @@ class MulticopterAutopilot(Autopilot):
             alt: Hover altitude [m]; None holds the current altitude.
 
         Returns:
-            tuple: (success flag, confirmation message).
+            Result containing the confirmation message or an error.
         """
         callsign = self.traffic.callsign[idx]
         mc = get_multicopter(self.traffic)
         if mc is None or not mc.ismulticopter[idx]:
-            return False, f"HOVER: {callsign} is not a multicopter (use MCOPT {callsign} ON)"
+            return Err(f"HOVER: {callsign} is not a multicopter (use MCOPT {callsign} ON)")
 
         if not self.swhover[idx]:
             # Entering the hover: save the route state to resume later.
             self._suspend_route(idx)
             self.swhover[idx] = True
         if alt is not None:
-            self.selaltcmd(idx, alt)
+            result = self.selaltcmd(np.asarray([idx], dtype=int), alt)
+            if isinstance(result, Err):
+                return result
         self.hovertimer[idx] = -1.0 if duration is None else duration
 
         if duration is None:
-            return True, f"HOVER {callsign}: holding position (resume with LNAV {callsign} ON)"
-        return True, f"HOVER {callsign}: holding position for {duration:.0f} s"
+            return Ok(f"HOVER {callsign}: holding position (resume with LNAV {callsign} ON)")
+        return Ok(f"HOVER {callsign}: holding position for {duration:.0f} s")
 
     def _suspend_route(self, idx: int) -> None:
         """Save the route state of one aircraft and command a hover."""
