@@ -15,7 +15,6 @@ for the available commands.
 
 ## Argument parsing
 
-Parsers for the aviation-aware argument types (`alt`, `spd`, `hdg`, `latlon`,
-`wpt`, ...) used in command signatures.
+Parsers for the aviation-aware argument types (`alt`, `spd`, `hdg`, positions, waypoints, ...) used in command signatures.
 
-::: minisky.stack.argparser
+::: minisky.command

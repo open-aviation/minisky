@@ -15,10 +15,11 @@ from enum import Enum, auto
 from importlib import metadata
 from random import Random
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, Generic, TypeVar
+from typing import TYPE_CHECKING, Any, Generic, Literal, TypeVar
 
 from pydantic import TypeAdapter
 
+from minisky.command import Keyword, command
 from minisky.core.trafficarrays import PreparedReplacement, TrafficArrays
 from minisky.identifiers import validate_plugin_id
 from minisky.plugin.entity import Entity
@@ -32,7 +33,7 @@ if TYPE_CHECKING:
     from minisky.runtime import MiniSky
     from minisky.simulation import ConsoleIO, Simulation
     from minisky.simulation.console import ConsoleSubscription
-    from minisky.stack import CommandStack, PreparedCommand
+    from minisky.stack import Command, CommandStack
 
 ConfigT = TypeVar("ConfigT")
 ComponentT = TypeVar("ComponentT")
@@ -208,20 +209,20 @@ class _Hook:
     elapsed: float = 0.0
     enabled: bool = True
 
-    def due(self, simdt: float) -> tuple[bool, float]:
+    def elapsed_if_due(self, simdt: float) -> float | None:
         if self.interval <= 0:
-            return True, simdt
+            return simdt
         self.elapsed += simdt
         if self.elapsed + 1e-12 < self.interval:
-            return False, 0.0
+            return None
         elapsed, self.elapsed = self.elapsed, 0.0
-        return True, elapsed
+        return elapsed
 
 
 @dataclass(frozen=True, slots=True)
 class _PreparedPlugin:
     spec: PluginSpec
-    commands: tuple[PreparedCommand, ...]
+    commands: tuple[Command, ...]
     hooks: tuple[_Hook, ...]
     entities: tuple[Entity, ...]
     replacements: tuple[PreparedReplacement, ...]
@@ -239,7 +240,7 @@ class _PluginRecord:
     plugin_name: str
     loaded: bool = False
     spec: PluginSpec | None = None
-    commands: tuple[PreparedCommand, ...] = ()
+    commands: tuple[Command, ...] = ()
     hooks: tuple[_Hook, ...] = ()
     entities: tuple[Entity, ...] = ()
     replacements: tuple[PreparedReplacement, ...] = ()
@@ -406,7 +407,7 @@ class PluginManager:
         return spec
 
     def _prepare(self, key: str, spec: PluginSpec) -> _PreparedPlugin:
-        commands: list[PreparedCommand] = []
+        commands: list[Command] = []
         for component in spec.components:
             try:
                 commands.extend(self.commands.prepare_component(component))
@@ -545,20 +546,27 @@ class PluginManager:
             text += "\nNo additional plugins available."
         return Ok(text)
 
-    def manage(
-        self, command: str = "LIST", plugin_name: str = ""
-    ) -> CommandReply | Awaitable[CommandReply]:
-        """List available plugins or load a plugin through the command stack."""
-        operation = command.strip().upper()
-        if operation in ("", "LIST"):
-            return self.listing()
-        if operation == "LOAD":
-            if not plugin_name.strip():
-                return Err("plugin name is required")
-            return self.load(plugin_name)
-        if not plugin_name:
-            return self.load(command)
-        return Err(f"Unknown command: {command}")
+    @command(name="PLUGINS", aliases=("PLUGIN", "PLUG-IN", "PLUG-INS", "SIMPLUGIN"))
+    def list_plugins(self) -> CommandReply:
+        """List loaded and available plugins."""
+        return self.listing()
+
+    @command(name="PLUGINS")
+    def list_plugins_explicit(self, _action: Literal["LIST"]) -> CommandReply:
+        """List loaded and available plugins."""
+        return self.listing()
+
+    @command(name="PLUGINS")
+    def load_plugin_explicit(
+        self, _action: Literal["LOAD"], plugin_name: Keyword
+    ) -> Awaitable[CommandReply]:
+        """Load a plugin by name."""
+        return self.load(plugin_name)
+
+    @command(name="PLUGINS")
+    def load_plugin(self, plugin_name: Keyword) -> Awaitable[CommandReply]:
+        """Load a plugin by name."""
+        return self.load(plugin_name)
 
     def preupdate(self) -> None:
         self._run_hooks("preupdate")
@@ -583,8 +591,8 @@ class PluginManager:
             for hook in plugin.hooks:
                 if not hook.enabled or hook.phase != phase:
                     continue
-                due, elapsed = hook.due(simdt)
-                if not due:
+                elapsed = hook.elapsed_if_due(simdt)
+                if elapsed is None:
                     continue
                 try:
                     if hook.accepts_dt:

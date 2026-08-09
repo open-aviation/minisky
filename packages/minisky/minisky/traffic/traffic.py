@@ -14,25 +14,37 @@ A single instance is created at simulator start-up and made available as
 
 from __future__ import annotations
 
-from collections.abc import Callable, Collection, Iterable, Mapping
+from collections.abc import Callable, Collection, Iterable
 from random import Random
-from typing import TYPE_CHECKING, Literal, overload
+from typing import TYPE_CHECKING, Annotated, Literal, overload
 
 import numpy as np
+from annotated_types import Ge, Le
 
 from minisky.command import (
+    AcId,
+    AcIdSelection,
     AltM,
+    ArgumentIssue,
+    CmdParser,
+    CommandParseContext,
     HeadingDeg,
     Keyword,
+    LatLonDeg,
     MagneticHeadingDeg,
     OnOff,
+    Parsed,
+    ParseResult,
     ResolvedPositionArg,
     RunwayHeadingRequest,
     RunwayPosition,
     SpeedMpsOrMach,
     Text,
+    TimeS,
     UseRunwayHeading,
+    VspdMps,
     command,
+    next_argument,
 )
 from minisky.core.config import MiniSkyConfig
 from minisky.core.trafficarrays import TrafficArrays
@@ -68,6 +80,25 @@ from .wind import Wind
 if TYPE_CHECKING:
     from minisky.simulation import ConsoleIO, Simulation
     from minisky.tools.navdata import Navdatabase
+
+
+def _parse_throttle(_context: CommandParseContext, text: str) -> ParseResult[float]:
+    if isinstance(result := next_argument(text), Err):
+        return result
+    token = result.ok()
+    value = token.value
+    factor = 0.01 if value.endswith("%") else 1.0
+    number = value.removesuffix("%")
+    if "%" in number:
+        return Err(ArgumentIssue.expected("a throttle fraction or percentage", value, token.span))
+    try:
+        throttle = factor * float(number)
+    except ValueError:
+        return Err(ArgumentIssue.expected("a throttle fraction or percentage", value, token.span))
+    return Ok(Parsed(throttle, token.remainder, token.span))
+
+
+Throttle = Annotated[float, CmdParser(_parse_throttle), Ge(0), Le(1)]
 
 
 class Traffic(TrafficArrays):
@@ -152,7 +183,6 @@ class Traffic(TrafficArrays):
         console: ConsoleIO,
         get_simulation: Callable[[], Simulation],
         stack_command: Callable[..., None],
-        get_command_registry: Callable[[], Mapping[str, object]],
         select_implementation: Callable[[str, str], Result[str, str]],
     ) -> None:
         super().__init__()
@@ -164,7 +194,6 @@ class Traffic(TrafficArrays):
         self.console = console
         self._get_simulation = get_simulation
         self.stack_command = stack_command
-        self._get_command_registry = get_command_registry
         self.select_implementation = select_implementation
 
         self.ntraf = 0
@@ -253,6 +282,7 @@ class Traffic(TrafficArrays):
         # Default bank angles per flight phase
         self.bphase = np.deg2rad(np.array([15, 35, 35, 35, 15, 45]))
 
+    @command(name="CASMACHTHR")
     def casmachthr(self, threshold: float | None = None) -> Result[str, str]:
         """Get or set this runtime's CAS/Mach interpretation threshold.
 
@@ -268,11 +298,6 @@ class Traffic(TrafficArrays):
 
         self.casmach_threshold = threshold
         return Ok(f"CASMACHTHR: Set CAS/Mach threshold to {threshold}")
-
-    @property
-    def command_registry(self) -> Mapping[str, object]:
-        """Return the command registry owned by this runtime."""
-        return self._get_command_registry()
 
     @property
     def simulation(self) -> Simulation:
@@ -375,8 +400,9 @@ class Traffic(TrafficArrays):
                 defaults to 300 kts.
         """
 
-        if callsign in self.callsign:
-            return Err(f"aircraft {callsign} already exists")
+        name_error = self._aircraft_name_collision(callsign)
+        if name_error is not None:
+            return Err(name_error)
 
         # covert to array with 1 element
         acid_ = np.array([callsign.upper()])
@@ -391,6 +417,7 @@ class Traffic(TrafficArrays):
 
         return Ok(f"Aircraft {callsign} created")
 
+    @command(name="MCRE")
     def mcre(
         self,
         n: int,
@@ -398,9 +425,9 @@ class Traffic(TrafficArrays):
         lon_min: float = 0.0,
         lat_max: float = 60.0,
         lon_max: float = 10.0,
-        actype: str = "A320",
-        acalt: int | None = None,
-        acspd: int | None = None,
+        actype: Keyword = "A320",
+        acalt: AltM | None = None,
+        acspd: SpeedMpsOrMach | None = None,
     ) -> Result[str, str]:
         """Create multiple aircraft at random positions in a lat/lon box.
 
@@ -427,6 +454,10 @@ class Traffic(TrafficArrays):
             + "{:>03}"
         )
         callsign = [idtmp.format(i) for i in range(n)]
+        for name in callsign:
+            name_collision = self._aircraft_name_collision(name)
+            if name_collision is not None:
+                return Err(name_collision)
 
         actype_ = np.array([actype] * n)
 
@@ -446,6 +477,18 @@ class Traffic(TrafficArrays):
         self.__create_aircraft(np.array(callsign), actype_, aclat, aclon, achdg, acalt_, acspd_)
 
         return Ok(f"{n} aircraft created")
+
+    def _aircraft_name_collision(self, callsign: str) -> str | None:
+        """Return why a new aircraft name is unavailable, if anything.
+
+        Aircraft identifiers must remain unique. BlueSky allowed the same
+        text to name an aircraft, group, and area; command-specific resolution
+        keeps that scenario compatibility.
+        """
+        name = callsign.upper()
+        if name in self.callsign:
+            return f"aircraft {name} already exists"
+        return None
 
     def __create_aircraft(
         self,
@@ -555,17 +598,18 @@ class Traffic(TrafficArrays):
             for cmdtxt in self.crecmdlist:
                 self.stack_command(self.callsign[j] + " " + cmdtxt)
 
+    @command(name="CRECONFS")
     def creconfs(
         self,
-        callsign: str,
-        actype: str,
-        targetidx: int,
+        callsign: Keyword,
+        actype: Keyword,
+        targetidx: AcId,
         dpsi: float,
         dcpa: float,
-        tlosh: float,
-        dH: float | None = None,
-        tlosv: float | None = None,
-        spd: float | None = None,
+        tlosh: TimeS,
+        dH: AltM | None = None,
+        tlosv: TimeS | None = None,
+        spd: SpeedMpsOrMach | None = None,
     ) -> None:
         """Create an aircraft in conflict with a target aircraft.
 
@@ -615,8 +659,8 @@ class Traffic(TrafficArrays):
             # wind at intruder position is similar to wind at ownship position
             tas = tasref if spd is None else casormach2tas(spd, acalt, self.casmach_threshold)
             tasn, tase = tas * np.cos(trk), tas * np.sin(trk)
-            wn, we = self.wind.getdata(latref, lonref, acalt)
-            gsn, gse = tasn + wn, tase + we
+            wind_north, wind_east = self.wind.getdata(latref, lonref, acalt)
+            gsn, gse = tasn + wind_north, tase + wind_east
         else:
             # Groundspeed is the same as ownship
             gsn, gse = gsref * np.cos(trk), gsref * np.sin(trk)
@@ -637,15 +681,25 @@ class Traffic(TrafficArrays):
 
         # Calculate intruder lat/lon
         aclat, aclon = geo.kwikpos(latref, lonref, brn, dist / nm)
+        aclat_scalar = float(aclat)
+        aclon_scalar = float(aclon)
         # convert groundspeed to CAS, and track to heading using actual
         # intruder position
-        wn, we = self.wind.getdata(aclat, aclon, acalt)
-        tasn, tase = gsn - wn, gse - we
+        wind_north, wind_east = self.wind.getdata(aclat_scalar, aclon_scalar, acalt)
+        tasn, tase = gsn - wind_north, gse - wind_east
         acspd = tas2cas(np.sqrt(tasn * tasn + tase * tase), acalt)
         achdg = np.degrees(np.atan2(tase, tasn))
 
         # Create and, when necessary, set vertical speed
-        self.cre(callsign, actype, float(aclat), float(aclon), float(achdg), acalt, float(acspd))
+        self.cre(
+            callsign,
+            actype,
+            aclat_scalar,
+            aclon_scalar,
+            float(achdg),
+            acalt,
+            float(acspd),
+        )
         self.ap.selaltcmd(np.asarray([len(self.lat) - 1]), altref, acvs)
         self.vs[-1] = acvs
 
@@ -778,15 +832,15 @@ class Traffic(TrafficArrays):
         """
         self.perf.engchange(acid, engid)  # type: ignore[attr-defined]
 
+    @command(name="MOVE")
     def move(
         self,
-        idx: int,
-        lat: float,
-        lon: float,
-        alt: float | None = None,
-        hdg: float | None = None,
-        casmach: float | None = None,
-        vspd: float | None = None,
+        idx: AcId,
+        position: LatLonDeg,
+        alt: AltM | None = None,
+        hdg: HeadingDeg | None = None,
+        casmach: SpeedMpsOrMach | None = None,
+        vspd: VspdMps | None = None,
     ) -> None:
         """Instantaneously move an aircraft to a new position/state.
 
@@ -795,23 +849,27 @@ class Traffic(TrafficArrays):
 
         Args:
             idx: Aircraft index.
-            lat: New latitude [deg].
-            lon: New longitude [deg].
+            position: New latitude and longitude [deg].
             alt: Optional new altitude [m]; also sets the selected altitude.
             hdg: Optional new heading [deg]; also sets the autopilot track.
             casmach: Optional new speed, CAS [m/s] or Mach [-].
             vspd: Optional new vertical speed [m/s].
         """
-        self.lat[idx] = lat
-        self.lon[idx] = lon
+        self.lat[idx] = position.lat
+        self.lon[idx] = position.lon
 
         if alt is not None:
             self.alt[idx] = alt
             self.selalt[idx] = alt
 
         if hdg is not None:
-            self.hdg[idx] = hdg
-            self.ap.trk[idx] = hdg
+            heading = (
+                (hdg.degrees + geo.magdec(position.lat, position.lon)) % 360.0
+                if isinstance(hdg, MagneticHeadingDeg)
+                else hdg.degrees
+            )
+            self.hdg[idx] = heading
+            self.ap.trk[idx] = heading
 
         if casmach is not None:
             h = alt if alt is not None else float(self.alt[idx])
@@ -821,24 +879,13 @@ class Traffic(TrafficArrays):
             self.vs[idx] = vspd
             self.swvnav[idx] = False
 
-    def position(self, id_or_name: int | str) -> Result[str, str]:
-        """Show information on an aircraft, airport, waypoint or navaid.
-
-        Implements the POS stack command. Dispatches to
-        [`Traffic.position_aircraft`][minisky.traffic.traffic.Traffic.position_aircraft]
-        when an aircraft index is given, and to
-        [`Traffic.position_by_name`][minisky.traffic.traffic.Traffic.position_by_name]
-        for a name lookup.
-
-        Args:
-            id_or_name: Aircraft index (int) or the name of an aircraft,
-                airport, waypoint, navaid or airway (str).
-        """
-
-        if isinstance(id_or_name, int):
-            return self.position_aircraft(id_or_name)
-        else:
-            return self.position_by_name(id_or_name)
+    @command(name="POS", aliases=("AWY", "AIRPORT", "RUNWAYS", "AIRWAY", "AIRWAYS"))
+    def position(self, name: Keyword) -> Result[str, str]:
+        """Show information on an aircraft, airport, waypoint or navaid."""
+        index = self.idx(name)
+        if index >= 0:
+            return self.position_aircraft(index)
+        return self.position_by_name(name)
 
     def position_aircraft(self, idx: int) -> Result[str, str]:
         """Generate a position report for a single aircraft.
@@ -1042,73 +1089,50 @@ class Traffic(TrafficArrays):
         tlvl = round(self.translvl / ft)
         return Ok(f"Transition level = {tlvl}/FL{round(tlvl / 100.0)}")
 
-    def setbanklim(self, idx: int, bankangle: float | None = None) -> Result[str, str]:
-        """Set or show the bank angle limit for a given aircraft.
-
-        Implements the BANK stack command. The limit is used by the autopilot
-        to compute turn rates when no explicit turn is specified.
-
-        Args:
-            idx: Aircraft index.
-            bankangle: New bank limit [deg]; when omitted, the current limit
-                is reported.
-        """
-        if bankangle:
-            self.ap.bankdef[idx] = np.radians(bankangle)  # [rad]
-            return Ok("")
+    @command(name="BANK", aliases=("BANKLIM",))
+    def bank_limit_status(self, idx: AcIdSelection) -> Result[str, str]:
+        """Show the bank-angle limit for an aircraft or selection."""
         return Ok(
-            f"Banklimit of {self.callsign[idx]} is {int(np.degrees(self.ap.bankdef[idx]))} deg"
+            "\n".join(
+                f"Banklimit of {self.callsign[index]} is "
+                f"{int(np.degrees(self.ap.bankdef[index]))} deg"
+                for index in idx
+            )
         )
 
-    def setthrottle(self, idx: int, throttle: str = "") -> Result[str, str]:
-        """Set the throttle of an aircraft, or report the autothrottle state.
+    @command(name="BANK")
+    def set_bank_limit(self, idx: AcIdSelection, bankangle: float) -> Result[str, str]:
+        """Set the bank-angle limit for an aircraft or selection."""
+        self.ap.bankdef[idx] = np.radians(bankangle)
+        return Ok("")
 
-        Implements the THR stack command. "AUTO"/"OFF" re-engages the
-        autothrottle, "IDLE" sets zero thrust, and a numeric value (0.0-1.0,
-        optionally as a percentage like "80%") sets a fixed throttle and
-        disables the autothrottle.
-
-        Args:
-            idx: Aircraft index.
-            throttle: Throttle argument string; empty to query the state.
-        """
-
-        if throttle:
-            if throttle in ("AUTO", "OFF"):  # throttle mode off, ATS on
-                self.swats[idx] = True  # Autothrottle on
-                self.thr[idx] = -999.0  # Set to invalid
-
-            elif throttle == "IDLE":
-                self.swats[idx] = False
-                self.thr[idx] = 0.0
-
-            else:
-                # Check for percent unit
-                if throttle.count("%") == 1:
-                    throttle = throttle.replace("%", "")
-                    factor = 0.01
-                else:
-                    factor = 1.0
-
-                # Remaining option is that it is a float, so try conversion
-                try:
-                    x = factor * float(throttle)
-                except ValueError:
-                    return Err("THR invalid argument " + throttle)
-
-                # Check whether value makes sense
-                if x < 0.0 or x > 1.0:
-                    return Err("THR invalid value " + throttle + ". Needs to be [0.0 , 1.0]")
-
-                # Valid value, set throttle and disable autothrottle
-                self.swats[idx] = False
-                self.thr[idx] = x
-
-            return Ok("")
-
+    @command(name="THR")
+    def throttle_status(self, idx: AcId) -> Result[str, str]:
+        """Report autothrottle state and fixed throttle when applicable."""
         if self.swats[idx]:
             return Ok("ATS of " + self.callsign[idx] + " is ON")
         return Ok("ATS of " + self.callsign[idx] + " is OFF. THR is " + str(self.thr[idx]))
+
+    @command(name="THR")
+    def enable_autothrottle(self, idx: AcId, _mode: Literal["AUTO", "OFF"]) -> Result[str, str]:
+        """Enable autothrottle."""
+        self.swats[idx] = True
+        self.thr[idx] = -999.0
+        return Ok("")
+
+    @command(name="THR")
+    def set_idle_throttle(self, idx: AcId, _mode: Literal["IDLE"]) -> Result[str, str]:
+        """Disable autothrottle and select idle thrust."""
+        self.swats[idx] = False
+        self.thr[idx] = 0.0
+        return Ok("")
+
+    @command(name="THR")
+    def set_throttle(self, idx: AcId, throttle: Throttle) -> Result[str, str]:
+        """Disable autothrottle and set a fixed throttle fraction."""
+        self.swats[idx] = False
+        self.thr[idx] = throttle
+        return Ok("")
 
     def _crecmd_status(self) -> Result[str, str]:
         if self.crecmdlist:

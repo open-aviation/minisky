@@ -94,14 +94,14 @@ def hook(
 
 def declared_hooks(component: object) -> Iterator[BoundHook]:
     """Bind hook declarations to this exact component instance."""
-    for attribute_name, value in _declared_attributes(component):
+    for name, value in _declared_attributes(component):
         declarations = getattr(_underlying_function(value), _HOOKS, ())
         if not declarations:
             continue
-        callback = _bound_method(component, attribute_name, "hook")
+        callback = _bound_method(component, name, "hook")
         for declaration in declarations:
             if not isinstance(declaration, HookDeclaration):
-                raise TypeError(f"invalid hook declaration on {attribute_name!r}")
+                raise TypeError(f"invalid hook declaration on {name!r}")
             yield BoundHook(callback, declaration)
 
 

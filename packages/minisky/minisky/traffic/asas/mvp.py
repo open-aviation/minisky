@@ -107,7 +107,6 @@ class MVP(ConflictResolution):
             self.swresohdg = True
             self.swresovert = False
         elif value in {"OFF", "OF", "NONE"}:
-            # Do NOT swtich off self.swresovert if value == OFF
             self.swresohoriz = False
             self.swresospd = False
             self.swresohdg = False

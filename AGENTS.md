@@ -43,18 +43,6 @@ Full details in `docs/architecture.md` — read it before making structural chan
 
 **Streaming.** Besides the poll-style REST endpoints, `minisky/streaming.py` provides a per-tick push feed. `build_snapshot()` reads the singletons and returns a JSON-serialisable, **SI-unit** `{siminfo, acdata}` dict; a `StreamHub` fans it out, published from the `update` plugin hook (rate-capped, default 10 Hz, and skipped when no client is connected). It surfaces over the `GET /stream` WebSocket. It is deliberately consumer-agnostic — raw SI on the wire, no client-specific unit conversion or field mapping. The server also exposes `GET /commands` (`{name: brief}` from `Command.cmddict`) for client autocomplete, and the `DTMULT` stack command sets the runner speed multiplier (`Runner.setspeed`) for clients that drive speed through the stack rather than the REST `/speed/{n}` endpoint.
 
-## The command stack (critical convention)
-
-Every text command — scenario file, REST `stack/` endpoint, or console — goes through `minisky.stack`. The built-in command table is `packages/minisky/minisky/stack/commands.py`; plugins add commands with the `@command` decorator.
-
-**Stack command arguments are parsed at runtime from the parameter annotations.** `packages/minisky/minisky/stack/argparser.py` inspects `param.annotation` when a command is registered:
-- **`Annotated` aliases (preferred):** `packages/minisky/minisky/stack/argparser.py` exports `Acid`, `Wpt`, `Alt`, `Spd`, `Vspd`, `Hdg`, `Time`, `Txt`, `String`, `OnOff`, `Lat`, `Lon` — e.g. `def selaltcmd(self, idx: int, alt: Alt, vspd: Vspd | None = None)`. These are real type hints (lint- and pyright-clean) carrying the parser key as `Annotated` metadata; unions with `None` are unwrapped.
-- **Argument-spec strings in the command table** (`packages/minisky/minisky/stack/commands.py`, e.g. `"callsign,alt,[vspd]"`) are plain data looked up in the `argparsers` dict and *override* function annotations.
-- **Legacy DSL strings** as annotations (`alt: "alt"`) still parse, but don't write new ones — use the `Annotated` aliases so linting works.
-- A real `type` annotation gets wrapped in `Parser(type)` (called on the argument text — fine for `int`/`float`/`str`, wrong for `bool`; use `OnOff`).
-
-`Command.callback` resolves signatures with `inspect.signature(func, eval_str=True)` (falling back to raw strings for legacy DSL annotations), so `from __future__ import annotations` is safe in command modules.
-
 `E711`/`E712`/`E721` are ignored in `pyproject.toml` because numpy overrides `==`/`is` elementwise, so `arr == None` is intentional and *not* equivalent to `arr is None`.
 
 `packages/minisky/minisky/traffic/asas/__init__.py` has a deliberately non-alphabetical import block wrapped in `# isort: off/on` (resolution before mvp, since MVP subclasses ConflictResolution) — don't "fix" it.

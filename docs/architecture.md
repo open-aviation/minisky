@@ -72,7 +72,7 @@ There are two ways to drive the loop:
 
 ## Per-aircraft arrays: `TrafficArrays`
 
-Aircraft state is stored as NumPy arrays (and lists for strings), one element per
+Aircraft state is stored as NumPy arrays (and lists for strings), with an element per
 aircraft, spread across many objects: [`runtime.traffic.lat`][minisky.traffic.traffic.Traffic], [`runtime.traffic.alt`][minisky.traffic.traffic.Traffic], [`runtime.traffic.ap.route`][minisky.traffic.route.Route],
 [`runtime.traffic.perf.mass`][minisky.traffic.performance.perfoap.OpenAP], and so on. Keeping all of these in sync when aircraft are created and
 deleted is the job of [`TrafficArrays`][minisky.core.trafficarrays.TrafficArrays].
@@ -98,14 +98,7 @@ or the console — goes through the same interpreter: [`minisky.stack`](api/stac
 
 - Commands are queued with `runtime.commands.stack("CRE KL001 B738 52 4 90 FL100 250")`
   and executed on the next `runtime.simulation.step()`.
-- Each command is a [`Command`][minisky.stack.Command] object with typed
-  parameters. Argument strings like `"callsign,wpt,[alt,spd]"` are parsed by
-  [`minisky.stack.argparser`](api/stack.md#argument-parsing), which knows aviation types
-  (`alt` accepts `FL100`, ft, or m; `spd` accepts CAS knots or Mach; `latlon` resolves
-  navaid names to coordinates).
-- The built-in command table lives in `packages/minisky/minisky/stack/commands.py`; plugins add commands
-  with the [`@command`][minisky.command.command] decorator.
-- Scenario files (`.scn`) are simply time-stamped stack commands; `IC filename` loads one.
+- Each command is compiled from its Python signature, see [commands](./guides/commands.md).
 
 See the [stack command reference](reference/commands.md) for every available command.
 

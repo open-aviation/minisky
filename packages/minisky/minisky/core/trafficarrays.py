@@ -25,12 +25,12 @@ from __future__ import annotations
 import inspect
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from functools import wraps
 from types import MappingProxyType
 from typing import Any
 
 import numpy as np
 
+from minisky.command import Keyword, command
 from minisky.identifiers import normalize_public_name
 from minisky.result import Err, Ok, Result
 
@@ -63,12 +63,20 @@ class _ComponentSlot:
 
     def bind(self, callback: Callable[..., Any]) -> Callable[..., Any]:
         method_name = callback.__name__
+        signature = inspect.signature(callback)
 
-        @wraps(callback)
         def dispatch(*args: Any, **kwargs: Any) -> Any:
             method = getattr(self.current, method_name)
             return method(*args, **kwargs)
 
+        # do not use functools.wraps here: __wrapped__ lets inspect.unwrap bypass
+        # this slot dispatch and bind command parsing to the replaced implementation.
+        dispatch.__name__ = callback.__name__
+        dispatch.__qualname__ = callback.__qualname__
+        dispatch.__module__ = callback.__module__
+        dispatch.__doc__ = callback.__doc__
+        dispatch.__annotations__ = dict(callback.__annotations__)
+        dispatch.__signature__ = signature  # type: ignore[attr-defined]
         return dispatch
 
     def replace(self, implementation: type[TrafficArrays]) -> None:
@@ -179,22 +187,37 @@ class ReplaceableManager:
             if implementations.get(replacement.name) is replacement.implementation:
                 del implementations[replacement.name]
 
-    def select(self, basename: str = "", implname: str = "") -> Result[str, str]:
-        if not basename:
-            return Ok("Replaceable classes in MiniSky:\n" + ", ".join(sorted(self._bases)))
+    @command(name="SELECTIMPL", aliases=("IMPL", "IMPLEMENTATION", "IMPLEMENT"))
+    def list_implementations(self) -> Result[str, str]:
+        """List replaceable classes."""
+        return Ok(f"Replaceable classes in MiniSky:\n{', '.join(sorted(self._bases))}")
 
+    @command(name="SELECTIMPL")
+    def describe_implementations(self, basename: Keyword) -> Result[str, str]:
+        """Show the current and available implementations for a replaceable."""
+        base = self._bases.get(basename)
+        if base is None:
+            return Err(f"Replaceable {basename} not found.")
+        implementations = self._implementations[base]
+        current = type(self._slots[base].current)
+        return Ok(
+            f"Current implementation for {basename}: {current.__name__}\n"
+            f"Available implementations: {', '.join(sorted(implementations))}"
+        )
+
+    @command(name="SELECTIMPL")
+    def select_implementation(self, basename: Keyword, implname: Keyword) -> Result[str, str]:
+        """Select an implementation for a replaceable class."""
+        return self.select(basename, implname)
+
+    def select(self, basename: str, implname: str) -> Result[str, str]:
+        """Select an implementation by normalized public names."""
         base = self._bases.get(basename.upper())
         if base is None:
             return Err(f"Replaceable {basename} not found.")
         implementations = self._implementations[base]
         slot = self._slots[base]
         current = type(slot.current)
-        if not implname:
-            return Ok(
-                f"Current implementation for {basename}: {current.__name__}\n"
-                f"Available implementations: {', '.join(sorted(implementations))}"
-            )
-
         requested = base.__name__.upper() if implname.upper() == "BASE" else implname.upper()
         implementation = implementations.get(requested)
         if implementation is None:
@@ -353,9 +376,14 @@ class TrafficArrays:
             lst.extend([defaults.get(vartype)] * n)
 
         for v in self._ArrVars:  # Numpy array
+            array = self.__dict__[v]
+            # Preserve the declared dtype. Building defaults as a Python list
+            # made NumPy promote uncommon dtypes (notably uint64 group masks)
+            # through float64 before appending, which can lose high membership bits.
             # Get type without byte length
-            vartype = "".join(c for c in str(self.__dict__[v].dtype) if c.isalpha())
-            self.__dict__[v] = np.append(self.__dict__[v], [defaults.get(vartype, 0)] * n)
+            vartype = "".join(c for c in str(array.dtype) if c.isalpha())
+            extension = np.full(n, defaults.get(vartype, 0), dtype=array.dtype)
+            self.__dict__[v] = np.append(array, extension)
 
     def istrafarray(self, name: str) -> bool:
         """Returns true if parameter 'name' is a registered traffic array of this object."""

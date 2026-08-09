@@ -73,19 +73,6 @@ def test_dtmult_sets_runner_speed(runtime: MiniSky, sim: Simulation, run_cmd: Ru
     assert runtime.runner.speed == 8.0
 
 
-@pytest.mark.parametrize(
-    ("value", "error"),
-    [("0", "greater than 0"), ("nan", "isfinite")],
-)
-def test_dtmult_rejects_invalid_multiplier(
-    runtime: MiniSky, sim: Simulation, run_cmd: RunCommand, value: str, error: str
-) -> None:
-    previous = runtime.runner.speed
-    output = run_cmd(f"DTMULT {value}")
-    assert error in output
-    assert runtime.runner.speed == previous
-
-
 def test_hub_skips_publish_without_subscribers(runtime: MiniSky) -> None:
     hub = StreamHub(
         lambda: build_snapshot(

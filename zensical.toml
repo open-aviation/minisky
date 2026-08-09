@@ -17,6 +17,7 @@ nav = [
     { "Control console" = "guides/console.md" },
     { "Python library" = "guides/python-api.md" },
     { "Writing plugins" = "guides/plugins.md" },
+    { "Adding Commands" = "guides/commands.md" },
     { "Flying multicopters" = "guides/multicopters.md" },
     { "Streaming to tangram" = "guides/tangram.md" },
   ] },

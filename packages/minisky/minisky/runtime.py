@@ -52,7 +52,6 @@ class MiniSky:
         self.console = ConsoleIO(lambda: self.simulation.state == SimulationState.OP)
         self.navigation = Navdatabase(data("navigation"), self.console)
         self.areas = AreaFilter()
-        self.geo_commands = GeoCommands()
         self.variables = VariableExplorer()
         self.traffic = Traffic(
             config=config,
@@ -63,7 +62,6 @@ class MiniSky:
             console=self.console,
             get_simulation=lambda: self.simulation,
             stack_command=lambda *args, **kwargs: self.commands.stack(*args, **kwargs),
-            get_command_registry=lambda: self.commands.cmddict,
             select_implementation=lambda base, impl: self.replaceables.select(base, impl),
         )
         self.replaceables = ReplaceableManager(
@@ -116,15 +114,33 @@ class MiniSky:
         )
         self.runner = Runner(self.simulation, self.console)
         self.route_commands = RouteCommands(self.traffic)
+        self.geo_commands = GeoCommands()
         self.variables.init(self.simulation, self.traffic)
+        self.commands.mount_components(
+            (
+                self.console,
+                self.navigation,
+                self.areas,
+                self.variables,
+                self.traffic,
+                self.traffic.cond,
+                self.traffic.wind,
+                self.traffic.cd,
+                self.traffic.cr,
+                self.traffic.ap,
+                self.traffic.trails,
+                self.traffic.perf,
+                self.traffic.groups,
+                self.replaceables,
+                self.plugins,
+                self.commands,
+                self.route_commands,
+                self.geo_commands,
+                self.simulation,
+                self.runner,
+            )
+        )
 
-        self.commands.init()
-        route_commands = self.commands.prepare_component(self.route_commands)
-        self.commands.validate_commands(route_commands)
-        self.commands.install_commands(route_commands)
-        geo_commands = self.commands.prepare_component(self.geo_commands)
-        self.commands.validate_commands(geo_commands)
-        self.commands.install_commands(geo_commands)
         self.plugins.discover()
 
         if scenario:

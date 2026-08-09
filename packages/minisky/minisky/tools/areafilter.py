@@ -86,15 +86,7 @@ class AreaFilter:
         top: AltM = 1e9,
         bottom: AltM = -1e9,
     ) -> Result[str, str]:
-        """BOX: Define a box-shaped area.
-
-        Args:
-            name: Area name.
-            first: First corner position.
-            second: Opposite corner position.
-            top: Top altitude bound [m].
-            bottom: Bottom altitude bound [m].
-        """
+        """Define a box-shaped area from two opposite corners."""
         return self.define_area(name, "BOX", self._coordinates((first, second)), top, bottom)
 
     @command(name="CIRCLE")
@@ -106,38 +98,19 @@ class AreaFilter:
         top: AltM = 1e9,
         bottom: AltM = -1e9,
     ) -> Result[str, str]:
-        """CIRCLE: Define a circle-shaped area.
-
-        Args:
-            name: Area name.
-            center: Center position.
-            radius: Radius [nm].
-            top: Top altitude bound [m].
-            bottom: Bottom altitude bound [m].
-        """
+        """Define a circular area from a center and radius in nautical miles."""
         return self.define_area(
             name, "CIRCLE", (*self._coordinates((center,)), radius), top, bottom
         )
 
     @command(name="LINE")
     def define_line_area(self, name: Keyword, start: LatLonDeg, end: LatLonDeg) -> Result[str, str]:
-        """LINE: Draw a line between two positions on the radar screen.
-
-        Args:
-            name: Line name.
-            start: First line position.
-            end: Second line position.
-        """
+        """Draw a line between two positions."""
         return self.define_area(name, "LINE", self._coordinates((start, end)))
 
     @command(name="POLY", aliases=("POLYGON",))
     def define_poly_area(self, name: Keyword, *points: LatLonDeg) -> Result[str, str]:
-        """POLY: Define a polygon-shaped area.
-
-        Args:
-            name: Area name.
-            *points: Polygon vertex positions.
-        """
+        """Define a polygon from position vertices."""
         return self.define_area(name, "POLY", self._coordinates(points))
 
     @command(name="POLYALT")
@@ -149,15 +122,7 @@ class AreaFilter:
         first: LatLonDeg,
         *additional: LatLonDeg,
     ) -> Result[str, str]:
-        """POLYALT: Define a polygon-shaped area in 3D, between two altitudes.
-
-        Args:
-            name: Area name.
-            top: Top altitude bound [m].
-            bottom: Bottom altitude bound [m].
-            first: First polygon vertex.
-            *additional: Additional polygon vertices.
-        """
+        """Define a polygon between top and bottom altitudes."""
         return self.define_area(
             name, "POLYALT", self._coordinates((first, *additional)), top, bottom
         )
@@ -166,13 +131,7 @@ class AreaFilter:
     def define_polyline_area(
         self, name: Keyword, first: LatLonDeg, *additional: LatLonDeg
     ) -> Result[str, str]:
-        """POLYLINE: Draw a multi-segment line on the radar screen.
-
-        Args:
-            name: Line name.
-            first: First line position.
-            *additional: Additional line positions.
-        """
+        """Draw a multi-segment line through position vertices."""
         return self.define_area(name, "LINE", self._coordinates((first, *additional)))
 
     def checkInside(

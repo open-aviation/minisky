@@ -9,16 +9,20 @@ resolution and fade to the "old" color after a configurable time.
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 
+from minisky.command import Keyword, OnOff, PositiveFiniteFloat, command
 from minisky.core import TrafficArrays
 from minisky.result import Err, Ok, Result
 
 if TYPE_CHECKING:
     from minisky.simulation import Simulation
     from minisky.traffic import Traffic
+
+
+TrailColor = Literal["BLUE", "RED", "YELLOW"]
 
 
 class Trails(TrafficArrays):
@@ -249,46 +253,38 @@ class Trails(TrafficArrays):
         self.clearbg()
         self.clearnew()
 
-    def setTrails(self, *args: Any) -> Result[str, str]:
-        """Switch trails on/off, or change the trail color of an aircraft.
+    @command(name="TRAIL", aliases=("TRAILS",))
+    def trail_status(self) -> Result[str, str]:
+        """Report whether aircraft trails are enabled."""
+        message = "TRAIL ON/OFF, [dt] / TRAIL acid color\n"
+        message += "TRAILS ARE ON" if self.active else "TRAILS ARE OFF"
+        return Ok(message)
 
-        Implements the TRAIL stack command:
-        `TRAIL ON/OFF, [dt]` or `TRAIL acid color`. Without arguments,
-        the current on/off state is reported. Switching trails off clears
-        all recorded segments.
+    @command(name="TRAIL")
+    def set_trail_state(
+        self, enabled: OnOff, interval: PositiveFiniteFloat | None = None
+    ) -> Result[str, str]:
+        """Enable or disable trails, optionally changing the sample interval."""
+        self.active = enabled
+        if interval is not None:
+            self.dt = interval
+        if not enabled:
+            self.clear()
+        return Ok("")
 
-        Args:
-            *args: Either a bool (on/off) optionally followed by the
-                segment time resolution [s], or an aircraft index followed
-                by a color name (BLUE/RED/YELLOW).
-        """
-        if len(args) == 0:
-            msg = "TRAIL ON/OFF, [dt] / TRAIL acid color\n"
-
-            msg = msg + "TRAILS ARE ON" if self.active else msg + "TRAILS ARE OFF"
-
-            return Ok(msg)
-
-        # Switch on/off
-        elif type(args[0]) == bool:
-            # Set trails on/off
-            self.active = args[0]
-            if len(args) > 1:
-                self.dt = args[1]
-            if not self.active:
-                self.clear()
-
+    @command(name="TRAIL")
+    def set_trail_color(self, callsign: Keyword, color: TrailColor) -> Result[str, str]:
+        """Set the trail color for an aircraft."""
         # Change color per acid (pygame only)
-        else:
-            # Change trail color
-            if len(args) < 2 or args[1] not in ["BLUE", "RED", "YELLOW"]:
-                return Err("Set aircraft trail color with: TRAIL acid BLUE/RED/YELLOW")
-            self.changeTrailColor(args[1], args[0])
-
+        index = self.traffic.idx(callsign)
+        if index < 0:
+            return Err(f"Aircraft with callsign {callsign} not found")
+        # Change trail color
+        self.changeTrailColor(color, index)
         return Ok("")
 
     def changeTrailColor(self, color: str, idx: int) -> None:
-        """Change the trail color of one aircraft.
+        """Change the trail color of an aircraft.
 
         Args:
             color: Color name; must be a key of colorList
