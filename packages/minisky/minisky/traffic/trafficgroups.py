@@ -133,7 +133,7 @@ class TrafficGroups(TrafficArrays):
             self.traffic.idx(sole_member) >= 0 or sole_member in self
         )
         if sole_member is not None and not sole_is_selection and self.areas.has_area(sole_member):
-            inside = self.areas.checkInside(
+            inside = self.areas.contains(
                 sole_member, self.traffic.lat, self.traffic.lon, self.traffic.alt
             )
             indices = np.flatnonzero(inside)

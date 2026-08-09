@@ -144,7 +144,7 @@ class AreaFilter:
         """Draw a multi-segment line through position vertices."""
         return self.define_area(name, "LINE", self._coordinates((first, *additional)))
 
-    def checkInside(
+    def contains(
         self, areaname: str, lat: np.ndarray, lon: np.ndarray, alt: np.ndarray
     ) -> np.ndarray:
         """Check if points with coordinates lat, lon, alt are inside area with name 'areaname'.
@@ -162,7 +162,7 @@ class AreaFilter:
         area = self.basic_shapes.get(areaname)
         if area is None or isinstance(area, Line):
             return np.zeros(len(lat), dtype=bool)
-        return area.checkInside(lat, lon, alt)
+        return area.contains(lat, lon, alt)
 
     def reset(self) -> None:
         """Clear all data."""
@@ -198,7 +198,7 @@ class HasArea(Protocol):
     so asking whether an aircraft is inside one is a category error.
     """
 
-    def checkInside(self, lat: np.ndarray, lon: np.ndarray, alt: np.ndarray) -> np.ndarray:
+    def contains(self, lat: np.ndarray, lon: np.ndarray, alt: np.ndarray) -> np.ndarray:
         """Return whether points (lat [deg], lon [deg], alt [m]) lie inside
         this shape's geometry and altitude bounds."""
         ...
@@ -207,7 +207,7 @@ class HasArea(Protocol):
 class Line:
     """A line shape between two lat/lon positions [deg].
 
-    Purely graphical: a line has no inside, and no checkInside().
+    Purely graphical: a line has no inside, and no contains().
     """
 
     def __init__(self, name: str, coordinates) -> None:
@@ -240,7 +240,7 @@ class Box(HasArea):
         self.lat1 = max(coordinates[0], coordinates[2])
         self.lon1 = max(coordinates[1], coordinates[3])
 
-    def checkInside(self, lat: np.ndarray, lon: np.ndarray, alt: np.ndarray) -> np.ndarray:
+    def contains(self, lat: np.ndarray, lon: np.ndarray, alt: np.ndarray) -> np.ndarray:
         """Return whether points (lat [deg], lon [deg], alt [m]) lie inside this box."""
         return (
             ((self.lat0 <= lat) & (lat <= self.lat1))
@@ -272,7 +272,7 @@ class Circle(HasArea):
         self.clon = coordinates[1]
         self.r = coordinates[2]
 
-    def checkInside(self, lat: np.ndarray, lon: np.ndarray, alt: np.ndarray) -> np.ndarray:
+    def contains(self, lat: np.ndarray, lon: np.ndarray, alt: np.ndarray) -> np.ndarray:
         """Return whether points (lat [deg], lon [deg], alt [m]) lie within
         the circle radius [nm] and altitude bounds."""
         distance = kwikdist(self.clat, self.clon, lat, lon)  # [NM]
@@ -312,7 +312,7 @@ class Poly(HasArea):
             )
         self._geom = shapely.Polygon(vertices)
 
-    def checkInside(self, lat: np.ndarray, lon: np.ndarray, alt: np.ndarray) -> np.ndarray:
+    def contains(self, lat: np.ndarray, lon: np.ndarray, alt: np.ndarray) -> np.ndarray:
         """Return whether points (lat [deg], lon [deg], alt [m]) lie inside
         the polygon border and altitude bounds."""
         return shapely.contains_xy(self._geom, lat, lon) & (self.bottom <= alt) & (alt <= self.top)
