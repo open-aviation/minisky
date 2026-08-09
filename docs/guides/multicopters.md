@@ -103,11 +103,19 @@ Multicopter rows replace fuel flow with an electric model, updated every
 simulation step:
 
 - **Required thrust** supports the weight and overcomes flat-plate parasite
-  drag: `T = hypot(m * sqrt(g^2 + az^2), 0.5 * rho * v^2 * CdS)`.
+  drag:
+
+    $$T = \sqrt{L^2 + D^2}, \qquad
+    L = m\sqrt{g^2 + a_z^2}, \qquad
+    D = \tfrac{1}{2}\rho v^2 C_D S$$
+
 - **Electrical power** follows a momentum-theory scaling anchored to the
-  installed power from the OpenAP rotor coefficients
-  (`P = P_max * (T / T_max)^1.5`, with `T_max = TWR * m * g` and a default
-  thrust-to-weight ratio of 2).
+  installed power from the OpenAP rotor coefficients, with
+  $T_\text{max} = \mathrm{TWR} \cdot m g$ and a default thrust-to-weight
+  ratio of 2:
+
+    $$P = P_\text{max} \left(\frac{T}{T_\text{max}}\right)^{1.5}$$
+
 - **State of charge** integrates that power against a usable pack energy —
   an ideal energy tank, with no terminal-voltage or current modelling.
 - **Envelope feedback**: below 20% charge the maximum speed shrinks to 60%
