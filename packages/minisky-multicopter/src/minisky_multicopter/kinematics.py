@@ -64,9 +64,11 @@ class MulticopterKinematics(Kinematics):
 
         Runs the base implementation for the whole fleet, then rebuilds the
         ground-speed components of multicopter rows from the *commanded
-        track* (`traf.aporasas.trk`) plus wind, and derives `gs`/`trk`
-        from them: thrust is redirected without rotating the body, and
-        course changes have no turn radius.
+        track* (`traf.aporasas.trk`) plus wind, and derives `gs`/`trk` from
+        them: thrust is redirected without rotating the body, and course
+        changes have no turn radius. The work accumulated by the base class
+        along its heading-driven ground speed is corrected to the rebuilt
+        velocity.
         """
         traf = self.traffic
         super().update_groundspeed()
@@ -74,10 +76,8 @@ class MulticopterKinematics(Kinematics):
         if mc is None or not mc.ismulticopter.any():
             return
 
-        # Note: the base class already accumulated traf.work from its
-        # heading-driven gs; without wind the magnitudes are identical, and
-        # with wind the difference is negligible for the energy bookkeeping.
         m = mc.ismulticopter
+        gsbase = traf.gs[m]
         trkcmd = np.radians(traf.aporasas.trk)
         airborne = traf.alt > q.ft_to_m(50.0)  # windnorth/east are zero without wind
         traf.gsnorth[m] = (traf.tas * np.cos(trkcmd) + traf.windnorth * airborne)[m]
@@ -94,3 +94,14 @@ class MulticopterKinematics(Kinematics):
             traf.aporasas.trk % 360.0,
         )
         traf.trk = np.where(m, trk, traf.trk)
+
+        # The base class accumulated traf.work along its heading-driven
+        # ground speed; replace that increment with one along the rebuilt
+        # velocity for multicopter rows.
+        simdt = self._get_simulation().simdt
+        vs2 = traf.vs[m] ** 2
+        traf.work[m] += (
+            traf.perf.thrust[m]
+            * simdt
+            * (np.sqrt(traf.gs[m] ** 2 + vs2) - np.sqrt(gsbase**2 + vs2))
+        )
