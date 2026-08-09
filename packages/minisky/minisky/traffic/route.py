@@ -1252,9 +1252,6 @@ def direct(traffic: Traffic, acidx: int, wpname: str) -> bool:
         traffic.actwp.torta[acidx] = profile.rta.time
         traffic.actwp.xtorta[acidx] = profile.rta.distance
 
-    # VNAV calculations like V/S and speed for RTA
-    traffic.ap.ComputeVNAV(acidx, profile)
-
     # If there is a speed specified, process it
     if (speed := acrte.wpspd[wpidx]) is not None:
         altitude = acrte.wpalt[wpidx]
@@ -1270,16 +1267,20 @@ def direct(traffic: Traffic, acidx: int, wpname: str) -> bool:
     else:
         traffic.actwp.nextspd[acidx] = np.ma.masked
 
-    qdr_, dist_ = geo.qdrdist(
+    qdr_result, dist_result = geo.qdrdist(
         traffic.lat[acidx],
         traffic.lon[acidx],
         traffic.actwp.lat[acidx],
         traffic.actwp.lon[acidx],
     )
+    qdr_ = float(np.asarray(qdr_result).item())
+    leg_distance = float(np.asarray(dist_result).item()) * nm
 
     # Save leg length & direction in actwp data
     traffic.actwp.curlegdir[acidx] = qdr_  # [deg]
-    traffic.actwp.curleglen[acidx] = dist_ * nm  # [m]
+    traffic.actwp.curleglen[acidx] = leg_distance  # [m]
+    traffic.ap.qdr2wp[acidx] = qdr_ % 360.0
+    traffic.ap.dist2wp[acidx] = leg_distance
 
     # FIXME(abraham): BlueSky a918582 (2022-12-30) introduced a bug: an explicit radius
     # is ignored when no heading rate is set because this path falls back to bank-derived radius
@@ -1290,6 +1291,8 @@ def direct(traffic: Traffic, acidx: int, wpname: str) -> bool:
             traffic.tas[acidx] * traffic.tas[acidx] / math.tan(math.radians(acrte.bank)) / g0 / nm
         )
 
+    # TODO(abraham): direct() still mixes nautical-mile turn geometry with the SI
+    # ActiveWaypoint turn-distance boundary; migrate this calculation to SI.
     traffic.actwp.turndist[acidx] = (
         np.logical_or(isinstance(geometry, TurnHeadingRate), traffic.actwp.flyby[acidx] > 0.5)
         * turnrad
@@ -1299,6 +1302,14 @@ def direct(traffic: Traffic, acidx: int, wpname: str) -> bool:
             )
         )
     )  # [nm]
+
+    # NOTE: in bluesky cca80df (2016-11-05), ComputeVNAV() was inserted before
+    # the direct-to leg geometry had been calculated
+    # (which could be the previous leg's distance)
+    # the later direct-to turn-distance calculation from bluesky 08194fa
+    # (2023-06-22) was also still after ComputeVNAV()
+    # we current-leg distance, bearing, and turn distance first
+    traffic.ap.ComputeVNAV(acidx, profile, leg_distance)
 
     traffic.swlnav[acidx] = True
     return True
