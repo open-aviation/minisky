@@ -382,6 +382,11 @@ class TrafficArrays:
 
         for v in self._ArrVars:  # Numpy array
             array = self.__dict__[v]
+            if np.ma.isMaskedArray(array):
+                extension = np.ma.masked_all(n, dtype=array.dtype)
+                self.__dict__[v] = np.ma.concatenate((array, extension))
+                continue
+
             # Preserve the declared dtype. Building defaults as a Python list
             # made NumPy promote uncommon dtypes (notably uint64 group masks)
             # through float64 before appending, which can lose high membership bits.
@@ -419,7 +424,14 @@ class TrafficArrays:
             child.delete(idx)
 
         for v in self._ArrVars:
-            self.__dict__[v] = np.delete(self.__dict__[v], idx)
+            array = self.__dict__[v]
+            if np.ma.isMaskedArray(array):
+                self.__dict__[v] = np.ma.array(
+                    np.delete(array.data, idx),
+                    mask=np.delete(np.ma.getmaskarray(array), idx),
+                )
+            else:
+                self.__dict__[v] = np.delete(array, idx)
 
         if self._LstVars:
             if isinstance(idx, np.ndarray):
@@ -440,7 +452,12 @@ class TrafficArrays:
             child.reset()
 
         for v in self._ArrVars:
-            self.__dict__[v] = np.array([], dtype=self.__dict__[v].dtype)
+            array = self.__dict__[v]
+            self.__dict__[v] = (
+                np.ma.masked_all(0, dtype=array.dtype)
+                if np.ma.isMaskedArray(array)
+                else np.array([], dtype=array.dtype)
+            )
 
         for v in self._LstVars:
             self.__dict__[v] = []

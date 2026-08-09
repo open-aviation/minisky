@@ -298,10 +298,10 @@ class TestActiveWaypointDefaults:
         self, runtime: MiniSky, run_cmd: RunCommand
     ) -> None:
         # ActiveWaypoint.create() used nextaltco[-n] instead of [-n:],
-        # leaving all but one new aircraft without the -999 sentinel
+        # leaving all but one new aircraft with an invalid absence state.
         run_cmd("MCRE 3")
         assert runtime.traffic.ntraf == 3
-        assert (runtime.traffic.actwp.nextaltco == -999.0).all()
+        assert np.ma.getmaskarray(runtime.traffic.actwp.nextaltco).all()
 
 
 class TestGuidanceGeometry:
@@ -405,6 +405,32 @@ class TestWaypointSwitching:
         # Once past the fly-turn waypoint there is no upcoming turn.
         step_until(lambda: route.iactwp == 3, max_steps=600)
         assert route.getnextturnwp() is None
+        assert np.ma.is_masked(runtime.traffic.actwp.nextturnidx[0])
+
+    def test_flyturn_without_turn_speed_does_not_override_speed(
+        self, runtime: MiniSky, run_cmd: RunCommand, aircraft: str
+    ) -> None:
+        # BlueSky 55c641e (2023-06-21) treated next-turn presence as turn-speed presence.
+        run_cmd(f"ADDWPT {aircraft} {self.WPTS[0][0]},{self.WPTS[0][1]}")
+        run_cmd(f"ADDWPT {aircraft} TURNRAD 1")
+        run_cmd(f"ADDWPT {aircraft} {self.WPTS[1][0]},{self.WPTS[1][1]}")
+        run_cmd(f"VNAV {aircraft} ON")
+
+        assert np.ma.is_masked(runtime.traffic.actwp.nextturnspd[0])
+        runtime.simulation.step()
+        assert runtime.traffic.selspd[0] > 0.0
+
+    def test_first_waypoint_turn_speed_keeps_index_zero_valid(
+        self, runtime: MiniSky, run_cmd: RunCommand, aircraft: str
+    ) -> None:
+        # BlueSky 55c641e (2023-06-21) used nextturnidx > 0; 08194fa (2023-06-22) fixed index 0.
+        run_cmd(f"ADDWPT {aircraft} TURNSPD 200")
+        run_cmd(f"ADDWPT {aircraft} {self.WPTS[0][0]},{self.WPTS[0][1]}")
+        route = runtime.traffic.ap.route[0]
+
+        assert route.iactwp == 0
+        assert runtime.traffic.actwp.nextturnidx[0] == 0
+        assert runtime.traffic.actwp.nextturnspd[0] == pytest.approx(200 * KTS, rel=1e-3)
 
     def test_no_flyturn_waypoints_has_no_next_turn(
         self, runtime: MiniSky, step_until: StepUntil, route: Route
