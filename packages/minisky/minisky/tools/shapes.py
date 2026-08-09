@@ -163,6 +163,7 @@ class Line:
 # TODO(abraham): stop using sentinels to indicate the lack of top / bottom.
 # see issue #40
 
+
 class Box(HasArea):
     """A lat/lon-aligned box shape.
 
