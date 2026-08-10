@@ -144,7 +144,7 @@ class Kinematics(TrafficArrays):
         delta_alt = traf.aporasas.alt - traf.alt
         # Old dead band version:
         #        self.swaltsel = np.abs(delta_alt) > np.maximum(
-        #            q.ft_to_m(10.0), np.abs(2 * simdt * self.vs))
+        #            10 * ft, np.abs(2 * simdt * self.vs))
 
         # Update version: time based engage of altitude capture (to adapt for UAV vs airliner scale)
         self.swaltsel = np.abs(delta_alt) > 1.05 * np.maximum(

@@ -19,7 +19,7 @@ from random import Random
 from typing import TYPE_CHECKING, Annotated, Literal, overload
 
 import numpy as np
-from annotated_types import Ge, Le
+from annotated_types import Ge, Le, Lt
 
 from minisky import quantities as q
 from minisky.command import (
@@ -29,6 +29,7 @@ from minisky.command import (
     ArgumentIssue,
     CmdParser,
     CommandParseContext,
+    FiniteFloat,
     HeadingDeg,
     Keyword,
     LatLonDeg,
@@ -36,6 +37,7 @@ from minisky.command import (
     OnOff,
     Parsed,
     ParseResult,
+    PositiveFiniteFloat,
     ResolvedPositionArg,
     RunwayHeadingRequest,
     RunwayPosition,
@@ -98,8 +100,14 @@ def _parse_throttle(_context: CommandParseContext, text: str) -> ParseResult[flo
 
 Throttle = Annotated[float, CmdParser(_parse_throttle), Ge(0), Le(1)]
 
+LatitudeArg = Annotated[q.LatitudeDeg[float], Ge(-90), Le(90)]
+LongitudeArg = Annotated[q.LongitudeDeg[float], Ge(-180), Le(180)]
+ConflictAngleDeg = q.AngleDeg[FiniteFloat]
+ConflictDistanceNM = q.DistanceNM[FiniteFloat]
+BankLimitDeg = Annotated[q.BankAngleDeg[PositiveFiniteFloat], Lt(90)]
 
-_DEFAULT_ALTITUDE = q.ft_to_m(25000.0)
+
+_DEFAULT_ALTITUDE: q.PressureAltitudeM[float] = q.ft_to_m(25000.0)
 _DEFAULT_SPEED = q.kt_to_mps(300.0)
 
 
@@ -127,36 +135,16 @@ class Traffic(TrafficArrays):
             interpreted as Mach numbers.
         callsign (list): Aircraft identifier (callsign) strings.
         typecode (list): ICAO aircraft type designators (e.g. "A320").
-        lat (ndarray): Latitude [deg].
-        lon (ndarray): Longitude [deg].
-        distflown (ndarray): Distance flown since creation [m].
-        alt (ndarray): Altitude [m].
-        hdg (ndarray): Heading [deg].
-        trk (ndarray): Track angle over the ground [deg].
-        tas (ndarray): True airspeed [m/s].
-        gs (ndarray): Ground speed [m/s].
         gsnorth (ndarray): North component of ground speed [m/s].
         gseast (ndarray): East component of ground speed [m/s].
-        cas (ndarray): Calibrated airspeed [m/s].
-        M (ndarray): Mach number [-].
-        vs (ndarray): Vertical speed [m/s].
-        p (ndarray): Ambient air pressure [Pa].
-        rho (ndarray): Ambient air density [kg/m3].
-        Temp (ndarray): Ambient air temperature [K].
-        dtemp (ndarray): Temperature offset for non-ISA conditions [K].
         windnorth (ndarray): Wind north component at aircraft position [m/s].
         windeast (ndarray): Wind east component at aircraft position [m/s].
         selspd (ndarray): Selected speed: CAS [m/s] or Mach [-].
-        selalt (ndarray): Selected altitude [m].
-        selvs (ndarray): Selected vertical speed [m/s].
         swlnav (ndarray): Bool switch: LNAV (lateral FMS guidance) on/off.
         swvnav (ndarray): Bool switch: VNAV (vertical FMS guidance) on/off.
         swvnavspd (ndarray): Bool switch: VNAV speed guidance on/off.
         swats (ndarray): Bool switch: autothrottle on/off.
         thr (ndarray): Fixed throttle setting [0.0-1.0], used when autothrottle is off.
-        work (ndarray): Work done by the engines during the flight [J].
-        translvl (float): Transition level [m].
-        bphase (ndarray): Default bank angles per flight phase [rad].
         crecmdlist (list): Command lines issued for each new aircraft.
         cond (Condition): Pending conditional (ATALT/ATSPD/ATDIST) commands.
         wind (Wind): Wind-field model.
@@ -174,6 +162,30 @@ class Traffic(TrafficArrays):
 
     Created by: Jacco M. Hoekstra
     """
+
+    translvl: q.PressureAltitudeM[float]
+    lat: q.LatitudeDeg[np.ndarray]
+    lon: q.LongitudeDeg[np.ndarray]
+    distflown: q.DistanceM[np.ndarray]
+    alt: q.PressureAltitudeM[np.ndarray]
+    hdg: q.TrueHeadingDegrees[np.ndarray]
+    trk: q.GroundTrackDeg[np.ndarray]
+    tas: q.TrueAirspeedMps[np.ndarray]
+    gs: q.GroundSpeedMps[np.ndarray]
+    gsnorth: q.GroundSpeedMps[np.ndarray]
+    gseast: q.GroundSpeedMps[np.ndarray]
+    cas: q.CalibratedAirspeedMps[np.ndarray]
+    M: q.MachNumber[np.ndarray]
+    vs: q.VerticalRateMps[np.ndarray]
+    p: q.StaticPressurePa[np.ndarray]
+    rho: q.DensityKgPerM3[np.ndarray]
+    Temp: q.StaticTemperatureK[np.ndarray]
+    windnorth: q.WindSpeedMps[np.ndarray]
+    windeast: q.WindSpeedMps[np.ndarray]
+    aptas: q.TrueAirspeedMps[np.ndarray]
+    selalt: q.PressureAltitudeM[np.ndarray]
+    selvs: q.VerticalRateMps[np.ndarray]
+    work: q.EnergyJ[np.ndarray]
 
     def __init__(
         self,
@@ -201,11 +213,11 @@ class Traffic(TrafficArrays):
         self.ntraf = 0
         self.casmach_threshold = DEFAULT_CASMACH_THRESHOLD
 
-        self.cond = Condition(self, stack_command, console)  # Conditional commands list
+        self.cond = Condition(self, stack_command)  # Conditional commands list
         self.wind = Wind()
         self.wind.reparent(self)
         self.turbulence = Turbulence(self, get_simulation)
-        self.translvl = q.ft_to_m(5000.0)  # [m] Default transition level
+        self.translvl = q.ft_to_m(5000.0)
 
         # Default commands issued for an aircraft after creation
         self.crecmdlist = []
@@ -216,37 +228,37 @@ class Traffic(TrafficArrays):
             self.typecode: list[str] = []  # aircaft type (string)
 
             # Positions
-            self.lat = np.array([])  # latitude [deg]
-            self.lon = np.array([])  # longitude [deg]
-            self.distflown = np.array([])  # distance travelled [m]
-            self.alt = np.array([])  # altitude [m]
-            self.hdg = np.array([])  # traffic heading [deg]
-            self.trk = np.array([])  # track angle [deg]
+            self.lat = np.array([])
+            self.lon = np.array([])
+            self.distflown = np.array([])
+            self.alt = np.array([])
+            self.hdg = np.array([])
+            self.trk = np.array([])
 
             # Velocities
-            self.tas = np.array([])  # true airspeed [m/s]
-            self.gs = np.array([])  # ground speed [m/s]
+            self.tas = np.array([])
+            self.gs = np.array([])
             self.gsnorth = np.array([])  # ground speed [m/s]
             self.gseast = np.array([])  # ground speed [m/s]
-            self.cas = np.array([])  # calibrated airspeed [m/s]
-            self.M = np.array([])  # mach number
-            self.vs = np.array([])  # vertical speed [m/s]
+            self.cas = np.array([])
+            self.M = np.array([])
+            self.vs = np.array([])
 
             # Atmosphere
-            self.p = np.array([])  # air pressure [N/m2]
-            self.rho = np.array([])  # air density [kg/m3]
-            self.Temp = np.array([])  # air temperature [K]
-            self.dtemp = np.array([])  # delta t for non-ISA conditions
+            self.p = np.array([])
+            self.rho = np.array([])
+            self.Temp = np.array([])
 
             # Wind speeds
             self.windnorth = np.array([])  # wind speed north component a/c pos [m/s]
             self.windeast = np.array([])  # wind speed east component a/c pos [m/s]
 
             # Traffic autopilot settings
-            self.selspd = np.array([])  # selected spd(CAS or Mach) [m/s or -]
+            # TODO(abraham): #40 must split selected CAS and Mach before selspd can carry isqx metadata.
+            self.selspd = np.array([])  # selected CAS or Mach
             self.aptas = np.array([])  # just for initializing
-            self.selalt = np.array([])  # selected alt[m]
-            self.selvs = np.array([])  # selected vertical speed [m/s]
+            self.selalt = np.array([])
+            self.selvs = np.array([])
 
             # Whether to perform LNAV and VNAV
             self.swlnav = np.array([], dtype=bool)
@@ -279,10 +291,7 @@ class Traffic(TrafficArrays):
             # Miscallaneous
             self.coslat = np.array([])  # Cosine of latitude for computations
             self.eps = np.array([])  # Small nonzero numbers
-            self.work = np.array([])  # Work done throughout the flight
-
-        # Default bank angles per flight phase
-        self.bphase = np.deg2rad(np.array([15, 35, 35, 35, 15, 45]))
+            self.work = np.array([])
 
     @command(name="CASMACHTHR")
     def casmachthr(self, threshold: float | None = None) -> Result[str, str]:
@@ -378,9 +387,9 @@ class Traffic(TrafficArrays):
         self,
         callsign: Keyword,
         actype: Keyword = "A320",
-        lat: float = 53.0,
-        lon: float = 4.0,
-        hdg: float = 45.0,
+        lat: q.LatitudeDeg[float] = 53.0,
+        lon: q.LongitudeDeg[float] = 4.0,
+        hdg: q.TrueHeadingDegrees[float] = 45.0,
         alt: AltM = _DEFAULT_ALTITUDE,
         spd: SpeedMpsOrMach = _DEFAULT_SPEED,
     ) -> Result[str, str]:
@@ -423,10 +432,10 @@ class Traffic(TrafficArrays):
     def mcre(
         self,
         n: int,
-        lat_min: float = 53.0,
-        lon_min: float = 0.0,
-        lat_max: float = 60.0,
-        lon_max: float = 10.0,
+        lat_min: LatitudeArg = 53.0,
+        lon_min: LongitudeArg = 0.0,
+        lat_max: LatitudeArg = 60.0,
+        lon_max: LongitudeArg = 10.0,
         actype: Keyword = "A320",
         acalt: AltM | None = None,
         acspd: SpeedMpsOrMach | None = None,
@@ -498,10 +507,10 @@ class Traffic(TrafficArrays):
         self,
         acid: np.ndarray,
         actype: np.ndarray,
-        lat: np.ndarray,
-        lon: np.ndarray,
-        hdg: np.ndarray,
-        alt: np.ndarray,
+        lat: q.LatitudeDeg[np.ndarray],
+        lon: q.LongitudeDeg[np.ndarray],
+        hdg: q.TrueHeadingDegrees[np.ndarray],
+        alt: q.PressureAltitudeM[np.ndarray],
         spd: np.ndarray,
     ) -> None:
         """Append one or more aircraft to all traffic arrays.
@@ -588,8 +597,6 @@ class Traffic(TrafficArrays):
         #             str(self.lat[j]),
         #             str(self.lon[j]),
         #             str(round(self.trk[j])),
-        #             str(round(self.alt[j] / ft)),
-        #             str(round(self.cas[j] / kts)),
         #         ]
         #     )
         #     # Savecmd(cmd,line): line is saved, cmd is used to prevent recording PAN & ZOOM commands and CRE
@@ -608,8 +615,8 @@ class Traffic(TrafficArrays):
         callsign: Keyword,
         actype: Keyword,
         targetidx: AcId,
-        dpsi: float,
-        dcpa: float,
+        dpsi: ConflictAngleDeg,
+        dcpa: ConflictDistanceNM,
         tlosh: TimeS,
         dH: AltM | None = None,
         tlosv: TimeS | None = None,
@@ -643,7 +650,6 @@ class Traffic(TrafficArrays):
         altref = self.alt[targetidx]  # m
         trkref = np.radians(self.trk[targetidx])
         gsref = self.gs[targetidx]  # m/s
-        tasref = self.tas[targetidx]  # m/s
         vsref = self.vs[targetidx]  # m/s
         cpa = q.nmi_to_m(dcpa)
         pzr = q.nmi_to_m(self.config.asas_pzr)
@@ -661,7 +667,7 @@ class Traffic(TrafficArrays):
         if spd:
             # CAS or Mach provided: convert to groundspeed, assuming that
             # wind at intruder position is similar to wind at ownship position
-            tas = tasref if spd is None else casormach2tas(spd, acalt, self.casmach_threshold)
+            tas = casormach2tas(spd, acalt, self.casmach_threshold)
             tasn, tase = tas * np.cos(trk), tas * np.sin(trk)
             wind_north, wind_east = self.wind.getdata(latref, lonref, acalt)
             gsn, gse = tasn + wind_north, tase + wind_east
@@ -1103,7 +1109,7 @@ class Traffic(TrafficArrays):
         )
 
     @command(name="BANK")
-    def set_bank_limit(self, idx: AcIdSelection, bankangle: float) -> Result[str, str]:
+    def set_bank_limit(self, idx: AcIdSelection, bankangle: BankLimitDeg) -> Result[str, str]:
         """Set the bank-angle limit for an aircraft or selection."""
         self.ap.bankdef[idx] = np.radians(bankangle)
         return Ok("")

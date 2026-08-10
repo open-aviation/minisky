@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
+import subprocess
 import tomllib
 from pathlib import Path
 from pprint import pprint
@@ -141,7 +141,7 @@ def console_cmd(
             break
 
         if cmd in ("/clear", "clear"):
-            os.system("clear")
+            subprocess.run(["clear"], check=False)
             continue
 
         if cmd.startswith(("/load ", "load ")):

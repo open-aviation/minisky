@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from math import sqrt
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import numpy as np
 
@@ -118,23 +118,29 @@ class Autopilot(TrafficArrays):
             delayed VNAV descent should start [m], masked when no distance
             threshold is armed.
         swvnavvs (ndarray): Switch: use the VNAV-computed vertical speed.
-        vnavvs (ndarray): Vertical speed used in VNAV mode [m/s].
-        qdr2wp (MaskedArray): Bearing to the active waypoint [deg].
-        dist2wp (MaskedArray): Distance to the active waypoint [m].
-        qdrturn (MaskedArray): Bearing to the next turn waypoint [deg].
-        dist2turn (MaskedArray): Distance to the next turn waypoint [m].
         inturn (ndarray): Switch: aircraft is currently in a turn.
         orig (list): Origin airport identifier per aircraft.
         dest (list): Destination airport identifier per aircraft.
-        bankdef (ndarray): Default bank angle limit [rad].
-        vsdef (ndarray): Default vertical speed [m/s].
-        turnphi (ndarray): Bank angle used in the current turn [rad].
         route (list): Per-aircraft [`Route`][minisky.traffic.route.Route] (flight plan) objects.
         steepness (float): Default climb/descent gradient [-]
             (3000 ft per 10 nm).
         idxreached (list): Indices of aircraft that reached their active
             waypoint during the last update.
     """
+
+    trk: q.GroundTrackDeg[np.ndarray]
+    tas: q.TrueAirspeedMps[np.ndarray]
+    alt: q.PressureAltitudeM[np.ndarray]
+    vs: q.VerticalRateMps[np.ndarray]
+    dist2vs: q.DistanceM[np.ma.MaskedArray]
+    vnavvs: q.VerticalRateMps[np.ndarray]
+    qdr2wp: q.BearingDeg[np.ma.MaskedArray]
+    dist2wp: q.DistanceM[np.ma.MaskedArray]
+    qdrturn: q.BearingDeg[np.ma.MaskedArray]
+    dist2turn: q.DistanceM[np.ma.MaskedArray]
+    bankdef: q.BankAngleRad[np.ndarray]
+    vsdef: q.VerticalRateMps[np.ndarray]
+    turnphi: q.BankAngleRad[np.ndarray]
 
     def __init__(self, traffic: Traffic, get_simulation: Callable[[], Simulation]) -> None:
         super().__init__()
@@ -149,6 +155,7 @@ class Autopilot(TrafficArrays):
         with self.settrafarrays():
             # FMS directions
             self.trk = np.array([])
+            # TODO(abraham): #40 must split commanded CAS and Mach before spd can carry isqx metadata.
             self.spd = np.array([])
             self.tas = np.array([])
             self.alt = np.array([])
@@ -193,11 +200,11 @@ class Autopilot(TrafficArrays):
             self.dest = []  # Destination airport code (4 letters)
 
             # Default values
-            self.bankdef = np.array([])  # Default bank angle [radians]
-            self.vsdef = np.array([])  # Default vertical speed [m/s]
+            self.bankdef = np.array([])
+            self.vsdef = np.array([])
 
             # Currently used bank angle [rad]
-            self.turnphi = np.array([])  # Current bank angle setting
+            self.turnphi = np.array([])
 
             # Route objects
             self.route = []
@@ -222,7 +229,7 @@ class Autopilot(TrafficArrays):
         object for each new aircraft.
 
         Args:
-            n: Number of aircraft that were appended to the traffic arrays.
+            n: Number of aircraft appended to the traffic arrays.
         """
         super().create(n)
 
@@ -256,7 +263,7 @@ class Autopilot(TrafficArrays):
         for ridx, acid in enumerate(self.traffic.callsign[-n:]):
             self.route[ridx - n] = Route(self.traffic, acid)
 
-    def wppassingcheck(self, qdr: np.ndarray, dist: np.ndarray) -> None:
+    def wppassingcheck(self, qdr: q.BearingDeg[np.ndarray], dist: q.DistanceM[np.ndarray]) -> None:
         """
         The actwp is the interface between the list of waypoint data in the route object and the autopilot guidance
         when LNAV is on (heading) and optionally VNAV is on (speed & altitude)
@@ -274,10 +281,7 @@ class Autopilot(TrafficArrays):
         - Shift and maintain data (see last- and next- prefix in variable name) e.g. to continue a special turn
         - Prepare some VNAV triggers along the new leg for the VNAV profile (where to start descent/climb)
 
-        Args:
-            qdr: Bearing from each aircraft to its active waypoint [deg];
-                updated in place for aircraft that switch waypoint.
-            dist: Distance from each aircraft to its active waypoint [m].
+        `qdr` is updated in place for aircraft that switch waypoint.
         """
 
         # Get list of indices of aircraft which have reached their active waypoint
@@ -437,7 +441,7 @@ class Autopilot(TrafficArrays):
             tas = self.traffic.tas[nxt]
 
             # Special turns: specified by turn radius, heading rate, and/or speed.
-            # If no turn speed is specified, use current CAS for the active fly-turn.
+            # If no turn speed is specified, use current speed for the active fly-turn.
             has_turn_speed = ~np.ma.getmaskarray(turnspd)
             active_turn_speed = np.where(has_turn_speed, turnspd.data, self.traffic.cas[nxt])
 
@@ -808,7 +812,9 @@ class Autopilot(TrafficArrays):
             self.traffic.casmach_threshold,
         )
 
-    def ComputeVNAV(self, idx: int, profile: RouteProfile, distance_to_waypoint: float) -> None:
+    def ComputeVNAV(
+        self, idx: int, profile: RouteProfile, distance_to_waypoint: q.DistanceM[float]
+    ) -> None:
         """
         This function to do VNAV (and RTA) calculations is only called only once per leg for an aircraft index.
         If:
@@ -924,21 +930,6 @@ class Autopilot(TrafficArrays):
                 )  # [m] required length for descent, uses default steepness!
                 self.dist2vs[idx] = descdist - xtoalt  # [m] part of that length on this leg
 
-                # print(
-                #     self.traffic.id[idx],
-                #     "traf.alt =", q.m_to_ft(self.traffic.alt[idx]),
-                #     "ft toalt =", q.m_to_ft(toalt),
-                #     "ft descdist =", q.m_to_nmi(descdist), "nm",
-                # )
-                # print(
-                #     "d2wp =", q.m_to_nmi(distance_to_waypoint),
-                #     "nm d2vs =", q.m_to_nmi(self.dist2vs[idx]), "nm",
-                # )
-                # print(
-                #     "xtoalt =", q.m_to_nmi(xtoalt),
-                #     "nm descdist =", q.m_to_nmi(descdist), "nm",
-                # )
-
                 # Exceptions: Descend now?
                 if (
                     distance_to_waypoint - 1.02 * self.traffic.actwp.turndist[idx]
@@ -1013,8 +1004,8 @@ class Autopilot(TrafficArrays):
         return
 
     def setspeedforRTA(
-        self, idx: int, target: RtaTarget | None, distance_to_waypoint: float
-    ) -> float | None:
+        self, idx: int, target: RtaTarget | None, distance_to_waypoint: q.DistanceM[float]
+    ) -> q.CalibratedAirspeedMps[float] | None:
         """Compute and set the speed required to meet an RTA constraint.
 
         Calculates the ground speed needed to cover the remaining distance
@@ -1126,7 +1117,7 @@ class Autopilot(TrafficArrays):
             hdg: Selected heading [deg].
         """
 
-        resolved_hdg: float | np.ndarray[Any, Any]
+        resolved_hdg: q.TrueHeadingDegrees
         if isinstance(hdg, MagneticHeadingDeg):
             resolved_hdg = np.fromiter(
                 (
@@ -1373,7 +1364,12 @@ class Autopilot(TrafficArrays):
         return Ok(f"SWTOD {'ON' if flag else 'OFF'}")
 
 
-def calcvrta(v0: float, dx: float, deltime: float, trafax: float) -> float:
+def calcvrta(
+    v0: q.GroundSpeedMps[float],
+    dx: q.DistanceM[float],
+    deltime: q.DurationS[float],
+    trafax: q.AccelerationMps2[float],
+) -> q.GroundSpeedMps[float]:
     """Calculate the target ground speed needed to meet an RTA on a leg.
 
     Solves for the end speed of a constant-acceleration speed change
@@ -1452,7 +1448,11 @@ def calcvrta(v0: float, dx: float, deltime: float, trafax: float) -> float:
     return vtarg
 
 
-def distaccel(v0: Any, v1: Any, axabs: Any) -> Any:
+def distaccel(
+    v0: q.TrueAirspeedMps,
+    v1: q.TrueAirspeedMps,
+    axabs: q.AccelerationMps2,
+) -> q.DistanceM:
     """Calculate the distance travelled during an acceleration/deceleration.
 
     Uses the uniform-acceleration relation dx = |v1^2 - v0^2| / (2 |a|),

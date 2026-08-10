@@ -9,10 +9,11 @@ resolution and fade to the "old" color after a configurable time.
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 
+from minisky import quantities as q
 from minisky.command import Keyword, OnOff, PositiveFiniteFloat, command
 from minisky.core import TrafficArrays
 from minisky.result import Err, Ok, Result
@@ -57,11 +58,27 @@ class Trails(TrafficArrays):
     Created by: Jacco M. Hoekstra
     """
 
+    dt: q.DurationS[float]
+    tcol0: q.DurationS[float]
+    lat0: q.LatitudeDeg[np.ndarray]
+    lon0: q.LongitudeDeg[np.ndarray]
+    lat1: q.LatitudeDeg[np.ndarray]
+    lon1: q.LongitudeDeg[np.ndarray]
+    time: q.SimulationTimeS[np.ndarray]
+    bglat0: q.LatitudeDeg[np.ndarray]
+    bglon0: q.LongitudeDeg[np.ndarray]
+    bglat1: q.LatitudeDeg[np.ndarray]
+    bglon1: q.LongitudeDeg[np.ndarray]
+    bgtime: q.SimulationTimeS[np.ndarray]
+    lastlat: q.LatitudeDeg[np.ndarray]
+    lastlon: q.LongitudeDeg[np.ndarray]
+    lasttim: q.SimulationTimeS[np.ndarray]
+
     def __init__(
         self,
         traffic: Traffic,
         get_simulation: Callable[[], Simulation],
-        dttrail: float = 10.0,
+        dttrail: q.DurationS[float] = 10.0,
     ) -> None:
         super().__init__(traffic)
         self.traffic = traffic
@@ -87,7 +104,7 @@ class Trails(TrafficArrays):
         self.lat1 = np.array([])
         self.lon1 = np.array([])
         self.time = np.array([])
-        self.col: Any = []
+        self.col: list[np.ndarray] = []
         self.fcol = np.array([])
 
         # background copy of data
@@ -96,7 +113,7 @@ class Trails(TrafficArrays):
         self.bglat1 = np.array([])
         self.bglon1 = np.array([])
         self.bgtime = np.array([])
-        self.bgcol: Any = []
+        self.bgcol: list[np.ndarray] = []
         self.bgacid: list = []
 
         with self.settrafarrays():
@@ -167,13 +184,6 @@ class Trails(TrafficArrays):
             lstlon1.append(self.traffic.lon[i])
             lsttime.append(self._get_simulation().simt)
 
-            if isinstance(self.col, np.ndarray):
-                # print type(trailcol[i])
-                # print trailcol[i]
-                # print "col type: ",type(self.col)
-                self.col = self.col.tolist()
-
-            type(self.col)
             self.col.append(self.accolor[i])
 
             # Update aircraft record
@@ -209,12 +219,7 @@ class Trails(TrafficArrays):
         self.bgtime = np.append(self.bgtime, self.time)
 
         # No color saved: Background: always 'old color' self.col0
-        if isinstance(self.bgcol, np.ndarray):
-            self.bgcol = self.bgcol.tolist()
-        if isinstance(self.col, np.ndarray):
-            self.col = self.col.tolist()
-
-        self.bgcol = self.bgcol + self.col
+        self.bgcol.extend(self.col)
         self.bgacid = self.bgacid + self.acid
 
         self.clearfg()  # Clear foreground trails
@@ -234,7 +239,7 @@ class Trails(TrafficArrays):
         self.lat1 = np.array([])
         self.lon1 = np.array([])
         self.time = np.array([])
-        self.col = np.array([])
+        self.col = []
 
     def clearbg(self) -> None:  # Background
         """Clear the background trail segment buffers."""
@@ -243,6 +248,7 @@ class Trails(TrafficArrays):
         self.bglat1 = np.array([])
         self.bglon1 = np.array([])
         self.bgtime = np.array([])
+        self.bgcol = []
         self.bgacid = []
 
     def clear(self) -> None:
@@ -262,7 +268,7 @@ class Trails(TrafficArrays):
 
     @command(name="TRAIL")
     def set_trail_state(
-        self, enabled: OnOff, interval: PositiveFiniteFloat | None = None
+        self, enabled: OnOff, interval: q.DurationS[PositiveFiniteFloat] | None = None
     ) -> Result[str, str]:
         """Enable or disable trails, optionally changing the sample interval."""
         self.active = enabled

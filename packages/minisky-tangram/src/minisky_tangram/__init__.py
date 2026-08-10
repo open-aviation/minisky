@@ -47,7 +47,7 @@ from collections import deque
 from collections.abc import AsyncGenerator, Callable
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
-from typing import Any, TypedDict, cast
+from typing import Any, TypedDict
 
 from minisky import plugin as plugin_api
 from minisky import quantities as q
@@ -65,7 +65,7 @@ class TangramConfig(BaseModel):
 
     redis_url: str = "redis://127.0.0.1:6379"
     channel: str = "minisky"
-    max_hz: float = 5.0
+    max_hz: q.FrequencyHz[float] = 5.0
 
 
 # --8<-- [end:configuration]
@@ -73,7 +73,7 @@ class TangramConfig(BaseModel):
 
 # How often the background thread republishes state while the simulation is
 # not advancing (paused/init), so the frontend still sees state changes.
-HEARTBEAT_SECS = 1.0
+HEARTBEAT_SECS: q.DurationS[float] = 1.0
 
 
 def _state_name(state: int) -> str:
@@ -87,8 +87,8 @@ def _state_name(state: int) -> str:
 class TangramSimInfo(TypedDict):
     """Simulation status block of the `new-data` wire payload."""
 
-    simt: float  # s
-    simdt: float  # s
+    simt: q.SimulationTimeS[float]
+    simdt: q.DurationS[float]
     simutc: str  # ISO-8601
     speed: float  # runner speed multiplier (x realtime)
     ntraf: int
@@ -105,16 +105,16 @@ class TangramAircraft(TypedDict):
     id: str
     callsign: str
     typecode: str
-    latitude: float  # deg
-    longitude: float  # deg
-    altitude: int  # ft
-    groundspeed: float  # kt
-    tas: float  # kt
-    ias: float  # kt
-    vertical_rate: int  # fpm
-    track: float  # deg
+    latitude: q.LatitudeDeg[float]
+    longitude: q.LongitudeDeg[float]
+    altitude: q.PressureAltitudeFt[int]
+    groundspeed: q.GroundSpeedKt[float]
+    tas: q.TrueAirspeedKt[float]
+    ias: q.CalibratedAirspeedKt[float]
+    vertical_rate: q.VerticalRateFpm[int]
+    track: q.GroundTrackDeg[float]
     inconf: bool
-    timestamp: float | None  # epoch seconds; None when simutc fails to parse
+    timestamp: q.WallClockTimeS[float] | None
 
 
 class TangramPayload(TypedDict):
@@ -161,6 +161,11 @@ def convert_snapshot(snapshot: Snapshot) -> TangramPayload:
 
     aircraft: list[TangramAircraft] = []
     for i, callsign in enumerate(acdata["callsign"]):
+        altitude_ft: q.PressureAltitudeFt[float] = q.m_to_ft(acdata["alt"][i])
+        groundspeed_kt: q.GroundSpeedKt[float] = q.mps_to_kt(acdata["gs"][i])
+        tas_kt: q.TrueAirspeedKt[float] = q.mps_to_kt(acdata["tas"][i])
+        ias_kt: q.CalibratedAirspeedKt[float] = q.mps_to_kt(acdata["cas"][i])
+        vertical_rate_fpm: q.VerticalRateFpm[float] = q.mps_to_fpm(acdata["vs"][i])
         aircraft.append(
             {
                 "id": callsign,
@@ -168,11 +173,11 @@ def convert_snapshot(snapshot: Snapshot) -> TangramPayload:
                 "typecode": acdata["typecode"][i],
                 "latitude": acdata["lat"][i],
                 "longitude": acdata["lon"][i],
-                "altitude": round(q.m_to_ft(acdata["alt"][i])),  # type: ignore[reportUnknownArgumentType]
-                "groundspeed": round(q.mps_to_kt(acdata["gs"][i]), 1),  # type: ignore[reportUnknownArgumentType]
-                "tas": round(q.mps_to_kt(acdata["tas"][i]), 1),  # type: ignore[reportUnknownArgumentType]
-                "ias": round(q.mps_to_kt(acdata["cas"][i]), 1),  # type: ignore[reportUnknownArgumentType]
-                "vertical_rate": round(q.mps_to_fpm(acdata["vs"][i])),  # type: ignore[reportUnknownArgumentType]
+                "altitude": round(altitude_ft),
+                "groundspeed": round(groundspeed_kt, 1),
+                "tas": round(tas_kt, 1),
+                "ias": round(ias_kt, 1),
+                "vertical_rate": round(vertical_rate_fpm),
                 "track": acdata["trk"][i],
                 "inconf": acdata["inconf"][i],
                 "timestamp": timestamp,
@@ -199,7 +204,7 @@ def extract_command(payload: str | bytes) -> str | None:
     except ValueError:
         return text
     if isinstance(data, dict):
-        cmd = cast("dict[str, Any]", data).get("command")
+        cmd = data.get("command")
         return str(cmd).strip() or None if cmd is not None else None
     if isinstance(data, str):
         return data.strip() or None
@@ -243,10 +248,8 @@ class TangramBridge:
             if self.redis_factory is None:
                 import redis
 
-                self.redis_factory = cast(
-                    "Callable[[str], Any]",
-                    redis.Redis.from_url,  # pyright: ignore[reportUnknownMemberType]
-                )
+                redis_factory: Callable[[str], Any] = redis.Redis.from_url
+                self.redis_factory = redis_factory
         except ImportError:
             return Err(
                 "TANGRAM plugin needs the redis package; run `just sync` from the "
@@ -370,7 +373,12 @@ class TangramBridge:
                         if isinstance(topic, bytes):
                             topic = topic.decode("utf-8", errors="replace")
                         if topic == command_topic:
-                            command = extract_command(message.get("data", ""))
+                            payload = message.get("data")
+                            command = (
+                                extract_command(payload)
+                                if isinstance(payload, (str, bytes))
+                                else None
+                            )
                             stack_command = self._stack_command
                             if command and stack_command is not None:
                                 stack_command(command)

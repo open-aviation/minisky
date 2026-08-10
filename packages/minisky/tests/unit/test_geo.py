@@ -110,5 +110,5 @@ class TestWgs84:
 
     def test_radius_within_bounds(self) -> None:
         for lat in (10.0, 30.0, 45.0, 60.0, 80.0):
-            r = geo.rwgs84(lat)
-            assert 6356752.0 < r < 6378138.0
+            radius = geo.rwgs84(lat)
+            assert 6356752.0 < radius < 6378138.0
