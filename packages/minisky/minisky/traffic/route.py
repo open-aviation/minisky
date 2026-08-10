@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING, Annotated, Literal, NamedTuple, TypeAlias
 
 import numpy as np
 
+from minisky import quantities as q
 from minisky.command import (
     AcId,
     AltM,
@@ -153,7 +154,7 @@ class Route:
             aircraft then keeps the runway heading.
         wpdirfrom (list): Direction of the leg leaving each waypoint [deg].
         wpdirto (list): Direction of the leg to each waypoint [deg].
-        wpdistto (list): Length of the leg to each waypoint [nm].
+        wpdistto (list): Length of the leg to each waypoint [m].
         wpprofile (list): Optional altitude and RTA guidance targets from each waypoint.
 
     Created by: Jacco M. Hoekstra
@@ -199,8 +200,7 @@ class Route:
 
         self.wpdirfrom = []  # [deg] direction leg to wp
         self.wpdirto = []  # [deg] direction leg from wp
-        # TODO(abraham): migrate this to SI!
-        self.wpdistto = []  # [nm] leg length to wp
+        self.wpdistto = []  # [m] leg length to wp
         self.wpprofile: list[RouteProfile] = []
 
     def insert_wpt_data(
@@ -566,7 +566,7 @@ class Route:
         the speed, which might be undefined (often is). Guidance in autpilot.py takes
         care of ToD and ToC logic while flying using current speed.
 
-        Recomputes, per waypoint: leg directions [deg] and lengths [nm]
+        Recomputes, per waypoint: leg directions [deg] and lengths [m]
         (wpdirfrom, wpdirto, wpdistto), plus typed altitude and RTA guidance
         targets in wpprofile.
         """
@@ -581,7 +581,7 @@ class Route:
         # [deg] Direction of leg ot this waypoint (if it exists)
         self.wpdirto = n_wpt * [0.0]
 
-        # [nm] Distance of leg to this waypoint in nm
+        # [m] Distance of leg to this waypoint
         self.wpdistto = n_wpt * [0.0]
 
         self.wpprofile = [RouteProfile() for _ in range(n_wpt)]
@@ -598,7 +598,7 @@ class Route:
                 self.wplat[i], self.wplon[i], self.wplat[i + 1], self.wplon[i + 1]
             )
             self.wpdirfrom[i] = float(qdr)  # [deg]
-            self.wpdistto[i + 1] = float(dist)  # [nm] distto is in nautical miles
+            self.wpdistto[i + 1] = float(dist)  # [m]
 
         # Also add "from direction" as to directions so no need to shift for actwpdata
         # direction to will be overwritten in actwpdata in case of a direct to
@@ -626,7 +626,7 @@ class Route:
             elif altitude_target is not None and i != n_wpt - 1:
                 altitude_target = AltitudeTarget(
                     altitude_target.altitude,
-                    altitude_target.distance + self.wpdistto[i + 1] * nm,
+                    altitude_target.distance + self.wpdistto[i + 1],
                 )
             else:
                 altitude_target = None
@@ -643,7 +643,7 @@ class Route:
                 if (speed := self.wpspd[i]) is None:
                     rta_target = RtaTarget(
                         rta_target.time,
-                        rta_target.distance + self.wpdistto[i + 1] * nm,
+                        rta_target.distance + self.wpdistto[i + 1],
                     )
                 else:
                     # speed constraint on this leg: shift RTA time to account for this
@@ -660,7 +660,7 @@ class Route:
 
                     # This fixed-speed leg is excluded from RTA distance, so subtract its
                     # travel time from the target time instead.
-                    legtime = self.wpdistto[i + 1] * nm / legtas
+                    legtime = self.wpdistto[i + 1] / legtas
                     rta_target = RtaTarget(rta_target.time - legtime, rta_target.distance)
             else:
                 rta_target = None
@@ -947,7 +947,7 @@ def _add_takeoff_waypoint(
         rwylon = traffic.lon[acidx]
         rwyhdg = traffic.trk[acidx]
 
-    lat, lon = geo.qdrpos(rwylat, rwylon, rwyhdg, 2.0)
+    lat, lon = geo.qdrpos(rwylat, rwylon, rwyhdg, q.nmi_to_m(2.0))
     afterwp = ""
     if rwyrteidx is not None and rwyrteidx > 0:
         afterwp = acrte.wpname[rwyrteidx]
@@ -1284,7 +1284,7 @@ def direct(traffic: Traffic, acidx: int, wpname: str) -> bool:
         traffic.actwp.lon[acidx],
     )
     qdr_ = float(np.asarray(qdr_result).item())
-    leg_distance = float(np.asarray(dist_result).item()) * nm
+    leg_distance = float(np.asarray(dist_result).item())
 
     # Save leg length & direction in actwp data
     traffic.actwp.curlegdir[acidx] = qdr_  # [deg]

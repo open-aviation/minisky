@@ -485,9 +485,9 @@ class Autopilot(TrafficArrays):
             actwp.flyby[nxt] = flyby
 
             # Update qdr and turn distance for this new waypoint for ComputeVNAV
-            qdrnxt, distnmi = geo.qdrdist(self.traffic.lat[nxt], self.traffic.lon[nxt], lat, lon)
+            qdrnxt, distance = geo.qdrdist(self.traffic.lat[nxt], self.traffic.lon[nxt], lat, lon)
             qdr[nxt] = qdrnxt
-            dist[nxt] = distnmi * nm
+            dist[nxt] = distance
 
             actwp.curlegdir[nxt] = qdrnxt
             actwp.curleglen[nxt] = dist[nxt]
@@ -552,18 +552,15 @@ class Autopilot(TrafficArrays):
             route = self.route[iac]
             if (iwp := route.iactwp) is not None and route.wprta[iwp] is not None:
                 # For all aircraft flying to an RTA waypoint, recalculate speed more often
-                distance_to_waypoint = (
-                    float(
-                        np.asarray(
-                            geo.kwikdist(
-                                self.traffic.lat[iac],
-                                self.traffic.lon[iac],
-                                self.traffic.actwp.lat[iac],
-                                self.traffic.actwp.lon[iac],
-                            )
-                        ).item()
-                    )
-                    * nm
+                distance_to_waypoint = float(
+                    np.asarray(
+                        geo.kwikdist(
+                            self.traffic.lat[iac],
+                            self.traffic.lon[iac],
+                            self.traffic.actwp.lat[iac],
+                            self.traffic.actwp.lon[iac],
+                        )
+                    ).item()
                 )
 
                 # Set self.traffic.actwp.spd to RTA speed, if necessary
@@ -592,15 +589,15 @@ class Autopilot(TrafficArrays):
         tas) and in the traffic selected-state arrays where applicable.
         """
         # FMS LNAV mode:
-        # qdr[deg],distinnm[nm]
-        qdr_result, distinnm = geo.qdrdist(
+        # qdr [deg], distance [m]
+        qdr_result, distance = geo.qdrdist(
             self.traffic.lat,
             self.traffic.lon,
             self.traffic.actwp.lat,
             self.traffic.actwp.lon,
-        )  # [deg][nm])
+        )
         qdr = np.asarray(qdr_result)
-        distance_to_waypoint = np.asarray(distinnm) * nm  # Conversion to meters
+        distance_to_waypoint = np.asarray(distance)
 
         # Check possible waypoint shift. Note: qdr and distance_to_waypoint are
         # updated accordingly in case of a waypoint switch.
@@ -726,13 +723,13 @@ class Autopilot(TrafficArrays):
         qdrturn = np.zeros_like(self.traffic.lat)
         dist2turn = np.zeros_like(self.traffic.lat)
         if np.any(has_next_turn):
-            qdrturn[has_next_turn], distnmi = geo.qdrdist(
+            qdrturn[has_next_turn], distance = geo.qdrdist(
                 self.traffic.lat[has_next_turn],
                 self.traffic.lon[has_next_turn],
                 self.traffic.actwp.nextturnlat.data[has_next_turn],
                 self.traffic.actwp.nextturnlon.data[has_next_turn],
             )
-            dist2turn[has_next_turn] = distnmi * nm
+            dist2turn[has_next_turn] = distance
 
         # Where we don't have a turn waypoint, there is no turn bearing or distance.
         self.qdrturn[:] = np.ma.array(qdrturn, mask=~has_next_turn)
@@ -1281,18 +1278,15 @@ class Autopilot(TrafficArrays):
                 actwpidx = route.iactwp
                 assert actwpidx is not None
                 profile = route.wpprofile[actwpidx]
-                distance_to_waypoint = (
-                    float(
-                        np.asarray(
-                            geo.kwikdist(
-                                self.traffic.lat[i],
-                                self.traffic.lon[i],
-                                self.traffic.actwp.lat[i],
-                                self.traffic.actwp.lon[i],
-                            )
-                        ).item()
-                    )
-                    * nm
+                distance_to_waypoint = float(
+                    np.asarray(
+                        geo.kwikdist(
+                            self.traffic.lat[i],
+                            self.traffic.lon[i],
+                            self.traffic.actwp.lat[i],
+                            self.traffic.actwp.lon[i],
+                        )
+                    ).item()
                 )
                 self.dist2wp[i] = distance_to_waypoint
                 self.ComputeVNAV(i, profile, distance_to_waypoint)

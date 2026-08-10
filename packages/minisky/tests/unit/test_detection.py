@@ -33,7 +33,7 @@ def detect_reference(ownship, intruder, rpz, hpz, dtlookahead):
         np.atleast_2d(intruder.lon),
     )
     qdr = np.asarray(qdr)
-    dist = np.asarray(dist) * nm + 1e9 * eye
+    dist = np.asarray(dist) + 1e9 * eye
 
     qdrrad = np.radians(qdr)
     dx = dist * np.sin(qdrrad)

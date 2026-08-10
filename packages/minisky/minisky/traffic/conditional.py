@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
+from minisky import quantities as q
 from minisky.command import AcId, AltM, LatLonDeg, SpeedMpsOrMach, Text, command
 from minisky.tools.geo import qdrdist
 
@@ -46,7 +47,7 @@ class Condition:
         id (list): Callsign of the aircraft per condition.
         condtype (ndarray): Condition type.
         target (ndarray): Target value: altitude [m], speed (CAS) [m/s]
-            or distance [nm].
+            or distance [m].
         lastdif (ndarray): Difference target - actual at the last update.
         posdata (list): For distance conditions: (lat [deg], lon [deg]) of
             the reference position, else None.
@@ -66,7 +67,7 @@ class Condition:
         # distance condition can carry a reference position)
         self.id = []  # Id of aircraft of condition
         self.condtype = np.array([], dtype=int)
-        self.target = np.array([], dtype=float)  # Target value (alt,speed,distance[nm])
+        self.target = np.array([], dtype=float)  # Target value (alt,speed,distance [m])
         self.lastdif = np.array([], dtype=float)  # Difference during last update
         self.posdata = []  # Reference lat/lon for distance conditions.
         self.cmd = []  # Commands to be issued
@@ -86,7 +87,7 @@ class Condition:
 
         Called every simulation step. Conditions of deleted aircraft are
         removed first. Then the actual value (altitude [m], CAS [m/s] or
-        distance to the reference position [nm]) is compared with the
+        distance to the reference position [m]) is compared with the
         target: when the difference changes sign, the stored command is
         stacked and the condition is deleted.
         """
@@ -130,7 +131,7 @@ class Condition:
                 self.posdata[j][0],
                 self.posdata[j][1],
             )
-            self.actual[j] = dist  # [nm]
+            self.actual[j] = dist  # [m]
 
         # Compare sign of actual difference with sign of last difference
         actdif = self.target - self.actual
@@ -225,7 +226,12 @@ class Condition:
             self.traffic.lat[acidx], self.traffic.lon[acidx], position.lat, position.lon
         )
         self.addcondition(
-            acidx, ConditionType.DISTANCE, targdist, actdist, cmdtxt, (position.lat, position.lon)
+            acidx,
+            ConditionType.DISTANCE,
+            q.nmi_to_m(targdist),
+            actdist,
+            cmdtxt,
+            (position.lat, position.lon),
         )
         return True
 
@@ -245,7 +251,7 @@ class Condition:
                 survives index shifts when other aircraft are deleted.
             icondtype: Condition type.
             target: Target value (altitude [m], speed [m/s] or
-                distance [nm]).
+                distance [m]).
             actual: Current value, used to initialize the sign of the
                 difference.
             cmdtxt: Command line to stack when the condition triggers.

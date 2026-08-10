@@ -11,7 +11,7 @@ and magnetic declination lookup from a WMM data table (magdec).
 Matrix variants (suffixed with _matrix) operate on vectors of positions
 and return results for every combination of the input positions.
 Latitudes, longitudes, bearings, and headings are in degrees; distances
-are in nautical miles unless stated otherwise.
+are in metres.
 """
 
 from functools import cache
@@ -19,13 +19,14 @@ from functools import cache
 import numpy as np
 import pandas as pd
 
+from minisky import quantities as q
 from minisky.core.config import data
 
 # Type alias for values that may be a scalar or a numpy array
 FloatOrArray = float | np.ndarray
 
 # Constants
-nm = 1852.0  # m       1 nautical mile
+_METERS_PER_LATITUDE_DEGREE = q.nmi_to_m(60.0)
 
 
 def rwgs84(latd: FloatOrArray) -> FloatOrArray:
@@ -105,7 +106,7 @@ def qdrdist(
 
     Returns:
         tuple: (qdr, d): bearing from 1 to 2 [deg] and distance from
-        1 to 2 [nm].
+        1 to 2 [m].
     """
 
     # Haversine with average radius for direction
@@ -161,7 +162,7 @@ def qdrdist(
         )
     )
 
-    return qdr, d / nm
+    return qdr, d
 
 
 def qdrdist_matrix(
@@ -180,7 +181,7 @@ def qdrdist_matrix(
 
     Returns:
         tuple: (qdr, dist) matrices: bearing from 1 to 2 [deg] and
-        distance from 1 to 2 [nm].
+        distance from 1 to 2 [m].
     """
     # Convert inputs to 2-D row arrays, so that .T gives column arrays and
     # broadcasting yields a result for every combination of positions.
@@ -243,7 +244,7 @@ def qdrdist_matrix(
     sin2sin2 = np.multiply(sin20, sin20)
     sqrt = sin1sin1 + np.multiply((coslat1.T * coslat2), sin2sin2)
     dist_c = np.multiply(2.0, np.arctan2(np.sqrt(sqrt), np.sqrt(1 - sqrt)))
-    dist = np.multiply(r / nm, dist_c)
+    dist = np.multiply(r, dist_c)
     #    dist = np.multiply(2.*r, np.arcsin(sqrt))
 
     return qdr, dist
@@ -262,7 +263,7 @@ def latlondist(
         lond2: Longitude of position 2 [deg].
 
     Returns:
-        Distance from 1 to 2 in meters [m] (note: NOT nm, unlike qdrdist).
+        Distance from 1 to 2 [m].
     """
 
     # Haversine with average radius
@@ -315,8 +316,7 @@ def latlondist_matrix(
         lon2: Longitudes of positions 2 [deg] (vector).
 
     Returns:
-        Distance matrix from 1 to 2 in meters [m] for every position
-        combination (note: NOT nm, consistent with the scalar latlondist).
+        Distance matrix from 1 to 2 [m] for every position combination.
     """
     # Convert inputs to 2-D row arrays, so that .T gives column arrays and
     # broadcasting yields a result for every combination of positions.
@@ -404,14 +404,13 @@ def qdrpos(
         latd1: Reference latitude(s) [deg].
         lond1: Reference longitude(s) [deg].
         qdr: Bearing (vector) from 1 to 2 [deg].
-        dist: Distance (vector) between 1 and 2 [nm].
+        dist: Distance (vector) between 1 and 2 [m].
 
     Returns:
         tuple: (latd2, lond2): the projected position(s) [deg].
     """
 
-    # Unit conversion
-    R = rwgs84(latd1) / nm
+    R = rwgs84(latd1)
     lat1 = np.radians(latd1)
     lon1 = np.radians(lond1)
 
@@ -442,7 +441,7 @@ def kwikdist(
         lonb: Longitude of point b [deg].
 
     Returns:
-        Distance [nm].
+        Distance [m].
     """
 
     re = 6371000.0  # radius earth [m]
@@ -451,7 +450,7 @@ def kwikdist(
     cavelat = np.cos(np.radians(lata + latb) * 0.5)
 
     dangle = np.sqrt(dlat * dlat + dlon * dlon * cavelat * cavelat)
-    dist = re * dangle / nm
+    dist = re * dangle
 
     return dist
 
@@ -471,7 +470,7 @@ def kwikdist_matrix(
         lonb: Longitudes of points b [deg] (vector).
 
     Returns:
-        Distance matrix [nm] for every combination of a and b.
+        Distance matrix [m] for every combination of a and b.
     """
 
     re = 6371000.0  # readius earth [m]
@@ -483,7 +482,7 @@ def kwikdist_matrix(
         np.multiply(dlat, dlat)
         + np.multiply(np.multiply(dlon, dlon), np.multiply(cavelat, cavelat))
     )
-    dist = re * dangle / nm
+    dist = re * dangle
 
     return dist
 
@@ -491,7 +490,7 @@ def kwikdist_matrix(
 def kwikqdrdist(
     lata: FloatOrArray, lona: FloatOrArray, latb: FloatOrArray, lonb: FloatOrArray
 ) -> tuple[FloatOrArray, FloatOrArray]:
-    """Gives quick and dirty qdr[deg] and dist [nm]
+    """Gives quick and dirty qdr [deg] and dist [m]
     from lat/lon. (note: does not work well close to poles)
 
     Flat-earth approximation with the mean earth radius.
@@ -504,7 +503,7 @@ def kwikqdrdist(
 
     Returns:
         tuple: (qdr, dist): bearing from a to b [deg], in [0, 360),
-        and distance [nm].
+        and distance [m].
     """
 
     re = 6371000.0  # radius earth [m]
@@ -513,7 +512,7 @@ def kwikqdrdist(
     cavelat = np.cos(np.radians(lata + latb) * 0.5)
 
     dangle = np.sqrt(dlat * dlat + dlon * dlon * cavelat * cavelat)
-    dist = re * dangle / nm
+    dist = re * dangle
 
     qdr = np.degrees(np.arctan2(dlon * cavelat, dlat)) % 360.0
 
@@ -523,7 +522,7 @@ def kwikqdrdist(
 def kwikqdrdist_matrix(
     lata: np.ndarray, lona: np.ndarray, latb: np.ndarray, lonb: np.ndarray
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Gives quick and dirty qdr[deg] and dist [nm] matrices
+    """Gives quick and dirty qdr [deg] and dist [m] matrices
     from lat/lon vectors. (note: does not work well close to poles)
 
     Flat-earth approximation with the mean earth radius.
@@ -536,7 +535,7 @@ def kwikqdrdist_matrix(
 
     Returns:
         tuple: (qdr, dist) matrices: bearing from a to b [deg], in
-        [0, 360), and distance [nm] for every combination of a and b.
+        [0, 360), and distance [m] for every combination of a and b.
     """
 
     re = 6371000.0  # radius earth [m]
@@ -548,7 +547,7 @@ def kwikqdrdist_matrix(
         np.multiply(dlat, dlat)
         + np.multiply(np.multiply(dlon, dlon), np.multiply(cavelat, cavelat))
     )
-    dist = re * dangle / nm
+    dist = re * dangle
 
     qdr = np.degrees(np.arctan2(np.multiply(dlon, cavelat), dlat)) % 360.0
 
@@ -567,7 +566,7 @@ def kwikpos(
         latd1: Reference latitude(s) [deg].
         lond1: Reference longitude(s) [deg].
         qdr: Bearing (vector) from 1 to 2 [deg].
-        dist: Distance (vector) between 1 and 2 [nm].
+        dist: Distance (vector) between 1 and 2 [m].
 
     Returns:
         tuple: (latd2, lond2): the resulting position(s) [deg], with
@@ -576,8 +575,8 @@ def kwikpos(
 
     dx = dist * np.sin(np.radians(qdr))
     dy = dist * np.cos(np.radians(qdr))
-    dlat = dy / 60.0
-    dlon = dx / (np.maximum(0.01, 60.0 * np.cos(np.radians(latd1))))
+    dlat = dy / _METERS_PER_LATITUDE_DEGREE
+    dlon = dx / np.maximum(0.01, _METERS_PER_LATITUDE_DEGREE * np.cos(np.radians(latd1)))
     latd2 = latd1 + dlat
     lond2 = ((lond1 + dlon) + 180) % 360 - 180
 

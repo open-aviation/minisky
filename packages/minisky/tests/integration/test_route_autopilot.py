@@ -7,6 +7,7 @@ from typing import ClassVar
 import numpy as np
 import pytest
 from minisky import MiniSky
+from minisky import quantities as q
 from minisky.tools import geo
 from minisky.traffic import route as route_commands
 from minisky.traffic.route import Route, TurnHeadingRate
@@ -76,6 +77,9 @@ class TestAddwpt:
         route = runtime.traffic.ap.route[0]
         assert "error:" not in out.lower()
         assert route.wpname == [f"T/O-{aircraft}"]
+        rwylat, rwylon, _ = runtime.traffic.navigation.rwythresholds["EHAM"]["06"]
+        _, distance_to_waypoint = geo.qdrdist(rwylat, rwylon, route.wplat[0], route.wplon[0])
+        assert distance_to_waypoint == pytest.approx(q.nmi_to_m(2.0), rel=1e-3)
 
     def test_dest_resolves_airport(
         self, runtime: MiniSky, run_cmd: RunCommand, aircraft: str
@@ -312,15 +316,15 @@ class TestGuidanceGeometry:
         run_cmd(f"ADDWPT {aircraft} {wplat},{wplon}")
         run_cmd(f"LNAV {aircraft} ON")
 
-        def dist_nm() -> float:
+        def distance() -> float:
             return float(
                 np.asarray(
                     geo.kwikdist(runtime.traffic.lat[0], runtime.traffic.lon[0], wplat, wplon)
                 ).item()
             )
 
-        start = dist_nm()
-        step_until(lambda: dist_nm() < start / 2, max_steps=600)
+        start = distance()
+        step_until(lambda: distance() < start / 2, max_steps=600)
 
 
 class TestWaypointSwitching:

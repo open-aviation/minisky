@@ -18,10 +18,10 @@ from typing import TYPE_CHECKING, Any, Literal, Protocol
 import numpy as np
 import pandas as pd
 
+from minisky import quantities as q
 from minisky.command import Keyword, LatLonDeg, command
 from minisky.result import Err, Ok, Result
 from minisky.tools import geo
-from minisky.tools.aero import nm
 
 if TYPE_CHECKING:
     from minisky.simulation.console import ConsoleIO
@@ -347,7 +347,10 @@ class Navdatabase:
                 return imin
 
     def getwpindices(
-        self, txt: str, reference: LatLonReference | None = None, crit: float = 1852.0
+        self,
+        txt: str,
+        reference: LatLonReference | None = None,
+        crit: float = q.nmi_to_m(1.0),
     ) -> list[int]:
         """Get indices of a waypoint and its co-located duplicates.
 
@@ -392,7 +395,7 @@ class Navdatabase:
                 indices = [imin]
                 for i in idx:
                     if i != imin:
-                        dist = nm * geo.kwikdist(
+                        dist = geo.kwikdist(
                             self.wplat[i],
                             self.wplon[i],
                             self.wplat[imin],
@@ -623,7 +626,7 @@ class Navdatabase:
                 newitem = [self.awid[i], self.awtowpid[i]]
                 if (newitem not in connect) and geo.kwikdist(
                     self.awfromlat[i], self.awfromlon[i], wplat, wplon
-                ) < 10.0:
+                ) < q.nmi_to_m(10.0):
                     connect.append(newitem)
 
         # Check to-list nextt
@@ -633,7 +636,7 @@ class Navdatabase:
                 newitem = [self.awid[i], self.awfromwpid[i]]
                 if (newitem not in connect) and geo.kwikdist(
                     self.awtolat[i], self.awtolon[i], wplat, wplon
-                ) < 10.0:
+                ) < q.nmi_to_m(10.0):
                     connect.append(newitem)
 
         return connect  # return list of [awid,wpid]
