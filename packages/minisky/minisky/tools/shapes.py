@@ -9,6 +9,7 @@ from typing import NamedTuple, Protocol
 import numpy as np
 import shapely
 
+from minisky import quantities as q
 from minisky.command import AltM, Keyword, LatLonDeg, LatLonDegrees, command
 from minisky.result import Err, Ok, Result
 from minisky.tools.geo import kwikdist
@@ -56,7 +57,7 @@ class Shapes:
         bottom: AltM | None = None,
     ) -> Result[str, str]:
         """Define a circular area from a center and radius in nautical miles."""
-        self._store_area(name, Circle(center, radius, top, bottom))
+        self._store_area(name, Circle(center, q.nmi_to_m(radius), top, bottom))
         return Ok(f"Created CIRCLE {name}")
 
     @command(name="LINE")
@@ -189,7 +190,7 @@ class Box(HasArea):
 class Circle(HasArea):
     """A circle shape.
 
-    Defined by a center position [deg], a radius [nm], and optional
+    Defined by a center position [deg], a radius [m], and optional
     altitude bounds [m].
     """
 
@@ -206,8 +207,8 @@ class Circle(HasArea):
 
     def contains(self, lat: np.ndarray, lon: np.ndarray, alt: np.ndarray) -> np.ndarray:
         """Return whether points (lat [deg], lon [deg], alt [m]) lie within
-        the circle radius [nm] and altitude bounds."""
-        distance = kwikdist(self.center.lat, self.center.lon, lat, lon)  # [NM]
+        the circle radius [m] and altitude bounds."""
+        distance = kwikdist(self.center.lat, self.center.lon, lat, lon)  # [m]
         return (distance <= self.radius) & _inside_altitude_bounds(alt, self.altitude_bounds)
 
 

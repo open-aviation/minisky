@@ -2,6 +2,7 @@
 
 import numpy as np
 import pytest
+from minisky import quantities as q
 from minisky.command import LatLonDegrees
 from minisky.tools.shapes import Box, Circle, HasArea, Poly, Shapes
 

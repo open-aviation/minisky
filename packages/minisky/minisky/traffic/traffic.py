@@ -680,7 +680,7 @@ class Traffic(TrafficArrays):
         brn = np.degrees(np.atan2(-rx * vreln + rd * vrele, rd * vreln + rx * vrele))
 
         # Calculate intruder lat/lon
-        aclat, aclon = geo.kwikpos(latref, lonref, brn, dist / nm)
+        aclat, aclon = geo.kwikpos(latref, lonref, brn, dist)
         aclat_scalar = float(aclat)
         aclon_scalar = float(aclon)
         # convert groundspeed to CAS, and track to heading using actual

@@ -5,6 +5,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 from minisky import MiniSky
+from minisky import quantities as q
+from minisky.command import LatLonDegrees
 from minisky.simulation import Simulation
 from minisky.traffic.wind import WindFieldKind
 from tests._types import RunCommand
