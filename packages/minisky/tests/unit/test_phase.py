@@ -6,44 +6,45 @@ The fixed-wing altitude bands must be non-overlapping: an aircraft exactly at
 
 import numpy as np
 from minisky.traffic.performance import phase
-from minisky.traffic.performance.coeff import LIFT_FIXWING, LIFT_ROTOR
+from minisky.traffic.performance.coeff import LiftType
+from minisky.traffic.performance.phase import FlightPhase
 
 FT = 0.3048
 FPM = 0.00508
 
 
-def fixwing_phase(alt_ft: float, roc_fpm: float, spd_kts: float = 150.0) -> int:
+def fixwing_phase(alt_ft: float, roc_fpm: float, spd_kts: float = 150.0) -> FlightPhase:
     ph = phase.get_fixwing(np.array([spd_kts]), np.array([roc_fpm]), np.array([alt_ft]), unit="EP")
-    return int(ph[0])
+    return FlightPhase(int(ph[0]))
 
-
+# NOTE(abraham): most of these tests look useless, remove?
 class TestFixwingBoundaries:
     def test_exactly_75ft_climbing_is_ground(self) -> None:
-        assert fixwing_phase(75.0, 500.0) == phase.GD
+        assert fixwing_phase(75.0, 500.0) == FlightPhase.GROUND
 
     def test_exactly_75ft_descending_is_ground(self) -> None:
-        assert fixwing_phase(75.0, -500.0) == phase.GD
+        assert fixwing_phase(75.0, -500.0) == FlightPhase.GROUND
 
     def test_just_above_75ft_climbing_is_initial_climb(self) -> None:
-        assert fixwing_phase(76.0, 500.0) == phase.IC
+        assert fixwing_phase(76.0, 500.0) == FlightPhase.INITIAL_CLIMB
 
     def test_just_above_75ft_descending_is_approach(self) -> None:
-        assert fixwing_phase(76.0, -500.0) == phase.AP
+        assert fixwing_phase(76.0, -500.0) == FlightPhase.APPROACH
 
     def test_exactly_1000ft_climbing_is_initial_climb(self) -> None:
-        assert fixwing_phase(1000.0, 500.0) == phase.IC
+        assert fixwing_phase(1000.0, 500.0) == FlightPhase.INITIAL_CLIMB
 
     def test_exactly_1000ft_descending_is_approach(self) -> None:
-        assert fixwing_phase(1000.0, -500.0) == phase.AP
+        assert fixwing_phase(1000.0, -500.0) == FlightPhase.APPROACH
 
     def test_just_above_1000ft_climbing_is_climb(self) -> None:
-        assert fixwing_phase(1001.0, 500.0) == phase.CL
+        assert fixwing_phase(1001.0, 500.0) == FlightPhase.CLIMB
 
     def test_just_above_1000ft_descending_is_descent(self) -> None:
-        assert fixwing_phase(1001.0, -500.0) == phase.DE
+        assert fixwing_phase(1001.0, -500.0) == FlightPhase.DESCENT
 
     def test_level_above_10000ft_is_cruise(self) -> None:
-        assert fixwing_phase(30000.0, 0.0) == phase.CR
+        assert fixwing_phase(30000.0, 0.0) == FlightPhase.CRUISE
 
     def test_boundary_conditions_assign_exactly_one_phase(self) -> None:
         # Each altitude/roc band must match exactly one condition
@@ -62,12 +63,12 @@ class TestFixwingBoundaries:
 
     def test_si_units_exactly_75ft_is_ground(self) -> None:
         ph = phase.get_fixwing(np.array([80.0]), np.array([5.0]), np.array([75.0 * FT]), unit="SI")
-        assert ph[0] == phase.GD
+        assert ph[0] == FlightPhase.GROUND
 
 
 class TestGetDtype:
     def test_get_returns_integer_dtype(self) -> None:
-        lifttype = np.array([LIFT_FIXWING, LIFT_ROTOR])
+        lifttype = np.array([LiftType.FIXED_WING.value, LiftType.ROTORCRAFT.value])
         ph = phase.get(
             lifttype,
             np.array([150.0, 50.0]),
@@ -76,8 +77,8 @@ class TestGetDtype:
             unit="EP",
         )
         assert np.issubdtype(ph.dtype, np.integer)
-        assert ph[0] == phase.CR
-        assert ph[1] == phase.NA
+        assert ph[0] == FlightPhase.CRUISE
+        assert ph[1] == FlightPhase.UNKNOWN
 
     def test_get_fixwing_returns_integer_dtype(self) -> None:
         ph = phase.get_fixwing(np.array([150.0]), np.array([0.0]), np.array([2000.0]), unit="EP")

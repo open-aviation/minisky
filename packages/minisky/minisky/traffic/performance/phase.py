@@ -1,45 +1,40 @@
 """Flight-phase identification for the OpenAP performance model.
 
 Infers the phase of flight of each aircraft from its speed, vertical rate,
-and altitude. The phase identifiers defined here (NA, GD, IC, CL, CR, DE, AP)
-are used by the performance model to select the applicable drag polar,
+and altitude. `FlightPhase` values are used by the performance model to select the applicable drag polar,
 thrust model, speed limits, and bank angle. Fixed-wing phases are determined
 with simple altitude/vertical-rate thresholds; rotorcraft are always
-classified as NA (unknown).
+classified as `FlightPhase.UNKNOWN`.
 """
+
+from enum import IntEnum
 
 import numpy as np
 
-from .coeff import LIFT_FIXWING, LIFT_ROTOR
-
-NA = 0  # Unknown phase
-GD = 1  # Ground
-IC = 2  # Initial climb
-CL = 3  # Climb
-CR = 4  # Cruise
-DE = 5  # Descent
-AP = 6  # Approach
+from .coeff import LiftType
 
 
-def readable_phase(ph: int) -> str:
-    """Return the human-readable name of a flight-phase identifier.
+class FlightPhase(IntEnum):
+    UNKNOWN = 0
+    GROUND = 1
+    INITIAL_CLIMB = 2
+    CLIMB = 3
+    CRUISE = 4
+    DESCENT = 5
+    APPROACH = 6
 
-    Args:
-        ph (int): Phase identifier (0-6, i.e. NA, GD, IC, CL, CR, DE, AP).
 
-    Returns:
-        str: Phase name, e.g. "Cruise".
-    """
-    phases = {
-        0: "Unknown phase",
-        1: "Ground",
-        2: "Initial climb",
-        3: "Climb",
-        4: "Cruise",
-        5: "Descent",
-        6: "Approach",
-    }
-    return phases[ph]
+def readable_phase(phase: FlightPhase) -> str:
+    """Return the human-readable name of a flight phase."""
+    return {
+        FlightPhase.UNKNOWN: "Unknown phase",
+        FlightPhase.GROUND: "Ground",
+        FlightPhase.INITIAL_CLIMB: "Initial climb",
+        FlightPhase.CLIMB: "Climb",
+        FlightPhase.CRUISE: "Cruise",
+        FlightPhase.DESCENT: "Descent",
+        FlightPhase.APPROACH: "Approach",
+    }[phase]
 
 
 def get(
@@ -55,23 +50,22 @@ def get(
     with :func:`get_rotor`.
 
     Args:
-        lifttype (1D array): Lift type per aircraft, LIFT_FIXWING (1) or
-            LIFT_ROTOR (2).
+        lifttype (1D array): Lift type per aircraft.
         spd (1D array): Aircraft speed(s); [m/s] for unit "SI", [kts] for "EP".
         roc (1D array): Vertical rate(s); [m/s] for "SI", [fpm] for "EP".
         alt (1D array): Altitude(s); [m] for "SI", [ft] for "EP".
         unit (str): Unit convention of the inputs, "SI" (default) or "EP".
 
     Returns:
-        1D array: Phase identifier per aircraft (NA, GD, IC, CL, CR, DE, AP).
+        1D array: `FlightPhase` values per aircraft.
     """
-    ph = np.zeros(len(spd), dtype=int)
+    ph = np.full(len(spd), FlightPhase.UNKNOWN.value, dtype=int)
 
     # phase for fixwings
-    ph = np.where(lifttype == LIFT_FIXWING, get_fixwing(spd, roc, alt, unit), ph)
+    ph = np.where(lifttype == LiftType.FIXED_WING, get_fixwing(spd, roc, alt, unit), ph)
 
     # phase for rotors
-    ph = np.where(lifttype == LIFT_ROTOR, get_rotor(spd, roc, alt, unit), ph)
+    ph = np.where(lifttype == LiftType.ROTORCRAFT, get_rotor(spd, roc, alt, unit), ph)
     return ph
 
 
@@ -95,7 +89,7 @@ def get_fixwing(spd: np.ndarray, roc: np.ndarray, alt: np.ndarray, unit: str = "
         unit (String):  unit, default 'SI', option 'EP'
 
     Returns:
-        int or 1D array: phase indentifier (NA, GD, IC, CL, CR, DE, AP)
+        1D array: `FlightPhase` values.
 
     Raises:
         RuntimeError: If ``unit`` is not "SI" or "EP".
@@ -109,23 +103,23 @@ def get_fixwing(spd: np.ndarray, roc: np.ndarray, alt: np.ndarray, unit: str = "
         roc = roc / 0.00508
         alt = alt / 0.3048
 
-    ph = np.zeros(len(spd), dtype=int)
+    ph = np.full(len(spd), FlightPhase.UNKNOWN.value, dtype=int)
 
-    ph[(alt <= 75)] = GD
-    ph[(alt > 75) & (alt <= 1000) & (roc >= 150)] = IC
-    ph[(alt > 75) & (alt <= 1000) & (roc <= -150)] = AP
-    ph[(alt > 1000) & (roc >= 150)] = CL
-    ph[(alt > 1000) & (roc <= -150)] = DE
-    ph[(alt >= 10000) & (roc < 150) & (roc > -150)] = CR
+    ph[alt <= 75] = FlightPhase.GROUND.value
+    ph[(alt > 75) & (alt <= 1000) & (roc >= 150)] = FlightPhase.INITIAL_CLIMB.value
+    ph[(alt > 75) & (alt <= 1000) & (roc <= -150)] = FlightPhase.APPROACH.value
+    ph[(alt > 1000) & (roc >= 150)] = FlightPhase.CLIMB.value
+    ph[(alt > 1000) & (roc <= -150)] = FlightPhase.DESCENT.value
+    ph[(alt >= 10000) & (roc < 150) & (roc > -150)] = FlightPhase.CRUISE.value
 
     return ph
 
 
 def get_rotor(spd: np.ndarray, roc: np.ndarray, alt: np.ndarray, unit: str = "SI") -> np.ndarray:
-    """Get the flight phase for rotorcraft (always NA).
+    """Get the flight phase for rotorcraft (always unknown).
 
     Rotorcraft phase identification is not implemented; all rotorcraft are
-    classified as NA (unknown phase).
+    classified as `FlightPhase.UNKNOWN`.
 
     Args:
         spd (float or 1D array): aircraft speed(s) (unused).
@@ -134,7 +128,7 @@ def get_rotor(spd: np.ndarray, roc: np.ndarray, alt: np.ndarray, unit: str = "SI
         unit (str): unit convention, "SI" or "EP" (unused).
 
     Returns:
-        1D array: NA phase identifier for every aircraft.
+        1D array: `FlightPhase.UNKNOWN` for every aircraft.
     """
-    ph = np.full(len(spd), NA, dtype=int)
+    ph = np.full(len(spd), FlightPhase.UNKNOWN.value, dtype=int)
     return ph

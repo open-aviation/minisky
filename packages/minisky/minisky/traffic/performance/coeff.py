@@ -10,15 +10,21 @@ values are stored in SI units. The [`Coefficient`][] container is instantiated o
 
 import json
 import warnings
+from enum import IntEnum
 
 import numpy as np
 from openap import WRAP, drag, prop
 
 from minisky.core.config import data
 
-LIFT_FIXWING = 1  # fixwing aircraft
-LIFT_ROTOR = 2  # rotor aircraft
 
+class LiftType(IntEnum):
+    FIXED_WING = 1
+    ROTORCRAFT = 2
+
+
+# TODO(abraham): remove the unused engine-type codes and OpenAP.engtype array?
+# seems like it is dead?
 ENG_TYPE_TF = 1  # turbofan, fixwing
 ENG_TYPE_TP = 2  # turboprop, fixwing
 ENG_TYPE_TS = 3  # turboshlft, rotor
@@ -90,7 +96,7 @@ class Coefficient:
         acs_ = {}
         for mdl, ac in acs.items():
             acs_[mdl.upper()] = ac.copy()
-            acs_[mdl.upper()]["lifttype"] = LIFT_ROTOR
+            acs_[mdl.upper()]["lifttype"] = LiftType.ROTORCRAFT
         return acs_
 
     def _load_all_fixwing_envelop(self) -> dict:

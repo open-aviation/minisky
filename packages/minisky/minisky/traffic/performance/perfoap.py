@@ -22,6 +22,7 @@ from minisky.tools.aero import fpm, ft, kts
 
 from . import coeff, thrust
 from . import phase as ph
+from .phase import FlightPhase
 
 if TYPE_CHECKING:
     from minisky.traffic import Traffic
@@ -46,7 +47,7 @@ class OpenAP(TrafficArrays):
 
     Attributes:
         actype (ndarray): ICAO aircraft type code per aircraft.
-        lifttype (ndarray): Lift type, fixed-wing (1) or rotor (2) [-].
+        lifttype (ndarray): `LiftType` values [-].
         Sref (ndarray): Wing reference surface area [m^2].
         mass (ndarray): Effective mass, mean of OEW and MTOW [kg].
         phase (ndarray): Current flight phase identifier (see `phase`) [-].
@@ -87,7 +88,7 @@ class OpenAP(TrafficArrays):
 
             # --- dynamic parameters ---
             self.mass = np.array([])  # effective mass [kg]
-            self.phase = np.array([])
+            self.phase = np.array([], dtype=int)
             self.cd0 = np.array([])
             self.k = np.array([])
             self.bank = np.array([])
@@ -103,7 +104,7 @@ class OpenAP(TrafficArrays):
             self.vsmax = np.array([])  # Maximum climb speed [m/s]
             self.axmax = np.array([])  # Max/min acceleration [m/s2]
 
-            self.lifttype = np.array([])  # lift type, fixwing [1] or rotor [2]
+            self.lifttype = np.array([], dtype=int)
             self.engnum = np.array([], dtype=int)  # number of engines
             self.engthrmax = np.array([])  # static engine thrust
             self.engbpr = np.array([])  # engine bypass ratio
@@ -156,7 +157,7 @@ class OpenAP(TrafficArrays):
         # initialize aircraft / engine performance parameters
         # check fixwing or rotor, default to fixwing
         if actype in self.coeff.actypes_rotor:
-            self.lifttype[-n:] = coeff.LIFT_ROTOR
+            self.lifttype[-n:] = coeff.LiftType.ROTORCRAFT
             self.mass[-n:] = 0.5 * (
                 self.coeff.acs_rotor[actype]["oew"] + self.coeff.acs_rotor[actype]["mtow"]
             )
@@ -175,7 +176,7 @@ class OpenAP(TrafficArrays):
                 e["ff_idl"], e["ff_app"], e["ff_co"], e["ff_to"]
             )
 
-            self.lifttype[-n:] = coeff.LIFT_FIXWING
+            self.lifttype[-n:] = coeff.LiftType.FIXED_WING
 
             self.Sref[-n:] = self.coeff.acs_fixwing[actype]["wing"]["area"]
             self.mass[-n:] = 0.5 * (
@@ -274,27 +275,40 @@ class OpenAP(TrafficArrays):
         # update speed limits, based on phase change
         self.vmin, self.vmax = self._construct_v_limits()
 
-        idx_fixwing = np.where(self.lifttype == coeff.LIFT_FIXWING)[0]
+        idx_fixwing = np.where(self.lifttype == coeff.LiftType.FIXED_WING)[0]
 
         # ----- compute drag -----
         # update drage coefficient based on flight phase
-        self.cd0[self.phase == ph.GD] = (
-            self.cd0_to[self.phase == ph.GD] + self.delta_cd_gear[self.phase == ph.GD]
+        self.cd0[self.phase == FlightPhase.GROUND] = (
+            self.cd0_to[self.phase == FlightPhase.GROUND]
+            + self.delta_cd_gear[self.phase == FlightPhase.GROUND]
         )
-        self.cd0[self.phase == ph.IC] = self.cd0_to[self.phase == ph.IC]
-        self.cd0[self.phase == ph.AP] = self.cd0_ld[self.phase == ph.AP]
-        self.cd0[self.phase == ph.CL] = self.cd0_clean[self.phase == ph.CL]
-        self.cd0[self.phase == ph.CR] = self.cd0_clean[self.phase == ph.CR]
-        self.cd0[self.phase == ph.DE] = self.cd0_clean[self.phase == ph.DE]
-        self.cd0[self.phase == ph.NA] = self.cd0_clean[self.phase == ph.NA]
+        self.cd0[self.phase == FlightPhase.INITIAL_CLIMB] = self.cd0_to[
+            self.phase == FlightPhase.INITIAL_CLIMB
+        ]
+        self.cd0[self.phase == FlightPhase.APPROACH] = self.cd0_ld[
+            self.phase == FlightPhase.APPROACH
+        ]
+        self.cd0[self.phase == FlightPhase.CLIMB] = self.cd0_clean[self.phase == FlightPhase.CLIMB]
+        self.cd0[self.phase == FlightPhase.CRUISE] = self.cd0_clean[
+            self.phase == FlightPhase.CRUISE
+        ]
+        self.cd0[self.phase == FlightPhase.DESCENT] = self.cd0_clean[
+            self.phase == FlightPhase.DESCENT
+        ]
+        self.cd0[self.phase == FlightPhase.UNKNOWN] = self.cd0_clean[
+            self.phase == FlightPhase.UNKNOWN
+        ]
 
-        self.k[self.phase == ph.GD] = self.k_to[self.phase == ph.GD]
-        self.k[self.phase == ph.IC] = self.k_to[self.phase == ph.IC]
-        self.k[self.phase == ph.AP] = self.k_ld[self.phase == ph.AP]
-        self.k[self.phase == ph.CL] = self.k_clean[self.phase == ph.CL]
-        self.k[self.phase == ph.CR] = self.k_clean[self.phase == ph.CR]
-        self.k[self.phase == ph.DE] = self.k_clean[self.phase == ph.DE]
-        self.k[self.phase == ph.NA] = self.k_clean[self.phase == ph.NA]
+        self.k[self.phase == FlightPhase.GROUND] = self.k_to[self.phase == FlightPhase.GROUND]
+        self.k[self.phase == FlightPhase.INITIAL_CLIMB] = self.k_to[
+            self.phase == FlightPhase.INITIAL_CLIMB
+        ]
+        self.k[self.phase == FlightPhase.APPROACH] = self.k_ld[self.phase == FlightPhase.APPROACH]
+        self.k[self.phase == FlightPhase.CLIMB] = self.k_clean[self.phase == FlightPhase.CLIMB]
+        self.k[self.phase == FlightPhase.CRUISE] = self.k_clean[self.phase == FlightPhase.CRUISE]
+        self.k[self.phase == FlightPhase.DESCENT] = self.k_clean[self.phase == FlightPhase.DESCENT]
+        self.k[self.phase == FlightPhase.UNKNOWN] = self.k_clean[self.phase == FlightPhase.UNKNOWN]
 
         rho = aero.vdensity(self.traffic.alt[idx_fixwing])
         vtas = self.traffic.tas[idx_fixwing]
@@ -335,13 +349,15 @@ class OpenAP(TrafficArrays):
         self.axmax = self.calc_axmax()
 
         # TODO: implement thrust computation for rotor aircraft
-        # idx_rotor = np.where(self.lifttype==coeff.LIFT_ROTOR)[0]
+        # idx_rotor = np.where(self.lifttype==coeff.LiftType.ROTORCRAFT)[0]
         # self.thrust[idx_rotor] = 0
 
         # update bank angle, due to phase change
-        self.bank = np.where((self.phase == ph.GD), 15, self.bank)
+        self.bank = np.where((self.phase == FlightPhase.GROUND), 15, self.bank)
         self.bank = np.where(
-            (self.phase == ph.IC) | (self.phase == ph.CR) | (self.phase == ph.AP),
+            (self.phase == FlightPhase.INITIAL_CLIMB)
+            | (self.phase == FlightPhase.CRUISE)
+            | (self.phase == FlightPhase.APPROACH),
             35,
             self.bank,
         )
@@ -397,11 +413,11 @@ class OpenAP(TrafficArrays):
             (intent_vs < 0) & (intent_vs < self.vsmin), vs_min_with_acc, allow_vs
         )  # for descent with vs smaller than vsmin (negative)
         allow_vs = np.where(
-            (self.phase == ph.GD) & (self.traffic.tas < self.vminto), 0, allow_vs
+            (self.phase == FlightPhase.GROUND) & (self.traffic.tas < self.vminto), 0, allow_vs
         )  # takeoff aircraft
 
         # corect rotercraft speed limits
-        ir = np.where(self.lifttype == coeff.LIFT_ROTOR)[0]
+        ir = np.where(self.lifttype == coeff.LiftType.ROTORCRAFT)[0]
         allow_v_tas[ir] = np.where(
             (intent_v_tas[ir] < self.vmin[ir]), self.vmin[ir], intent_v_tas[ir]
         )
@@ -468,7 +484,7 @@ class OpenAP(TrafficArrays):
         vmin = np.zeros(n)
         vmax = np.zeros(n)
 
-        ifw = np.where(np.logical_and(self.lifttype == coeff.LIFT_FIXWING, mask))[0]
+        ifw = np.where(np.logical_and(self.lifttype == coeff.LiftType.FIXED_WING, mask))[0]
         vminfw = np.zeros(len(ifw))
         vmaxfw = np.zeros(len(ifw))
 
@@ -476,29 +492,27 @@ class OpenAP(TrafficArrays):
         # obtain flight envelope for speed, roc, and alt, based on flight phase
 
         # --- minimum speed ---
-        vminfw = np.where(self.phase[ifw] == ph.NA, 0, vminfw)
-        vminfw = np.where(self.phase[ifw] == ph.IC, self.vminic[ifw], vminfw)
-        vminfw = np.where(
-            (self.phase[ifw] >= ph.CL) | (self.phase[ifw] <= ph.DE),
-            self.vminer[ifw],
-            vminfw,
+        vminfw = np.where(self.phase[ifw] == FlightPhase.UNKNOWN, 0, vminfw)
+        vminfw = np.where(self.phase[ifw] == FlightPhase.INITIAL_CLIMB, self.vminic[ifw], vminfw)
+        fixedwing_phase = self.phase[ifw]
+        enroute = (
+            (fixedwing_phase == FlightPhase.CLIMB)
+            | (fixedwing_phase == FlightPhase.CRUISE)
+            | (fixedwing_phase == FlightPhase.DESCENT)
         )
-        vminfw = np.where(self.phase[ifw] == ph.AP, self.vminap[ifw], vminfw)
-        vminfw = np.where(self.phase[ifw] == ph.GD, 0, vminfw)
+        vminfw = np.where(enroute, self.vminer[ifw], vminfw)
+        vminfw = np.where(self.phase[ifw] == FlightPhase.APPROACH, self.vminap[ifw], vminfw)
+        vminfw = np.where(self.phase[ifw] == FlightPhase.GROUND, 0, vminfw)
 
         # --- maximum speed ---
-        vmaxfw = np.where(self.phase[ifw] == ph.NA, self.vmaxer[ifw], vmaxfw)
-        vmaxfw = np.where(self.phase[ifw] == ph.IC, self.vmaxic[ifw], vmaxfw)
-        vmaxfw = np.where(
-            (self.phase[ifw] >= ph.CL) | (self.phase[ifw] <= ph.DE),
-            self.vmaxer[ifw],
-            vmaxfw,
-        )
-        vmaxfw = np.where(self.phase[ifw] == ph.AP, self.vmaxap[ifw], vmaxfw)
-        vmaxfw = np.where(self.phase[ifw] == ph.GD, self.vmaxic[ifw], vmaxfw)
+        vmaxfw = np.where(self.phase[ifw] == FlightPhase.UNKNOWN, self.vmaxer[ifw], vmaxfw)
+        vmaxfw = np.where(self.phase[ifw] == FlightPhase.INITIAL_CLIMB, self.vmaxic[ifw], vmaxfw)
+        vmaxfw = np.where(enroute, self.vmaxer[ifw], vmaxfw)
+        vmaxfw = np.where(self.phase[ifw] == FlightPhase.APPROACH, self.vmaxap[ifw], vmaxfw)
+        vmaxfw = np.where(self.phase[ifw] == FlightPhase.GROUND, self.vmaxic[ifw], vmaxfw)
 
         # rotor
-        ir = np.where(np.logical_and(self.lifttype == coeff.LIFT_ROTOR, mask))[0]
+        ir = np.where(np.logical_and(self.lifttype == coeff.LiftType.ROTORCRAFT, mask))[0]
         vminr = self.vmin[ir]
         vmaxr = self.vmax[ir]
 
@@ -530,10 +544,10 @@ class OpenAP(TrafficArrays):
         axmax = (self.max_thrust - self.drag) / self.mass
 
         # fix-wing, on ground
-        axmax[self.phase == ph.GD] = axmax_fixwing_ground
+        axmax[self.phase == FlightPhase.GROUND] = axmax_fixwing_ground
 
         # drones
-        axmax[self.lifttype == coeff.LIFT_ROTOR] = axmax_rotor
+        axmax[self.lifttype == coeff.LiftType.ROTORCRAFT] = axmax_rotor
 
         # global minumum acceleration
         axmax[axmax < 0.5] = 0.5
@@ -552,7 +566,7 @@ class OpenAP(TrafficArrays):
             acid (int): Aircraft index.
         """
         return Ok(
-            f"Flight phase: {ph.readable_phase(self.phase[acid])}\n"
+            f"Flight phase: {ph.readable_phase(FlightPhase(int(self.phase[acid])))}\n"
             f"Thrust: {self.thrust[acid] / 1000:.0f} kN\n"
             f"Drag: {self.drag[acid] / 1000:.0f} kN\n"
             f"Fuel flow: {self.fuelflow[acid]:.2f} kg/s\n"
