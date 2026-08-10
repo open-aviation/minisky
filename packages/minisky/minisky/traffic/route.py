@@ -360,18 +360,13 @@ class Route:
                     beforewp and self.wpname.count(bfwp) > 0
                 ):
                     wpidx = self.wpname.index(aftwp) + 1 if afterwp else self.wpname.index(bfwp)
-
-                    self.insert_wpt_data(wpidx, newname, wplat, wplon, wptype, alt, spd)
-
-                    if (active_idx := self.iactwp) is not None and afterwp and active_idx >= wpidx:
-                        self.iactwp = active_idx + 1
-
-                # No afterwp: append, just before dest if there is a dest
                 else:
-                    # Is there a destination?
+                    # Append, just before dest if there is a dest
                     wpidx = n_wpt - 1 if n_wpt > 0 and self.wptype[-1] == Route.dest else n_wpt
 
-                    self.insert_wpt_data(wpidx, newname, wplat, wplon, wptype, alt, spd)
+                self.insert_wpt_data(wpidx, newname, wplat, wplon, wptype, alt, spd)
+                if (active_idx := self.iactwp) is not None and active_idx >= wpidx:
+                    self.iactwp = active_idx + 1
 
                 idx = wpidx
                 n_wpt += 1
