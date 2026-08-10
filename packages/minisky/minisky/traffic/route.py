@@ -52,7 +52,7 @@ from minisky.result import Err, Ok, Result
 
 # from minisky.core import Replaceable
 from minisky.tools import geo
-from minisky.tools.aero import casormach2tas, ft, g0, kts, mach2cas, nm
+from minisky.tools.aero import casormach2tas, ft, g0, kts, mach2cas, nm, vcas2tas
 from minisky.tools.convert import degto180
 from minisky.tools.position import txt2pos
 
@@ -652,9 +652,7 @@ class Route:
 
                     # This fixed-speed leg is excluded from RTA distance, so subtract its
                     # travel time from the target time instead.
-                    # FIXME(abraham): BlueSky f352d73 (2019-07-14) computes this leg time
-                    # from nautical miles / m/s, missing the nm conversion.
-                    legtime = self.wpdistto[i + 1] / legtas
+                    legtime = self.wpdistto[i + 1] * nm / legtas
                     rta_target = RtaTarget(rta_target.time - legtime, rta_target.distance)
             else:
                 rta_target = None
@@ -1282,22 +1280,23 @@ def direct(traffic: Traffic, acidx: int, wpname: str) -> bool:
     traffic.ap.qdr2wp[acidx] = qdr_ % 360.0
     traffic.ap.dist2wp[acidx] = leg_distance
 
-    # FIXME(abraham): BlueSky a918582 (2022-12-30) introduced a bug: an explicit radius
-    # is ignored when no heading rate is set because this path falls back to bank-derived radius
-    if isinstance(geometry, TurnHeadingRate):
-        turnrad = traffic.tas[acidx] * 360.0 / (2 * math.pi * geometry.heading_rate)
-    else:
-        turnrad = (
-            traffic.tas[acidx] * traffic.tas[acidx] / math.tan(math.radians(acrte.bank)) / g0 / nm
-        )
-
-    # TODO(abraham): direct() still mixes nautical-mile turn geometry with the SI
-    # ActiveWaypoint turn-distance boundary; migrate this calculation to SI.
+    next_qdr = acrte.getnextqdr()
+    turn_geometry = traffic.actwp.calcturn(
+        traffic.tas[acidx],
+        traffic.ap.bankdef[acidx],
+        qdr_,
+        qdr_ if next_qdr is None else next_qdr,
+        traffic.actwp.turnrad[acidx : acidx + 1],
+        traffic.actwp.turnhdgr[acidx : acidx + 1],
+        traffic.actwp.flyturn[acidx],
+    )
+    turn_distance = turn_geometry.distance.item()
+    if turn is not None and turn.geometry is None and turn.speed is not None:
+        turn_tas = vcas2tas(turn.speed, traffic.alt[acidx])
+        turn_distance *= turn_tas * turn_tas / (traffic.tas[acidx] * traffic.tas[acidx])
     traffic.actwp.turndist[acidx] = (
-        np.logical_or(isinstance(geometry, TurnHeadingRate), traffic.actwp.flyby[acidx] > 0.5)
-        * turnrad
-        * abs(math.tan(0.5 * math.radians(max(5.0, abs(degto180(qdr_ - acrte.wpdirfrom[wpidx]))))))
-    )  # [nm]
+        np.logical_or(traffic.actwp.flyby[acidx], traffic.actwp.flyturn[acidx]) * turn_distance
+    )
 
     # NOTE: in bluesky cca80df (2016-11-05), ComputeVNAV() was inserted before
     # the direct-to leg geometry had been calculated
