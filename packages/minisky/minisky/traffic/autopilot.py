@@ -437,9 +437,9 @@ class Autopilot(TrafficArrays):
             tas = self.traffic.tas[nxt]
 
             # Special turns: specified by turn radius, heading rate, and/or speed.
-            # If no turn speed is specified, use current speed for the active fly-turn.
+            # If no turn speed is specified, use current CAS for the active fly-turn.
             has_turn_speed = ~np.ma.getmaskarray(turnspd)
-            active_turn_speed = np.where(has_turn_speed, turnspd.data, tas)
+            active_turn_speed = np.where(has_turn_speed, turnspd.data, self.traffic.cas[nxt])
 
             # Use the previous turn geometry for bank angle in the current turn
             # (old values, from the waypoint we pass now; fancy indexing copies).
@@ -449,19 +449,20 @@ class Autopilot(TrafficArrays):
             has_oldturnrad = ~np.ma.getmaskarray(oldturnrad)
             has_oldturnhdgr = ~np.ma.getmaskarray(oldturnhdgr)
             has_oldturnspd = ~np.ma.getmaskarray(oldturnspd)
+            oldturntas = vcas2tas(
+                np.where(has_oldturnspd, oldturnspd.data, 0.0), self.traffic.alt[nxt]
+            )
             oldradius = np.where(
                 has_oldturnrad,
                 oldturnrad.data,
-                oldturnspd.data
+                oldturntas
                 * 360.0
                 / (2.0 * np.pi * np.where(has_oldturnhdgr, oldturnhdgr.data, 1.0)),
             )
             useoldturn = has_oldturnspd & (has_oldturnrad | has_oldturnhdgr)
             self.turnphi[nxt] = np.where(
                 useoldturn,
-                np.arctan(
-                    oldturnspd.data * oldturnspd.data / (np.where(useoldturn, oldradius, 1.0) * g0)
-                ),
+                np.arctan(oldturntas * oldturntas / (np.where(useoldturn, oldradius, 1.0) * g0)),
                 0.0,
             )  # [rad]
 

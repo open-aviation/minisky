@@ -42,10 +42,22 @@ class SurveillanceUncertainty(TrafficArrays):
         transnoise (bool): Whether transmission noise is added.
         truncated (bool): Whether updates are truncated to the update
             interval.
-        transerror (list): Standard deviations of the transmission noise:
-            [lat/lon error [deg], altitude error [m]].
+        position_noise_std (float): Latitude/longitude noise standard deviation [deg].
+        altitude_noise_std (float): Altitude noise standard deviation [m].
         trunctime (float): Minimum time between broadcast updates [s].
     """
+
+    position_noise_std: q.AngleDeg[float]
+    altitude_noise_std: q.VerticalDistanceM[float]
+    trunctime: q.DurationS[float]
+    lastupdate: q.SimulationTimeS[np.ndarray]
+    lat: q.LatitudeDeg[np.ndarray]
+    lon: q.LongitudeDeg[np.ndarray]
+    alt: q.PressureAltitudeM[np.ndarray]
+    trk: q.GroundTrackDeg[np.ndarray]
+    tas: q.TrueAirspeedMps[np.ndarray]
+    gs: q.GroundSpeedMps[np.ndarray]
+    vs: q.VerticalRateMps[np.ndarray]
 
     def __init__(self, traffic: Traffic, get_simulation: Callable[[], Simulation]) -> None:
         super().__init__(traffic)
@@ -70,19 +82,12 @@ class SurveillanceUncertainty(TrafficArrays):
         return implementation(self.traffic, self._get_simulation)
 
     def setnoise(self, n: bool) -> None:
-        """Switch surveillance noise on or off (part of the NOISE command).
-
-        Args:
-            n: True to enable transmission noise and truncation, False to
-                disable them.
-        """
+        """Switch surveillance noise on or off (part of the NOISE command)."""
         self.transnoise = n
         self.truncated = n
-        self.transerror = [
-            1e-4,
-            q.ft_to_m(100.0),
-        ]  # [degree,m] standard lat/lon distance, altitude error
-        self.trunctime = 0  # [s]
+        self.position_noise_std = 1e-4
+        self.altitude_noise_std = q.ft_to_m(100.0)
+        self.trunctime = 0.0
 
     def create(self, n: int = 1) -> None:
         """Initialize broadcast data for n newly created aircraft.
@@ -92,7 +97,7 @@ class SurveillanceUncertainty(TrafficArrays):
         simulation step.
 
         Args:
-            n: Number of aircraft that were appended to the traffic arrays.
+            n: Number of aircraft appended to the traffic arrays.
         """
         super().create(n)
 
@@ -103,6 +108,7 @@ class SurveillanceUncertainty(TrafficArrays):
         self.trk[-n:] = self.traffic.trk[-n:]
         self.tas[-n:] = self.traffic.tas[-n:]
         self.gs[-n:] = self.traffic.gs[-n:]
+        self.vs[-n:] = self.traffic.vs[-n:]
 
     def update(self) -> None:
         """Refresh the broadcast state of aircraft that are due an update.
@@ -116,13 +122,13 @@ class SurveillanceUncertainty(TrafficArrays):
         nup = len(up[0])
         if self.transnoise:
             self.lat[up] = self.traffic.lat[up] + self.traffic.numpy_random.normal(
-                0, self.transerror[0], nup
+                0, self.position_noise_std, nup
             )
             self.lon[up] = self.traffic.lon[up] + self.traffic.numpy_random.normal(
-                0, self.transerror[0], nup
+                0, self.position_noise_std, nup
             )
             self.alt[up] = self.traffic.alt[up] + self.traffic.numpy_random.normal(
-                0, self.transerror[1], nup
+                0, self.altitude_noise_std, nup
             )
         else:
             self.lat[up] = self.traffic.lat[up]
