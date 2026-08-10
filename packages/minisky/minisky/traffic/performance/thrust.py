@@ -20,10 +20,10 @@ from minisky.traffic.performance.phase import FlightPhase
 def compute_max_thr_ratio(
     phase: np.ndarray,
     bpr: np.ndarray,
-    v: np.ndarray,
-    h: np.ndarray,
-    vs: np.ndarray,
-    thr0: np.ndarray,
+    v: q.TrueAirspeedMps[np.ndarray],
+    h: q.PressureAltitudeM[np.ndarray],
+    vs: q.VerticalRateMps[np.ndarray],
+    thr0: q.ForceN[np.ndarray],
 ) -> np.ndarray:
     """Computer the dynamic thrust based on engine bypass-ratio, static maximum
     thrust, aircraft true airspeed, and aircraft altitude
@@ -34,15 +34,12 @@ def compute_max_thr_ratio(
     static thrust ``thr0``.
 
     Args:
-        phase (int or 1D-array): phase of flight, option: `FlightPhase` values
-        bpr (int or 1D-array): engine bypass ratio [-]
-        v (int or 1D-array): aircraft true airspeed [m/s]
-        h (int or 1D-array): aircraft altitude [m]
-        vs (int or 1D-array): aircraft vertical rate [m/s]
-        thr0 (int or 1D-array): total maximum static thrust of all engines [N]
+        phase: Flight phase, using `FlightPhase` values.
+        bpr: Engine bypass ratio.
+        thr0: Total maximum static thrust of all engines.
 
     Returns:
-        int or 1D-array: maximum thrust ratio (fraction of thr0) [-]
+        Available maximum thrust as a fraction of `thr0`.
     """
 
     n = len(phase)
@@ -61,7 +58,11 @@ def compute_max_thr_ratio(
     return tr
 
 
-def tr_takeoff(bpr: np.ndarray, v: np.ndarray, h: np.ndarray) -> np.ndarray:
+def tr_takeoff(
+    bpr: np.ndarray,
+    v: q.TrueAirspeedMps[np.ndarray],
+    h: q.PressureAltitudeM[np.ndarray],
+) -> np.ndarray:
     """Compute thrust ration at take-off.
 
     Empirical polynomial model of the thrust lapse of a turbofan during the
@@ -69,12 +70,10 @@ def tr_takeoff(bpr: np.ndarray, v: np.ndarray, h: np.ndarray) -> np.ndarray:
     parameterised by the engine bypass ratio.
 
     Args:
-        bpr (int or 1D-array): engine bypass ratio [-]
-        v (int or 1D-array): aircraft true airspeed [m/s]
-        h (int or 1D-array): aircraft altitude [m]
+        bpr: Engine bypass ratio.
 
     Returns:
-        int or 1D-array: takeoff thrust ratio (fraction of static thrust) [-]
+        Available takeoff thrust as a fraction of static thrust.
     """
     G0 = 0.0606 * bpr + 0.6337
     Mach = aero.vtas2mach(v, h)
@@ -95,7 +94,12 @@ def tr_takeoff(bpr: np.ndarray, v: np.ndarray, h: np.ndarray) -> np.ndarray:
     return ratio
 
 
-def inflight(v: np.ndarray, h: np.ndarray, vs: np.ndarray, thr0: np.ndarray) -> np.ndarray:
+def inflight(
+    v: q.TrueAirspeedMps[np.ndarray],
+    h: q.PressureAltitudeM[np.ndarray],
+    vs: q.VerticalRateMps[np.ndarray],
+    thr0: q.ForceN[np.ndarray],
+) -> np.ndarray:
     """Compute thrust ration for inflight.
 
     Empirical model of the in-flight maximum thrust of a turbofan. The
@@ -107,13 +111,10 @@ def inflight(v: np.ndarray, h: np.ndarray, vs: np.ndarray, thr0: np.ndarray) -> 
     static thrust.
 
     Args:
-        v (int or 1D-array): aircraft true airspeed [m/s]
-        h (int or 1D-array): aircraft altitude [m]
-        vs (int or 1D-array): aircraft vertical rate [m/s]
-        thr0 (int or 1D-array): total maximum static thrust of all engines [N]
+        thr0: Total maximum static thrust of all engines.
 
     Returns:
-        int or 1D-array: in-flight thrust ratio (fraction of thr0) [-]
+        Available in-flight thrust as a fraction of `thr0`.
     """
 
     def dfunc(mratio):
@@ -135,13 +136,15 @@ def inflight(v: np.ndarray, h: np.ndarray, vs: np.ndarray, thr0: np.ndarray) -> 
     vcas = aero.vtas2cas(v, h)
 
     p = aero.vpressure(h)
-    p10 = aero.vpressure(np.asarray(q.ft_to_m(10000.0)))
-    p35 = aero.vpressure(np.asarray(q.ft_to_m(35000.0)))
+    alt10 = q.ft_to_m(10000.0)
+    alt35 = q.ft_to_m(35000.0)
+    p10 = aero.vpressure(alt10)
+    p35 = aero.vpressure(alt35)
 
     # approximate thrust at top of climb (REF 2)
     F35 = q.lbf_to_n(200.0 + 0.2 * q.n_to_lbf(thr0))
     mach_ref = 0.8
-    vcas_ref = aero.vmach2cas(np.asarray(mach_ref), np.asarray(q.ft_to_m(35000.0)))
+    vcas_ref = aero.vmach2cas(mach_ref, alt35)
 
     # segment 3: alt > 35000:
     d = dfunc(mach / mach_ref)
@@ -159,9 +162,9 @@ def inflight(v: np.ndarray, h: np.ndarray, vs: np.ndarray, thr0: np.ndarray) -> 
     ratio_seg1 = m * (p / p35) + (F10 / F35 - m * (p10 / p35))
 
     ratio = np.where(
-        h > q.ft_to_m(35000.0),
+        h > alt35,
         ratio_seg3,
-        np.where(h > q.ft_to_m(10000.0), ratio_seg2, ratio_seg1),
+        np.where(h > alt10, ratio_seg2, ratio_seg1),
     )
 
     # convert to maximum static thrust ratio
@@ -171,16 +174,16 @@ def inflight(v: np.ndarray, h: np.ndarray, vs: np.ndarray, thr0: np.ndarray) -> 
 
 
 class FuelFlowCoefficients(NamedTuple):
-    quadratic: float | np.ndarray
-    """Quadratic fuel-flow coefficient [kg/s]."""
-    linear: float | np.ndarray
-    """Linear fuel-flow coefficient [kg/s]."""
-    constant: float | np.ndarray
-    """Constant fuel-flow coefficient [kg/s]."""
+    quadratic: q.MassFlowKgPerS
+    linear: q.MassFlowKgPerS
+    constant: q.MassFlowKgPerS
 
 
 def compute_eng_ff_coeff(
-    ffidl: float, ffapp: float, ffco: float, ffto: float
+    ffidl: q.MassFlowKgPerS,
+    ffapp: q.MassFlowKgPerS,
+    ffco: q.MassFlowKgPerS,
+    ffto: q.MassFlowKgPerS,
 ) -> FuelFlowCoefficients:
     """Compute fuel flow based on engine icao fuel flow model
 
@@ -190,10 +193,10 @@ def compute_eng_ff_coeff(
     engine as a function of thrust ratio x: ff = a*x^2 + b*x + c.
 
     Args:
-        ffidl (float or 1D-array): fuel flow at idle thrust (7%) [kg/s]
-        ffapp (float or 1D-array): fuel flow at approach thrust (30%) [kg/s]
-        ffco (float or 1D-array): fuel flow at climb-out thrust (85%) [kg/s]
-        ffto (float or 1D-array): fuel flow at takeoff thrust (100%) [kg/s]
+        ffidl: Measured fuel flow at idle thrust (7%)
+        ffapp: Measured fuel flow at approach thrust (30%)
+        ffco: Measured fuel flow at climb-out thrust (85%)
+        ffto: Measured fuel flow at takeoff thrust (100%)
     """
 
     # standard fuel flow at test thrust ratios

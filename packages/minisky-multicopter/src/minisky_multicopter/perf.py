@@ -28,7 +28,7 @@ a traffic simulator.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NotRequired, TypedDict
 
 import numpy as np
 from minisky import plugin as plugin_api
@@ -55,18 +55,25 @@ LOWBATT_VS_FACTOR = 0.5
 DEFAULT_TWR = 2.0
 
 #: Default flat-plate parasite drag area [m2].
-DEFAULT_CDS = 0.01
+DEFAULT_CDS: q.AreaM2[float] = 0.01
 
 #: Cruise speed as a fraction of the envelope maximum, for the
 #: range-derived battery-energy fallback [-].
 CRUISE_SPEED_FRACTION = 0.8
+
 
 #: Spec-sheet constants per multicopter typecode: usable pack energy
 #: ``battery_wh`` [Wh] (the one datum missing from the OpenAP rotor
 #: ``aircraft.json``), and optional ``cds`` [m2] / ``twr`` [-] overrides.
 #: MNET, AMZN and HORSEFLY have no public pack spec and fall back to an
 #: energy derived from ``d_range_max`` at cruise speed.
-CONSTANTS: dict[str, dict[str, float]] = {
+class MulticopterSpec(TypedDict):
+    battery_wh: NotRequired[q.EnergyWh[float]]
+    cds: NotRequired[q.AreaM2[float]]
+    twr: NotRequired[float]
+
+
+CONSTANTS: dict[str, MulticopterSpec] = {
     "MAVIC": {"battery_wh": 43.6},  # 3830 mAh 11.4 V
     "PHAN4": {"battery_wh": 81.3},  # 5350 mAh 15.2 V
     "M100": {"battery_wh": 99.9},  # TB47D
@@ -87,6 +94,10 @@ class MulticopterPerf(OpenAP):
         twr (ndarray): Thrust-to-weight ratio at maximum thrust [-].
         cds (ndarray): Flat-plate parasite drag area [m2].
     """
+
+    capacity: q.EnergyJ[np.ndarray]
+    power: q.PowerW[np.ndarray]
+    cds: q.AreaM2[np.ndarray]
 
     def __init__(self, traffic: Traffic) -> None:
         super().__init__(traffic)
@@ -109,7 +120,7 @@ class MulticopterPerf(OpenAP):
         the traffic tree, so its arrays cannot be relied upon here.
 
         Args:
-            n: Number of aircraft that were appended to the traffic arrays.
+            n: Number of aircraft appended to the traffic arrays.
         """
         super().create(n)
         for offset, typecode in enumerate(self.traffic.typecode[-n:], start=-n):
@@ -127,7 +138,7 @@ class MulticopterPerf(OpenAP):
             self.soc[offset] = 1.0
 
     @staticmethod
-    def _range_derived_wh(ac: dict, cds: float, twr: float) -> float:
+    def _range_derived_wh(ac: dict, cds: q.AreaM2[float], twr: float) -> q.EnergyWh[float]:
         """Derive the pack energy of an unlisted type from its range [Wh].
 
         Energy to fly the ``d_range_max`` of the OpenAP rotor entry at
@@ -135,9 +146,8 @@ class MulticopterPerf(OpenAP):
         with the same momentum-theory power model used at runtime.
 
         Args:
-            ac: OpenAP rotor ``aircraft.json`` entry for the typecode.
-            cds: Flat-plate parasite drag area [m2].
-            twr: Thrust-to-weight ratio at maximum thrust [-].
+            ac: OpenAP rotor `aircraft.json` entry for the typecode.
+            twr: Thrust-to-weight ratio at maximum thrust.
         """
         envelop = ac["envelop"]
         d_range = q.km_to_m(envelop.get("d_range_max", 0.0))
@@ -152,7 +162,7 @@ class MulticopterPerf(OpenAP):
         power = p_max * min(thrust / (twr * mass * aero.g0), 1.0) ** 1.5
         return q.j_to_wh(power * (d_range / v_cruise))
 
-    def required_thrust(self) -> np.ndarray:
+    def required_thrust(self) -> q.ForceN[np.ndarray]:
         """Return the thrust each aircraft would need as a multicopter [N].
 
         The thrust vector supports the weight — including any vertical
@@ -177,8 +187,7 @@ class MulticopterPerf(OpenAP):
         and integrates the battery state of charge as an ideal energy tank.
 
         Args:
-            dt: Update timestep [s] (unused; the simulation timestep is read
-                from the owning runtime, like the base class does elsewhere).
+            dt: Update timestep; the simulation timestep is read from the owning runtime.
         """
         super().update(dt)
         mc = get_multicopter(self.traffic)
@@ -200,10 +209,10 @@ class MulticopterPerf(OpenAP):
 
     def limits(
         self,
-        intent_v_tas: np.ndarray,
-        intent_vs: np.ndarray,
-        intent_h: np.ndarray,
-        ax: np.ndarray,
+        intent_v_tas: q.TrueAirspeedMps[np.ndarray],
+        intent_vs: q.VerticalRateMps[np.ndarray],
+        intent_h: q.PressureAltitudeM[np.ndarray],
+        ax: q.AccelerationMps2[np.ndarray],
     ) -> OpenAP.PerformanceLimits:
         """Clip the intended state to the flight envelope.
 
@@ -213,13 +222,10 @@ class MulticopterPerf(OpenAP):
         unrestricted — a low battery should not keep an aircraft airborne.
 
         Args:
-            intent_v_tas: Intended true airspeed [m/s].
-            intent_vs: Intended vertical speed [m/s].
-            intent_h: Intended altitude [m].
-            ax: Current longitudinal acceleration [m/s2].
-
-        Returns:
-            Allowed TAS [m/s], vertical speed [m/s] and altitude [m].
+            intent_v_tas: Intended true airspeed.
+            intent_vs: Intended vertical speed.
+            intent_h: Intended altitude.
+            ax: Current longitudinal acceleration.
         """
         allowed = super().limits(intent_v_tas, intent_vs, intent_h, ax)
         mc = get_multicopter(self.traffic)
@@ -243,9 +249,6 @@ class MulticopterPerf(OpenAP):
 
         Args:
             idx: Aircraft index.
-
-        Returns:
-            Result containing the report message or an error.
         """
         callsign = self.traffic.callsign[idx]
         if self.capacity[idx] <= 0.0:

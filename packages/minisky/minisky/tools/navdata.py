@@ -13,7 +13,7 @@ from __future__ import annotations
 import json
 from enum import IntEnum
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal, Protocol
+from typing import TYPE_CHECKING, Literal, Protocol
 
 import numpy as np
 import pandas as pd
@@ -27,6 +27,9 @@ if TYPE_CHECKING:
     from minisky.simulation.console import ConsoleIO
 
 
+_COLOCATED_DISTANCE: q.DistanceM[float] = q.nmi_to_m(1.0)
+
+
 class AirportSize(IntEnum):
     LARGE = 1
     MEDIUM = 2
@@ -37,13 +40,13 @@ class LatLonReference(Protocol):
     """A position record usable as a waypoint disambiguation reference."""
 
     @property
-    def lat(self) -> float: ...
+    def lat(self) -> q.LatitudeDeg[float]: ...
 
     @property
-    def lon(self) -> float: ...
+    def lon(self) -> q.LongitudeDeg[float]: ...
 
 
-def _tolist(column: Any) -> list:
+def _tolist(column) -> list:
     """Return a pandas column as a plain Python list.
 
     Wrapper around `Series.to_list()` that gives a concrete `list`
@@ -125,6 +128,18 @@ class Navdatabase:
     Created by  : Jacco M. Hoekstra (TU Delft)
     """
 
+    wplat: q.LatitudeDeg[np.ndarray]
+    wplon: q.LongitudeDeg[np.ndarray]
+    awfromlat: q.LatitudeDeg[np.ndarray]
+    awfromlon: q.LongitudeDeg[np.ndarray]
+    awtolat: q.LatitudeDeg[np.ndarray]
+    awtolon: q.LongitudeDeg[np.ndarray]
+    aptlat: q.LatitudeDeg[np.ndarray]
+    aptlon: q.LongitudeDeg[np.ndarray]
+    aptmaxrwy: q.LengthM[np.ndarray]
+    wpelev: list[q.GeometricAltitudeM[float]]
+    aptelev: list[q.GeometricAltitudeM[float]]
+
     def __init__(self, data_path: Path, console: ConsoleIO) -> None:
         """The navigation database: Contains waypoint, airport, airway, and sector data, but also
         geographical graphics data."""
@@ -151,9 +166,8 @@ class Navdatabase:
 
         # Get waypoint data
         self.wpid = _tolist(wptdata["wpid"])  # identifier (string)
-        # wplat/wplon start as lists but are reassigned to ndarrays by addwpt
-        self.wplat: Any = _tolist(wptdata["wplat"])  # latitude [deg]
-        self.wplon: Any = _tolist(wptdata["wplon"])  # longitude [deg]
+        self.wplat = np.asarray(wptdata["wplat"], dtype=float)
+        self.wplon = np.asarray(wptdata["wplon"], dtype=float)
         # TODO(abraham): rename this navigation-database category; Route.wptype is a
         # different WaypointType domain, and the shared name makes the two easy to confuse.
         self.wptype = _tolist(wptdata["wptype"])  # type (string)
@@ -164,11 +178,11 @@ class Navdatabase:
 
         # Get airway legs data
         self.awfromwpid = _tolist(awydata["awfromwpid"])  # identifier (string)
-        self.awfromlat = _tolist(awydata["awfromlat"])  # latitude [deg]
-        self.awfromlon = _tolist(awydata["awfromlon"])  # longitude [deg]
+        self.awfromlat = np.asarray(awydata["awfromlat"], dtype=float)  # latitude [deg]
+        self.awfromlon = np.asarray(awydata["awfromlon"], dtype=float)  # longitude [deg]
         self.awtowpid = _tolist(awydata["awtowpid"])  # identifier (string)
-        self.awtolat = _tolist(awydata["awtolat"])  # latitude [deg]
-        self.awtolon = _tolist(awydata["awtolon"])  # longitude [deg]
+        self.awtolat = np.asarray(awydata["awtolat"], dtype=float)  # latitude [deg]
+        self.awtolon = np.asarray(awydata["awtolon"], dtype=float)  # longitude [deg]
         self.awid = _tolist(awydata["awid"])  # airway identifier (string)
         self.awndir = _tolist(awydata["awndir"])  # number of directions (1 or 2)
         self.awlowfl = _tolist(awydata["awlowfl"])  # lower flight level (int)
@@ -177,9 +191,9 @@ class Navdatabase:
         # Get airpoint data
         self.aptid = _tolist(aptdata["apid"])  # 4 char identifier (string)
         self.aptname = _tolist(aptdata["apname"])  # full name
-        self.aptlat = _tolist(aptdata["aplat"])  # latitude [deg]
-        self.aptlon = _tolist(aptdata["aplon"])  # longitude [deg]
-        self.aptmaxrwy = _tolist(aptdata["apmaxrwy"])  # max runway length [m]
+        self.aptlat = np.asarray(aptdata["aplat"], dtype=float)  # latitude [deg]
+        self.aptlon = np.asarray(aptdata["aplon"], dtype=float)  # longitude [deg]
+        self.aptmaxrwy = np.asarray(aptdata["apmaxrwy"], dtype=float)  # max runway length [m]
         self.apsize = [AirportSize(int(value)) for value in _tolist(aptdata["aptype"])]
         self.aptco = _tolist(aptdata["apco"])  # two char country code (string)
         self.aptelev = _tolist(aptdata["apelev"])  # elevation in meters [m] MSL
@@ -246,8 +260,8 @@ class Navdatabase:
     def defwpt(
         self,
         name: str,
-        lat: float,
-        lon: float,
+        lat: q.LatitudeDeg[float],
+        lon: q.LongitudeDeg[float],
         waypoint_type: str | None = None,
     ) -> Result[str, str]:
         """Add a scenario-specific waypoint to the navigation database."""
@@ -350,7 +364,7 @@ class Navdatabase:
         self,
         txt: str,
         reference: LatLonReference | None = None,
-        crit: float = q.nmi_to_m(1.0),
+        crit: q.DistanceM[float] = _COLOCATED_DISTANCE,
     ) -> list[int]:
         """Get indices of a waypoint and its co-located duplicates.
 
@@ -360,7 +374,7 @@ class Navdatabase:
         Args:
             txt: Waypoint identifier.
             reference: Optional reference position [deg].
-            crit: Co-location distance criterion [m] (default 1852 m = 1 nm).
+            crit: Co-location distance criterion [m] (default 1 NM).
 
         Returns:
             Waypoint indices, empty when not found.
@@ -421,7 +435,11 @@ class Navdatabase:
             return None
 
     def getinear(
-        self, wlat: np.ndarray | list, wlon: np.ndarray | list, lat: float, lon: float
+        self,
+        wlat: q.LatitudeDeg,
+        wlon: q.LongitudeDeg,
+        lat: q.LatitudeDeg[float],
+        lon: q.LongitudeDeg[float],
     ) -> int:  # lat,lon in degrees
         """Get the index of the entry nearest to a given position.
 
@@ -448,22 +466,26 @@ class Navdatabase:
         # print dt
         return int(idx)
 
-    def getwpinear(self, lat: float, lon: float):  # lat,lon in degrees
+    def getwpinear(
+        self, lat: q.LatitudeDeg[float], lon: q.LongitudeDeg[float]
+    ) -> int:  # lat,lon in degrees
         """Get the index of the waypoint closest to position (lat, lon) [deg]."""
         return self.getinear(self.wplat, self.wplon, lat, lon)
 
-    def getapinear(self, lat: float, lon: float):  # lat,lon in degrees
+    def getapinear(
+        self, lat: q.LatitudeDeg[float], lon: q.LongitudeDeg[float]
+    ) -> int:  # lat,lon in degrees
         """Get the index of the airport closest to position (lat, lon) [deg]."""
         return self.getinear(self.aptlat, self.aptlon, lat, lon)
 
     def getinside(
         self,
-        wlat: np.ndarray | list,
-        wlon: np.ndarray | list,
-        lat0: float,
-        lat1: float,
-        lon0: float,
-        lon1: float,
+        wlat: q.LatitudeDeg,
+        wlon: q.LongitudeDeg,
+        lat0: q.LatitudeDeg[float],
+        lat1: q.LatitudeDeg[float],
+        lon0: q.LongitudeDeg[float],
+        lon1: q.LongitudeDeg[float],
     ) -> list:
         """Get indices of positions inside the given lat/lon box.
 
@@ -490,11 +512,23 @@ class Navdatabase:
         # print dt
         return list(arr[0])  # Get indices
 
-    def getwpinside(self, lat0: float, lat1: float, lon0: float, lon1: float) -> list:
+    def getwpinside(
+        self,
+        lat0: q.LatitudeDeg[float],
+        lat1: q.LatitudeDeg[float],
+        lon0: q.LongitudeDeg[float],
+        lon1: q.LongitudeDeg[float],
+    ) -> list:
         """Get waypoint indices inside the given lat/lon box [deg]."""
         return self.getinside(self.wplat, self.wplon, lat0, lat1, lon0, lon1)
 
-    def getapinside(self, lat0: float, lat1: float, lon0: float, lon1: float) -> list:
+    def getapinside(
+        self,
+        lat0: q.LatitudeDeg[float],
+        lat1: q.LatitudeDeg[float],
+        lon0: q.LongitudeDeg[float],
+        lon1: q.LongitudeDeg[float],
+    ) -> list:
         """Get airport indices inside the given lat/lon box [deg]."""
         return self.getinside(self.aptlat, self.aptlon, lat0, lat1, lon0, lon1)
 
@@ -602,7 +636,9 @@ class Navdatabase:
 
         return airway  # ,connect
 
-    def listconnections(self, wpid: str, wplat: float, wplon: float) -> list:
+    def listconnections(
+        self, wpid: str, wplat: q.LatitudeDeg[float], wplon: q.LongitudeDeg[float]
+    ) -> list:
         """Return the airway legs connecting to a given waypoint.
 
         Only legs whose stored endpoint lies within 10 nm of the given

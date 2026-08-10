@@ -25,9 +25,8 @@ import asyncio
 from contextlib import asynccontextmanager, suppress
 from io import StringIO
 from pathlib import Path
-from typing import Annotated, Any, Literal, TypeAlias, TypedDict, cast
+from typing import Annotated, Literal, TypeAlias, TypedDict
 
-import pandas as pd
 from fastapi import (
     APIRouter,
     Depends,
@@ -50,7 +49,8 @@ from minisky.result import Err, Ok, Result
 
 def _get_runtime(request: Request) -> MiniSky:
     """Return the runtime owned by the current FastAPI application."""
-    return cast(MiniSky, request.app.state.runtime)
+    runtime: MiniSky = request.app.state.runtime
+    return runtime
 
 
 Runtime = Annotated[MiniSky, Depends(_get_runtime)]
@@ -76,6 +76,46 @@ class ErrResultResponse(TypedDict):
 ResultResponse: TypeAlias = OkResultResponse | ErrResultResponse
 
 
+StackResponse = TypedDict("StackResponse", {"command to minisky": str, "message": str})
+
+
+AircraftResponse = TypedDict(
+    "AircraftResponse",
+    {
+        "callsign": str,
+        "typecode": str,
+        "latitude": q.LatitudeDeg[float],
+        "longitude": q.LongitudeDeg[float],
+        "altitude (feet)": q.PressureAltitudeFt[int],
+        "heading (degrees)": q.TrueHeadingDegrees[int],
+        "assigned heading (degrees)": q.TrueHeadingDegrees[int],
+        "track (degrees)": q.GroundTrackDeg[float],
+        "TAS (knots)": q.TrueAirspeedKt[int],
+        "groundspeed (knots)": q.GroundSpeedKt[int],
+        "CAS (knots)": q.CalibratedAirspeedKt[int],
+        "mach": q.MachNumber[float],
+        "vertical_rate (feet/minute)": q.VerticalRateFpm[int],
+        "target altitude (feet)": q.PressureAltitudeFt[int],
+        # TODO(abraham): #40 must split selected CAS and Mach before this
+        # legacy API field can carry truthful quantity metadata.
+        "assigned speed (knots)": int,
+    },
+)
+
+ConflictResponse = TypedDict(
+    "ConflictResponse",
+    {
+        "conflict pairs": tuple[str, str],
+        "distance (nautical miles)": q.DistanceNM[float],
+        "altitude difference (feet)": q.VerticalDistanceFt[float],
+        "qdr (degrees)": q.BearingDeg[float],
+        "tlos (seconds)": q.DurationS[float],
+        "dcpa (meters)": q.DistanceM[float],
+        "tcpa (seconds)": q.DurationS[float],
+    },
+)
+
+
 def _result_response(result: Result[str, str]) -> ResultResponse:
     match result:
         case Ok(value):
@@ -87,7 +127,7 @@ def _result_response(result: Result[str, str]) -> ResultResponse:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Run the app-owned simulator for the lifetime of the API server."""
-    runtime = cast(MiniSky, app.state.runtime)
+    runtime: MiniSky = app.state.runtime
     await runtime.plugins.load_configured()
     runner_task = asyncio.create_task(runtime.run())
     try:
@@ -132,33 +172,41 @@ def root() -> dict[str, str]:
     return {"msg": "MiniSky API endpoint ready"}
 
 
-def all_aircraft(runtime: Runtime) -> list[dict[str, Any]]:
-    """Get all aircraft states."""
+def all_aircraft(runtime: Runtime) -> list[AircraftResponse]:
+    """Get all aircraft states in the aviation units used by the REST API."""
     traffic = runtime.traffic
-    df = pd.DataFrame(
-        {
-            "callsign": traffic.callsign,
-            "typecode": traffic.typecode,
-            "latitude": traffic.lat,
-            "longitude": traffic.lon,
-            "altitude (feet)": q.m_to_ft(traffic.alt).astype(int),
-            "heading (degrees)": traffic.hdg.astype(int),
-            "assigned heading (degrees)": traffic.aporasas.hdg.astype(int),
-            "track (degrees)": traffic.trk,
-            "TAS (knots)": q.mps_to_kt(traffic.tas).astype(int),
-            "groundspeed (knots)": q.mps_to_kt(traffic.gs).astype(int),
-            "CAS (knots)": q.mps_to_kt(traffic.cas).astype(int),
-            "mach": traffic.M,
-            "vertical_rate (feet/minute)": q.mps_to_fpm(traffic.vs).astype(int),
-            "target altitude (feet)": q.m_to_ft(traffic.selalt).astype(int),
-            "assigned speed (knots)": q.mps_to_kt(traffic.selspd).astype(int),
-        }
-    )
+    aircraft: list[AircraftResponse] = []
+    for i, (callsign, typecode) in enumerate(zip(traffic.callsign, traffic.typecode, strict=True)):
+        altitude_ft: q.PressureAltitudeFt[float] = q.m_to_ft(float(traffic.alt[i]))
+        tas_kt: q.TrueAirspeedKt[float] = q.mps_to_kt(float(traffic.tas[i]))
+        groundspeed_kt: q.GroundSpeedKt[float] = q.mps_to_kt(float(traffic.gs[i]))
+        cas_kt: q.CalibratedAirspeedKt[float] = q.mps_to_kt(float(traffic.cas[i]))
+        vertical_rate_fpm: q.VerticalRateFpm[float] = q.mps_to_fpm(float(traffic.vs[i]))
+        target_altitude_ft: q.PressureAltitudeFt[float] = q.m_to_ft(float(traffic.selalt[i]))
+        assigned_speed_kt = q.mps_to_kt(float(traffic.selspd[i]))
+        aircraft.append(
+            {
+                "callsign": callsign,
+                "typecode": typecode,
+                "latitude": float(traffic.lat[i]),
+                "longitude": float(traffic.lon[i]),
+                "altitude (feet)": int(altitude_ft),
+                "heading (degrees)": int(traffic.hdg[i]),
+                "assigned heading (degrees)": int(traffic.aporasas.hdg[i]),
+                "track (degrees)": float(traffic.trk[i]),
+                "TAS (knots)": int(tas_kt),
+                "groundspeed (knots)": int(groundspeed_kt),
+                "CAS (knots)": int(cas_kt),
+                "mach": float(traffic.M[i]),
+                "vertical_rate (feet/minute)": int(vertical_rate_fpm),
+                "target altitude (feet)": int(target_altitude_ft),
+                "assigned speed (knots)": int(assigned_speed_kt),
+            }
+        )
+    return aircraft
 
-    return df.to_dict(orient="records")
 
-
-def simtime(runtime: Runtime) -> dict[str, float]:
+def simtime(runtime: Runtime) -> dict[str, q.SimulationTimeS[float]]:
     """Get the simulation time."""
     return {"simulation time (seconds)": runtime.simulation.simt}
 
@@ -169,19 +217,14 @@ def speedup(speed: float, runtime: Runtime) -> dict[str, str]:
     return {"msg": f"simulation speed set to {speed}x"}
 
 
-def forward(seconds: float, runtime: Runtime) -> dict[str, str]:
+def forward(seconds: q.DurationS[float], runtime: Runtime) -> dict[str, str]:
     """Jump to a specific simulation time."""
     runtime.runner.forward(seconds)
     return {"msg": f"simulation time jump forward {seconds} seconds"}
 
 
-def conflicts(runtime: Runtime) -> list[dict[str, Any]] | dict[str, str]:
-    """Get all detected conflicts.
-
-    Returns one record per unique aircraft pair with distance (NM), altitude
-    difference (ft), bearing (deg), time to loss of separation (s), and distance and
-    time to the closest point of approach (m, s).
-    """
+def conflicts(runtime: Runtime) -> list[ConflictResponse] | dict[str, str]:
+    """Get all detected conflicts with explicit aviation-unit output fields."""
     detection = runtime.traffic.cd
     if not detection.confpairs:
         return {"msg": "No conflicts detected"}
@@ -189,30 +232,31 @@ def conflicts(runtime: Runtime) -> list[dict[str, Any]] | dict[str, str]:
     if len(detection.tcpa) == 0:
         return {"msg": "No TCPA data available"}
 
-    processed_pairs = []
-    conflict_info = []
+    processed_pairs: list[set[str]] = []
+    conflict_info: list[ConflictResponse] = []
 
     for i, pair in enumerate(detection.confpairs):
         if set(pair) in processed_pairs:
             continue
 
         processed_pairs.append(set(pair))
-
+        distance_nm: q.DistanceNM[float] = q.m_to_nmi(float(detection.dist[i]))
+        altitude_difference_ft: q.VerticalDistanceFt[float] = q.m_to_ft(float(detection.dalt[i]))
         conflict_info.append(
             {
                 "conflict pairs": pair,
-                "distance (nautical miles)": q.m_to_nmi(detection.dist[i]),
-                "altitude difference (feet)": q.m_to_ft(detection.dalt[i]),
-                "qdr (degrees)": detection.qdr[i],
-                "tlos (seconds)": detection.tLOS[i],
-                "dcpa (meters)": detection.dcpa[i],
-                "tcpa (seconds)": detection.tcpa[i],
+                "distance (nautical miles)": distance_nm,
+                "altitude difference (feet)": altitude_difference_ft,
+                "qdr (degrees)": float(detection.qdr[i]),
+                "tlos (seconds)": float(detection.tLOS[i]),
+                "dcpa (meters)": float(detection.dcpa[i]),
+                "tcpa (seconds)": float(detection.tcpa[i]),
             }
         )
     return conflict_info
 
 
-async def stack(cmd: str, runtime: Runtime) -> dict[str, Any]:
+async def stack(cmd: str, runtime: Runtime) -> StackResponse:
     """Execute a stack command and return the output."""
     runtime.console.event.clear()
     runtime.commands.stack(cmd)
@@ -247,7 +291,7 @@ async def stream(websocket: WebSocket) -> None:
     The most recent snapshot is sent immediately on connect so a new client is
     not left blank until the next tick.
     """
-    runtime = cast(MiniSky, websocket.app.state.runtime)
+    runtime: MiniSky = websocket.app.state.runtime
     hub = runtime.streaming
     await websocket.accept()
     hub.subscribe()

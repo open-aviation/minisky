@@ -11,6 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, NamedTuple, TypeAlias
 
+from minisky import quantities as q
 from minisky.result import Err, Ok, Result
 
 from .convert import txt2lat, txt2lon
@@ -21,45 +22,45 @@ if TYPE_CHECKING:
 
 
 class _ReferencePosition(NamedTuple):
-    lat: float
-    lon: float
+    lat: q.LatitudeDeg[float]
+    lon: q.LongitudeDeg[float]
 
 
 @dataclass(frozen=True, slots=True)
 class LatLonPosition:
-    lat: float
-    lon: float
+    lat: q.LatitudeDeg[float]
+    lon: q.LongitudeDeg[float]
 
 
 @dataclass(frozen=True, slots=True)
 class ResolvedRunwayPosition:
-    lat: float
-    lon: float
-    heading: float
+    lat: q.LatitudeDeg[float]
+    lon: q.LongitudeDeg[float]
+    heading: q.TrueHeadingDegrees[float]
 
 
 @dataclass(frozen=True, slots=True)
 class AirportPosition:
-    lat: float
-    lon: float
+    lat: q.LatitudeDeg[float]
+    lon: q.LongitudeDeg[float]
 
 
 @dataclass(frozen=True, slots=True)
 class NavaidPosition:
-    lat: float
-    lon: float
+    lat: q.LatitudeDeg[float]
+    lon: q.LongitudeDeg[float]
 
 
 @dataclass(frozen=True, slots=True)
 class AircraftPosition:
-    lat: float
-    lon: float
+    lat: q.LatitudeDeg[float]
+    lon: q.LongitudeDeg[float]
 
 
 @dataclass(frozen=True, slots=True)
 class DirectionPosition:
-    lat: float
-    lon: float
+    lat: q.LatitudeDeg[float]
+    lon: q.LongitudeDeg[float]
 
 
 Position: TypeAlias = (
@@ -74,8 +75,8 @@ Position: TypeAlias = (
 
 def txt2pos(
     name: str,
-    reflat: float,
-    reflon: float,
+    reflat: q.LatitudeDeg[float],
+    reflon: q.LongitudeDeg[float],
     navigation: Navdatabase,
     traffic: Traffic,
 ) -> Result[Position, str]:

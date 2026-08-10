@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from enum import Enum, auto
 from itertools import pairwise
 from math import isfinite
-from typing import Annotated, Any, Literal
+from typing import Annotated, Literal
 
 import numpy as np
 from scipy.interpolate import LinearNDInterpolator, interp1d
@@ -40,6 +40,9 @@ from minisky.command import (
 )
 from minisky.core.trafficarrays import TrafficArrays
 from minisky.result import Err, Ok, Result
+
+WindDirectionArg = q.WindDirectionDeg[FiniteFloat]
+WindSpeedKtArg = q.WindSpeedKt[NonNegativeFiniteFloat]
 
 
 class WindFieldKind(Enum):
@@ -79,10 +82,18 @@ class Windfield:
 
     """
 
+    altmax: q.PressureAltitudeM[float]
+    altstep: q.VerticalDistanceM[float]
+    altaxis: q.PressureAltitudeM[np.ndarray]
+    lat: q.LatitudeDeg[np.ndarray]
+    lon: q.LongitudeDeg[np.ndarray]
+    vnorth: q.WindSpeedMps[np.ndarray]
+    veast: q.WindSpeedMps[np.ndarray]
+
     def __init__(self) -> None:
         # For altitude use fixed axis to allow vectorisation later
-        self.altmax = q.ft_to_m(45000.0)  # [m]
-        self.altstep = q.ft_to_m(100.0)  # [m]
+        self.altmax = q.ft_to_m(45000.0)
+        self.altstep = q.ft_to_m(100.0)
 
         # Axis
         self.altaxis = np.arange(0.0, self.altmax + self.altstep, self.altstep)
@@ -123,11 +134,11 @@ class Windfield:
 
     def addpointvne(
         self,
-        lat: np.ndarray,
-        lon: np.ndarray,
-        vnorth: np.ndarray,
-        veast: np.ndarray,
-        windalt: np.ndarray | None = None,
+        lat: q.LatitudeDeg[np.ndarray],
+        lon: q.LongitudeDeg[np.ndarray],
+        vnorth: q.WindSpeedMps[np.ndarray],
+        veast: q.WindSpeedMps[np.ndarray],
+        windalt: q.PressureAltitudeM[np.ndarray] | None = None,
     ) -> None:
         """Add wind vectors given as north/east speed components.
 
@@ -137,13 +148,9 @@ class Windfield:
         profiles are resampled onto the fixed altitude axis.
 
         Args:
-            lat: Latitudes of the wind definition points [deg].
-            lon: Longitudes of the wind definition points [deg].
-            vnorth: North wind component [m/s]; 2D (altitude x position)
-                when windalt is given.
-            veast: East wind component [m/s]; same shape as vnorth.
-            windalt: Optional array of altitudes [m] belonging to the rows
-                of vnorth/veast; makes the field 3D.
+            vnorth: North component; altitude-by-position when `windalt` is given.
+            veast: East component with the same shape as `vnorth`.
+            windalt: Optional profile altitudes corresponding to component-array rows.
         """
         has_profile = windalt is not None and len(windalt) > 1
         if has_profile:
@@ -216,11 +223,11 @@ class Windfield:
 
     def addpoint(
         self,
-        lat: float,
-        lon: float,
-        winddir: Any,
-        windspd: Any,
-        windalt: Any = None,
+        lat: q.LatitudeDeg[float],
+        lon: q.LongitudeDeg[float],
+        winddir: q.WindDirectionDeg,
+        windspd: q.WindSpeedMps,
+        windalt: q.PressureAltitudeM | None = None,
     ) -> int:
         """Add a wind vector (direction/speed) at a lat/lon position.
 
@@ -230,16 +237,12 @@ class Windfield:
         (altitude dependent).
 
         Args:
-            lat: Latitude of the wind definition point [deg].
-            lon: Longitude of the wind definition point [deg].
-            winddir: Direction the wind comes from [deg]; array when an
-                altitude profile is given.
-            windspd: Wind speed [m/s]; same dimension as winddir.
-            windalt: Optional altitudes [m] belonging to winddir/windspd,
-                defining an altitude profile at this position.
+            winddir: Direction the wind comes from; an array for an altitude profile.
+            windspd: Wind speed with the same dimensionality as `winddir`.
+            windalt: Optional altitudes defining the profile at this position.
 
         Returns:
-            int: Index of the added wind point (for use with remove()).
+            Index of the added wind point, suitable for `remove()`.
         """
 
         # If scalar, copy into table for altitude axis
@@ -280,8 +283,13 @@ class Windfield:
         return idx  # return index of added point
 
     def getdata(
-        self, userlat: Any, userlon: Any, useralt: Any = 0.0
-    ) -> tuple[Any, Any]:  # in case no altitude specified and field is 3D, use sea level wind
+        self,
+        userlat: q.LatitudeDeg,
+        userlon: q.LongitudeDeg,
+        useralt: q.PressureAltitudeM = 0.0,
+    ) -> tuple[
+        q.WindSpeedMps, q.WindSpeedMps
+    ]:  # in case no altitude specified and field is 3D, use sea level wind
         """Interpolate the wind field at one or more positions.
 
         Uses inverse-distance-squared weighting between the defined wind
@@ -291,13 +299,12 @@ class Windfield:
         wind is returned.
 
         Args:
-            userlat: Latitude(s) [deg]; scalar, list or ndarray.
-            userlon: Longitude(s) [deg]; same shape as userlat.
-            useralt: Altitude(s) [m]; scalar, list or ndarray (default 0).
+            userlat: Scalar, list, or ndarray of query latitudes.
+            userlon: Query longitudes with the same shape as `userlat`.
+            useralt: Query altitudes; defaults to sea level.
 
         Returns:
-            tuple: (vnorth, veast): north and east wind components [m/s],
-            with the same type/shape as the given positions.
+            North/east wind components with the same container shape as the query positions.
         """
         eps = 1e-20  # [m2] to avoid divison by zero for using exact same points
 
@@ -407,7 +414,7 @@ class Windfield:
         """Remove a wind definition point by index.
 
         Args:
-            idx: Index of the point, as returned by addpoint().
+            idx: Point index returned by `addpoint()`.
         """
         if idx < len(self.lat):
             self.lat = np.delete(self.lat, idx)
@@ -425,9 +432,9 @@ class Windfield:
 class WindLevel:
     """A validated altitude-dependent wind vector in SI units."""
 
-    altitude_meters: FiniteFloat
-    direction_degrees: FiniteFloat
-    speed_meters_per_second: NonNegativeFiniteFloat
+    altitude_meters: q.PressureAltitudeM[float]
+    direction_degrees: q.WindDirectionDeg[float]
+    speed_meters_per_second: q.WindSpeedMps[float]
 
 
 def _parse_wind_level(_context: CommandParseContext, text: str) -> ParseResult[WindLevel]:
@@ -517,8 +524,8 @@ class Wind(TrafficArrays, Windfield):
     def set_constant_wind(
         self,
         position: LatLonDeg,
-        direction: FiniteFloat,
-        speed: NonNegativeFiniteFloat,
+        direction: WindDirectionArg,
+        speed: WindSpeedKtArg,
     ) -> Result[str, str]:
         """Define altitude-independent wind at a position."""
         # No altitude: use the same wind for all altitudes at this position.
@@ -530,8 +537,8 @@ class Wind(TrafficArrays, Windfield):
         self,
         position: LatLonDeg,
         _omitted: Omitted,
-        direction: FiniteFloat,
-        speed: NonNegativeFiniteFloat,
+        direction: WindDirectionArg,
+        speed: WindSpeedKtArg,
     ) -> Result[str, str]:
         """Define constant wind when the altitude field is explicitly omitted."""
         self.addpoint(position.lat, position.lon, direction % 360.0, q.kt_to_mps(speed))

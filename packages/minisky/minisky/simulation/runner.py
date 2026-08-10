@@ -13,6 +13,7 @@ import asyncio
 import os
 from typing import TYPE_CHECKING
 
+from minisky import quantities as q
 from minisky.command import PositiveFiniteFloat, command
 from minisky.result import Ok, Result
 
@@ -20,7 +21,7 @@ if TYPE_CHECKING:
     from minisky.simulation.console import ConsoleIO
     from minisky.simulation.simulation import Simulation
 
-MIN_UPDATE_INTERVAL = 0.0001
+MIN_UPDATE_INTERVAL: q.DurationS[float] = 0.0001
 
 
 class Runner:
@@ -45,6 +46,9 @@ class Runner:
         jump_to: Target simulation time of the active fast-forward jump [s].
     """
 
+    jump: q.DurationS[float]
+    jump_to: q.SimulationTimeS[float]
+
     def __init__(self, simulation: Simulation, console: ConsoleIO, speed: float = 1) -> None:
         """Initialize the runner.
 
@@ -60,10 +64,10 @@ class Runner:
         self.running: bool = False
         self.allow_shutdown: bool = True
         self.speed = speed
-        self.jump: float = 0
-        self.jump_to: float = 0
+        self.jump = 0.0
+        self.jump_to = 0.0
 
-    def forward(self, seconds: float) -> None:
+    def forward(self, seconds: q.DurationS[float]) -> None:
         """Fast-forward the simulation by a number of simulation seconds.
 
         Activates a jump: the run loop switches to the minimum sleep interval

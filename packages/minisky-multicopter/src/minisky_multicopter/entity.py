@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 from minisky import plugin as plugin_api
+from minisky import quantities as q
 from minisky.plugin import (
     AcId,
     AltM,
@@ -39,7 +40,7 @@ MULTICOPTER_TYPES = frozenset(
 )
 
 #: Default yaw rate for a newly created multicopter [deg/s].
-DEFAULT_YAWRATE = 90.0
+DEFAULT_YAWRATE: q.YawRateDegPerS[float] = 90.0
 
 #: Replaceable base -> multicopter implementation, selected on load and reset.
 #: Kept as names (not classes) because every implementation module imports
@@ -79,6 +80,9 @@ class Multicopter(plugin_api.Entity):
         yawrate (ndarray): Maximum yaw rate [deg/s].
     """
 
+    selhdg: q.TrueHeadingDegrees[np.ndarray]
+    yawrate: q.YawRateDegPerS[np.ndarray]
+
     def __init__(self) -> None:
         super().__init__()
         self._selected = False
@@ -95,7 +99,7 @@ class Multicopter(plugin_api.Entity):
         unconstrained (nose follows track) at the default yaw rate.
 
         Args:
-            n: Number of aircraft that were appended to the traffic arrays.
+            n: Number of aircraft appended to the traffic arrays.
         """
         super().create(n)
         self.ismulticopter[-n:] = [
@@ -146,10 +150,9 @@ class Multicopter(plugin_api.Entity):
     def mcopt(self, idx: AcId, flag: OnOff | None = None) -> Result[str, str]:
         """Mark an aircraft as a multicopter (or report its current setting).
 
-        Arguments:
-        - idx: Aircraft callsign
-        - flag: ON to fly it as a multicopter, OFF for normal fixed-wing
-          kinematics (optional, omit to query)
+        Args:
+            idx: Aircraft callsign.
+            flag: ON/OFF mode; omit to query the current setting.
         """
         callsign = self.traffic.callsign[idx]
         if flag is None:
@@ -172,9 +175,9 @@ class Multicopter(plugin_api.Entity):
         The velocity vector keeps following the track command from the FMS
         or conflict resolution, so this rotates the aircraft in place.
 
-        Arguments:
-        - idx: Aircraft callsign
-        - hdg: Commanded body heading [deg]
+        Args:
+            idx: Aircraft callsign.
+            hdg: Commanded body heading.
         """
         if not self.ismulticopter[idx]:
             callsign = self.traffic.callsign[idx]
@@ -189,12 +192,16 @@ class Multicopter(plugin_api.Entity):
         return Ok(f"YAW {self.traffic.callsign[idx]}: nose to {resolved_hdg:.0f} deg")
 
     @plugin_api.command(name="YAWRATE")
-    def setyawrate(self, idx: AcId, yawrate: PositiveFiniteFloat | None = None) -> Result[str, str]:
+    def setyawrate(
+        self,
+        idx: AcId,
+        yawrate: q.YawRateDegPerS[PositiveFiniteFloat] | None = None,
+    ) -> Result[str, str]:
         """Set or report the maximum yaw rate of a multicopter.
 
-        Arguments:
-        - idx: Aircraft callsign
-        - yawrate: Maximum yaw rate [deg/s] (optional, omit to query)
+        Args:
+            idx: Aircraft callsign.
+            yawrate: Maximum yaw rate; omit to query the current maximum.
         """
         callsign = self.traffic.callsign[idx]
         if yawrate is None:
@@ -221,10 +228,10 @@ class Multicopter(plugin_api.Entity):
         time and altitude, and a plain ALT command changes the hover
         altitude as well.
 
-        Arguments:
-        - idx: Aircraft callsign
-        - duration: Hold time [s] (optional, omit to hover indefinitely)
-        - alt: Hover altitude [ft or FL] (optional, default: hold current)
+        Args:
+            idx: Aircraft callsign.
+            duration: Hold time; omit to hover indefinitely.
+            alt: Hover altitude; omit to hold the current altitude.
         """
         # Deferred import: the autopilot module imports this one.
         from minisky_multicopter.autopilot import MulticopterAutopilot
@@ -238,8 +245,8 @@ class Multicopter(plugin_api.Entity):
     def batt(self, idx: AcId) -> Result[str, str]:
         """Report the battery state of charge, power draw and endurance.
 
-        Arguments:
-        - idx: Aircraft callsign
+        Args:
+            idx: Aircraft callsign.
         """
         # Deferred import: the perf module imports this one.
         from minisky_multicopter.perf import MulticopterPerf
