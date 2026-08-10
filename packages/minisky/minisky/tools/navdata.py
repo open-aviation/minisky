@@ -147,6 +147,8 @@ class Navdatabase:
         # wplat/wplon start as lists but are reassigned to ndarrays by addwpt
         self.wplat: Any = _tolist(wptdata["wplat"])  # latitude [deg]
         self.wplon: Any = _tolist(wptdata["wplon"])  # longitude [deg]
+        # TODO(abraham): rename this navigation-database category; Route.wptype is a
+        # different WaypointType domain, and the shared name makes the two easy to confuse.
         self.wptype = _tolist(wptdata["wptype"])  # type (string)
         self.wpelev = _tolist(wptdata["wpelev"])  # elevation [m]
         self.wpvar = _tolist(wptdata["wpvar"])  # magn variation [deg]

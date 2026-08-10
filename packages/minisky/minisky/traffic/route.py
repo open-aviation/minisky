@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from enum import Enum, auto
+from enum import Enum, IntEnum, auto
 from typing import TYPE_CHECKING, Annotated, Literal, NamedTuple, TypeAlias
 
 import numpy as np
@@ -58,6 +58,21 @@ from minisky.tools.position import txt2pos
 
 if TYPE_CHECKING:
     from minisky.traffic import Traffic
+
+
+class WaypointType(IntEnum):
+    LATLON = 0
+    """Latitude/Longitude Waypoint"""
+    NAV = 1
+    """VOR/NAV database waypoint"""
+    ORIGIN = 2
+    """Origin airport"""
+    DESTINATION = 3
+    """Destination airport"""
+    CALCULATED = 4
+    """Calculated waypoint (T/C, T/D, A/C)"""
+    RUNWAY = 5
+    """Runway: Copy name and positions"""
 
 
 class TurnRadius(NamedTuple):
@@ -120,8 +135,7 @@ class Route:
     Attributes:
         acid (str): Callsign of the aircraft this route belongs to.
         wpname (list): Waypoint names.
-        wptype (list): Waypoint types (wplatlon, wpnav, orig, dest,
-            calcwp, runway).
+        wptype (list): Waypoint types.
         wplat (list): Waypoint latitudes [deg].
         wplon (list): Waypoint longitudes [deg].
         wpalt (list): Optional altitude constraints [m].
@@ -145,14 +159,6 @@ class Route:
     Created by: Jacco M. Hoekstra
     """
 
-    # Waypoint types:
-    wplatlon = 0  # lat/lon waypoint
-    wpnav = 1  # VOR/nav database waypoint
-    orig = 2  # Origin airport
-    dest = 3  # Destination airport
-    calcwp = 4  # Calculated waypoint (T/C, T/D, A/C)
-    runway = 5  # Runway: Copy name and positions
-
     # # Aircraft route objects
     # _routes: WeakValueDictionary[str, "Route"] = WeakValueDictionary()
 
@@ -163,7 +169,7 @@ class Route:
 
         # Waypoint data
         self.wpname = []  # List of waypoint names for this flight plan
-        self.wptype = []  # List of waypoint types
+        self.wptype: list[WaypointType] = []
         self.wplat = []  # List of waypoint latitudes
         self.wplon = []  # List of waypoint longitudes
         self.wpalt: list[float | None] = []  # [m]
@@ -203,7 +209,7 @@ class Route:
         wpname: str,
         wplat: float,
         wplon: float,
-        wptype: int,
+        wptype: WaypointType,
         wpalt: float | None,
         wpspd: float | None,
     ) -> None:
@@ -218,7 +224,7 @@ class Route:
             wpname: Waypoint name.
             wplat: Waypoint latitude [deg].
             wplon: Waypoint longitude [deg].
-            wptype: Waypoint type (see the Route class constants).
+            wptype: Waypoint type.
             wpalt: Optional altitude constraint [m].
             wpspd: Optional speed constraint, CAS [m/s] or Mach [-].
         """
@@ -238,7 +244,7 @@ class Route:
         self,
         iac: int,
         name: str,
-        wptype: int,
+        wptype: WaypointType,
         lat: float,
         lon: float,
         alt: float | None = None,
@@ -260,7 +266,7 @@ class Route:
         Args:
             iac: Aircraft index.
             name: Waypoint name (or callsign for lat/lon waypoints).
-            wptype: Waypoint type (see the Route class constants).
+            wptype: Waypoint type.
             lat: Waypoint latitude [deg].
             lon: Waypoint longitude [deg].
             alt: Optional altitude constraint [m].
@@ -287,8 +293,8 @@ class Route:
         wprtename = get_available_name(self.wpname, name, self.traffic.callsign)
         # Select on wptype
         # ORIGIN: Wptype is origin/destination?
-        if wptype == Route.orig or wptype == Route.dest:
-            orig = wptype == Route.orig
+        if wptype in {WaypointType.ORIGIN, WaypointType.DESTINATION}:
+            orig = wptype == WaypointType.ORIGIN
             existing_idx = 0 if orig else n_wpt - 1
             suffix = "ORIG" if orig else "DEST"
 
@@ -334,14 +340,14 @@ class Route:
         # NORMAL: Wptype is normal waypoint? (lat/lon or nav)
         else:
             # Lat/lon: wpname is then call sign of aircraft: add number
-            if wptype == Route.wplatlon:
+            if wptype == WaypointType.LATLON:
                 newname = get_available_name(self.wpname, name, self.traffic.callsign, 3)
 
             # Else make data complete with nav database and closest to given lat,lon
             else:  # so wptypewpnav
                 newname = wprtename
 
-                if wptype != Route.runway:
+                if wptype != WaypointType.RUNWAY:
                     if (i := self.navigation.getwpidx(name, LatLonDegrees(lat, lon))) is not None:
                         wplat = self.navigation.wplat[i]
                         wplon = self.navigation.wplon[i]
@@ -362,7 +368,11 @@ class Route:
                     wpidx = self.wpname.index(aftwp) + 1 if afterwp else self.wpname.index(bfwp)
                 else:
                     # Append, just before dest if there is a dest
-                    wpidx = n_wpt - 1 if n_wpt > 0 and self.wptype[-1] == Route.dest else n_wpt
+                    wpidx = (
+                        n_wpt - 1
+                        if n_wpt > 0 and self.wptype[-1] == WaypointType.DESTINATION
+                        else n_wpt
+                    )
 
                 self.insert_wpt_data(wpidx, newname, wplat, wplon, wptype, alt, spd)
                 if (active_idx := self.iactwp) is not None and active_idx >= wpidx:
@@ -383,7 +393,7 @@ class Route:
             self.traffic.actwp.swlastwp[iac] = self.iactwp == n_wpt - 1
 
         # Update waypoints
-        if wptype != Route.calcwp:
+        if wptype != WaypointType.CALCULATED:
             self.calcfp()
 
         # Update autopilot settings
@@ -501,10 +511,13 @@ class Route:
         # instead of deviating to the airport centre
         # When there is a destination: current = runway, next  = Dest
         # Else: current = runway and this is also the last waypoint
-        if (self.wptype[active_idx] == 5 and self.wpname[active_idx] == self.wpname[-1]) or (
-            self.wptype[active_idx] == 5
+        if (
+            self.wptype[active_idx] == WaypointType.RUNWAY
+            and self.wpname[active_idx] == self.wpname[-1]
+        ) or (
+            self.wptype[active_idx] == WaypointType.RUNWAY
             and active_idx + 1 < n_wpt
-            and self.wptype[active_idx + 1] == 3
+            and self.wptype[active_idx + 1] == WaypointType.DESTINATION
         ):
             self.flag_landed_runway = True
 
@@ -540,7 +553,7 @@ class Route:
         self.wplon.insert(i, 0.0)
         self.wpalt.insert(i, None)
         self.wpspd.insert(i, None)
-        self.wptype.insert(i, Route.calcwp)
+        self.wptype.insert(i, WaypointType.CALCULATED)
 
     def calcfp(self) -> None:
         """Current Flight Plan calculations, which actualize based on flight condition
@@ -605,7 +618,7 @@ class Route:
         altitude_target: AltitudeTarget | None = None
         for i in range(n_wpt - 1, -1, -1):
             # waypoint with altitude constraint (dest of all specified)
-            if self.wptype[i] == Route.dest:
+            if self.wptype[i] == WaypointType.DESTINATION:
                 altitude_target = AltitudeTarget(0.0, 0.0)
             elif (altitude := self.wpalt[i]) is not None:
                 altitude_target = AltitudeTarget(altitude, 0.0)
@@ -938,11 +951,14 @@ def _add_takeoff_waypoint(
     afterwp = ""
     if rwyrteidx is not None and rwyrteidx > 0:
         afterwp = acrte.wpname[rwyrteidx]
-    elif acrte.wptype and acrte.wptype[0] == Route.orig:
+    elif acrte.wptype and acrte.wptype[0] == WaypointType.ORIGIN:
         afterwp = acrte.wpname[0]
 
     name = f"T/O-{callsign}"
-    if acrte.add_waypoint(acidx, name, Route.wplatlon, lat, lon, None, None, afterwp, "") is None:
+    if (
+        acrte.add_waypoint(acidx, name, WaypointType.LATLON, lat, lon, None, None, afterwp, "")
+        is None
+    ):
         return Err(f"Waypoint {name} not added.")
     acrte.calcfp()
 
@@ -978,7 +994,7 @@ def _add_route_waypoint(
 
     # Or last waypoint before destination
     else:
-        if acrte.wptype[-1] != Route.dest or n_wpt == 1:
+        if acrte.wptype[-1] != WaypointType.DESTINATION or n_wpt == 1:
             reflat = acrte.wplat[-1]
             reflon = acrte.wplon[-1]
         else:
@@ -995,7 +1011,7 @@ def _add_route_waypoint(
             name = callsign
             lat = coordinates.lat
             lon = coordinates.lon
-            wptype = Route.wplatlon
+            wptype = WaypointType.LATLON
         case NamedWaypoint(name):
             takeoffwpt = name.replace("-", "") == "TAKEOFF"
             if takeoffwpt:
@@ -1008,12 +1024,12 @@ def _add_route_waypoint(
                     lat = posobj.lat
                     lon = posobj.lon
                     if posobj.type in {"nav", "apt"}:
-                        wptype = Route.wpnav
+                        wptype = WaypointType.NAV
                     elif posobj.type == "rwy":
-                        wptype = Route.runway
+                        wptype = WaypointType.RUNWAY
                     else:
                         name = callsign
-                        wptype = Route.wplatlon
+                        wptype = WaypointType.LATLON
                 case Err():
                     return Err("Waypoint " + name + " not found.")
 
@@ -1151,9 +1167,9 @@ def _format_at_query(acrte: Route, wpidx: int, atwp: str, query: AtQuery) -> str
         text += "---" if speed is None else str(round(speed / kts))
 
     if show_altitude and show_speed:
-        if acrte.wptype[wpidx] == Route.orig:
+        if acrte.wptype[wpidx] == WaypointType.ORIGIN:
             text += "[orig]"
-        elif acrte.wptype[wpidx] == Route.dest:
+        elif acrte.wptype[wpidx] == WaypointType.DESTINATION:
             text += "[dest]"
 
     if show_stack and acrte.wpstack[wpidx]:
@@ -1387,9 +1403,9 @@ def listrte(traffic: Traffic, acidx: int, ipagetxt: str = "0") -> Result[None, s
                 txt += "M" + str(speed)
 
             # Type: orig, dest, C = flyby, | = flyover, U = flyturn
-            if acrte.wptype[i] == Route.orig:
+            if acrte.wptype[i] == WaypointType.ORIGIN:
                 txt += "[orig]"
-            elif acrte.wptype[i] == Route.dest:
+            elif acrte.wptype[i] == WaypointType.DESTINATION:
                 txt += "[dest]"
             elif acrte.wpturn[i] is not None:
                 txt += "[U]"
