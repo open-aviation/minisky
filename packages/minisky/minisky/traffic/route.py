@@ -131,7 +131,7 @@ class Route:
         wpturn (list): Optional fly-turn parameters per waypoint.
         wpstack (list): Stack command lines executed when passing each
             waypoint (AT ... DO).
-        iactwp (int): Index of the currently active waypoint (-1 = none).
+        iactwp (int | None): Index of the currently active waypoint, or None.
         swflyby (bool): Default fly-by mode for newly added waypoints.
         swflyturn (bool): Default fly-turn mode for newly added waypoints.
         bank (float): Default bank angle for turn calculations [deg].
@@ -176,7 +176,7 @@ class Route:
         self.wpturn: list[TurnParameters | None] = []
 
         # Current actual waypoint
-        self.iactwp = -1
+        self.iactwp: int | None = None
 
         # FIXME(abraham): BlueSky 01ea1f9 (2020-04-03) introduced this two-boolean mode state;
         # swflyby and swflyturn can both be true even though only three modes are valid.
@@ -245,7 +245,7 @@ class Route:
         spd: float | None = None,
         afterwp: str = "",
         beforewp: str = "",
-    ) -> int:
+    ) -> int | None:
         """Add a waypoint to the route and update the flight plan.
 
         Handles all waypoint types: origin/destination airports (placed at
@@ -269,7 +269,7 @@ class Route:
             beforewp: Optional name of the waypoint before which to insert.
 
         Returns:
-            int: Index of the added waypoint in the route, or -1 on failure.
+            Index of the added waypoint in the route, or None on failure.
         """
 
         # For safety
@@ -289,20 +289,22 @@ class Route:
         # ORIGIN: Wptype is origin/destination?
         if wptype == Route.orig or wptype == Route.dest:
             orig = wptype == Route.orig
-            wpidx = 0 if orig else -1
+            existing_idx = 0 if orig else n_wpt - 1
             suffix = "ORIG" if orig else "DEST"
 
-            if name != self.traffic.callsign[iac] + suffix:  # published identifier
-                i = self.navigation.getaptidx(name)
-                if i is not None:
-                    wplat = self.navigation.aptlat[i]
-                    wplon = self.navigation.aptlon[i]
+            if (
+                name != self.traffic.callsign[iac] + suffix
+                and (i := self.navigation.getaptidx(name)) is not None
+            ):  # published identifier
+                wplat = self.navigation.aptlat[i]
+                wplon = self.navigation.aptlon[i]
 
             if not orig and alt is None:
                 alt = 0.0
 
             # Overwrite existing origin/dest
-            if n_wpt > 0 and self.wptype[wpidx] == wptype:
+            if n_wpt > 0 and self.wptype[existing_idx] == wptype:
+                wpidx = existing_idx
                 self.wpname[wpidx] = wprtename
                 self.wplat[wpidx] = wplat
                 self.wplon[wpidx] = wplon
@@ -317,15 +319,13 @@ class Route:
 
             # Or add before first waypoint/append to end
             else:
-                if not orig:
-                    wpidx = len(self.wplat)
-
+                wpidx = 0 if orig else len(self.wplat)
                 self.insert_wpt_data(wpidx, wprtename, wplat, wplon, wptype, alt, spd)
 
                 n_wpt += 1
-                if orig and self.iactwp >= 0:
-                    self.iactwp += 1
-                elif not orig and self.iactwp < 0 and n_wpt == 1:
+                if orig and (active_idx := self.iactwp) is not None:
+                    self.iactwp = active_idx + 1
+                elif not orig and self.iactwp is None and n_wpt == 1:
                     # When only waypoint: adjust pointer to point to destination
                     self.iactwp = 0
 
@@ -342,18 +342,14 @@ class Route:
                 newname = wprtename
 
                 if wptype != Route.runway:
-                    i = self.navigation.getwpidx(name, LatLonDegrees(lat, lon))
-                    wpok = i is not None
-
-                    if i is not None:
+                    if (i := self.navigation.getwpidx(name, LatLonDegrees(lat, lon))) is not None:
                         wplat = self.navigation.wplat[i]
                         wplon = self.navigation.wplon[i]
+                    elif (i := self.navigation.getaptidx(name)) is not None:
+                        wplat = self.navigation.aptlat[i]
+                        wplon = self.navigation.aptlon[i]
                     else:
-                        i = self.navigation.getaptidx(name)
-                        wpok = i is not None
-                        if i is not None:
-                            wplat = self.navigation.aptlat[i]
-                            wplon = self.navigation.aptlon[i]
+                        wpok = False
 
             # Check if afterwp or beforewp is specified and found:
             aftwp = afterwp.upper().strip()  # Remove space, upper case
@@ -367,8 +363,8 @@ class Route:
 
                     self.insert_wpt_data(wpidx, newname, wplat, wplon, wptype, alt, spd)
 
-                    if afterwp and self.iactwp >= wpidx:
-                        self.iactwp += 1
+                    if (active_idx := self.iactwp) is not None and afterwp and active_idx >= wpidx:
+                        self.iactwp = active_idx + 1
 
                 # No afterwp: append, just before dest if there is a dest
                 else:
@@ -381,12 +377,12 @@ class Route:
                 n_wpt += 1
 
             else:
-                idx = -1
+                idx = None
                 if len(self.wplat) == 1:
                     self.iactwp = 0
 
         # update qdr and "last waypoint switch" in traffic
-        if idx >= 0:
+        if idx is not None:
             next_qdr = self.getnextqdr()
             self.traffic.actwp.next_qdr[iac] = np.ma.masked if next_qdr is None else next_qdr
             self.traffic.actwp.swlastwp[iac] = self.iactwp == n_wpt - 1
@@ -396,14 +392,15 @@ class Route:
             self.calcfp()
 
         # Update autopilot settings
-        if wpok and 0 <= self.iactwp < n_wpt:
-            direct(self.traffic, iac, self.wpname[self.iactwp])
+        if wpok and (active_idx := self.iactwp) is not None and active_idx < n_wpt:
+            direct(self.traffic, iac, self.wpname[active_idx])
 
         return idx
 
     def getnextturnwp(self) -> NextTurn | None:
         """Return the next fly-turn waypoint at or after the active waypoint."""
-        for waypoint_index in range(max(self.iactwp, 0), len(self.wpturn)):
+        start_idx = 0 if self.iactwp is None else self.iactwp
+        for waypoint_index in range(start_idx, len(self.wpturn)):
             turn = self.wpturn[waypoint_index]
             if turn is not None:
                 return NextTurn(
@@ -445,13 +442,15 @@ class Route:
         stack.
         """
         n_wpt = len(self.wpname)
+        active_idx = self.iactwp
+        assert active_idx is not None
 
         if self.flag_landed_runway:
             # when landing, LNAV is switched off
             lnavon = False
 
             # no further waypoint; the aircraft only needs a fixed runway heading
-            name = self.wpname[self.iactwp]
+            name = self.wpname[active_idx]
 
             # Change RW06,RWY18C,RWY24001 to resp. 06,18C,24
             if "RWY" in name:
@@ -477,25 +476,26 @@ class Route:
             self.traffic.stack_command("DELAY " + "42 " + "DEL " + str(self.acid))
 
             return self.WaypointTransition(
-                LatLonDegrees(self.wplat[self.iactwp], self.wplon[self.iactwp]),
-                self.wpspd[self.iactwp],
-                self.wpprofile[self.iactwp],
+                LatLonDegrees(self.wplat[active_idx], self.wplon[active_idx]),
+                self.wpspd[active_idx],
+                self.wpprofile[active_idx],
                 lnavon,
-                self.wpflyby[self.iactwp],
-                self.wpturn[self.iactwp],
+                self.wpflyby[active_idx],
+                self.wpturn[active_idx],
                 None,
-                self.iactwp == n_wpt - 1,
+                active_idx == n_wpt - 1,
             )
 
         # Switch LNAV off when last waypoint has been passed
-        lnavon = self.iactwp < n_wpt - 1
+        lnavon = active_idx < n_wpt - 1
 
         # if LNAV on: increase counter
         if lnavon:
-            self.iactwp += 1
+            active_idx += 1
+            self.iactwp = active_idx
 
         # Activate switch to indicate that this is the last waypoint (for lenient passing logic in actwp.Reached function)
-        swlastwp = self.iactwp == n_wpt - 1
+        swlastwp = active_idx == n_wpt - 1
 
         # Endpoint of the leg after the new active waypoint; the autopilot
         # computes the next-leg bearings for all switching aircraft in one
@@ -506,20 +506,20 @@ class Route:
         # instead of deviating to the airport centre
         # When there is a destination: current = runway, next  = Dest
         # Else: current = runway and this is also the last waypoint
-        if (self.wptype[self.iactwp] == 5 and self.wpname[self.iactwp] == self.wpname[-1]) or (
-            self.wptype[self.iactwp] == 5
-            and self.iactwp + 1 < n_wpt
-            and self.wptype[self.iactwp + 1] == 3
+        if (self.wptype[active_idx] == 5 and self.wpname[active_idx] == self.wpname[-1]) or (
+            self.wptype[active_idx] == 5
+            and active_idx + 1 < n_wpt
+            and self.wptype[active_idx + 1] == 3
         ):
             self.flag_landed_runway = True
 
         return self.WaypointTransition(
-            LatLonDegrees(self.wplat[self.iactwp], self.wplon[self.iactwp]),
-            self.wpspd[self.iactwp],
-            self.wpprofile[self.iactwp],
+            LatLonDegrees(self.wplat[active_idx], self.wplon[active_idx]),
+            self.wpspd[active_idx],
+            self.wpprofile[active_idx],
             lnavon,
-            self.wpflyby[self.iactwp],
-            self.wpturn[self.iactwp],
+            self.wpflyby[active_idx],
+            self.wpturn[active_idx],
             next_leg,
             swlastwp,
         )
@@ -530,7 +530,9 @@ class Route:
         Commands are attached to waypoints with the AT ... DO/STACK command
         and are issued when the aircraft passes the waypoint.
         """
-        for cmdline in self.wpstack[self.iactwp]:
+        active_idx = self.iactwp
+        assert active_idx is not None
+        for cmdline in self.wpstack[active_idx]:
             self.traffic.stack_command(cmdline)
             # debug
             # stack.stack("ECHO "+self.acid+" AT "+self.wpname[self.iactwp]+" command issued:"+cmdline)
@@ -694,7 +696,7 @@ class Route:
         # Note: the max() prevents walking back, even in cases when this might be apropriate,
         # such as when previous waypoints have been deleted
 
-        iwpnear = max(self.iactwp, np.argmin(dist2))
+        iwpnear = max(0 if self.iactwp is None else self.iactwp, np.argmin(dist2))
 
         # Unless behind us, next waypoint?
         if iwpnear + 1 < n_wpt:
@@ -717,19 +719,20 @@ class Route:
 
     def getnextleg(self) -> LatLonDegrees | None:
         """Return the endpoint of the leg after the active waypoint."""
-        if -1 < self.iactwp < len(self.wpname) - 1:
-            return LatLonDegrees(self.wplat[self.iactwp + 1], self.wplon[self.iactwp + 1])
+        if (active_idx := self.iactwp) is not None and active_idx < len(self.wpname) - 1:
+            return LatLonDegrees(self.wplat[active_idx + 1], self.wplon[active_idx + 1])
         return None
 
     def getnextqdr(self) -> float | None:
         """Return the bearing of the leg after the active waypoint [deg]."""
         # get qdr for next leg
-        next_leg = self.getnextleg()
-        if next_leg is None:
+        if (active_idx := self.iactwp) is None:
+            return None
+        if (next_leg := self.getnextleg()) is None:
             return None
         nextqdr, _dist = geo.qdrdist(
-            self.wplat[self.iactwp],
-            self.wplon[self.iactwp],
+            self.wplat[active_idx],
+            self.wplon[active_idx],
             next_leg.lat,
             next_leg.lon,
         )
@@ -919,13 +922,13 @@ def _add_takeoff_waypoint(
 ) -> Result[str, str]:
     callsign = traffic.callsign[acidx]
     acrte = traffic.ap.route[acidx]
-    rwyrteidx = next((i for i, name in enumerate(acrte.wpname) if "/" in name), -1)
+    rwyrteidx = next((i for i, name in enumerate(acrte.wpname) if "/" in name), None)
 
     if runway is not None:
         rwylat = runway.coordinates.lat
         rwylon = runway.coordinates.lon
         rwyhdg = runway.runway_heading
-    elif rwyrteidx > 0:
+    elif rwyrteidx is not None and rwyrteidx > 0:
         rwylat = acrte.wplat[rwyrteidx]
         rwylon = acrte.wplon[rwyrteidx]
         aptidx = traffic.navigation.getapinear(rwylat, rwylon)
@@ -940,16 +943,15 @@ def _add_takeoff_waypoint(
 
     lat, lon = geo.qdrpos(rwylat, rwylon, rwyhdg, 2.0)
     afterwp = ""
-    if rwyrteidx > 0:
+    if rwyrteidx is not None and rwyrteidx > 0:
         afterwp = acrte.wpname[rwyrteidx]
     elif acrte.wptype and acrte.wptype[0] == Route.orig:
         afterwp = acrte.wpname[0]
 
     name = f"T/O-{callsign}"
-    wpidx = acrte.add_waypoint(acidx, name, Route.wplatlon, lat, lon, None, None, afterwp, "")
-    acrte.calcfp()
-    if wpidx < 0:
+    if acrte.add_waypoint(acidx, name, Route.wplatlon, lat, lon, None, None, afterwp, "") is None:
         return Err(f"Waypoint {name} not added.")
+    acrte.calcfp()
 
     norig = int(traffic.ap.orig[acidx] != "")
     ndest = int(traffic.ap.dest[acidx] != "")
@@ -1031,14 +1033,11 @@ def _add_route_waypoint(
             pass
 
     # Add waypoint
-    wpidx = acrte.add_waypoint(acidx, name, wptype, lat, lon, alt, spd, afterwp, beforewp)
+    if acrte.add_waypoint(acidx, name, wptype, lat, lon, alt, spd, afterwp, beforewp) is None:
+        return Err(f"Waypoint {name} not added.")
 
     # Recalculate flight plan
     acrte.calcfp()
-
-    # Check for success by checking inserted location in flight plan >= 0
-    if wpidx < 0:
-        return Err(f"Waypoint {name} not added.")
 
     # check for presence of orig/dest
     norig = int(traffic.ap.orig[acidx] != "")  # 1 if orig is present in route
@@ -1132,7 +1131,8 @@ def _at_waypoint(traffic: Traffic, acidx: int, atwp: str) -> Result[_AtWaypoint,
 
 def _finish_at_mutation(traffic: Traffic, acidx: int, target: _AtWaypoint) -> Result[str, str]:
     target.route.calcfp()
-    direct(traffic, acidx, target.route.wpname[target.route.iactwp])
+    if (active_idx := target.route.iactwp) is not None:
+        direct(traffic, acidx, target.route.wpname[active_idx])
     return Ok("")
 
 
@@ -1296,11 +1296,7 @@ def direct(traffic: Traffic, acidx: int, wpname: str) -> bool:
     traffic.actwp.turndist[acidx] = (
         np.logical_or(isinstance(geometry, TurnHeadingRate), traffic.actwp.flyby[acidx] > 0.5)
         * turnrad
-        * abs(
-            math.tan(
-                0.5 * math.radians(max(5.0, abs(degto180(qdr_ - acrte.wpdirfrom[acrte.iactwp]))))
-            )
-        )
+        * abs(math.tan(0.5 * math.radians(max(5.0, abs(degto180(qdr_ - acrte.wpdirfrom[wpidx]))))))
     )  # [nm]
 
     # NOTE: in bluesky cca80df (2016-11-05), ComputeVNAV() was inserted before
@@ -1338,7 +1334,8 @@ def set_rta(
     acrte.wprta[wpidx] = time
 
     # Recompute route and update actwp because of RTA addition
-    direct(traffic, acidx, acrte.wpname[acrte.iactwp])
+    if (active_idx := acrte.iactwp) is not None:
+        direct(traffic, acidx, acrte.wpname[active_idx])
 
     return True
 
@@ -1479,10 +1476,10 @@ def delwpt(traffic: Traffic, acidx: int, wpname: str) -> Result[str, str]:
     del acrte.wpturn[wpidx]
     del acrte.wpstack[wpidx]
 
-    if acrte.iactwp > wpidx:
-        acrte.iactwp = max(0, acrte.iactwp - 1)
-
-    acrte.iactwp = min(acrte.iactwp, n_wpt - 1)
+    if (active_idx := acrte.iactwp) is not None:
+        if active_idx > wpidx:
+            active_idx -= 1
+        acrte.iactwp = None if n_wpt == 0 else min(active_idx, n_wpt - 1)
 
     # If no waypoints left, make sure to disable LNAV/VNAV
     if n_wpt == 0 and (acidx or acidx == 0):

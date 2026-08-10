@@ -923,14 +923,14 @@ class Traffic(TrafficArrays):
         )
 
         # FMS AP modes
-        if self.swlnav[idx] and len(route.wpname) > 0 and route.iactwp >= 0:
+        if self.swlnav[idx] and route.wpname and (active_idx := route.iactwp) is not None:
             if self.swvnav[idx]:
                 if self.swvnavspd[idx]:
                     info = info + "VNAV (incl.VNAVSPD), "
                 else:
                     info = info + "VNAV (NOT VNAVSPD), "
 
-            info += "LNAV to " + route.wpname[route.iactwp] + "\n"
+            info += "LNAV to " + route.wpname[active_idx] + "\n"
 
         # Flight info: Destination and origin
         if self.ap.orig[idx] != "" or self.ap.dest[idx] != "":
