@@ -4,11 +4,10 @@ from __future__ import annotations
 
 import pytest
 from minisky import MiniSky
+from minisky import quantities as q
 from minisky.simulation import Simulation
 from minisky.traffic.asas import MVP
 from tests._types import RunCommand, StepUntil
-
-FT = 0.3048
 
 
 @pytest.fixture
@@ -122,11 +121,11 @@ class TestDetectionCommands:
     def test_sethpz_status_uses_default(self, runtime: MiniSky, run_cmd: RunCommand) -> None:
         run_cmd("CRE KL204,B744,52,4,45,FL250,350")
         output = run_cmd("ZONEDH")
-        assert f"{runtime.traffic.cd.hpz_def / FT:.2f} ft" in output
+        assert f"{q.m_to_ft(runtime.traffic.cd.hpz_def):.2f} ft" in output
 
     def test_hpz_default_consistent_after_reset(self, runtime: MiniSky, sim: Simulation) -> None:
         # reset() must restore the same default as __init__
-        assert runtime.traffic.cd.hpz_def == pytest.approx(runtime.config.asas_pzh * FT)
+        assert runtime.traffic.cd.hpz_def == pytest.approx(q.ft_to_m(runtime.config.asas_pzh))
 
     def test_zoner_with_callsign_sets_aircraft_rpz(
         self, runtime: MiniSky, run_cmd: RunCommand
@@ -136,7 +135,7 @@ class TestDetectionCommands:
         run_cmd("CRE KL204,B744,52,4,45,FL250,350")
         out = run_cmd("ZONER 6.0,KL204")
         assert "Error" not in out
-        assert runtime.traffic.cd.rpz[0] == pytest.approx(6.0 * 1852.0)
+        assert runtime.traffic.cd.rpz[0] == pytest.approx(q.nmi_to_m(6.0))
 
     def test_resooff_with_callsign_sets_flag(self, runtime: MiniSky, run_cmd: RunCommand) -> None:
         # The RESOOFF/NORESO specs had an unparseable "callsign..." token,

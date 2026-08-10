@@ -50,10 +50,10 @@ from datetime import UTC, datetime
 from typing import Any, TypedDict, cast
 
 from minisky import plugin as plugin_api
+from minisky import quantities as q
 from minisky.result import Err, Ok, Result
 from minisky.simulation import SimulationState
 from minisky.streaming import Snapshot
-from minisky.tools.aero import fpm, ft, kts
 from pydantic import BaseModel, ConfigDict
 
 
@@ -168,11 +168,11 @@ def convert_snapshot(snapshot: Snapshot) -> TangramPayload:
                 "typecode": acdata["typecode"][i],
                 "latitude": acdata["lat"][i],
                 "longitude": acdata["lon"][i],
-                "altitude": round(acdata["alt"][i] / ft),
-                "groundspeed": round(acdata["gs"][i] / kts, 1),
-                "tas": round(acdata["tas"][i] / kts, 1),
-                "ias": round(acdata["cas"][i] / kts, 1),
-                "vertical_rate": round(acdata["vs"][i] / fpm),
+                "altitude": round(q.m_to_ft(acdata["alt"][i])),  # type: ignore[reportUnknownArgumentType]
+                "groundspeed": round(q.mps_to_kt(acdata["gs"][i]), 1),  # type: ignore[reportUnknownArgumentType]
+                "tas": round(q.mps_to_kt(acdata["tas"][i]), 1),  # type: ignore[reportUnknownArgumentType]
+                "ias": round(q.mps_to_kt(acdata["cas"][i]), 1),  # type: ignore[reportUnknownArgumentType]
+                "vertical_rate": round(q.mps_to_fpm(acdata["vs"][i])),  # type: ignore[reportUnknownArgumentType]
                 "track": acdata["trk"][i],
                 "inconf": acdata["inconf"][i],
                 "timestamp": timestamp,

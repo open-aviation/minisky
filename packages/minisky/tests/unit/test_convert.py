@@ -5,18 +5,16 @@ txt2tim returns seconds.
 """
 
 import pytest
+from minisky import quantities as q
 from minisky.tools import convert as cv
-
-FT = 0.3048
-KTS = 0.514444
 
 
 class TestAltitude:
     def test_flight_level(self) -> None:
-        assert cv.txt2alt("FL300") == pytest.approx(30000 * FT)
+        assert cv.txt2alt("FL300") == pytest.approx(q.ft_to_m(30000.0))
 
     def test_plain_feet(self) -> None:
-        assert cv.txt2alt("2500") == pytest.approx(2500 * FT)
+        assert cv.txt2alt("2500") == pytest.approx(q.ft_to_m(2500.0))
 
     def test_invalid_raises(self) -> None:
         with pytest.raises(ValueError, match=r'Could not parse "NOTANALT" as altitude'):
@@ -57,7 +55,7 @@ class TestLatLon:
 
 class TestSpeed:
     def test_knots_to_ms(self) -> None:
-        assert cv.txt2spd("250") == pytest.approx(250 * KTS, rel=1e-3)
+        assert cv.txt2spd("250") == pytest.approx(q.kt_to_mps(250.0), rel=1e-3)
 
     def test_mach_passthrough(self) -> None:
         assert cv.txt2spd(".8") == pytest.approx(0.8)

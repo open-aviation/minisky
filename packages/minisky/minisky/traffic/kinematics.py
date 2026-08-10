@@ -19,8 +19,9 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
+from minisky import quantities as q
 from minisky.core.trafficarrays import TrafficArrays
-from minisky.tools.aero import Rearth, fpm, ft, g0, vtas2cas, vtas2mach
+from minisky.tools.aero import Rearth, g0, vtas2cas, vtas2mach
 
 if TYPE_CHECKING:
     from minisky.simulation import Simulation
@@ -140,7 +141,7 @@ class Kinematics(TrafficArrays):
         delta_alt = traf.aporasas.alt - traf.alt
         # Old dead band version:
         #        self.swaltsel = np.abs(delta_alt) > np.maximum(
-        #            10 * ft, np.abs(2 * simdt * self.vs))
+        #            q.ft_to_m(10.0), np.abs(2 * simdt * self.vs))
 
         # Update version: time based engage of altitude capture (to adapt for UAV vs airliner scale)
         self.swaltsel = np.abs(delta_alt) > 1.05 * np.maximum(
@@ -149,9 +150,11 @@ class Kinematics(TrafficArrays):
         )
         target_vs = self.swaltsel * np.sign(delta_alt) * np.abs(traf.aporasas.vs)
         delta_vs = target_vs - traf.vs
-        # print(delta_vs / fpm)
-        need_az = np.abs(delta_vs) > 300 * fpm  # small threshold
-        self.az = need_az * np.sign(delta_vs) * (300 * fpm)  # fixed vertical acc approx 1.6 m/s^2
+        # print(q.mps_to_fpm(delta_vs))
+        need_az = np.abs(delta_vs) > q.fpm_to_mps(300.0)  # small threshold
+        self.az = (
+            need_az * np.sign(delta_vs) * q.fpm_to_mps(300.0)
+        )  # fixed vertical acc approx 1.6 m/s^2
         traf.vs = np.where(need_az, traf.vs + self.az * simdt, target_vs)
         traf.vs = np.where(np.isfinite(traf.vs), traf.vs, 0)  # fix vs nan issue
 
@@ -175,7 +178,7 @@ class Kinematics(TrafficArrays):
             traf.windnorth[:], traf.windeast[:] = 0.0, 0.0
 
         else:
-            applywind = traf.alt > 50.0 * ft  # Only apply wind when airborne
+            applywind = traf.alt > q.ft_to_m(50.0)  # Only apply wind when airborne
 
             vnwnd, vewnd = traf.wind.getdata(traf.lat, traf.lon, traf.alt)
             traf.windnorth[:], traf.windeast[:] = vnwnd, vewnd

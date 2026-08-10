@@ -32,6 +32,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 from minisky import plugin as plugin_api
+from minisky import quantities as q
 from minisky.result import Err, Ok, Result
 from minisky.tools import aero
 from minisky.traffic.performance.perfoap import OpenAP
@@ -122,7 +123,7 @@ class MulticopterPerf(OpenAP):
             wh = spec.get("battery_wh")
             if wh is None:
                 wh = self._range_derived_wh(ac, self.cds[offset], self.twr[offset])
-            self.capacity[offset] = wh * 3600.0
+            self.capacity[offset] = q.wh_to_j(wh)
             self.soc[offset] = 1.0
 
     @staticmethod
@@ -139,17 +140,17 @@ class MulticopterPerf(OpenAP):
             twr: Thrust-to-weight ratio at maximum thrust [-].
         """
         envelop = ac["envelop"]
-        d_range = envelop.get("d_range_max", 0.0) * 1000.0
+        d_range = q.km_to_m(envelop.get("d_range_max", 0.0))
         v_max = envelop.get("v_max", 0.0)
         if d_range <= 0.0 or v_max <= 0.0:
             return 0.0
         mass = 0.5 * (ac["oew"] + ac["mtow"])
-        p_max = int(ac["n_engines"]) * ac["engines"][0][1] * 1000.0  # kW -> W
+        p_max = q.kw_to_w(int(ac["n_engines"]) * ac["engines"][0][1])
         v_cruise = CRUISE_SPEED_FRACTION * v_max
         drag = 0.5 * aero.rho0 * v_cruise**2 * cds
         thrust = float(np.hypot(mass * aero.g0, drag))
         power = p_max * min(thrust / (twr * mass * aero.g0), 1.0) ** 1.5
-        return power * (d_range / v_cruise) / 3600.0
+        return q.j_to_wh(power * (d_range / v_cruise))
 
     def required_thrust(self) -> np.ndarray:
         """Return the thrust each aircraft would need as a multicopter [N].
@@ -189,7 +190,7 @@ class MulticopterPerf(OpenAP):
 
         thrust = self.required_thrust()[m]
         t_max = self.twr[m] * self.mass[m] * aero.g0
-        p_max = self.engnum[m] * self.engpower[m] * 1000.0  # engpower is in kW
+        p_max = self.engnum[m] * self.engpower[m]
         power = p_max * np.clip(thrust / t_max, 0.0, 1.0) ** 1.5
 
         self.thrust[m] = thrust
@@ -255,7 +256,7 @@ class MulticopterPerf(OpenAP):
         if soc <= 0.0:
             endurance = "battery empty"
         elif power > 0.0:
-            endurance = f"endurance {soc * self.capacity[idx] / power / 60.0:.0f} min"
+            endurance = f"endurance {q.s_to_min(soc * self.capacity[idx] / power):.0f} min"
         else:
             endurance = "endurance --"
         return Ok(f"BATT {callsign}: {soc:.0%}, drawing {power:.0f} W, {endurance}")

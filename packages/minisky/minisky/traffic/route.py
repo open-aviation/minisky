@@ -53,7 +53,7 @@ from minisky.result import Err, Ok, Result
 
 # from minisky.core import Replaceable
 from minisky.tools import geo
-from minisky.tools.aero import casormach2tas, ft, g0, kts, mach2cas, nm, vcas2tas
+from minisky.tools.aero import casormach2tas, g0, mach2cas, vcas2tas
 from minisky.tools.convert import degto180
 from minisky.tools.position import AirportPosition, NavaidPosition, ResolvedRunwayPosition, txt2pos
 
@@ -653,7 +653,7 @@ class Route:
                     altitude = (
                         altitude_target.altitude
                         if altitude_target is not None and altitude_target.altitude > 0.0
-                        else 10000.0 * ft
+                        else q.ft_to_m(10000.0)
                     )
                     legtas = casormach2tas(speed, altitude, self.traffic.casmach_threshold)
                     # TODO(abraham): account for wind at this position by adding wind vectors to waypoints?
@@ -716,7 +716,9 @@ class Route:
                 * math.radians(delhdg)
                 / (g0 * math.tan(self.traffic.ap.bankdef[i]))
             )
-            time_straight = math.sqrt(dist2[iwpnear]) * 60.0 * nm / max(0.01, self.traffic.tas[i])
+            time_straight = (
+                math.sqrt(dist2[iwpnear]) * q.nmi_to_m(60.0) / max(0.01, self.traffic.tas[i])
+            )
 
             if time_turn > time_straight:
                 iwpnear += 1
@@ -905,12 +907,12 @@ def _set_turn_parameter(
     if parameter is TurnParameter.RADIUS:
         geometry = acrte.turn.geometry
         if value is not None:
-            geometry = TurnRadius(value * nm)
+            geometry = TurnRadius(q.nmi_to_m(value))
         elif isinstance(geometry, TurnRadius):
             geometry = None
         acrte.turn = acrte.turn._replace(geometry=geometry)
     elif parameter is TurnParameter.SPEED:
-        acrte.turn = acrte.turn._replace(speed=None if value is None else value * kts)
+        acrte.turn = acrte.turn._replace(speed=None if value is None else q.kt_to_mps(value))
     else:
         geometry = acrte.turn.geometry
         if value is not None:
@@ -1156,16 +1158,16 @@ def _format_at_query(acrte: Route, wpidx: int, atwp: str, query: AtQuery) -> str
         altitude = acrte.wpalt[wpidx]
         if altitude is None:
             text += "-----"
-        elif altitude > 4500 * ft:
-            text += f"FL{round(altitude / (100.0 * ft))}"
+        elif altitude > q.ft_to_m(4500.0):
+            text += f"FL{round(q.m_to_ft(altitude) / 100.0)}"
         else:
-            text += str(round(altitude / ft))
+            text += str(round(q.m_to_ft(altitude)))
         if show_speed:
             text += "/"
 
     if show_speed:
         speed = acrte.wpspd[wpidx]
-        text += "---" if speed is None else str(round(speed / kts))
+        text += "---" if speed is None else str(round(q.mps_to_kt(speed)))
 
     if show_altitude and show_speed:
         if acrte.wptype[wpidx] == WaypointType.ORIGIN:
@@ -1388,18 +1390,18 @@ def listrte(traffic: Traffic, acidx: int, ipagetxt: str = "0") -> Result[None, s
             altitude = acrte.wpalt[i]
             if altitude is None:
                 txt += "-----/"
-            elif altitude > 4500 * ft:
-                fl = round(altitude / (100.0 * ft))
+            elif altitude > q.ft_to_m(4500.0):
+                fl = round(q.m_to_ft(altitude) / 100.0)
                 txt += "FL" + str(fl) + "/"
             else:
-                txt += str(round(altitude / ft)) + "/"
+                txt += str(round(q.m_to_ft(altitude))) + "/"
 
             # Speed
             speed = acrte.wpspd[i]
             if speed is None:
                 txt += "---"
             elif speed > 2.0:
-                txt += str(round(speed / kts))
+                txt += str(round(q.mps_to_kt(speed)))
             else:
                 txt += "M" + str(speed)
 

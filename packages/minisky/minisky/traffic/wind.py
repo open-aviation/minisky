@@ -21,6 +21,7 @@ from typing import Annotated, Any, Literal
 import numpy as np
 from scipy.interpolate import LinearNDInterpolator, interp1d
 
+from minisky import quantities as q
 from minisky.command import (
     AltM,
     ArgumentIssue,
@@ -39,7 +40,6 @@ from minisky.command import (
 )
 from minisky.core.trafficarrays import TrafficArrays
 from minisky.result import Err, Ok, Result
-from minisky.tools.aero import ft, kts
 
 
 class WindFieldKind(Enum):
@@ -81,8 +81,8 @@ class Windfield:
 
     def __init__(self) -> None:
         # For altitude use fixed axis to allow vectorisation later
-        self.altmax = 45000.0 * ft  # [m]
-        self.altstep = 100.0 * ft  # [m]
+        self.altmax = q.ft_to_m(45000.0)  # [m]
+        self.altstep = q.ft_to_m(100.0)  # [m]
 
         # Axis
         self.altaxis = np.arange(0.0, self.altmax + self.altstep, self.altstep)
@@ -483,7 +483,7 @@ def _parse_wind_level(_context: CommandParseContext, text: str) -> ParseResult[W
     consumed = len(text) - len(speed_token.remainder)
     return Ok(
         Parsed(
-            WindLevel(altitude, direction % 360.0, speed * kts),
+            WindLevel(altitude, direction % 360.0, q.kt_to_mps(speed)),
             speed_token.remainder,
             SourceSpan(0, consumed),
         )
@@ -522,7 +522,7 @@ class Wind(TrafficArrays, Windfield):
     ) -> Result[str, str]:
         """Define altitude-independent wind at a position."""
         # No altitude: use the same wind for all altitudes at this position.
-        self.addpoint(position.lat, position.lon, direction % 360.0, speed * kts)
+        self.addpoint(position.lat, position.lon, direction % 360.0, q.kt_to_mps(speed))
         return Ok("")
 
     @command(name="WIND")
@@ -534,7 +534,7 @@ class Wind(TrafficArrays, Windfield):
         speed: NonNegativeFiniteFloat,
     ) -> Result[str, str]:
         """Define constant wind when the altitude field is explicitly omitted."""
-        self.addpoint(position.lat, position.lon, direction % 360.0, speed * kts)
+        self.addpoint(position.lat, position.lon, direction % 360.0, q.kt_to_mps(speed))
         return Ok("")
 
     @command(name="WIND")
@@ -563,5 +563,5 @@ class Wind(TrafficArrays, Windfield):
         speed = np.sqrt(north * north + east * east)
         return Ok(
             f"WIND AT {position.lat:.5f}, {position.lon:.5f}: "
-            f"{round(direction):03d}/{round(speed / kts)}"
+            f"{round(direction):03d}/{round(q.mps_to_kt(speed))}"
         )

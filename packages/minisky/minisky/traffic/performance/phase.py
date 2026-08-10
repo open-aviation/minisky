@@ -11,6 +11,8 @@ from enum import IntEnum
 
 import numpy as np
 
+from minisky import quantities as q
+
 from .coeff import LiftType
 
 
@@ -99,9 +101,9 @@ def get_fixwing(spd: np.ndarray, roc: np.ndarray, alt: np.ndarray, unit: str = "
         raise RuntimeError("wrong unit type")
 
     if unit == "SI":
-        spd = spd / 0.514444
-        roc = roc / 0.00508
-        alt = alt / 0.3048
+        spd = q.mps_to_kt(spd)
+        roc = q.mps_to_fpm(roc)
+        alt = q.m_to_ft(alt)
 
     ph = np.full(len(spd), FlightPhase.UNKNOWN.value, dtype=int)
 

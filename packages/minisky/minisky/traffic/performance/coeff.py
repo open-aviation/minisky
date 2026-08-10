@@ -15,6 +15,7 @@ from enum import IntEnum
 import numpy as np
 from openap import WRAP, drag, prop
 
+from minisky import quantities as q
 from minisky.core.config import data
 
 
@@ -143,7 +144,7 @@ class Coefficient:
             limits_fixwing[mdl]["vmo"] = limits_fixwing[mdl]["vmaxer"]
             limits_fixwing[mdl]["mmo"] = wrap.cruise_max_mach()[_OPT]
 
-            limits_fixwing[mdl]["hmax"] = wrap.cruise_max_alt()[_OPT] * 1000.0
+            limits_fixwing[mdl]["hmax"] = q.km_to_m(wrap.cruise_max_alt()[_OPT])
             limits_fixwing[mdl]["crosscl"] = wrap.climb_cross_alt_conmach()[_OPT]
             limits_fixwing[mdl]["crossde"] = wrap.descent_cross_alt_concas()[_OPT]
 

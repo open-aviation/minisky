@@ -39,6 +39,7 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
+from minisky import quantities as q
 from minisky.command import (
     ArgumentIssue,
     CommandParseContext,
@@ -727,8 +728,8 @@ class CommandStack:
                 icmdline = line.index(">")
                 tstamp = line[:icmdline]
                 ttxt = tstamp.strip().split(":")
-                ihr = int(ttxt[0]) * 3600.0
-                imin = int(ttxt[1]) * 60.0
+                ihr = q.hour_to_s(int(ttxt[0]))
+                imin = q.min_to_s(int(ttxt[1]))
                 xsec = float(ttxt[2])
                 cmdtime = ihr + imin + xsec
 

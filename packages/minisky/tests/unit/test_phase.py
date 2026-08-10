@@ -5,12 +5,10 @@ The fixed-wing altitude bands must be non-overlapping: an aircraft exactly at
 """
 
 import numpy as np
+from minisky import quantities as q
 from minisky.traffic.performance import phase
 from minisky.traffic.performance.coeff import LiftType
 from minisky.traffic.performance.phase import FlightPhase
-
-FT = 0.3048
-FPM = 0.00508
 
 
 def fixwing_phase(alt_ft: float, roc_fpm: float, spd_kts: float = 150.0) -> FlightPhase:
@@ -63,7 +61,9 @@ class TestFixwingBoundaries:
         assert np.all(matches == 1)
 
     def test_si_units_exactly_75ft_is_ground(self) -> None:
-        ph = phase.get_fixwing(np.array([80.0]), np.array([5.0]), np.array([75.0 * FT]), unit="SI")
+        ph = phase.get_fixwing(
+            np.array([80.0]), np.array([5.0]), np.array([q.ft_to_m(75.0)]), unit="SI"
+        )
         assert ph[0] == FlightPhase.GROUND
 
 

@@ -21,11 +21,11 @@ from typing import TYPE_CHECKING, Any, Literal, NamedTuple
 
 import numpy as np
 
+from minisky import quantities as q
 from minisky.command import AcIdSelection, OnOff, aircraft_indices, command
 from minisky.core.config import MiniSkyConfig
 from minisky.core.trafficarrays import TrafficArrays
 from minisky.result import Err, Ok, Result
-from minisky.tools.aero import ft, nm
 from minisky.traffic import route
 
 if TYPE_CHECKING:
@@ -435,7 +435,7 @@ class ConflictResolution(TrafficArrays):
         if isinstance(available := self._horizontal_absolute_zone_available(), Err):
             return available
         return Ok(
-            f"RSZONER [radiusnm]\nCurrent horizontal resolution factor is: {self.resofach}, resulting in radius: {self.resofach * self.traffic.cd.rpz_def / nm} nm"
+            f"RSZONER [radiusnm]\nCurrent horizontal resolution factor is: {self.resofach}, resulting in radius: {q.m_to_nmi(self.resofach * self.traffic.cd.rpz_def)} nm"
         )
 
     @command(name="RSZONER")
@@ -443,7 +443,7 @@ class ConflictResolution(TrafficArrays):
         """Set the absolute horizontal resolution-zone radius."""
         if isinstance(available := self._horizontal_absolute_zone_available(), Err):
             return available
-        self.resofach = zoner / self.traffic.cd.rpz_def * nm
+        self.resofach = q.nmi_to_m(zoner) / self.traffic.cd.rpz_def
         # Size of resolution zone r, vertically, no longer relative to CD zone
         self.resorrelative = False
         return Ok(
@@ -464,7 +464,7 @@ class ConflictResolution(TrafficArrays):
         if isinstance(available := self._vertical_absolute_zone_available(), Err):
             return available
         return Ok(
-            f"RSZONEDH [zonedhft]\nCurrent vertical resolution factor is: {self.resofacv}, resulting in height: {self.resofacv * self.traffic.cd.hpz_def / ft} ft"
+            f"RSZONEDH [zonedhft]\nCurrent vertical resolution factor is: {self.resofacv}, resulting in height: {q.m_to_ft(self.resofacv * self.traffic.cd.hpz_def)} ft"
         )
 
     @command(name="RSZONEDH")
@@ -472,7 +472,7 @@ class ConflictResolution(TrafficArrays):
         """Set the absolute vertical resolution-zone height."""
         if isinstance(available := self._vertical_absolute_zone_available(), Err):
             return available
-        self.resofacv = zonedh / self.traffic.cd.hpz_def * ft
+        self.resofacv = q.ft_to_m(zonedh) / self.traffic.cd.hpz_def
         # Size of resolution zone dh, vertically, no longer relative to CD zone
         self.resodhrelative = False
         return Ok(

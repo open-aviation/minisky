@@ -12,6 +12,7 @@ from typing import NamedTuple
 
 import numpy as np
 
+from minisky import quantities as q
 from minisky.tools import aero
 from minisky.traffic.performance.phase import FlightPhase
 
@@ -127,20 +128,20 @@ def inflight(v: np.ndarray, h: np.ndarray, vs: np.ndarray, thr0: np.ndarray) -> 
         m = -1.2043e-1 * vratio - 8.8889e-9 * roc**2 + 2.4444e-5 * roc + 4.7379e-1
         return m
 
-    roc = np.abs(np.asarray(vs / aero.fpm))
+    roc = np.abs(np.asarray(q.mps_to_fpm(vs)))
     v = np.where(v < 10, 10, v)
 
     mach = aero.vtas2mach(v, h)
     vcas = aero.vtas2cas(v, h)
 
     p = aero.vpressure(h)
-    p10 = aero.vpressure(np.asarray(10000 * aero.ft))
-    p35 = aero.vpressure(np.asarray(35000 * aero.ft))
+    p10 = aero.vpressure(np.asarray(q.ft_to_m(10000.0)))
+    p35 = aero.vpressure(np.asarray(q.ft_to_m(35000.0)))
 
     # approximate thrust at top of climb (REF 2)
-    F35 = (200 + 0.2 * thr0 / 4.448) * 4.448
+    F35 = q.lbf_to_n(200.0 + 0.2 * q.n_to_lbf(thr0))
     mach_ref = 0.8
-    vcas_ref = aero.vmach2cas(np.asarray(mach_ref), np.asarray(35000 * aero.ft))
+    vcas_ref = aero.vmach2cas(np.asarray(mach_ref), np.asarray(q.ft_to_m(35000.0)))
 
     # segment 3: alt > 35000:
     d = dfunc(mach / mach_ref)
@@ -158,9 +159,9 @@ def inflight(v: np.ndarray, h: np.ndarray, vs: np.ndarray, thr0: np.ndarray) -> 
     ratio_seg1 = m * (p / p35) + (F10 / F35 - m * (p10 / p35))
 
     ratio = np.where(
-        h > 35000 * aero.ft,
+        h > q.ft_to_m(35000.0),
         ratio_seg3,
-        np.where(h > 10000 * aero.ft, ratio_seg2, ratio_seg1),
+        np.where(h > q.ft_to_m(10000.0), ratio_seg2, ratio_seg1),
     )
 
     # convert to maximum static thrust ratio

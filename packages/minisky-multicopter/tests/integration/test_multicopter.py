@@ -11,8 +11,8 @@ must be observable across steps.
 from __future__ import annotations
 
 from minisky import MiniSky
+from minisky import quantities as q
 from minisky.simulation import Simulation
-from minisky.tools.aero import ft
 from minisky_multicopter.autopilot import MulticopterAutopilot
 from tests._types import RunCommand, StepUntil
 
@@ -175,13 +175,13 @@ class TestRouteFollowing:
         step_mc(lambda: traf.gs[0] == 0.0, 20)
         lat0, lon0 = float(traf.lat[0]), float(traf.lon[0])
 
-        step_mc(lambda: abs(traf.alt[0] - 100.0 * ft) < 0.5, 120)
+        step_mc(lambda: abs(traf.alt[0] - q.ft_to_m(100.0)) < 0.5, 120)
         assert float(traf.lat[0]) == lat0
         assert float(traf.lon[0]) == lon0
 
         # after 5 s held at altitude, the route resumes at the hover altitude
         step_mc(lambda: not ap.swhover[0], 30)
-        assert abs(traf.alt[0] - 100.0 * ft) < 0.5
+        assert abs(traf.alt[0] - q.ft_to_m(100.0)) < 0.5
         assert float(traf.lat[0]) == lat0
         assert float(traf.lon[0]) == lon0
         assert traf.swlnav[0]
@@ -203,9 +203,9 @@ class TestRouteFollowing:
         lat0, lon0 = float(traf.lat[0]), float(traf.lon[0])
 
         run_mc("ALT D1 100")  # plain ALT works inside a hover
-        step_mc(lambda: abs(traf.alt[0] - 100.0 * ft) < 0.5, 120)
+        step_mc(lambda: abs(traf.alt[0] - q.ft_to_m(100.0)) < 0.5, 120)
         run_mc("ALT D1 400")
-        step_mc(lambda: abs(traf.alt[0] - 400.0 * ft) < 0.5, 120)
+        step_mc(lambda: abs(traf.alt[0] - q.ft_to_m(400.0)) < 0.5, 120)
         assert traf.gs[0] == 0.0
         assert float(traf.lat[0]) == lat0
         assert float(traf.lon[0]) == lon0

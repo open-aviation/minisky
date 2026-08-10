@@ -6,13 +6,9 @@ import numpy as np
 import pytest
 from minisky import MiniSky
 from minisky import quantities as q
-from minisky.command import LatLonDegrees
 from minisky.simulation import Simulation
 from minisky.traffic.wind import WindFieldKind
 from tests._types import RunCommand
-
-FT = 0.3048
-KTS = 0.514444
 
 
 class TestCreate:
@@ -52,16 +48,16 @@ class TestCreate:
     def test_cre_defaults_are_25000ft_300kts(self, runtime: MiniSky, sim: Simulation) -> None:
         # Defaults used to be 25000 m / 300 m/s; they are meant as ft/kts.
         runtime.traffic.cre("KL001")
-        assert runtime.traffic.alt[0] == pytest.approx(25000 * FT)
-        assert runtime.traffic.cas[0] == pytest.approx(300 * KTS)
+        assert runtime.traffic.alt[0] == pytest.approx(q.ft_to_m(25000.0))
+        assert runtime.traffic.cas[0] == pytest.approx(q.kt_to_mps(300.0))
 
     def test_cre_via_stack_without_alt_spd_uses_defaults(
         self, runtime: MiniSky, run_cmd: RunCommand
     ) -> None:
         run_cmd("CRE KL204,B744,52,4")
         assert runtime.traffic.ntraf == 1
-        assert runtime.traffic.alt[0] == pytest.approx(25000 * FT, rel=1e-3)
-        assert runtime.traffic.cas[0] == pytest.approx(300 * KTS, rel=1e-3)
+        assert runtime.traffic.alt[0] == pytest.approx(q.ft_to_m(25000.0), rel=1e-3)
+        assert runtime.traffic.cas[0] == pytest.approx(q.kt_to_mps(300.0), rel=1e-3)
 
     def test_cre_echoes_confirmation(self, runtime: MiniSky, run_cmd: RunCommand) -> None:
         # Command results must reach the output buffer (scr.echo), not stdout only
@@ -128,7 +124,7 @@ class TestStep:
         assert runtime.simulation.simt == 0
 
     def test_aircraft_moves_when_stepped(self, runtime: MiniSky, sim: Simulation) -> None:
-        runtime.traffic.cre("KL001", lat=52.0, lon=4.0, hdg=90, alt=10000 * FT, spd=250)
+        runtime.traffic.cre("KL001", lat=52.0, lon=4.0, hdg=90, alt=q.ft_to_m(10000.0), spd=250)
         for _ in range(10):
             runtime.simulation.step()
         # eastbound: longitude increases, latitude nearly constant
@@ -152,7 +148,7 @@ class TestCreCmd:
 
 class TestConditional:
     def test_atspd_seeds_condition_with_cas(self, runtime: MiniSky, sim: Simulation) -> None:
-        runtime.traffic.cre("KL001", alt=25000 * FT, spd=150)
+        runtime.traffic.cre("KL001", alt=q.ft_to_m(25000.0), spd=150)
         cas, tas = runtime.traffic.cas[0], runtime.traffic.tas[0]
         assert tas > cas  # TAS exceeds CAS at altitude
         # Target between current CAS and TAS: not crossed in CAS terms
@@ -166,8 +162,8 @@ class TestConditional:
         assert runtime.traffic.cond.ncond == ncond
 
     def test_renameac_updates_pending_conditions(self, runtime: MiniSky, sim: Simulation) -> None:
-        runtime.traffic.cre("KL001", alt=10000 * FT, spd=150)
-        runtime.traffic.cond.ataltcmd(0, 5000 * FT, "KL001 SPD 200")
+        runtime.traffic.cre("KL001", alt=q.ft_to_m(10000.0), spd=150)
+        runtime.traffic.cond.ataltcmd(0, q.ft_to_m(5000.0), "KL001 SPD 200")
         runtime.traffic.cond.renameac("KL001", "KL999")
         assert "KL999" in runtime.traffic.cond.id
         assert "KL001" not in runtime.traffic.cond.id
@@ -179,9 +175,9 @@ class TestConditional:
 class TestWind:
     def test_wind_add_get_roundtrip(self, runtime: MiniSky, sim: Simulation) -> None:
         wind = runtime.traffic.wind
-        wind.addpoint(52.0, 4.0, 270.0, 20.0 * KTS)
+        wind.addpoint(52.0, 4.0, 270.0, q.kt_to_mps(20.0))
         vn, ve = wind.getdata(52.0, 4.0, 0.0)
-        assert ve == pytest.approx(20 * KTS)  # westerly wind blows eastward
+        assert ve == pytest.approx(q.kt_to_mps(20.0))  # westerly wind blows eastward
         assert vn == pytest.approx(0.0, abs=1e-9)
 
     def test_windfield_remove_keeps_lat_lon_paired(self, runtime: MiniSky, sim: Simulation) -> None:
@@ -195,7 +191,7 @@ class TestWind:
 
     def test_wind_del_clears_field(self, runtime: MiniSky, sim: Simulation) -> None:
         wind = runtime.traffic.wind
-        wind.addpoint(52.0, 4.0, 270.0, 20.0 * KTS)
+        wind.addpoint(52.0, 4.0, 270.0, q.kt_to_mps(20.0))
         assert wind.has_wind
         wind.clear()
         assert wind.kind is WindFieldKind.NONE
@@ -207,7 +203,7 @@ class TestWind:
         out = run_cmd("WIND 52,4,270,20")
         assert "Error" not in out
         vn, ve = runtime.traffic.wind.getdata(52.0, 4.0, 0.0)
-        assert ve == pytest.approx(20 * KTS, rel=1e-6)
+        assert ve == pytest.approx(q.kt_to_mps(20.0), rel=1e-6)
         assert vn == pytest.approx(0.0, abs=1e-9)
 
     def test_wind_del_via_stack(self, runtime: MiniSky, run_cmd: RunCommand) -> None:
