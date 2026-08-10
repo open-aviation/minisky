@@ -133,7 +133,6 @@ AreaM2 = Annotated[_T, isqx.AREA(isqx.M**2)]
 #
 # unit conversions
 #
-
 _ARCMINUTE = (isqx.DEG / 60).alias("arcminute")
 _ARCSECOND = (_ARCMINUTE / 60).alias("arcsecond")
 

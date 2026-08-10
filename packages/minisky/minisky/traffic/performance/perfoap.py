@@ -276,7 +276,7 @@ class OpenAP(TrafficArrays):
         mask[-n:] = True
         self.vmin[-n:], self.vmax[-n:] = self._construct_v_limits(mask)
 
-    def update(self, dt: float = 1) -> None:
+    def update(self) -> None:
         """Periodic update function for performance calculations.
 
         Re-derives the flight phase from the current speed, vertical rate,
@@ -289,16 +289,8 @@ class OpenAP(TrafficArrays):
         - fuel flow from the quadratic ICAO fuel-flow fit;
         - maximum acceleration and phase-dependent maximum bank angle.
 
-        Args:
-            dt: Update timestep; currently unused.
         """
-        self.phase = ph.get(
-            self.lifttype,
-            self.traffic.tas,
-            self.traffic.vs,
-            self.traffic.alt,
-            unit="SI",
-        )
+        self.phase = ph.get(self.lifttype, self.traffic.vs, self.traffic.alt)
 
         # update speed limits, based on phase change
         self.vmin, self.vmax = self._construct_v_limits()

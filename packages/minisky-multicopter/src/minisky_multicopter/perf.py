@@ -177,7 +177,7 @@ class MulticopterPerf(OpenAP):
         lift = self.mass * np.hypot(aero.g0, traf.kinematics.az)
         return np.hypot(lift, drag)
 
-    def update(self, dt: float = 1) -> None:
+    def update(self) -> None:
         """Update performance, then the electric model for multicopter rows.
 
         After the base update, computes the thrust each multicopter needs to
@@ -186,10 +186,8 @@ class MulticopterPerf(OpenAP):
         ``P = P_max * (T / T_max) ** 1.5`` anchored to the installed power,
         and integrates the battery state of charge as an ideal energy tank.
 
-        Args:
-            dt: Update timestep; the simulation timestep is read from the owning runtime.
         """
-        super().update(dt)
+        super().update()
         mc = get_multicopter(self.traffic)
         if mc is None:
             return

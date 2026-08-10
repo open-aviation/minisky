@@ -7,6 +7,7 @@ import pytest
 from minisky import MiniSky
 from minisky import quantities as q
 from minisky.simulation import Simulation
+from minisky.traffic.conditional import AltitudeCondition, SpeedCondition
 from minisky.traffic.wind import WindFieldKind
 from tests._types import RunCommand
 
@@ -154,8 +155,10 @@ class TestConditional:
         # Target between current CAS and TAS: not crossed in CAS terms
         target = 0.5 * (cas + tas)
         runtime.traffic.cond.atspdcmd(0, target, "KL001 LNAV ON")
-        # Seed must be based on CAS, like the comparison in update()
-        assert runtime.traffic.cond.lastdif[-1] == pytest.approx(target - cas)
+        # Seed must be based on CAS, like the comparison in update().
+        condition = runtime.traffic.cond.conditions[-1]
+        assert isinstance(condition, SpeedCondition)
+        assert condition.last_difference == pytest.approx(target - cas)
         # The speed did not cross the target, so nothing may trigger
         ncond = runtime.traffic.cond.ncond
         runtime.traffic.cond.update()
@@ -165,11 +168,12 @@ class TestConditional:
         runtime.traffic.cre("KL001", alt=q.ft_to_m(10000.0), spd=150)
         runtime.traffic.cond.ataltcmd(0, q.ft_to_m(5000.0), "KL001 SPD 200")
         runtime.traffic.cond.renameac("KL001", "KL999")
-        assert "KL999" in runtime.traffic.cond.id
-        assert "KL001" not in runtime.traffic.cond.id
+        condition = runtime.traffic.cond.conditions[-1]
+        assert isinstance(condition, AltitudeCondition)
+        assert condition.callsign == "KL999"
         # Unknown callsign takes the early-return path without errors
         runtime.traffic.cond.renameac("MISSING", "XX123")
-        assert "XX123" not in runtime.traffic.cond.id
+        assert all(condition.callsign != "XX123" for condition in runtime.traffic.cond.conditions)
 
 
 class TestWind:

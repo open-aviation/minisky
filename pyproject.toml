@@ -66,12 +66,29 @@ extraPaths = [
     "packages/tangram-minisky/src",
 ]
 pythonVersion = "3.11"
-# "standard" catches useful bugs while staying practical for this numpy/scipy-heavy fork.
-typeCheckingMode = "standard"
-# Fully-typed files where any leftover implicit Any should be an error.
-strict = [
-    "packages/minisky-example*/src/**/*.py",
-    "packages/minisky-tangram/src/**/*.py",
-]
+typeCheckingMode = "strict"
+# in isqx, we don't want to force people to annotate `[float]` or `[np.ndarray]`
+# see https://github.com/open-aviation/minisky/issues/38#issuecomment-5156669559.
+reportMissingTypeArgument = false
+# passing `value: q.DistanceM` to NumPy intentionally propagates its unknown carrier.
+reportUnknownArgumentType = false
+# numPy overloads such as `np.where(..., q.DistanceM, ...)` can be partially unknown.
+reportUnknownMemberType = false
+# `value: q.DistanceM` intentionally leaves the underlying Python carrier unknown.
+reportUnknownParameterType = false
+# Results derived from an unspecialized `q.DistanceM` may retain an unknown carrier.
+reportUnknownVariableType = false
+# something to do with pandas, maybe we should investigate?
 reportMissingTypeStubs = false
-reportWildcardImportFromLibrary = false
+
+# the following are used to supress pyright temporarily
+# they are scheduled for removal in a future PR.
+
+# a few dynamically-typed callbacks still leave lambda parameter/result types unknown.
+reportUnknownLambdaType = false
+# some legacy helpers still have truly unannotated non-physical parameters such as `dict` data.
+reportMissingParameterType = false
+# cooperating traffic/plugin classes still access framework internals such as `_children`.
+reportPrivateUsage = false
+reportUnnecessaryIsInstance = false
+reportConstantRedefinition = false

@@ -5,8 +5,7 @@ position helpers.
 
 ## Aeronautics (`aero`)
 
-The ISA atmosphere and CAS/TAS/EAS/Mach conversions. Standard unit-conversion
-callables live in [`minisky.quantities`][].
+The ISA atmosphere and CAS/TAS/EAS/Mach conversions. Shared physical quantity metadata and unit converters live in [`minisky.quantities`](quantities.md).
 
 ::: minisky.tools.aero
 

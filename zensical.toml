@@ -25,6 +25,7 @@ nav = [
     { "Stack commands" = "reference/commands.md" },
     { "API" = [
       { "minisky" = "api/minisky.md" },
+      { "quantities" = "api/quantities.md" },
       { "simulation" = "api/simulation.md" },
       { "traffic" = "api/traffic.md" },
       { "stack" = "api/stack.md" },
@@ -70,13 +71,17 @@ name = "Switch to light mode"
 [project.plugins]
 search = {}
 
+[project.plugins.mkdocstrings]
+enable_inventory = true
+
 [project.plugins.mkdocstrings.handlers.python]
 # tangram_minisky lives in its own workspace and is not installed in the docs
 # environment; point griffe at its source so it can analyse it statically.
-paths = ["packages/tangram-minisky/src"]
+paths = ["packages/minisky", "packages/tangram-minisky/src"]
 inventories = [
   "https://docs.python.org/3/objects.inv",
   "https://fastapi.tiangolo.com/objects.inv",
+  "https://abc8747.github.io/isqx/objects.inv",
 ]
 
 [project.plugins.mkdocstrings.handlers.python.options]

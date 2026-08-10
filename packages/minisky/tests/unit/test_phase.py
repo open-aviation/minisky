@@ -1,8 +1,4 @@
-"""Unit tests for flight-phase identification (minisky.traffic.performance.phase).
-
-The fixed-wing altitude bands must be non-overlapping: an aircraft exactly at
-75 ft or 1000 ft must be assigned exactly one phase.
-"""
+"""Unit tests for SI-only OpenAP flight-phase identification."""
 
 import numpy as np
 from minisky import quantities as q
@@ -11,80 +7,40 @@ from minisky.traffic.performance.coeff import LiftType
 from minisky.traffic.performance.phase import FlightPhase
 
 
-def fixwing_phase(alt_ft: float, roc_fpm: float, spd_kts: float = 150.0) -> FlightPhase:
-    ph = phase.get_fixwing(np.array([spd_kts]), np.array([roc_fpm]), np.array([alt_ft]), unit="EP")
-    return FlightPhase(int(ph[0]))
+def fixwing_phase(alt_ft: float, roc_fpm: float) -> FlightPhase:
+    alt = np.array([q.ft_to_m(alt_ft)])
+    roc = np.array([q.fpm_to_mps(roc_fpm)])
+    result = phase.get_fixwing(roc, alt)
+    return FlightPhase(int(result[0]))
 
 
-# NOTE(abraham): most of these tests look useless, remove?
 class TestFixwingBoundaries:
-    def test_exactly_75ft_climbing_is_ground(self) -> None:
+    def test_ground_boundary(self) -> None:
         assert fixwing_phase(75.0, 500.0) == FlightPhase.GROUND
-
-    def test_exactly_75ft_descending_is_ground(self) -> None:
         assert fixwing_phase(75.0, -500.0) == FlightPhase.GROUND
 
-    def test_just_above_75ft_climbing_is_initial_climb(self) -> None:
+    def test_terminal_boundary(self) -> None:
         assert fixwing_phase(76.0, 500.0) == FlightPhase.INITIAL_CLIMB
-
-    def test_just_above_75ft_descending_is_approach(self) -> None:
         assert fixwing_phase(76.0, -500.0) == FlightPhase.APPROACH
-
-    def test_exactly_1000ft_climbing_is_initial_climb(self) -> None:
         assert fixwing_phase(1000.0, 500.0) == FlightPhase.INITIAL_CLIMB
-
-    def test_exactly_1000ft_descending_is_approach(self) -> None:
         assert fixwing_phase(1000.0, -500.0) == FlightPhase.APPROACH
 
-    def test_just_above_1000ft_climbing_is_climb(self) -> None:
+    def test_enroute_boundary(self) -> None:
         assert fixwing_phase(1001.0, 500.0) == FlightPhase.CLIMB
-
-    def test_just_above_1000ft_descending_is_descent(self) -> None:
         assert fixwing_phase(1001.0, -500.0) == FlightPhase.DESCENT
-
-    def test_level_above_10000ft_is_cruise(self) -> None:
         assert fixwing_phase(30000.0, 0.0) == FlightPhase.CRUISE
-
-    def test_boundary_conditions_assign_exactly_one_phase(self) -> None:
-        # Each altitude/roc band must match exactly one condition
-        alt = np.array([75.0, 75.0, 1000.0, 1000.0, 1001.0, 1001.0])
-        roc = np.array([500.0, -500.0, 500.0, -500.0, 500.0, -500.0])
-        conditions = [
-            alt <= 75,
-            (alt > 75) & (alt <= 1000) & (roc >= 150),
-            (alt > 75) & (alt <= 1000) & (roc <= -150),
-            (alt > 1000) & (roc >= 150),
-            (alt > 1000) & (roc <= -150),
-            (alt >= 10000) & (roc < 150) & (roc > -150),
-        ]
-        matches = np.sum(conditions, axis=0)
-        assert np.all(matches == 1)
-
-    def test_si_units_exactly_75ft_is_ground(self) -> None:
-        ph = phase.get_fixwing(
-            np.array([80.0]), np.array([5.0]), np.array([q.ft_to_m(75.0)]), unit="SI"
-        )
-        assert ph[0] == FlightPhase.GROUND
 
 
 class TestGetDtype:
-    def test_get_returns_integer_dtype(self) -> None:
+    def test_get_preserves_unknown_rotor_phase(self) -> None:
         lifttype = np.array([LiftType.FIXED_WING.value, LiftType.ROTORCRAFT.value])
-        ph = phase.get(
-            lifttype,
-            np.array([150.0, 50.0]),
-            np.array([0.0, 0.0]),
-            np.array([30000.0, 500.0]),
-            unit="EP",
-        )
-        assert np.issubdtype(ph.dtype, np.integer)
-        assert ph[0] == FlightPhase.CRUISE
-        assert ph[1] == FlightPhase.UNKNOWN
+        roc = np.array([0.0, 0.0])
+        alt = np.array([q.ft_to_m(30000.0), q.ft_to_m(500.0)])
+        result = phase.get(lifttype, roc, alt)
+        assert np.issubdtype(result.dtype, np.integer)
+        assert result[0] == FlightPhase.CRUISE
+        assert result[1] == FlightPhase.UNKNOWN
 
     def test_get_fixwing_returns_integer_dtype(self) -> None:
-        ph = phase.get_fixwing(np.array([150.0]), np.array([0.0]), np.array([2000.0]), unit="EP")
-        assert np.issubdtype(ph.dtype, np.integer)
-
-    def test_get_rotor_returns_integer_dtype(self) -> None:
-        ph = phase.get_rotor(np.array([50.0]), np.array([0.0]), np.array([500.0]))
-        assert np.issubdtype(ph.dtype, np.integer)
+        result = phase.get_fixwing(np.array([0.0]), np.array([q.ft_to_m(2000.0)]))
+        assert np.issubdtype(result.dtype, np.integer)
