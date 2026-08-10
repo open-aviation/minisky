@@ -549,8 +549,8 @@ class Autopilot(TrafficArrays):
         has_speed_constraint = ~np.ma.getmaskarray(self.traffic.actwp.spdcon)
         for iac in np.where(has_rta & ~has_speed_constraint)[0]:
             iac = int(iac)
-            iwp = self.route[iac].iactwp
-            if self.route[iac].wprta[iwp] is not None:
+            route = self.route[iac]
+            if (iwp := route.iactwp) is not None and route.wprta[iwp] is not None:
                 # For all aircraft flying to an RTA waypoint, recalculate speed more often
                 distance_to_waypoint = (
                     float(
@@ -1190,9 +1190,13 @@ class Autopilot(TrafficArrays):
             return Err("DEST: " + position.err())
         coordinates = position.ok()
         self.dest[acidx] = wpname
-        iwp = route.add_waypoint(
-            acidx, self.dest[acidx], route.dest, coordinates.lat, coordinates.lon, 0.0, casmach
-        )
+        if (
+            iwp := route.add_waypoint(
+                acidx, self.dest[acidx], route.dest, coordinates.lat, coordinates.lon, 0.0, casmach
+            )
+        ) is None:
+            return Err("DEST position" + self.dest[acidx] + " not found.")
+
         # If only waypoint: activate
         if (iwp == 0) or (self.orig[acidx] != "" and len(route.wpname) == 2):
             self.traffic.swlnav[acidx] = True
@@ -1200,9 +1204,6 @@ class Autopilot(TrafficArrays):
             route.iactwp = iwp
             direct(self.traffic, acidx, route.wpname[iwp])
 
-        # If not found, say so
-        elif iwp < 0:
-            return Err("DEST position" + self.dest[acidx] + " not found.")
         return Ok(f"destination set to {wpname}")
 
     @command(name="ORIG")
@@ -1221,16 +1222,18 @@ class Autopilot(TrafficArrays):
 
         # Origin: bookkeeping only for now, store in route as origin
         self.orig[acidx] = wpname
-        iwp = route.add_waypoint(
-            acidx,
-            self.orig[acidx],
-            route.orig,
-            coordinates.lat,
-            coordinates.lon,
-            0.0,
-            self.traffic.cas[acidx],
-        )
-        if iwp < 0:
+        if (
+            route.add_waypoint(
+                acidx,
+                self.orig[acidx],
+                route.orig,
+                coordinates.lat,
+                coordinates.lon,
+                0.0,
+                self.traffic.cas[acidx],
+            )
+            is None
+        ):
             return Err(self.orig[acidx] + " not found.")
         return Ok(f"origin set to {wpname}")
 
@@ -1265,6 +1268,7 @@ class Autopilot(TrafficArrays):
                 self.traffic.swvnavspd[i] = True
                 route.calcfp()
                 actwpidx = route.iactwp
+                assert actwpidx is not None
                 profile = route.wpprofile[actwpidx]
                 distance_to_waypoint = (
                     float(
