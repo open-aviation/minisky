@@ -902,6 +902,15 @@ wheels = [
 ]
 
 [[package]]
+name = "isqx"
+version = "0.1.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/05/24/7bf8af5502b5f6548778b72f888d41d95f6946a9bb718a35d0a74271eba8/isqx-0.1.2.tar.gz", hash = "sha256:341552103f34e66a6a17848170f14e8fc60406963f13b8705f32b8379a6f75ff", size = 482731, upload-time = "2025-12-16T20:46:50.595Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/30/31/0e5f1fce0346cace1769caf384b8e97b9ec4032a0f2c62a8fb93dc15ceb3/isqx-0.1.2-py3-none-any.whl", hash = "sha256:5a52a52610d42346fc19de5d00d35fe54cae223ddb09a90c4e75fc2af155f91f", size = 124024, upload-time = "2025-12-16T20:46:48.926Z" },
+]
+
+[[package]]
 name = "jedi"
 version = "0.20.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1258,6 +1267,7 @@ source = { editable = "packages/minisky" }
 dependencies = [
     { name = "colorama" },
     { name = "fastapi", extra = ["standard"] },
+    { name = "isqx" },
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "numpy", version = "2.5.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "openap" },
@@ -1276,6 +1286,7 @@ dependencies = [
 requires-dist = [
     { name = "colorama", specifier = ">=0.4.6" },
     { name = "fastapi", extras = ["standard"], specifier = ">=0.115.7" },
+    { name = "isqx", specifier = ">=0.1.2" },
     { name = "numpy", specifier = ">=2.2.2" },
     { name = "openap", specifier = ">=2.4" },
     { name = "pandas", specifier = ">=2.2.3" },
