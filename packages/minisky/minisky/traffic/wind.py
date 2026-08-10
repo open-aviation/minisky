@@ -13,6 +13,7 @@ speed and track from heading and airspeed.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import Enum, auto
 from itertools import pairwise
 from math import isfinite
 from typing import Annotated, Any, Literal
@@ -41,6 +42,13 @@ from minisky.result import Err, Ok, Result
 from minisky.tools.aero import ft, kts
 
 
+class WindFieldKind(Enum):
+    NONE = auto()
+    CONSTANT = auto()
+    HORIZONTAL = auto()
+    ALTITUDE_DEPENDENT = auto()
+
+
 class Windfield:
     """Windfield class:
     Methods:
@@ -67,11 +75,7 @@ class Windfield:
         vnorth(nalt,nvec)  = wind north component [m/s]
         veast(nalt,nvec)   = wind east component [m/s]
 
-        winddim   = Windfield dimension, will automatically be detected:
-                      0 = no wind
-                      1 = constant wind
-                      2 = 2D field (no alt profiles),
-                      3 = 3D field (alt dependent wind at some points)
+        kind = Wind field kind, derived from the defined points and profiles.
 
     """
 
@@ -85,23 +89,35 @@ class Windfield:
         self.idxalt = np.arange(0, len(self.altaxis), 1.0)
         self.nalt = len(self.altaxis)
 
-        # List of indices of points with an altitude profile (for 3D check)
-        self.iprof = []
-
         # Clear actual field
         self.clear()
 
+    @property
+    def kind(self) -> WindFieldKind:
+        """Classify the field from its actual point/profile data."""
+        if np.any(self.profiled):
+            return WindFieldKind.ALTITUDE_DEPENDENT
+        if len(self.lat) == 0:
+            return WindFieldKind.NONE
+        if len(self.lat) == 1:
+            return WindFieldKind.CONSTANT
+        return WindFieldKind.HORIZONTAL
+
+    @property
+    def has_wind(self) -> bool:
+        return self.kind is not WindFieldKind.NONE
+
+    @property
+    def nvec(self) -> int:
+        return len(self.lat)
+
     def clear(self) -> None:  # Clear actual field
-        """Remove all wind vectors, leaving a windless (winddim 0) field."""
-        # Windfield dimension will automatically be detected:
-        # 0 = no wind, 1 = constant wind, 2 = 2D field (no alt profiles),
-        # 3 = 3D field (alt matters), used to speed up interpolation
-        self.winddim = 0
+        """Remove all wind vectors."""
         self.lat = np.array([])
         self.lon = np.array([])
+        self.profiled = np.array([], dtype=bool)
         self.vnorth = np.array([[]])
         self.veast = np.array([[]])
-        self.nvec = 0
         self.fe = None
         self.fn = None
 
@@ -129,7 +145,8 @@ class Windfield:
             windalt: Optional array of altitudes [m] belonging to the rows
                 of vnorth/veast; makes the field 3D.
         """
-        if windalt is not None and len(windalt) > 1:
+        has_profile = windalt is not None and len(windalt) > 1
+        if has_profile:
             # Set altitude interpolation functions
             fnorth = interp1d(
                 windalt,
@@ -182,16 +199,13 @@ class Windfield:
                 vnaxis = fnorth(self.altaxis).T
                 veaxis = feast(self.altaxis).T
 
-            self.winddim = 3
-            self.iprof.append(len(self.lat) + 1)
-
         else:
             vnaxis = vnorth
             veaxis = veast
 
-        self.nvec += len(lat)
         self.lat = np.append(self.lat, lat)
         self.lon = np.append(self.lon, lon)
+        self.profiled = np.append(self.profiled, np.full(len(lat), has_profile, dtype=bool))
 
         if self.vnorth.size == 0:
             self.vnorth = vnaxis
@@ -199,9 +213,6 @@ class Windfield:
         else:
             self.vnorth = np.concatenate((self.vnorth, vnaxis), axis=1)
             self.veast = np.concatenate((self.veast, veaxis), axis=1)
-
-        if self.winddim < 3:  # No 3D => set dim to 0,1 or 2 dep on nr of points
-            self.winddim = min(2, len(self.lat))
 
     def addpoint(
         self,
@@ -254,25 +265,17 @@ class Windfield:
         #        print array([vnaxis]).transpose()
         self.lat = np.append(self.lat, lat)
         self.lon = np.append(self.lon, lon)
+        self.profiled = np.append(self.profiled, prof3D)
 
         idx = len(self.lat) - 1
 
-        if self.nvec == 0:
+        if self.vnorth.size == 0:
             self.vnorth = np.array([vnaxis]).transpose()
             self.veast = np.array([veaxis]).transpose()
 
         else:
             self.vnorth = np.append(self.vnorth, np.array([vnaxis]).transpose(), axis=1)
             self.veast = np.append(self.veast, np.array([veaxis]).transpose(), axis=1)
-
-        if self.winddim < 3:  # No 3D => set dim to 0,1 or 2 dep on nr of points
-            self.winddim = min(2, len(self.lat))
-
-        if prof3D:
-            self.winddim = 3
-            self.iprof.append(idx)
-
-        self.nvec = self.nvec + 1
 
         return idx  # return index of added point
 
@@ -322,16 +325,15 @@ class Windfield:
             vnorth = self.fn(np.concatenate((alt.reshape(1, -1), lat, lon), axis=0).T)
             veast = self.fe(np.concatenate((alt.reshape(1, -1), lat, lon), axis=0).T)
         else:
-            # Check dimension of wind field
-            if self.winddim == 0:  # None = no wind
+            if self.kind is WindFieldKind.NONE:
                 vnorth = np.zeros(npos)
                 veast = np.zeros(npos)
 
-            elif self.winddim == 1:  # Constant = one point defined, so constant wind
+            elif self.kind is WindFieldKind.CONSTANT:
                 vnorth = np.ones(npos) * self.vnorth[0, 0]
                 veast = np.ones(npos) * self.veast[0, 0]
 
-            elif self.winddim >= 2:  # 2D/3D field = more points defined but no altitude profile
+            else:
                 # ---- Get horizontal weight factors
 
                 # Average cosine for flat-eartyh approximation
@@ -353,9 +355,9 @@ class Windfield:
                 # ---- Altitude interpolation
 
                 # No altitude profiles used: do 2D planar interpolation only
-                if self.winddim == 2 or (
+                if self.kind is WindFieldKind.HORIZONTAL or (
                     not isinstance(useralt, (list, np.ndarray)) and useralt == 0.0
-                ):  # 2D field no altitude interpolation
+                ):  # horizontal field or sea-level query
                     vnorth = self.vnorth[0, :].dot(horfact)
                     veast = self.veast[0, :].dot(horfact)
 
@@ -405,8 +407,7 @@ class Windfield:
         """Remove a wind definition point by index.
 
         Args:
-            idx: Index of the point, as returned by addpoint(). The field
-                dimension (winddim) is re-evaluated after removal.
+            idx: Index of the point, as returned by addpoint().
         """
         if idx < len(self.lat):
             self.lat = np.delete(self.lat, idx)
@@ -414,12 +415,10 @@ class Windfield:
 
             self.vnorth = np.delete(self.vnorth, idx, axis=1)
             self.veast = np.delete(self.veast, idx, axis=1)
+            self.profiled = np.delete(self.profiled, idx)
 
-            if idx in self.iprof:
-                self.iprof.remove(idx)
-
-            if self.winddim < 3 or len(self.iprof) == 0 or len(self.lat) == 0:
-                self.winddim = min(2, len(self.lat))  # Check for 0, 1D, 2D or 3D
+            # TODO(abraham): make the scipy interpolation functions a derived cache;
+            # add/remove can currently leave fe/fn describing an older point set.
 
 
 @dataclass(frozen=True, slots=True)

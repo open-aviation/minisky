@@ -542,7 +542,7 @@ class Traffic(TrafficArrays):
         self.p[-n:], self.rho[-n:], self.Temp[-n:] = vatmos(alt)
 
         # Wind
-        if self.wind.winddim > 0:
+        if self.wind.has_wind:
             applywind = self.alt[-n:] > 50.0 * ft
             self.windnorth[-n:], self.windeast[-n:] = self.wind.getdata(
                 self.lat[-n:], self.lon[-n:], self.alt[-n:]
@@ -962,8 +962,7 @@ class Traffic(TrafficArrays):
         # First try airports (most used and shorter, hence faster list)
         idx_airport = self.navigation.getaptidx(name)
         if idx_airport is not None:
-            airport_sizes = ["large", "medium", "small"]
-            airport_size = airport_sizes[max(-1, self.navigation.aptype[idx_airport] - 1)]
+            airport_size = self.navigation.apsize[idx_airport].name.lower()
 
             aptname = self.navigation.aptname[idx_airport]
             aptlat = self.navigation.aptlat[idx_airport]

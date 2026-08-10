@@ -1132,7 +1132,7 @@ class Autopilot(TrafficArrays):
         else:
             resolved_hdg = hdg.degrees
 
-        if self.traffic.wind.winddim > 0:
+        if self.traffic.wind.has_wind:
             tasnorth = self.traffic.tas[idx] * np.cos(np.radians(resolved_hdg))
             taseast = self.traffic.tas[idx] * np.sin(np.radians(resolved_hdg))
             wind_north, wind_east = self.traffic.wind.getdata(

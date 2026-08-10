@@ -166,7 +166,7 @@ class Kinematics(TrafficArrays):
         traf = self.traffic
         simdt = self._get_simulation().simdt
         # Compute ground speed and track from heading, airspeed and wind
-        if traf.wind.winddim == 0:  # no wind
+        if not traf.wind.has_wind:  # no wind
             traf.gsnorth = traf.tas * np.cos(np.radians(traf.hdg))
             traf.gseast = traf.tas * np.sin(np.radians(traf.hdg))
 

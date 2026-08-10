@@ -17,6 +17,7 @@ def fixwing_phase(alt_ft: float, roc_fpm: float, spd_kts: float = 150.0) -> Flig
     ph = phase.get_fixwing(np.array([spd_kts]), np.array([roc_fpm]), np.array([alt_ft]), unit="EP")
     return FlightPhase(int(ph[0]))
 
+
 # NOTE(abraham): most of these tests look useless, remove?
 class TestFixwingBoundaries:
     def test_exactly_75ft_climbing_is_ground(self) -> None:

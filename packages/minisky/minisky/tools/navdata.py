@@ -11,6 +11,7 @@ argument that references a navaid, airport, or runway.
 from __future__ import annotations
 
 import json
+from enum import IntEnum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, Protocol
 
@@ -24,6 +25,12 @@ from minisky.tools.aero import nm
 
 if TYPE_CHECKING:
     from minisky.simulation.console import ConsoleIO
+
+
+class AirportSize(IntEnum):
+    LARGE = 1
+    MEDIUM = 2
+    SMALL = 3
 
 
 class LatLonReference(Protocol):
@@ -102,7 +109,7 @@ class Navdatabase:
         aptlat: Airport latitudes [deg].
         aptlon: Airport longitudes [deg].
         aptmaxrwy: Longest runway length per airport [m].
-        aptype: Airport type (1=large, 2=medium, 3=small).
+        apsize: Airport size.
         aptco: Two-character country codes (strings).
         aptelev: Airport elevations [m] above MSL.
         fir: FIR names.
@@ -173,7 +180,7 @@ class Navdatabase:
         self.aptlat = _tolist(aptdata["aplat"])  # latitude [deg]
         self.aptlon = _tolist(aptdata["aplon"])  # longitude [deg]
         self.aptmaxrwy = _tolist(aptdata["apmaxrwy"])  # max runway length [m]
-        self.aptype = _tolist(aptdata["aptype"])  # 1=large, 2=medium, 3=small
+        self.apsize = [AirportSize(int(value)) for value in _tolist(aptdata["aptype"])]
         self.aptco = _tolist(aptdata["apco"])  # two char country code (string)
         self.aptelev = _tolist(aptdata["apelev"])  # elevation in meters [m] MSL
 
