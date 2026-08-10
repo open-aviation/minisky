@@ -13,7 +13,7 @@ from typing import NamedTuple
 import numpy as np
 
 from minisky.tools import aero
-from minisky.traffic.performance import phase as ph
+from minisky.traffic.performance.phase import FlightPhase
 
 
 def compute_max_thr_ratio(
@@ -33,8 +33,7 @@ def compute_max_thr_ratio(
     static thrust ``thr0``.
 
     Args:
-        phase (int or 1D-array): phase of flight, option: phase.[NA, GD, IC,
-            CL, CR, DE, AP]
+        phase (int or 1D-array): phase of flight, option: `FlightPhase` values
         bpr (int or 1D-array): engine bypass ratio [-]
         v (int or 1D-array): aircraft true airspeed [m/s]
         h (int or 1D-array): aircraft altitude [m]
@@ -56,7 +55,7 @@ def compute_max_thr_ratio(
     # thrust ratio array
     #   LD and GN assume ZERO thrust
     tr = np.ones(n) * ratio_inflight
-    tr = np.where(phase == ph.GD, ratio_takeoff, tr)
+    tr = np.where(phase == FlightPhase.GROUND, ratio_takeoff, tr)
 
     return tr
 
