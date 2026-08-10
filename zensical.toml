@@ -36,6 +36,15 @@ nav = [
     ] },
   ] },
 ]
+extra_javascript = [
+  "assets/js/katex.js",
+  "https://cdn.jsdelivr.net/npm/katex@0.17.0/dist/katex.min.js",
+  "https://cdn.jsdelivr.net/npm/katex@0.17.0/dist/contrib/auto-render.min.js",
+  "https://cdn.jsdelivr.net/npm/katex@0.17.0/dist/contrib/copy-tex.min.js",
+]
+extra_css = [
+  "https://cdn.jsdelivr.net/npm/katex@0.17.0/dist/katex.min.css",
+]
 
 [project.theme]
 features = [
@@ -107,6 +116,7 @@ on_undefined = "strict"
 [project.markdown_extensions]
 admonition = {}
 attr_list = {}
+"pymdownx.arithmatex" = { generic = true }
 "pymdownx.details" = {}
 "pymdownx.superfences" = {}
 "pymdownx.highlight" = {}
