@@ -9,10 +9,11 @@ stack command (see Traffic.setnoise()).
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import numpy as np
 
+from minisky import quantities as q
 from minisky.core.trafficarrays import TrafficArrays
 from minisky.tools.aero import Rearth
 
@@ -30,17 +31,19 @@ class Turbulence(TrafficArrays):
 
     Attributes:
         active (bool): Whether turbulence is applied.
-        sd (ndarray): Turbulence standard deviations [m/s] in (horizontal
-            flight direction, horizontal wing direction, vertical);
+        sd (ndarray): Position-diffusion amplitudes [m/sqrt(s)] in
+            (horizontal flight direction, horizontal wing direction, vertical);
             clipped to a small positive minimum.
     """
+
+    sd: q.PositionDiffusionMPerSqrtS[np.ndarray]
 
     def __init__(self, traffic: Traffic, get_simulation: Callable[[], Simulation]) -> None:
         super().__init__(traffic)
         self.traffic = traffic
         self._get_simulation = get_simulation
         self.active = False
-        self.SetStandards([0, 0.1, 0.1])
+        self.set_standards([0, 0.1, 0.1])
 
     def new_implementation(self, implementation: Callable[..., TrafficArrays]) -> TrafficArrays:
         """Construct a replacement with this runtime's traffic and simulation."""
@@ -49,26 +52,19 @@ class Turbulence(TrafficArrays):
     def reset(self) -> None:
         """Switch turbulence off and restore the default standard deviations."""
         self.active = False
-        self.SetStandards([0, 0.1, 0.1])
+        self.set_standards([0, 0.1, 0.1])
 
     def setnoise(self, flag: bool) -> None:
-        """Switch the turbulence model on or off (part of the NOISE command).
-
-        Args:
-            flag: True to enable turbulence, False to disable it.
-        """
+        """Switch the turbulence model on or off (part of the NOISE command)."""
         self.active = flag
 
-    def SetStandards(self, s: Any) -> None:
+    def set_standards(self, s: q.PositionDiffusionMPerSqrtS) -> None:
         """Set the turbulence standard deviations.
 
-        Args:
-            s: Sequence of three standard deviations [m/s]: (horizontal
-                flight direction, horizontal wing direction, vertical).
-                Values are clipped to a small positive minimum.
+        Values are ordered horizontal-flight, horizontal-wing, vertical and
+        clipped to a small positive minimum.
         """
-        self.sd = np.array(s)  # m/s standard turbulence  (nonnegative)
-        # in (horizontal flight direction, horizontal wing direction, vertical)
+        self.sd = np.asarray(s, dtype=float)
         self.sd = np.where(self.sd > 1e-6, self.sd, 1e-6)
 
     def update(self) -> None:

@@ -42,14 +42,17 @@ class Kinematics(TrafficArrays):
         swaltsel (ndarray): Bool switch: True while altitude capture is engaged.
     """
 
+    ax: q.AccelerationMps2[np.ndarray]
+    az: q.AccelerationMps2[np.ndarray]
+
     def __init__(self, traffic: Traffic, get_simulation: Callable[[], Simulation]) -> None:
         super().__init__(traffic)
         self.traffic = traffic
         self._get_simulation = get_simulation
         with self.settrafarrays():
             # Acceleration
-            self.ax = np.array([])  # [m/s2] current longitudinal acceleration
-            self.az = np.array([])  # [m/s2] current vertical acceleration
+            self.ax = np.array([])
+            self.az = np.array([])
 
             # Turn/altitude-select switches
             self.swhdgsel = np.array([], dtype=bool)  # determines whether aircraft is turning
@@ -150,11 +153,9 @@ class Kinematics(TrafficArrays):
         )
         target_vs = self.swaltsel * np.sign(delta_alt) * np.abs(traf.aporasas.vs)
         delta_vs = target_vs - traf.vs
-        # print(q.mps_to_fpm(delta_vs))
-        need_az = np.abs(delta_vs) > q.fpm_to_mps(300.0)  # small threshold
-        self.az = (
-            need_az * np.sign(delta_vs) * q.fpm_to_mps(300.0)
-        )  # fixed vertical acc approx 1.6 m/s^2
+        vertical_acceleration: q.AccelerationMps2[float] = q.fpm_per_s_to_mps2(300.0)
+        need_az = np.abs(delta_vs) > vertical_acceleration * simdt
+        self.az = need_az * np.sign(delta_vs) * vertical_acceleration
         traf.vs = np.where(need_az, traf.vs + self.az * simdt, target_vs)
         traf.vs = np.where(np.isfinite(traf.vs), traf.vs, 0)  # fix vs nan issue
 

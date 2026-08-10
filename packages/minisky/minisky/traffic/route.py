@@ -1212,9 +1212,10 @@ def direct(traffic: Traffic, acidx: int, wpname: str) -> bool:
     traffic.actwp.turnrad[acidx] = (
         geometry.radius if isinstance(geometry, TurnRadius) else np.ma.masked
     )
-    traffic.actwp.turnspd[acidx] = (
-        np.ma.masked if turn is None or turn.speed is None else turn.speed
-    )
+    if turn is None:
+        traffic.actwp.turnspd[acidx] = np.ma.masked
+    else:
+        traffic.actwp.turnspd[acidx] = traffic.cas[acidx] if turn.speed is None else turn.speed
     traffic.actwp.turnhdgr[acidx] = (
         geometry.heading_rate if isinstance(geometry, TurnHeadingRate) else np.ma.masked
     )

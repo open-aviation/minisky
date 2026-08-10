@@ -402,6 +402,7 @@ class TestWaypointSwitching:
         # The active waypoint itself counts: still index 2 while flying to it
         step_until(lambda: route.iactwp == 2, max_steps=200)
         assert runtime.traffic.actwp.nextturnidx[0] == 2
+        assert runtime.traffic.actwp.turnspd[0] == pytest.approx(q.kt_to_mps(250.0), rel=1e-3)
 
         # Once past the fly-turn waypoint there is no upcoming turn.
         step_until(lambda: route.iactwp == 3, max_steps=600)

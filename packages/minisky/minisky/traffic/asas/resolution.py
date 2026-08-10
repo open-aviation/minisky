@@ -17,12 +17,19 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Literal, NamedTuple
+from typing import TYPE_CHECKING, Literal, NamedTuple
 
 import numpy as np
 
 from minisky import quantities as q
-from minisky.command import AcIdSelection, OnOff, aircraft_indices, command
+from minisky.command import (
+    AcIdSelection,
+    NonNegativeFiniteFloat,
+    OnOff,
+    PositiveFiniteFloat,
+    aircraft_indices,
+    command,
+)
 from minisky.core.config import MiniSkyConfig
 from minisky.core.trafficarrays import TrafficArrays
 from minisky.result import Err, Ok, Result
@@ -30,6 +37,8 @@ from minisky.traffic import route
 
 if TYPE_CHECKING:
     from minisky.traffic import Traffic
+
+    from .detection import ConflictDetection
 
 
 class PriorityCode(Enum):
@@ -41,6 +50,8 @@ class PriorityCode(Enum):
 
 
 PriorityCodeArg = Literal["FF1", "FF2", "FF3", "LAY1", "LAY2"]
+ResolutionRadiusNM = q.DistanceNM[NonNegativeFiniteFloat]
+ResolutionHeightFt = q.VerticalDistanceFt[NonNegativeFiniteFloat]
 HorizontalResolutionMethod = Literal["BOTH", "SPD", "HDG", "NONE", "ON", "OFF", "OF"]
 VerticalResolutionMethod = Literal["NONE", "ON", "OFF", "OF", "V/S"]
 
@@ -75,10 +86,15 @@ class ConflictResolution(TrafficArrays):
         active (ndarray): Per-aircraft flag, True while the autopilot follows
             the resolution advisory instead of the flight plan [-].
         trk (ndarray): Resolution heading advisory [deg].
-        tas (ndarray): Resolution speed advisory [m/s].
+        gs (ndarray): Resolution ground-speed advisory [m/s].
         alt (ndarray): Resolution altitude advisory [m].
         vs (ndarray): Resolution vertical speed advisory [m/s].
     """
+
+    trk: q.GroundTrackDeg[np.ndarray]
+    gs: q.GroundSpeedMps[np.ndarray]
+    alt: q.PressureAltitudeM[np.ndarray]
+    vs: q.VerticalRateMps[np.ndarray]
 
     def __init__(
         self,
@@ -112,21 +128,17 @@ class ConflictResolution(TrafficArrays):
             self.noresoac = np.array([], dtype=bool)
             # whether the autopilot follows ASAS or not
             self.active = np.array([], dtype=bool)
-            self.trk = np.array([])  # heading provided by the ASAS [deg]
-            self.tas = np.array([])  # speed provided by the ASAS (eas) [m/s]
-            self.alt = np.array([])  # alt provided by the ASAS [m]
-            self.vs = np.array([])  # vspeed provided by the ASAS [m/s]
+            self.trk = np.array([])
+            self.gs = np.array([])
+            self.alt = np.array([])
+            self.vs = np.array([])
 
     def new_implementation(self, implementation: Callable[..., TrafficArrays]) -> TrafficArrays:
         """Construct a replacement with this runtime's traffic and selector."""
         return implementation(self.config, self.traffic, self.select_implementation)
 
     def switch(self, flag: bool | None = None) -> None:
-        """Turn conflict resolution on or off.
-
-        Args:
-            flag (bool): True to activate resolution, False to deactivate.
-        """
+        """Turn conflict resolution on or off."""
         self.activate = flag
 
     def reset(self) -> None:
@@ -173,7 +185,7 @@ class ConflictResolution(TrafficArrays):
         return self.active
 
     @property
-    def tasactive(self) -> np.ndarray:
+    def gsactive(self) -> np.ndarray:
         """Return a boolean array sized according to the number of aircraft
         with True for all elements where speed is currently controlled by
         the conflict resolution algorithm.
@@ -181,16 +193,14 @@ class ConflictResolution(TrafficArrays):
         return self.active
 
     class ResolutionAdvisories(NamedTuple):
-        track: np.ndarray
-        """Per-aircraft track advisory [deg]."""
-        tas: np.ndarray
-        """Per-aircraft true airspeed advisory [m/s]."""
-        vertical_speed: np.ndarray
-        """Per-aircraft vertical speed advisory [m/s]."""
-        altitude: np.ndarray
-        """Per-aircraft altitude advisory [m]."""
+        track: q.GroundTrackDeg[np.ndarray]
+        ground_speed: q.GroundSpeedMps[np.ndarray]
+        vertical_speed: q.VerticalRateMps[np.ndarray]
+        altitude: q.PressureAltitudeM[np.ndarray]
 
-    def resolve(self, conf: Any, ownship: Any, intruder: Any) -> ResolutionAdvisories:
+    def resolve(
+        self, conf: ConflictDetection, ownship: Traffic, intruder: Traffic
+    ) -> ResolutionAdvisories:
         """Resolve all current conflicts.
 
         This function should be reimplemented in a subclass for actual
@@ -199,18 +209,16 @@ class ConflictResolution(TrafficArrays):
         avoidance manoeuvre.
 
         Args:
-            conf: The ConflictDetection instance with the current conflicts.
-            ownship: Traffic object with ownship states.
-            intruder: Traffic object with intruder states.
+            conf: Conflict detector containing the current conflicts.
+            ownship: Ownship traffic state.
+            intruder: Intruder traffic state.
         """
         # If resolution is off, and detection is on, and a conflict is detected
         # then asas will be active for that airplane. Since resolution is off, it
         # should then follow the auto pilot instructions.
-        return self.ResolutionAdvisories(
-            ownship.ap.trk, ownship.ap.tas, ownship.ap.vs, ownship.ap.alt
-        )
+        return self.ResolutionAdvisories(ownship.ap.trk, ownship.gs, ownship.ap.vs, ownship.ap.alt)
 
-    def update(self, conf: Any, ownship: Any, intruder: Any) -> None:
+    def update(self, conf: ConflictDetection, ownship: Traffic, intruder: Traffic) -> None:
         """Perform an update step of the Conflict Resolution implementation.
 
         When resolution is active, computes new resolution advisories with
@@ -218,21 +226,21 @@ class ConflictResolution(TrafficArrays):
         aircraft should keep following the resolution with [`ConflictResolution.resumenav`][minisky.traffic.asas.resolution.ConflictResolution.resumenav].
 
         Args:
-            conf: The ConflictDetection instance with the current conflicts.
-            ownship: Traffic object with ownship states.
-            intruder: Traffic object with intruder states.
+            conf: Conflict detector containing the current conflicts.
+            ownship: Ownship traffic state.
+            intruder: Intruder traffic state.
         """
         if self.activate:
             if conf.confpairs:
                 advisories = self.resolve(conf, ownship, intruder)
                 # TODO(abraham): consider storing the entire advisories result
                 self.trk = advisories.track
-                self.tas = advisories.tas
+                self.gs = advisories.ground_speed
                 self.vs = advisories.vertical_speed
                 self.alt = advisories.altitude
             self.resumenav(conf, ownship, intruder)
 
-    def resumenav(self, conf: Any, ownship: Any, intruder: Any) -> None:
+    def resumenav(self, conf: ConflictDetection, ownship: Traffic, intruder: Traffic) -> None:
         """Decide for each aircraft in the conflict list whether the ASAS
         should be followed or not, based on if the aircraft pairs passed
         their CPA.
@@ -246,9 +254,9 @@ class ConflictResolution(TrafficArrays):
         flight-plan waypoint.
 
         Args:
-            conf: The ConflictDetection instance with the current conflicts.
-            ownship: Traffic object with ownship states.
-            intruder: Traffic object with intruder states.
+            conf: Conflict detector containing the current and recent conflict pairs.
+            ownship: Ownship traffic state.
+            intruder: Intruder traffic state.
         """
         # Add new conflicts to resopairs and confpairs_all and new losses to lospairs_all
         self.resopairs.update(conf.confpairs)
@@ -258,7 +266,7 @@ class ConflictResolution(TrafficArrays):
         changeactive = {}
 
         # smallest relative angle between vectors of heading a and b
-        def anglediff(a: float, b: float) -> float:
+        def anglediff(a: q.AngleDeg, b: q.AngleDeg) -> q.AngleDeg:
             d = a - b
             if d > 180:
                 return anglediff(a, b + 360)
@@ -280,7 +288,7 @@ class ConflictResolution(TrafficArrays):
 
             if idx2 is not None:
                 # Distance vector using flat earth approximation
-                re = 6371000.0
+                re: q.LengthM[float] = 6371000.0
                 dist = re * np.array(
                     [
                         np.radians(intruder.lon[idx2] - ownship.lon[idx1])
@@ -402,7 +410,7 @@ class ConflictResolution(TrafficArrays):
         return Ok(f"RFACH [FACTOR]\nCurrent horizontal resolution factor is: {self.resofach}")
 
     @command(name="RFACH")
-    def set_horizontal_resolution_factor(self, factor: float) -> Result[str, str]:
+    def set_horizontal_resolution_factor(self, factor: PositiveFiniteFloat) -> Result[str, str]:
         """Set the horizontal resolution factor."""
         self.resofach = factor
         self.resorrelative = True  # Size of resolution zone r, vertically, set relative to CD zone
@@ -414,7 +422,7 @@ class ConflictResolution(TrafficArrays):
         return Ok(f"RFACV [FACTOR]\nCurrent vertical resolution factor is: {self.resofacv}")
 
     @command(name="RFACV")
-    def set_vertical_resolution_factor(self, factor: float) -> Result[str, str]:
+    def set_vertical_resolution_factor(self, factor: PositiveFiniteFloat) -> Result[str, str]:
         """Set the vertical resolution factor."""
         self.resofacv = factor
         # Size of resolution zone dh, vertically, set relative to CD zone
@@ -439,7 +447,7 @@ class ConflictResolution(TrafficArrays):
         )
 
     @command(name="RSZONER")
-    def set_horizontal_resolution_zone(self, zoner: float) -> Result[str, str]:
+    def set_horizontal_resolution_zone(self, zoner: ResolutionRadiusNM) -> Result[str, str]:
         """Set the absolute horizontal resolution-zone radius."""
         if isinstance(available := self._horizontal_absolute_zone_available(), Err):
             return available
@@ -468,7 +476,7 @@ class ConflictResolution(TrafficArrays):
         )
 
     @command(name="RSZONEDH")
-    def set_vertical_resolution_zone(self, zonedh: float) -> Result[str, str]:
+    def set_vertical_resolution_zone(self, zonedh: ResolutionHeightFt) -> Result[str, str]:
         """Set the absolute vertical resolution-zone height."""
         if isinstance(available := self._vertical_absolute_zone_available(), Err):
             return available

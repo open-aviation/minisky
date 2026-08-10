@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
+from minisky import quantities as q
 from minisky.core import TrafficArrays
 
 if TYPE_CHECKING:
@@ -35,6 +36,12 @@ class APorASAS(TrafficArrays):
         vs (ndarray): Desired vertical speed (magnitude) [m/s].
         tas (ndarray): Desired true airspeed [m/s].
     """
+
+    alt: q.PressureAltitudeM[np.ndarray]
+    hdg: q.TrueHeadingDegrees[np.ndarray]
+    trk: q.GroundTrackDeg[np.ndarray]
+    vs: q.VerticalRateMps[np.ndarray]
+    tas: q.TrueAirspeedMps[np.ndarray]
 
     def __init__(self, traffic: Traffic) -> None:
         super().__init__(traffic)
@@ -84,18 +91,18 @@ class APorASAS(TrafficArrays):
             vwn, vwe = self.traffic.wind.getdata(
                 self.traffic.lat, self.traffic.lon, self.traffic.alt
             )
-            asastasnorth = self.traffic.cr.tas * np.cos(np.radians(self.traffic.cr.trk)) - vwn
-            asastaseast = self.traffic.cr.tas * np.sin(np.radians(self.traffic.cr.trk)) - vwe
+            asastasnorth = self.traffic.cr.gs * np.cos(np.radians(self.traffic.cr.trk)) - vwn
+            asastaseast = self.traffic.cr.gs * np.sin(np.radians(self.traffic.cr.trk)) - vwe
             asastas = np.sqrt(asastasnorth**2 + asastaseast**2)
         # no wind, then ground speed = TAS
         else:
-            asastas = self.traffic.cr.tas  # TAS [m/s]
+            asastas = self.traffic.cr.gs
 
         # Select asas if there is a conflict AND resolution is on
         # Determine desired states per channel whether to use value from ASAS or AP.
         # `self.traffic.cr.active` may be used as well, will set all of these channels
         self.trk = np.where(self.traffic.cr.hdgactive, self.traffic.cr.trk, self.traffic.ap.trk)
-        self.tas = np.where(self.traffic.cr.tasactive, asastas, self.traffic.ap.tas)
+        self.tas = np.where(self.traffic.cr.gsactive, asastas, self.traffic.ap.tas)
         self.alt = np.where(self.traffic.cr.altactive, self.traffic.cr.alt, self.traffic.ap.alt)
         self.vs = np.where(self.traffic.cr.vsactive, self.traffic.cr.vs, self.traffic.ap.vs)
 
