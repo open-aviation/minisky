@@ -25,9 +25,11 @@ from __future__ import annotations
 import asyncio
 import time
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any, TypedDict, cast
+from typing import TYPE_CHECKING, TypedDict
 
 import numpy as np
+
+from minisky import quantities as q
 
 if TYPE_CHECKING:
     from minisky.simulation import Runner, Simulation
@@ -37,15 +39,15 @@ if TYPE_CHECKING:
 # Default upper bound on how often a snapshot is published, in Hz. The
 # simulation may step much faster than this in fast-forward; publishing is
 # gated to at most this wall-clock rate so consumers are not flooded.
-STREAM_MAX_HZ = 10.0
+STREAM_MAX_HZ: q.FrequencyHz[float] = 10.0
 
 
 class SimInfo(TypedDict):
     """Simulation-level snapshot fields."""
 
     speed: float  # runner speed multiplier (x realtime)
-    simdt: float  # s
-    simt: float  # s
+    simdt: q.DurationS[float]
+    simt: q.SimulationTimeS[float]
     simutc: str  # ISO-8601, timezone-aware
     ntraf: int
     state: int  # Serialized SimulationState value.
@@ -56,17 +58,17 @@ class AcData(TypedDict):
     """Per-aircraft snapshot columns (one element per aircraft, SI units)."""
 
     callsign: list[str]
-    lat: list[float]  # deg
-    lon: list[float]  # deg
-    alt: list[float]  # m
-    trk: list[float]  # deg
-    vs: list[float]  # m/s
-    tas: list[float]  # m/s
-    cas: list[float]  # m/s
-    gs: list[float]  # m/s
+    lat: list[q.LatitudeDeg[float]]
+    lon: list[q.LongitudeDeg[float]]
+    alt: list[q.PressureAltitudeM[float]]
+    trk: list[q.GroundTrackDeg[float]]
+    vs: list[q.VerticalRateMps[float]]
+    tas: list[q.TrueAirspeedMps[float]]
+    cas: list[q.CalibratedAirspeedMps[float]]
+    gs: list[q.GroundSpeedMps[float]]
     typecode: list[str]
     inconf: list[bool]
-    tcpamax: list[float]  # s
+    tcpamax: list[q.DurationS[float]]
     nconf_cur: int
     nconf_tot: int
     nlos_cur: int
@@ -80,10 +82,11 @@ class Snapshot(TypedDict):
     acdata: AcData
 
 
-def _tolist(arr: Any) -> list[float]:
+def _tolist(arr) -> list[float]:
     """Convert a numpy array (or list) into a plain JSON-serialisable list."""
     if isinstance(arr, np.ndarray):
-        return cast(list[float], arr.tolist())
+        values: list[float] = arr.tolist()
+        return values
     return list(arr)
 
 
@@ -93,11 +96,7 @@ def build_snapshot(
     runner: Runner,
     commands: CommandStack,
 ) -> Snapshot:
-    """Build a full snapshot from explicit runtime components in SI units.
-
-    Returns:
-        A [`Snapshot`][] with `siminfo` and `acdata` keys.
-    """
+    """Build a full snapshot from explicit runtime components in SI units."""
     sim = simulation
     traf = traffic
     cd = traf.cd
@@ -154,8 +153,12 @@ class StreamHub:
             publish; consumers may use it to detect missed ticks.
     """
 
+    _min_interval: q.DurationS[float]
+
     def __init__(
-        self, build_snapshot: Callable[[], Snapshot], max_hz: float = STREAM_MAX_HZ
+        self,
+        build_snapshot: Callable[[], Snapshot],
+        max_hz: q.FrequencyHz[float] = STREAM_MAX_HZ,
     ) -> None:
         self._build_snapshot = build_snapshot
         self._subscribers = 0

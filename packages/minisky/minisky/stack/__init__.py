@@ -45,6 +45,7 @@ from minisky.command import (
     CommandParseContext,
     Keyword,
     Parameter,
+    SimTimeS,
     SourceSpan,
     Text,
     TimeS,
@@ -220,7 +221,7 @@ class QueuedCommand:
 class ScheduledCommand:
     """A scenario command with the simulation time at which it becomes due."""
 
-    time: float
+    time: q.SimulationTimeS[float]
     text: str
 
 
@@ -796,7 +797,7 @@ class CommandStack:
         return Ok("Starting scenario " + name)
 
     @command(name="SCHEDULE")
-    def schedule(self, time: TimeS, cmdline: Text) -> bool:
+    def schedule(self, time: SimTimeS, cmdline: Text) -> bool:
         """Schedule a stack command at a specific simulation time.
 
         The command is inserted into the scenario buffer, keeping the buffer

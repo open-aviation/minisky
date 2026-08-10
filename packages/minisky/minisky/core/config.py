@@ -11,6 +11,7 @@ from annotated_types import Ge, Gt, Le
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.functional_validators import BeforeValidator
 
+from minisky import quantities as q
 from minisky.identifiers import validate_plugin_id
 
 PluginId: TypeAlias = Annotated[str, BeforeValidator(validate_plugin_id)]
@@ -28,9 +29,9 @@ class MiniSkyConfig(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    asas_dtlookahead: Annotated[float, Ge(0)] = 300.0
-    asas_pzr: Annotated[float, Gt(0)] = 5.0
-    asas_pzh: Annotated[float, Gt(0)] = 1000.0
+    asas_dtlookahead: Annotated[q.DurationS[float], Ge(0)] = 300.0
+    asas_pzr: Annotated[q.DistanceNM[float], Gt(0)] = 5.0
+    asas_pzh: Annotated[q.VerticalDistanceFt[float], Gt(0)] = 1000.0
     asas_marh: Annotated[float, Gt(0)] = 1.05
     asas_marv: Annotated[float, Gt(0)] = 1.05
     server: ServerConfig = Field(default_factory=ServerConfig)

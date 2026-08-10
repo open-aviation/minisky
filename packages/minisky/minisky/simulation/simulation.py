@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Annotated, Any, Literal
 import numpy as np
 from annotated_types import Ge, Le
 
+from minisky import quantities as q
 from minisky.command import (
     ArgumentIssue,
     CmdParser,
@@ -51,7 +52,7 @@ class SimulationState(IntEnum):
 
 
 # Minimum sleep interval
-MINSLEEP = 1e-3
+MINSLEEP: q.DurationS[float] = 1e-3
 
 
 Day = Annotated[int, Ge(1), Le(31)]
@@ -116,6 +117,10 @@ class Simulation:
         clients: Set of known client identifiers connected to this simulation.
     """
 
+    simt: q.SimulationTimeS[float]
+    simdt: q.DurationS[float]
+    syst: q.WallClockTimeS[float]
+
     def __init__(
         self,
         traffic: Traffic,
@@ -145,13 +150,13 @@ class Simulation:
         self.prevstate: SimulationState | None = None
 
         # Simulation time [seconds]
-        self.simt: float = 0
+        self.simt = 0.0
 
         # Simulation timestep [seconds]
-        self.simdt: float = 1
+        self.simdt = 1.0
 
         # System time [seconds]
-        self.syst: float = 0
+        self.syst = 0.0
 
         # Simulated UTC clock time (timezone-aware), set by TIME/DATE commands
         self.utc: datetime.datetime = datetime.datetime.now(datetime.UTC)

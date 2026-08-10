@@ -10,7 +10,7 @@ internal quantities are in SI units.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, NamedTuple
+from typing import TYPE_CHECKING, NamedTuple
 
 import numpy as np
 
@@ -71,6 +71,34 @@ class OpenAP(TrafficArrays):
         ff_coeff_a/b/c (ndarray): Quadratic ICAO fuel-flow fit coefficients.
     """
 
+    Sref: q.AreaM2[np.ndarray]
+    mass: q.MassKg[np.ndarray]
+    bank: q.BankAngleDeg[np.ndarray]
+    thrust: q.ForceN[np.ndarray]
+    drag: q.ForceN[np.ndarray]
+    fuelflow: q.MassFlowKgPerS[np.ndarray]
+    hmax: q.PressureAltitudeM[np.ndarray]
+    vmin: q.AirspeedMps[np.ndarray]
+    vmax: q.AirspeedMps[np.ndarray]
+    vsmin: q.VerticalRateMps[np.ndarray]
+    vsmax: q.VerticalRateMps[np.ndarray]
+    axmax: q.AccelerationMps2[np.ndarray]
+    engthrmax: q.ForceN[np.ndarray]
+    max_thrust: q.ForceN[np.ndarray]
+    ff_coeff_a: q.MassFlowKgPerS[np.ndarray]
+    ff_coeff_b: q.MassFlowKgPerS[np.ndarray]
+    ff_coeff_c: q.MassFlowKgPerS[np.ndarray]
+    engpower: q.PowerW[np.ndarray]
+    vminic: q.CalibratedAirspeedMps[np.ndarray]
+    vminer: q.CalibratedAirspeedMps[np.ndarray]
+    vminap: q.CalibratedAirspeedMps[np.ndarray]
+    vmaxic: q.CalibratedAirspeedMps[np.ndarray]
+    vmaxer: q.CalibratedAirspeedMps[np.ndarray]
+    vmaxap: q.CalibratedAirspeedMps[np.ndarray]
+    vminto: q.CalibratedAirspeedMps[np.ndarray]
+    hcross: q.PressureAltitudeM[np.ndarray]
+    mmo: q.MachNumber[np.ndarray]
+
     def __init__(self, traffic: Traffic) -> None:
         super().__init__()
         self.traffic = traffic
@@ -98,6 +126,8 @@ class OpenAP(TrafficArrays):
 
             # Envelope limits per aircraft
             self.hmax = np.array([])  # Flight ceiling [m]
+            # TODO(abraham): fixed-wing rows store CAS while rotor rows store TAS; a
+            # per-lift-type envelope record would make the speed kind unambiguous.
             self.vmin = np.array([])  # Minimum operating speed [m/s]
             self.vmax = np.array([])  # Maximum operating speed [m/s]
             self.vsmin = np.array([])  # Maximum descent speed [m/s]
@@ -146,8 +176,8 @@ class OpenAP(TrafficArrays):
         (simpler) rotor envelope; unknown fixed-wing types default to B744.
 
         Args:
-            n (int): Number of newly created aircraft (all assumed to be of
-                the same type as the last created aircraft).
+            n: Number of newly created aircraft; the batch is assumed to share
+                the typecode of the last created aircraft.
         """
         # cautious! considering multiple created aircraft with same type
         super().create(n)
@@ -260,10 +290,8 @@ class OpenAP(TrafficArrays):
         - maximum acceleration and phase-dependent maximum bank angle.
 
         Args:
-            dt (float): Update timestep [s] (currently unused).
+            dt: Update timestep; currently unused.
         """
-        # update phase, infer from spd, roc, alt
-        len(self.phase)
         self.phase = ph.get(
             self.lifttype,
             self.traffic.tas,
@@ -363,19 +391,19 @@ class OpenAP(TrafficArrays):
         )
 
     class PerformanceLimits(NamedTuple):
-        tas: np.ndarray
+        tas: q.TrueAirspeedMps[np.ndarray]
         """Allowed true airspeed [m/s]."""
-        vertical_speed: np.ndarray
+        vertical_speed: q.VerticalRateMps[np.ndarray]
         """Allowed vertical speed [m/s]."""
-        altitude: np.ndarray
+        altitude: q.PressureAltitudeM[np.ndarray]
         """Allowed altitude [m]."""
 
     def limits(
         self,
-        intent_v_tas: np.ndarray,
-        intent_vs: np.ndarray,
-        intent_h: np.ndarray,
-        ax: np.ndarray,
+        intent_v_tas: q.TrueAirspeedMps[np.ndarray],
+        intent_vs: q.VerticalRateMps[np.ndarray],
+        intent_h: q.PressureAltitudeM[np.ndarray],
+        ax: q.AccelerationMps2[np.ndarray],
     ) -> PerformanceLimits:
         """apply limits on indent speed, vertical speed, and altitude (called in pilot module)
 
@@ -387,13 +415,16 @@ class OpenAP(TrafficArrays):
         speed limits are applied directly on TAS.
 
         Args:
-            intent_v_tas (float or 1D-array): intent true airspeed [m/s]
-            intent_vs (float or 1D-array): intent vertical speed [m/s]
-            intent_h (float or 1D-array): intent altitude [m]
-            ax (float or 1D-array): acceleration [m/s^2]
+            intent_v_tas: Intended true airspeed.
+            intent_vs: Intended vertical speed.
+            intent_h: Intended altitude.
+            ax: Current longitudinal acceleration.
         """
         allow_h = np.where(intent_h > self.hmax, self.hmax, intent_h)
 
+        # TODO(abraham): #33 should evaluate the CAS envelope at the aircraft's
+        # current altitude; using intended altitude can create false speed limiting
+        # during large altitude changes.
         intent_v_cas = aero.vtas2cas(intent_v_tas, allow_h)
         allow_v_cas = np.where((intent_v_cas < self.vmin), self.vmin, intent_v_cas)
         allow_v_cas = np.where(intent_v_cas > self.vmax, self.vmax, allow_v_cas)
@@ -429,18 +460,13 @@ class OpenAP(TrafficArrays):
 
         return self.PerformanceLimits(allow_v_tas, allow_vs, allow_h)
 
-    # TODO(abraham): maybe make this Generic over float/np/any array?
     class CurrentPerformanceLimits(NamedTuple):
-        minimum_tas: float | np.ndarray
-        """Minimum true airspeed [m/s]."""
-        maximum_tas: float | np.ndarray
-        """Maximum true airspeed [m/s]."""
-        minimum_vertical_speed: float | np.ndarray
-        """Minimum vertical speed [m/s]."""
-        maximum_vertical_speed: float | np.ndarray
-        """Maximum vertical speed [m/s]."""
+        minimum_tas: q.TrueAirspeedMps
+        maximum_tas: q.TrueAirspeedMps
+        minimum_vertical_speed: q.VerticalRateMps
+        maximum_vertical_speed: q.VerticalRateMps
 
-    def currentlimits(self, idx: Any = None) -> CurrentPerformanceLimits:
+    def currentlimits(self, idx: int | np.ndarray | None = None) -> CurrentPerformanceLimits:
         """Get current kinematic performance envelop.
 
         Converts the phase-dependent CAS limits to TAS at the current
@@ -448,7 +474,7 @@ class OpenAP(TrafficArrays):
         operating Mach number.
 
         Args:
-            idx (int or 1D-array): Aircraft index or indices. Defaults to all aircraft.
+            idx: Aircraft index or indices; omit to return limits for the whole fleet.
         """
         vtasmin = aero.vcas2tas(self.vmin, self.traffic.alt)
 
@@ -464,12 +490,12 @@ class OpenAP(TrafficArrays):
         return self.CurrentPerformanceLimits(vtasmin, vtasmax, self.vsmin, self.vsmax)
 
     class SpeedLimits(NamedTuple):
-        minimum: np.ndarray
-        """Minimum calibrated airspeed [m/s]."""
-        maximum: np.ndarray
-        """Maximum calibrated airspeed [m/s]."""
+        minimum: q.AirspeedMps[np.ndarray]
+        """Minimum speed; fixed-wing rows are CAS and rotor rows are TAS."""
+        maximum: q.AirspeedMps[np.ndarray]
+        """Maximum speed; fixed-wing rows are CAS and rotor rows are TAS."""
 
-    def _construct_v_limits(self, mask: Any = True) -> SpeedLimits:
+    def _construct_v_limits(self, mask: bool | np.ndarray = True) -> SpeedLimits:
         """Compute speed limist base on aircraft model and flight phases
 
         For fixed-wing aircraft the applicable minimum and maximum calibrated
@@ -525,16 +551,13 @@ class OpenAP(TrafficArrays):
             return self.SpeedLimits(vmin, vmax)
         return self.SpeedLimits(vmin[mask], vmax[mask])
 
-    def calc_axmax(self) -> np.ndarray:
+    def calc_axmax(self) -> q.AccelerationMps2[np.ndarray]:
         """Compute the maximum longitudinal acceleration per aircraft.
 
         In flight the maximum acceleration follows from the excess thrust:
         (max_thrust - drag) / mass. Fixed constants are used for fixed-wing
         aircraft on the ground (2 m/s^2) and rotorcraft (3.5 m/s^2), with a
         global lower bound of 0.5 m/s^2.
-
-        Returns:
-            ndarray: Maximum acceleration per aircraft [m/s^2].
         """
         # accelerations depending on phase and wing type
         axmax_fixwing_ground = 2
@@ -561,9 +584,6 @@ class OpenAP(TrafficArrays):
         Implements the PERFSTATS stack command output: flight phase, thrust,
         drag, fuel flow, speed and vertical-speed envelopes, and ceiling in
         aviation units (kN, kg/s, kts, fpm, ft).
-
-        Args:
-            acid (int): Aircraft index.
         """
         return Ok(
             f"Flight phase: {ph.readable_phase(FlightPhase(int(self.phase[acid])))}\n"

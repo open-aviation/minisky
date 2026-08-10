@@ -17,10 +17,11 @@ way) rules can assign the manoeuvre to only one aircraft of a pair.
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any, NamedTuple
+from typing import TYPE_CHECKING, NamedTuple
 
 import numpy as np
 
+from minisky import quantities as q
 from minisky.core.config import MiniSkyConfig
 from minisky.result import Ok, Result
 from minisky.traffic.asas.resolution import (
@@ -30,8 +31,13 @@ from minisky.traffic.asas.resolution import (
     VerticalResolutionMethod,
 )
 
+_CRUISE_VERTICAL_RATE: q.VerticalRateMps[float] = 0.1
+_HEAD_ON_CPA_FLOOR: q.DistanceM[float] = 10.0
+
 if TYPE_CHECKING:
     from minisky.traffic import Traffic
+
+    from .detection import ConflictDetection
 
 
 class MVP(ConflictResolution):
@@ -139,18 +145,18 @@ class MVP(ConflictResolution):
         return Ok(f"Vertical resolution method set to {value}")
 
     class PriorityResolution(NamedTuple):
-        ownship: np.ndarray
+        ownship: q.VelocityMps[np.ndarray]
         """Updated ownship resolution vector [m/s]."""
-        intruder: np.ndarray
+        intruder: q.VelocityMps[np.ndarray]
         """Updated intruder resolution vector [m/s]."""
 
     def applyprio(
         self,
-        dv_mvp: np.ndarray,
-        dv1: np.ndarray,
-        dv2: np.ndarray,
-        vs1: float,
-        vs2: float,
+        dv_mvp: q.VelocityMps[np.ndarray],
+        dv1: q.VelocityMps[np.ndarray],
+        dv2: q.VelocityMps[np.ndarray],
+        vs1: q.VerticalRateMps[float],
+        vs2: q.VerticalRateMps[float],
     ) -> PriorityResolution:
         """Apply the desired priority setting to the resolution.
 
@@ -165,8 +171,6 @@ class MVP(ConflictResolution):
                 (east, north, up) [m/s]; may be modified in place.
             dv1 (ndarray): Accumulated resolution vector of aircraft 1 [m/s].
             dv2 (ndarray): Accumulated resolution vector of aircraft 2 [m/s].
-            vs1 (float): Vertical speed of aircraft 1 [m/s].
-            vs2 (float): Vertical speed of aircraft 2 [m/s].
         """
 
         # Primary Free Flight prio rules (no priority)
@@ -181,10 +185,10 @@ class MVP(ConflictResolution):
             # since cooperative, the vertical resolution component can be halved, and then dv_mvp can be added
             dv_mvp[2] = dv_mvp[2] / 2.0
             # If aircraft 1 is cruising, and aircraft 2 is climbing/descending -> aircraft 2 solves conflict
-            if abs(vs1) < 0.1 and abs(vs2) > 0.1:
+            if abs(vs1) < _CRUISE_VERTICAL_RATE and abs(vs2) > _CRUISE_VERTICAL_RATE:
                 dv2 = dv2 + dv_mvp
             # If aircraft 2 is cruising, and aircraft 1 is climbing -> aircraft 1 solves conflict
-            elif abs(vs2) < 0.1 and abs(vs1) > 0.1:
+            elif abs(vs2) < _CRUISE_VERTICAL_RATE and abs(vs1) > _CRUISE_VERTICAL_RATE:
                 dv1 = dv1 - dv_mvp
             else:  # both are climbing/descending/cruising -> both aircraft solves the conflict
                 dv1 = dv1 - dv_mvp
@@ -193,11 +197,11 @@ class MVP(ConflictResolution):
         # Tertiary Free Flight (Climbing/descending aircraft have priority and crusing solves with horizontal resolutions)
         elif self.priority_code is PriorityCode.FF3:
             # If aircraft 1 is cruising, and aircraft 2 is climbing/descending -> aircraft 1 solves conflict horizontally
-            if abs(vs1) < 0.1 and abs(vs2) > 0.1:
+            if abs(vs1) < _CRUISE_VERTICAL_RATE and abs(vs2) > _CRUISE_VERTICAL_RATE:
                 dv_mvp[2] = 0.0
                 dv1 = dv1 - dv_mvp
             # If aircraft 2 is cruising, and aircraft 1 is climbing -> aircraft 2 solves conflict horizontally
-            elif abs(vs2) < 0.1 and abs(vs1) > 0.1:
+            elif abs(vs2) < _CRUISE_VERTICAL_RATE and abs(vs1) > _CRUISE_VERTICAL_RATE:
                 dv_mvp[2] = 0.0
                 dv2 = dv2 + dv_mvp
             else:  # both are climbing/descending/cruising -> both aircraft solves the conflict, combined
@@ -209,10 +213,10 @@ class MVP(ConflictResolution):
         elif self.priority_code is PriorityCode.LAY1:
             dv_mvp[2] = 0.0
             # If aircraft 1 is cruising, and aircraft 2 is climbing/descending -> aircraft 2 solves conflict horizontally
-            if abs(vs1) < 0.1 and abs(vs2) > 0.1:
+            if abs(vs1) < _CRUISE_VERTICAL_RATE and abs(vs2) > _CRUISE_VERTICAL_RATE:
                 dv2 = dv2 + dv_mvp
             # If aircraft 2 is cruising, and aircraft 1 is climbing -> aircraft 1 solves conflict horizontally
-            elif abs(vs2) < 0.1 and abs(vs1) > 0.1:
+            elif abs(vs2) < _CRUISE_VERTICAL_RATE and abs(vs1) > _CRUISE_VERTICAL_RATE:
                 dv1 = dv1 - dv_mvp
             else:  # both are climbing/descending/cruising -> both aircraft solves the conflict horizontally
                 dv1 = dv1 - dv_mvp
@@ -222,10 +226,10 @@ class MVP(ConflictResolution):
         elif self.priority_code is PriorityCode.LAY2:
             dv_mvp[2] = 0.0
             # If aircraft 1 is cruising, and aircraft 2 is climbing/descending -> aircraft 1 solves conflict horizontally
-            if abs(vs1) < 0.1 and abs(vs2) > 0.1:
+            if abs(vs1) < _CRUISE_VERTICAL_RATE and abs(vs2) > _CRUISE_VERTICAL_RATE:
                 dv1 = dv1 - dv_mvp
             # If aircraft 2 is cruising, and aircraft 1 is climbing -> aircraft 2 solves conflict horizontally
-            elif abs(vs2) < 0.1 and abs(vs1) > 0.1:
+            elif abs(vs2) < _CRUISE_VERTICAL_RATE and abs(vs1) > _CRUISE_VERTICAL_RATE:
                 dv2 = dv2 + dv_mvp
             else:  # both are climbing/descending/cruising -> both aircraft solves the conflic horizontally
                 dv1 = dv1 - dv_mvp
@@ -234,7 +238,7 @@ class MVP(ConflictResolution):
         return self.PriorityResolution(dv1, dv2)
 
     def resolve(
-        self, conf: Any, ownship: Any, intruder: Any
+        self, conf: ConflictDetection, ownship: Traffic, intruder: Traffic
     ) -> ConflictResolution.ResolutionAdvisories:
         """Resolve all current conflicts.
 
@@ -318,11 +322,11 @@ class MVP(ConflictResolution):
                 newgs = np.sqrt(newv[0, :] ** 2 + newv[1, :] ** 2)
                 newvs = ownship.vs
             elif self.swresohdg and not self.swresospd:  # HDG only
-                newtrack = (np.arctan2(newv[0, :], newv[1, :]) * 180 / np.pi) % 360
+                newtrack = np.degrees(np.arctan2(newv[0, :], newv[1, :])) % 360
                 newgs = ownship.gs
                 newvs = ownship.vs
             else:  # SPD + HDG
-                newtrack = (np.arctan2(newv[0, :], newv[1, :]) * 180 / np.pi) % 360
+                newtrack = np.degrees(np.arctan2(newv[0, :], newv[1, :])) % 360
                 newgs = np.sqrt(newv[0, :] ** 2 + newv[1, :] ** 2)
                 newvs = ownship.vs
         elif self.swresovert:  # vertical resolutions
@@ -330,7 +334,7 @@ class MVP(ConflictResolution):
             newgs = ownship.gs
             newvs = newv[2, :]
         else:  # horizontal + vertical
-            newtrack = (np.arctan2(newv[0, :], newv[1, :]) * 180 / np.pi) % 360
+            newtrack = np.degrees(np.arctan2(newv[0, :], newv[1, :])) % 360
             newgs = np.sqrt(newv[0, :] ** 2 + newv[1, :] ** 2)
             newvs = newv[2, :]
 
@@ -375,20 +379,20 @@ class MVP(ConflictResolution):
         return self.ResolutionAdvisories(newtrack, newgscapped, vscapped, alt)
 
     class MvpResolution(NamedTuple):
-        velocity_delta: np.ndarray
+        velocity_delta: q.VelocityMps[np.ndarray]
         """Resolution velocity change, east/north/up [m/s]."""
-        vertical_time: float
+        vertical_time: q.DurationS[float]
         """Time needed to resolve the conflict vertically [s]."""
 
     def MVP(
         self,
-        ownship: Any,
-        intruder: Any,
-        conf: Any,
-        qdr,
-        dist: float,
-        tcpa: float,
-        tLOS: float,
+        ownship: Traffic,
+        intruder: Traffic,
+        conf: ConflictDetection,
+        qdr: q.BearingDeg[float],
+        dist: q.DistanceM[float],
+        tcpa: q.DurationS[float],
+        tLOS: q.DurationS[float],
         idx1: int,
         idx2: int,
     ) -> MvpResolution:
@@ -451,8 +455,8 @@ class MVP(ConflictResolution):
 
         # Exception handlers for head-on conflicts
         # This is done to prevent division by zero in the next step
-        if dabsH <= 10.0:
-            dabsH = 10.0
+        if dabsH <= _HEAD_ON_CPA_FLOOR:
+            dabsH = _HEAD_ON_CPA_FLOOR
             dcpa[0] = drel[1] / dist * dabsH
             dcpa[1] = -drel[0] / dist * dabsH
 
@@ -493,8 +497,6 @@ class MVP(ConflictResolution):
         # is solved in 1 timestep, leading to a vertical separation that is too
         # high (high vs assumed in traf). If vertical dynamics are included to
         # aircraft  model in traffic.py, the below three lines should be deleted.
-        #    mindv3 = -400*fpm# ~ 2.016 [m/s]
-        #    maxdv3 = 400*fpm
         #    dv3 = np.maximum(mindv3,np.minimum(maxdv3,dv3))
 
         # Combine resolutions------------------------------------------------------

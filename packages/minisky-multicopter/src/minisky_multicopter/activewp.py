@@ -15,16 +15,15 @@ overwritten before it is ever used.
 
 from __future__ import annotations
 
-from typing import Any
-
 import numpy as np
 from minisky import plugin as plugin_api
+from minisky import quantities as q
 from minisky.traffic.activewpdata import ActiveWaypoint
 
 from minisky_multicopter.entity import get_multicopter
 
 #: Waypoint capture radius for multicopters [m].
-CAPTURE_RADIUS = 10.0
+CAPTURE_RADIUS: q.DistanceM[float] = 10.0
 
 
 @plugin_api.replacement
@@ -33,12 +32,12 @@ class MulticopterActiveWaypoint(ActiveWaypoint):
 
     def reached(
         self,
-        qdr: Any,
-        dist: np.ndarray,
+        qdr: q.BearingDeg[np.ndarray],
+        dist: q.DistanceM[np.ndarray],
         flyby: np.ndarray,
         flyturn: np.ndarray,
-        turnrad: np.ma.MaskedArray,
-        turnhdgr: np.ma.MaskedArray,
+        turnrad: q.TurnRadiusM[np.ma.MaskedArray],
+        turnhdgr: q.TurnRateDegPerS[np.ma.MaskedArray],
         swlastwp: np.ndarray,
     ) -> np.ndarray:
         """Determine which aircraft have reached their active waypoint.
@@ -47,18 +46,10 @@ class MulticopterActiveWaypoint(ActiveWaypoint):
         distance of multicopter rows with the fixed capture radius and also
         counts them as reached when within it.
 
-        Args:
-            qdr: Bearing from each aircraft to its active waypoint [deg].
-            dist: Distance to the active waypoint [m].
-            flyby: Fly-by switch per aircraft.
-            flyturn: Fly-turn switch per aircraft.
-            turnrad: Specified turn radius [m] (<0 = not specified).
-            turnhdgr: Specified turn heading rate [deg/s]
-                (<0 = not specified).
-            swlastwp: Switch: active waypoint is the last waypoint.
+        `turnrad` and `turnhdgr` are masked when unspecified. `swlastwp`
+        marks aircraft whose active waypoint is their final waypoint.
 
-        Returns:
-            ndarray: Indices of the aircraft that reached their waypoint.
+        Returns the indices of aircraft that reached their waypoint.
         """
         swreached = super().reached(qdr, dist, flyby, flyturn, turnrad, turnhdgr, swlastwp)
         mc = get_multicopter(self.traffic)

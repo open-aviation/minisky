@@ -49,6 +49,7 @@ from annotated_types import (
     Predicate,
 )
 
+from minisky import quantities as q
 from minisky.identifiers import normalize_command_name
 from minisky.result import Err, Ok, Result
 from minisky.tools.convert import (
@@ -479,40 +480,55 @@ def parse_on_off(_context: CommandParseContext, text: str) -> ParseResult[bool]:
 OnOff = Annotated[bool, CmdParser(parse_on_off)]
 
 
-def parse_altitude_value(value: str) -> Result[float, ArgumentIssue]:
+def parse_altitude_value(value: str) -> Result[q.PressureAltitudeM[float], ArgumentIssue]:
     return _convert_value(value, txt2alt, "an altitude")
 
 
-def parse_altitude(_context: CommandParseContext, text: str) -> ParseResult[float]:
+def parse_altitude(
+    _context: CommandParseContext, text: str
+) -> ParseResult[q.PressureAltitudeM[float]]:
     return _convert(text, txt2alt, "an altitude")
 
 
-AltM = Annotated[float, CmdParser(parse_altitude)]
+# TODO(abraham): #22 should introduce geometric/AGL command types if those
+# altitude references become supported; stack altitude currently follows the
+# simulator's pressure-altitude model.
+AltM = Annotated[q.PressureAltitudeM[float], CmdParser(parse_altitude)]
 
 
-def parse_speed_value(value: str) -> Result[float, ArgumentIssue]:
+def parse_speed_value(
+    value: str,
+) -> Result[q.MachNumber[float] | q.CalibratedAirspeedMps[float], ArgumentIssue]:
     return _convert_value(value, txt2spd, "a speed")
 
 
-def parse_speed(_context: CommandParseContext, text: str) -> ParseResult[float]:
+def parse_speed(
+    _context: CommandParseContext, text: str
+) -> ParseResult[q.MachNumber[float] | q.CalibratedAirspeedMps[float]]:
     return _convert(text, txt2spd, "a speed")
 
 
-SpeedMpsOrMach = Annotated[float, CmdParser(parse_speed)]
+# TODO(abraham): #40 must split calibrated airspeed and Mach at runtime.
+SpeedMpsOrMach = Annotated[
+    q.MachNumber[float] | q.CalibratedAirspeedMps[float], CmdParser(parse_speed)
+]
 
 
-def parse_vertical_speed(_context: CommandParseContext, text: str) -> ParseResult[float]:
+def parse_vertical_speed(
+    _context: CommandParseContext, text: str
+) -> ParseResult[q.VerticalRateMps[float]]:
     return _convert(text, txt2vs, "a vertical speed")
 
 
-VspdMps = Annotated[float, CmdParser(parse_vertical_speed)]
+VspdMps = Annotated[q.VerticalRateMps[float], CmdParser(parse_vertical_speed)]
 
 
-def parse_time(_context: CommandParseContext, text: str) -> ParseResult[float]:
+def parse_time(_context: CommandParseContext, text: str) -> ParseResult[q.DurationS[float]]:
     return _convert(text, txt2tim, "a time")
 
 
-TimeS = Annotated[float, CmdParser(parse_time)]
+TimeS = Annotated[q.DurationS[float], CmdParser(parse_time)]
+SimTimeS = Annotated[q.SimulationTimeS[float], CmdParser(parse_time)]
 
 
 #
@@ -527,14 +543,14 @@ TimeS = Annotated[float, CmdParser(parse_time)]
 class TrueHeadingDeg:
     """A true heading in degrees."""
 
-    degrees: float
+    degrees: q.TrueHeadingDegrees[float]
 
 
 @dataclass(frozen=True, slots=True)
 class MagneticHeadingDeg:
     """A magnetic heading in degrees, not yet resolved to true north."""
 
-    degrees: float
+    degrees: q.MagneticHeadingDegrees[float]
 
 
 def _parse_heading_token(
@@ -701,8 +717,8 @@ def aircraft_indices(
 class LatLonDegrees:
     """Resolved latitude and longitude in degrees."""
 
-    lat: float
-    lon: float
+    lat: q.LatitudeDeg[float]
+    lon: q.LongitudeDeg[float]
 
 
 @dataclass(frozen=True, slots=True)
@@ -786,7 +802,7 @@ class RunwayPosition:
     """Resolved runway coordinates and their runway heading."""
 
     coordinates: LatLonDegrees
-    runway_heading: float
+    runway_heading: q.TrueHeadingDegrees[float]
 
 
 ResolvedPosition: TypeAlias = LatLonDegrees | RunwayPosition

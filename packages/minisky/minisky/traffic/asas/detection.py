@@ -20,7 +20,7 @@ aviation units (NM, ft).
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Annotated, Any, NamedTuple
+from typing import TYPE_CHECKING, Annotated, NamedTuple
 
 import numpy as np
 from annotated_types import Ge
@@ -43,9 +43,11 @@ if TYPE_CHECKING:
     from minisky.traffic import Traffic
 
 # Mean earth radius [m], same value as the geo module's flat-earth helpers
-RE = 6371000.0
+RE: q.LengthM[float] = 6371000.0
 
 NonNegativeTime = Annotated[TimeS, Ge(0)]
+ProtectedRadiusNM = q.DistanceNM[NonNegativeFiniteFloat]
+ProtectedHeightFt = q.VerticalDistanceFt[NonNegativeFiniteFloat]
 
 
 # TODO(abraham): model callsign pairs as a named ConflictPair record.
@@ -56,19 +58,19 @@ class ConflictDetectionResult(NamedTuple):
     """Callsign pairs in loss of separation."""
     inconf: np.ndarray
     """Per-aircraft in-conflict flags [-]."""
-    tcpamax: np.ndarray
+    tcpamax: q.DurationS[np.ndarray]
     """Per-aircraft maximum time to closest point of approach [s]."""
-    qdr: np.ndarray
+    qdr: q.BearingDeg[np.ndarray]
     """Bearing from ownship to intruder per conflict [deg]."""
-    dist: np.ndarray
+    dist: q.DistanceM[np.ndarray]
     """Current horizontal distance per conflict [m]."""
-    dcpa: np.ndarray
+    dcpa: q.DistanceM[np.ndarray]
     """Horizontal distance at closest point of approach per conflict [m]."""
-    tcpa: np.ndarray
+    tcpa: q.DurationS[np.ndarray]
     """Time to closest point of approach per conflict [s]."""
-    tLOS: np.ndarray
+    tLOS: q.DurationS[np.ndarray]
     """Time until loss of separation per conflict [s]."""
-    dalt: np.ndarray
+    dalt: q.VerticalDistanceM[np.ndarray]
     """Current altitude difference per conflict [m]."""
 
 
@@ -130,6 +132,22 @@ class ConflictDetection(TrafficArrays):
         dtlookahead (ndarray): Per-aircraft lookahead time [s].
         dtnolook (ndarray): Per-aircraft detection hold-off interval [s].
     """
+
+    rpz_def: q.DistanceM[float]
+    hpz_def: q.VerticalDistanceM[float]
+    dtlookahead_def: q.DurationS[float]
+    dtnolook_def: q.DurationS[float]
+    qdr: q.BearingDeg[np.ndarray]
+    dist: q.DistanceM[np.ndarray]
+    dcpa: q.DistanceM[np.ndarray]
+    tcpa: q.DurationS[np.ndarray]
+    tLOS: q.DurationS[np.ndarray]
+    dalt: q.VerticalDistanceM[np.ndarray]
+    tcpamax: q.DurationS[np.ndarray]
+    rpz: q.DistanceM[np.ndarray]
+    hpz: q.VerticalDistanceM[np.ndarray]
+    dtlookahead: q.DurationS[np.ndarray]
+    dtnolook: q.DurationS[np.ndarray]
 
     def __init__(
         self, config: MiniSkyConfig, traffic: Traffic, stack_command: Callable[..., None]
@@ -213,7 +231,7 @@ class ConflictDetection(TrafficArrays):
         default separation minima and lookahead times.
 
         Args:
-            n (int): Number of newly created aircraft.
+            n: Number of newly created aircraft.
         """
         super().create(n)
         # Initialise values of own states
@@ -266,7 +284,7 @@ class ConflictDetection(TrafficArrays):
         )
 
     @command(name="ZONER")
-    def set_protected_zone_radius(self, radius: NonNegativeFiniteFloat) -> Result[str, str]:
+    def set_protected_zone_radius(self, radius: ProtectedRadiusNM) -> Result[str, str]:
         """Set the default protected-zone radius in nautical miles."""
         oldradius = self.rpz_def
         self.rpz_def = q.nmi_to_m(radius)
@@ -279,7 +297,7 @@ class ConflictDetection(TrafficArrays):
 
     @command(name="ZONER")
     def set_aircraft_protected_zone_radius(
-        self, radius: NonNegativeFiniteFloat, first: AcIdSelection, *additional: AcIdSelection
+        self, radius: ProtectedRadiusNM, first: AcIdSelection, *additional: AcIdSelection
     ) -> Result[str, str]:
         """Set the protected-zone radius for selected aircraft."""
         idx = aircraft_indices((first, *additional))
@@ -295,7 +313,7 @@ class ConflictDetection(TrafficArrays):
         )
 
     @command(name="ZONEDH")
-    def set_protected_zone_height(self, height: NonNegativeFiniteFloat) -> Result[str, str]:
+    def set_protected_zone_height(self, height: ProtectedHeightFt) -> Result[str, str]:
         """Set the default protected-zone half-height in feet."""
         oldhpz = self.hpz_def
         self.hpz_def = q.ft_to_m(height)
@@ -308,7 +326,7 @@ class ConflictDetection(TrafficArrays):
 
     @command(name="ZONEDH")
     def set_aircraft_protected_zone_height(
-        self, height: NonNegativeFiniteFloat, first: AcIdSelection, *additional: AcIdSelection
+        self, height: ProtectedHeightFt, first: AcIdSelection, *additional: AcIdSelection
     ) -> Result[str, str]:
         """Set the protected-zone half-height for selected aircraft."""
         idx = aircraft_indices((first, *additional))
@@ -362,7 +380,7 @@ class ConflictDetection(TrafficArrays):
         self.global_dtnolook = False
         return Ok(f"Setting CD no-look to {time} sec for {len(idx)} aircraft")
 
-    def update(self, ownship: Any, intruder: Any) -> None:
+    def update(self, ownship: Traffic, intruder: Traffic) -> None:
         """Perform an update step of the Conflict Detection implementation.
 
         Runs [`ConflictDetection.detect`][minisky.traffic.asas.detection.ConflictDetection.detect] on the current traffic states and stores its
@@ -371,9 +389,8 @@ class ConflictDetection(TrafficArrays):
         pairs to the cumulative `confpairs_all`/`lospairs_all` lists.
 
         Args:
-            ownship: Traffic object with the states of the ownship aircraft.
-            intruder: Traffic object with the states of the intruder aircraft
-                (usually the same traffic object, or an ADS-B derived copy).
+            ownship: Traffic state used as the ownship side of each candidate pair.
+            intruder: Intruder traffic state; normally the same object, but may be an ADS-B-derived copy.
         """
         if not self.activate:
             return
@@ -404,18 +421,16 @@ class ConflictDetection(TrafficArrays):
         self.lospairs_unique = lospairs_unique
 
     class VerticalInterval(NamedTuple):
-        entry: np.ndarray
-        """Vertical conflict entry time [s]."""
-        exit: np.ndarray
-        """Vertical conflict exit time [s]."""
+        entry: q.DurationS[np.ndarray]
+        exit: q.DurationS[np.ndarray]
 
     def detect(
         self,
-        ownship: Any,
-        intruder: Any,
-        rpz: np.ndarray,
-        hpz: np.ndarray,
-        dtlookahead: np.ndarray,
+        ownship: Traffic,
+        intruder: Traffic,
+        rpz: q.DistanceM[np.ndarray],
+        hpz: q.VerticalDistanceM[np.ndarray],
+        dtlookahead: q.DurationS[np.ndarray],
     ) -> ConflictDetectionResult:
         """Conflict detection between ownship (traf) and intruder (traf/adsb).
 
@@ -436,12 +451,11 @@ class ConflictDetection(TrafficArrays):
         differ per aircraft, the largest value of each pair is used.
 
         Args:
-            ownship: Traffic object with ownship states (lat [deg], lon [deg],
-                trk [deg], gs [m/s], alt [m], vs [m/s]).
-            intruder: Traffic object with intruder states (same units).
-            rpz (ndarray): Per-aircraft horizontal separation minimum [m].
-            hpz (ndarray): Per-aircraft vertical separation minimum [m].
-            dtlookahead (ndarray): Per-aircraft lookahead time [s].
+            ownship: Ownship traffic state.
+            intruder: Intruder traffic state, which may come from surveillance.
+            rpz: Per-aircraft horizontal separation minimum.
+            hpz: Per-aircraft vertical separation minimum.
+            dtlookahead: Per-aircraft conflict lookahead time.
         """
         ntraf = ownship.ntraf
         if ntraf < 2:
