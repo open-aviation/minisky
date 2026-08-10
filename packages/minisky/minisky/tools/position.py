@@ -83,6 +83,8 @@ def islat(txt: str) -> bool:
     return True
 
 
+# TODO(abraham): return a Result of typed position variants instead of mutating an
+# object with string type/error flags and conditionally initialized fields
 class Position:
     """Position class: container for position data
 

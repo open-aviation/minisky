@@ -13,6 +13,7 @@ the condition is removed.
 from __future__ import annotations
 
 from collections.abc import Callable
+from enum import IntEnum
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -24,8 +25,11 @@ if TYPE_CHECKING:
     from minisky.simulation import ConsoleIO
     from minisky.traffic import Traffic
 
-# Enumerated condtion types
-alttype, spdtype, postype = 0, 1, 2
+
+class ConditionType(IntEnum):
+    ALTITUDE = 0
+    SPEED = 1
+    DISTANCE = 2
 
 
 class Condition:
@@ -40,8 +44,7 @@ class Condition:
     Attributes:
         ncond (int): Number of pending conditions.
         id (list): Callsign of the aircraft per condition.
-        condtype (ndarray): Condition type (0 = altitude, 1 = speed,
-            2 = position/distance).
+        condtype (ndarray): Condition type.
         target (ndarray): Target value: altitude [m], speed (CAS) [m/s]
             or distance [nm].
         lastdif (ndarray): Difference target - actual at the last update.
@@ -58,11 +61,14 @@ class Condition:
         self.console = console
         self.ncond = 0  # Number of conditions
 
+        # TODO(abraham): replace these parallel arrays with typed condition variants so
+        # each record owns exactly the fields its kind requires (for example, only a
+        # distance condition can carry a reference position)
         self.id = []  # Id of aircraft of condition
-        self.condtype = np.array([], dtype=int)  # Condition type (0=alt,1=spd)
+        self.condtype = np.array([], dtype=int)
         self.target = np.array([], dtype=float)  # Target value (alt,speed,distance[nm])
         self.lastdif = np.array([], dtype=float)  # Difference during last update
-        self.posdata = []  # Data for postype: tuples lat[deg],lon[deg] of ref position
+        self.posdata = []  # Reference lat/lon for distance conditions.
         self.cmd = []  # Commands to be issued
 
     def reset(self) -> None:
@@ -112,9 +118,9 @@ class Condition:
         # Get the actual value for each condition without fabricating values for
         # condition types that do not use them.
         self.actual = np.empty(self.ncond, dtype=float)
-        altcond = self.condtype == alttype
-        spdcond = self.condtype == spdtype
-        poscond = self.condtype == postype
+        altcond = self.condtype == ConditionType.ALTITUDE
+        spdcond = self.condtype == ConditionType.SPEED
+        poscond = self.condtype == ConditionType.DISTANCE
         self.actual[altcond] = self.traffic.alt[acidxlst[altcond]]
         self.actual[spdcond] = self.traffic.cas[acidxlst[spdcond]]
         for j in np.flatnonzero(poscond):
@@ -176,7 +182,7 @@ class Condition:
             bool: True (the condition is always added).
         """
         actalt = self.traffic.alt[acidx]
-        self.addcondition(acidx, alttype, targalt, actalt, cmdtxt)
+        self.addcondition(acidx, ConditionType.ALTITUDE, targalt, actalt, cmdtxt)
         return True
 
     @command(name="ATSPD")
@@ -195,7 +201,7 @@ class Condition:
             bool: True (the condition is always added).
         """
         actspd = self.traffic.cas[acidx]
-        self.addcondition(acidx, spdtype, targspd, actspd, cmdtxt)
+        self.addcondition(acidx, ConditionType.SPEED, targspd, actspd, cmdtxt)
         return True
 
     @command(name="ATDIST")
@@ -218,13 +224,15 @@ class Condition:
         _qdr, actdist = qdrdist(
             self.traffic.lat[acidx], self.traffic.lon[acidx], position.lat, position.lon
         )
-        self.addcondition(acidx, postype, targdist, actdist, cmdtxt, (position.lat, position.lon))
+        self.addcondition(
+            acidx, ConditionType.DISTANCE, targdist, actdist, cmdtxt, (position.lat, position.lon)
+        )
         return True
 
     def addcondition(
         self,
         acidx: int,
-        icondtype: int,
+        icondtype: ConditionType,
         target: float,
         actual: Any,
         cmdtxt: str,
@@ -235,8 +243,7 @@ class Condition:
         Args:
             acidx: Aircraft index; stored as callsign so the condition
                 survives index shifts when other aircraft are deleted.
-            icondtype: Condition type (0 = altitude, 1 = speed,
-                2 = position/distance).
+            icondtype: Condition type.
             target: Target value (altitude [m], speed [m/s] or
                 distance [nm]).
             actual: Current value, used to initialize the sign of the
@@ -250,7 +257,7 @@ class Condition:
         # Add condition to arrays
         self.id.append(self.traffic.callsign[acidx])
 
-        self.condtype = np.append(self.condtype, icondtype)
+        self.condtype = np.append(self.condtype, icondtype.value)
         self.target = np.append(self.target, target)
         self.lastdif = np.append(self.lastdif, target - actual)
 

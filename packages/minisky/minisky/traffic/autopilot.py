@@ -54,7 +54,7 @@ from minisky.tools.aero import (
 from minisky.tools.convert import degto180
 from minisky.tools.position import txt2pos
 
-from .route import Route, RouteProfile, RtaTarget, TurnHeadingRate, TurnRadius, direct
+from .route import Route, RouteProfile, RtaTarget, TurnHeadingRate, TurnRadius, WaypointType, direct
 
 if TYPE_CHECKING:
     from minisky.simulation import Simulation
@@ -653,10 +653,14 @@ class Autopilot(TrafficArrays):
         #    while descending to the destination (the last waypoint)
         #    Use 0.1 nm (185.2 m) circle in case turn distance might be zero
         has_vnav_vertical_speed = ~np.ma.getmaskarray(self.traffic.actwp.vs)
-        self.swvnavvs = self.traffic.swvnav * has_vnav_vertical_speed * np.where(
-            self.traffic.swlnav,
-            startdescorclimb,
-            distance_to_waypoint <= np.maximum(0.1 * nm, self.traffic.actwp.turndist),
+        self.swvnavvs = (
+            self.traffic.swvnav
+            * has_vnav_vertical_speed
+            * np.where(
+                self.traffic.swlnav,
+                startdescorclimb,
+                distance_to_waypoint <= np.maximum(0.1 * nm, self.traffic.actwp.turndist),
+            )
         )
 
         # Recalculate V/S based on current altitude and distance to next altitude constraint
@@ -1193,7 +1197,13 @@ class Autopilot(TrafficArrays):
         self.dest[acidx] = wpname
         if (
             iwp := route.add_waypoint(
-                acidx, self.dest[acidx], route.dest, coordinates.lat, coordinates.lon, 0.0, casmach
+                acidx,
+                self.dest[acidx],
+                WaypointType.DESTINATION,
+                coordinates.lat,
+                coordinates.lon,
+                0.0,
+                casmach,
             )
         ) is None:
             return Err("DEST position" + self.dest[acidx] + " not found.")
@@ -1227,7 +1237,7 @@ class Autopilot(TrafficArrays):
             route.add_waypoint(
                 acidx,
                 self.orig[acidx],
-                route.orig,
+                WaypointType.ORIGIN,
                 coordinates.lat,
                 coordinates.lon,
                 0.0,
