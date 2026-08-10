@@ -37,8 +37,8 @@ class MulticopterActiveWaypoint(ActiveWaypoint):
         dist: np.ndarray,
         flyby: np.ndarray,
         flyturn: np.ndarray,
-        turnrad: np.ndarray,
-        turnhdgr: np.ndarray,
+        turnrad: np.ma.MaskedArray,
+        turnhdgr: np.ma.MaskedArray,
         swlastwp: np.ndarray,
     ) -> np.ndarray:
         """Determine which aircraft have reached their active waypoint.

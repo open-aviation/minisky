@@ -16,6 +16,7 @@ Actual resolution algorithms (e.g. the Modified Voltage Potential method in
 from __future__ import annotations
 
 from collections.abc import Callable
+from enum import Enum
 from typing import TYPE_CHECKING, Any, Literal, NamedTuple
 
 import numpy as np
@@ -31,7 +32,15 @@ if TYPE_CHECKING:
     from minisky.traffic import Traffic
 
 
-PriorityCode = Literal["FF1", "FF2", "FF3", "LAY1", "LAY2"]
+class PriorityCode(Enum):
+    FF1 = "FF1"
+    FF2 = "FF2"
+    FF3 = "FF3"
+    LAY1 = "LAY1"
+    LAY2 = "LAY2"
+
+
+PriorityCodeArg = Literal["FF1", "FF2", "FF3", "LAY1", "LAY2"]
 HorizontalResolutionMethod = Literal["BOTH", "SPD", "HDG", "NONE", "ON", "OFF", "OF"]
 VerticalResolutionMethod = Literal["NONE", "ON", "OFF", "OF", "V/S"]
 
@@ -52,9 +61,7 @@ class ConflictResolution(TrafficArrays):
 
     Attributes:
         activate (bool): Whether conflict resolution is switched on.
-        swprio (bool): Whether priority (right-of-way) rules are applied.
-        priocode (str): Selected priority rule set (e.g. "FF1".."FF3",
-            "LAY1", "LAY2").
+        priority_code: Selected priority rule set, or None when priority is off.
         resopairs (set): Conflict pairs that are being resolved and have not
             yet passed their CPA.
         resofach (float): Horizontal resolution zone factor relative to the
@@ -85,9 +92,7 @@ class ConflictResolution(TrafficArrays):
         self.select_implementation = select_implementation
         self.activate = False
 
-        # [-] switch to activate priority rules for conflict resolution
-        self.swprio = False  # switch priority on/off
-        self.priocode = ""  # select priority mode
+        self.priority_code: PriorityCode | None = None
         self.resopairs = set()  # Resolved conflicts that are still before CPA
 
         # Resolution factors:
@@ -132,8 +137,7 @@ class ConflictResolution(TrafficArrays):
         simulation config.
         """
         super().reset()
-        self.swprio = False
-        self.priocode = ""
+        self.priority_code = None
         self.resopairs.clear()
         self.resofach = self.config.asas_marh
         self.resofacv = self.config.asas_marv
@@ -346,9 +350,8 @@ class ConflictResolution(TrafficArrays):
             return Err("No conflict resolution enabled.")
         return Err(f"Resolution algorithm {self.__class__.__name__} hasn't implemented priority.")
 
-    def configure_priority(self, flag: bool, priocode: PriorityCode) -> Result[str, str]:
-        self.swprio = flag
-        self.priocode = priocode
+    def configure_priority(self, flag: bool, priority_code: PriorityCode) -> Result[str, str]:
+        self.priority_code = priority_code if flag else None
         return Ok("")
 
     @command(name="PRIORULES")
@@ -357,9 +360,9 @@ class ConflictResolution(TrafficArrays):
         return self.priority_status()
 
     @command(name="PRIORULES")
-    def set_priority_rules(self, flag: OnOff, priocode: PriorityCode) -> Result[str, str]:
+    def set_priority_rules(self, flag: OnOff, priority_code: PriorityCodeArg) -> Result[str, str]:
         """Enable or disable priority rules using a selected rule code."""
-        return self.configure_priority(flag, priocode)
+        return self.configure_priority(flag, PriorityCode(priority_code))
 
     @command(name="NORESO")
     def noreso_status(self) -> Result[str, str]:

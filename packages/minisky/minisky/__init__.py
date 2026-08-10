@@ -14,16 +14,7 @@ from minisky.result import Err, Ok, Result, UnwrapError
 from minisky.runtime import MiniSky
 from minisky.simulation import SimulationState
 
-BS_OK = 0
-BS_ARGERR = 1
-BS_FUNERR = 2
-BS_CMDERR = 4
-
 __all__ = (
-    "BS_ARGERR",
-    "BS_CMDERR",
-    "BS_FUNERR",
-    "BS_OK",
     "Err",
     "MiniSky",
     "MiniSkyConfig",

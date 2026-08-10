@@ -82,13 +82,10 @@ class MVP(ConflictResolution):
             "\n     FF3:  Free Flight Tertiary (Climbing/descending has priority)"
             "\n     LAY1: Layers Primary (Cruising has priority + horizontal resolutions)"
             "\n     LAY2: Layers Secondary (Climbing/descending has priority + horizontal resolutions)"
-            f"\nPriority is currently {'ON' if self.swprio else 'OFF'}"
-            f"\nPriority code is currently: {self.priocode}"
+            f"\nPriority is currently {'ON' if self.priority_code is not None else 'OFF'}"
+            f"\nPriority code is currently: "
+            f"{self.priority_code.value if self.priority_code is not None else 'NONE'}"
         )
-
-    def configure_priority(self, flag: bool, priocode: PriorityCode) -> Result[str, str]:
-        """Configure MVP priority rules."""
-        return super().configure_priority(flag, priocode)
 
     def horizontal_method_status(self) -> Result[str, str]:
         """Show MVP horizontal resolution limitations."""
@@ -173,14 +170,14 @@ class MVP(ConflictResolution):
         """
 
         # Primary Free Flight prio rules (no priority)
-        if self.priocode == "FF1":
+        if self.priority_code is PriorityCode.FF1:
             # since cooperative, the vertical resolution component can be halved, and then dv_mvp can be added
             dv_mvp[2] = dv_mvp[2] / 2.0
             dv1 = dv1 - dv_mvp
             dv2 = dv2 + dv_mvp
 
         # Secondary Free Flight (Cruising aircraft has priority, combined resolutions)
-        if self.priocode == "FF2":
+        if self.priority_code is PriorityCode.FF2:
             # since cooperative, the vertical resolution component can be halved, and then dv_mvp can be added
             dv_mvp[2] = dv_mvp[2] / 2.0
             # If aircraft 1 is cruising, and aircraft 2 is climbing/descending -> aircraft 2 solves conflict
@@ -194,7 +191,7 @@ class MVP(ConflictResolution):
                 dv2 = dv2 + dv_mvp
 
         # Tertiary Free Flight (Climbing/descending aircraft have priority and crusing solves with horizontal resolutions)
-        elif self.priocode == "FF3":
+        elif self.priority_code is PriorityCode.FF3:
             # If aircraft 1 is cruising, and aircraft 2 is climbing/descending -> aircraft 1 solves conflict horizontally
             if abs(vs1) < 0.1 and abs(vs2) > 0.1:
                 dv_mvp[2] = 0.0
@@ -209,7 +206,7 @@ class MVP(ConflictResolution):
                 dv2 = dv2 + dv_mvp
 
         # Primary Layers (Cruising aircraft has priority and clmibing/descending solves. All conflicts solved horizontally)
-        elif self.priocode == "LAY1":
+        elif self.priority_code is PriorityCode.LAY1:
             dv_mvp[2] = 0.0
             # If aircraft 1 is cruising, and aircraft 2 is climbing/descending -> aircraft 2 solves conflict horizontally
             if abs(vs1) < 0.1 and abs(vs2) > 0.1:
@@ -222,7 +219,7 @@ class MVP(ConflictResolution):
                 dv2 = dv2 + dv_mvp
 
         # Secondary Layers (Climbing/descending aircraft has priority and cruising solves. All conflicts solved horizontally)
-        elif self.priocode == "LAY2":
+        elif self.priority_code is PriorityCode.LAY2:
             dv_mvp[2] = 0.0
             # If aircraft 1 is cruising, and aircraft 2 is climbing/descending -> aircraft 1 solves conflict horizontally
             if abs(vs1) < 0.1 and abs(vs2) > 0.1:
@@ -282,7 +279,7 @@ class MVP(ConflictResolution):
                 has_resolution_time[idx1] = True
 
             # Use priority rules if activated
-            if self.swprio:
+            if self.priority_code is not None:
                 priority = self.applyprio(
                     dv_mvp, dv[idx1], dv[idx2], ownship.vs[idx1], intruder.vs[idx2]
                 )

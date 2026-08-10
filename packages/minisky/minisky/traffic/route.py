@@ -54,7 +54,7 @@ from minisky.result import Err, Ok, Result
 from minisky.tools import geo
 from minisky.tools.aero import casormach2tas, ft, g0, kts, mach2cas, nm, vcas2tas
 from minisky.tools.convert import degto180
-from minisky.tools.position import txt2pos
+from minisky.tools.position import AirportPosition, NavaidPosition, ResolvedRunwayPosition, txt2pos
 
 if TYPE_CHECKING:
     from minisky.traffic import Traffic
@@ -1023,13 +1023,14 @@ def _add_route_waypoint(
                 case Ok(posobj):
                     lat = posobj.lat
                     lon = posobj.lon
-                    if posobj.type in {"nav", "apt"}:
-                        wptype = WaypointType.NAV
-                    elif posobj.type == "rwy":
-                        wptype = WaypointType.RUNWAY
-                    else:
-                        name = callsign
-                        wptype = WaypointType.LATLON
+                    match posobj:
+                        case NavaidPosition() | AirportPosition():
+                            wptype = WaypointType.NAV
+                        case ResolvedRunwayPosition():
+                            wptype = WaypointType.RUNWAY
+                        case _:
+                            name = callsign
+                            wptype = WaypointType.LATLON
                 case Err():
                     return Err("Waypoint " + name + " not found.")
 
