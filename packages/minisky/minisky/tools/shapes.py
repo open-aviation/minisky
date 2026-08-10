@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from types import MappingProxyType
-from typing import Protocol
+from typing import NamedTuple, Protocol
 
 import numpy as np
 import shapely
@@ -39,8 +39,8 @@ class Shapes:
         name: Keyword,
         first: LatLonDeg,
         second: LatLonDeg,
-        top: AltM = 1e9,
-        bottom: AltM = -1e9,
+        top: AltM | None = None,
+        bottom: AltM | None = None,
     ) -> Result[str, str]:
         """Define a box-shaped area from two opposite corners."""
         self._store_area(name, Box(first, second, top, bottom))
@@ -52,8 +52,8 @@ class Shapes:
         name: Keyword,
         center: LatLonDeg,
         radius: float,
-        top: AltM = 1e9,
-        bottom: AltM = -1e9,
+        top: AltM | None = None,
+        bottom: AltM | None = None,
     ) -> Result[str, str]:
         """Define a circular area from a center and radius in nautical miles."""
         self._store_area(name, Circle(center, radius, top, bottom))
@@ -134,8 +134,28 @@ class Line:
         self.points = points
 
 
-# TODO(abraham): stop using sentinels to indicate the lack of top / bottom.
-# see issue #40
+class AltitudeBounds(NamedTuple):
+    bottom: float | None
+    """Lower altitude bound [m], or None when unbounded below."""
+    top: float | None
+    """Upper altitude bound [m], or None when unbounded above."""
+
+
+def _altitude_bounds(top: float | None, bottom: float | None) -> AltitudeBounds:
+    """Normalize optional altitude limits while preserving unbounded sides."""
+    if top is not None and bottom is not None:
+        return AltitudeBounds(min(bottom, top), max(bottom, top))
+    return AltitudeBounds(bottom, top)
+
+
+def _inside_altitude_bounds(alt: np.ndarray, bounds: AltitudeBounds) -> np.ndarray:
+    """Return which altitudes lie within optional lower/upper bounds."""
+    inside = np.ones_like(alt, dtype=bool)
+    if bounds.bottom is not None:
+        inside &= bounds.bottom <= alt
+    if bounds.top is not None:
+        inside &= alt <= bounds.top
+    return inside
 
 
 class Box(HasArea):
@@ -145,10 +165,13 @@ class Box(HasArea):
     """
 
     def __init__(
-        self, first: LatLonDegrees, second: LatLonDegrees, top: float = 1e9, bottom: float = -1e9
+        self,
+        first: LatLonDegrees,
+        second: LatLonDegrees,
+        top: float | None = None,
+        bottom: float | None = None,
     ) -> None:
-        self.top = np.maximum(bottom, top)
-        self.bottom = np.minimum(bottom, top)
+        self.altitude_bounds = _altitude_bounds(top, bottom)
         self.lat0 = min(first.lat, second.lat)
         self.lon0 = min(first.lon, second.lon)
         self.lat1 = max(first.lat, second.lat)
@@ -159,7 +182,7 @@ class Box(HasArea):
         return (
             ((self.lat0 <= lat) & (lat <= self.lat1))
             & ((self.lon0 <= lon) & (lon <= self.lon1))
-            & ((self.bottom <= alt) & (alt <= self.top))
+            & _inside_altitude_bounds(alt, self.altitude_bounds)
         )
 
 
@@ -171,18 +194,21 @@ class Circle(HasArea):
     """
 
     def __init__(
-        self, center: LatLonDegrees, radius: float, top: float = 1e9, bottom: float = -1e9
+        self,
+        center: LatLonDegrees,
+        radius: float,
+        top: float | None = None,
+        bottom: float | None = None,
     ) -> None:
         self.center = center
         self.radius = radius
-        self.top = np.maximum(bottom, top)
-        self.bottom = np.minimum(bottom, top)
+        self.altitude_bounds = _altitude_bounds(top, bottom)
 
     def contains(self, lat: np.ndarray, lon: np.ndarray, alt: np.ndarray) -> np.ndarray:
         """Return whether points (lat [deg], lon [deg], alt [m]) lie within
         the circle radius [nm] and altitude bounds."""
         distance = kwikdist(self.center.lat, self.center.lon, lat, lon)  # [NM]
-        return (distance <= self.radius) & (self.bottom <= alt) & (alt <= self.top)
+        return (distance <= self.radius) & _inside_altitude_bounds(alt, self.altitude_bounds)
 
 
 class Poly(HasArea):
@@ -194,10 +220,12 @@ class Poly(HasArea):
     """
 
     def __init__(
-        self, points: tuple[LatLonDegrees, ...], top: float = 1e9, bottom: float = -1e9
+        self,
+        points: tuple[LatLonDegrees, ...],
+        top: float | None = None,
+        bottom: float | None = None,
     ) -> None:
-        self.top = np.maximum(bottom, top)
-        self.bottom = np.minimum(bottom, top)
+        self.altitude_bounds = _altitude_bounds(top, bottom)
         vertices = np.asarray([(point.lat, point.lon) for point in points], dtype=float)
         if len(vertices) < 3:
             raise ValueError("Polygon requires at least three vertices")
@@ -218,8 +246,6 @@ class Poly(HasArea):
         """Return whether points (lat [deg], lon [deg], alt [m]) lie inside
         the polygon border and altitude bounds."""
         unwrapped_lon = lon + 360.0 * np.floor((self._reference_lon - lon + 180.0) / 360.0)
-        return (
-            shapely.contains_xy(self._geom, lat, unwrapped_lon)
-            & (self.bottom <= alt)
-            & (alt <= self.top)
+        return shapely.contains_xy(self._geom, lat, unwrapped_lon) & _inside_altitude_bounds(
+            alt, self.altitude_bounds
         )

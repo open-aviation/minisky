@@ -294,7 +294,7 @@ class Route:
 
             if name != self.traffic.callsign[iac] + suffix:  # published identifier
                 i = self.navigation.getaptidx(name)
-                if i >= 0:
+                if i is not None:
                     wplat = self.navigation.aptlat[i]
                     wplon = self.navigation.aptlon[i]
 
@@ -342,16 +342,16 @@ class Route:
                 newname = wprtename
 
                 if wptype != Route.runway:
-                    i = self.navigation.getwpidx(name, lat, lon)
-                    wpok = i >= 0
+                    i = self.navigation.getwpidx(name, LatLonDegrees(lat, lon))
+                    wpok = i is not None
 
-                    if wpok:
+                    if i is not None:
                         wplat = self.navigation.wplat[i]
                         wplon = self.navigation.wplon[i]
                     else:
                         i = self.navigation.getaptidx(name)
-                        wpok = i >= 0
-                        if wpok:
+                        wpok = i is not None
+                        if i is not None:
                             wplat = self.navigation.aptlat[i]
                             wplon = self.navigation.aptlon[i]
 
@@ -593,7 +593,7 @@ class Route:
         # Also add "from direction" as to directions so no need to shift for actwpdata
         # direction to will be overwritten in actwpdata in case of a direct to
         # Add current pos to first waypoint as default value for direction to 1st waypoint
-        iac = self.traffic.idx(self.acid)
+        iac = self.traffic.callsign.index(self.acid)
         qdr, _dist = geo.qdrdist(
             self.traffic.lat[iac], self.traffic.lon[iac], self.wplat[0], self.wplon[0]
         )
@@ -659,7 +659,7 @@ class Route:
 
             self.wpprofile[i] = self.wpprofile[i]._replace(rta=rta_target)
 
-    def findact(self, i: int) -> int:
+    def findact(self, i: int) -> int | None:
         """Find the best default active waypoint for an aircraft.
 
         Called when LNAV is (re-)engaged. Selects the waypoint closest to
@@ -672,15 +672,15 @@ class Route:
             i: Aircraft index.
 
         Returns:
-            int: Index of the suggested active waypoint in this route,
-            or -1 for an empty route.
+            Index of the suggested active waypoint in this route, or None
+            for an empty route.
         """
 
         n_wpt = len(self.wpname)
 
         # Check for easy answers first
         if n_wpt <= 0:
-            return -1
+            return None
 
         elif n_wpt == 1:
             return 0

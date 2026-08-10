@@ -641,7 +641,7 @@ in their annotation, for example `HeadingDeg | UseRunwayHeading`.
 
 def _aircraft_index(context: CommandParseContext, callsign: str) -> Result[int, ArgumentIssue]:
     index = context.traffic.idx(callsign)
-    if index < 0:
+    if index is None:
         return Err(ArgumentIssue.expected("an existing aircraft", callsign))
     return Ok(index)
 
@@ -652,7 +652,7 @@ def parse_aircraft(context: CommandParseContext, text: str) -> ParseResult[int]:
     token = result.ok()
     callsign = token.value.upper()
 
-    if context.traffic.idx(callsign) < 0 and callsign in context.traffic.groups:
+    if context.traffic.idx(callsign) is None and callsign in context.traffic.groups:
         return Err(ArgumentIssue.expected("an aircraft", f"group {callsign}", token.span))
 
     if isinstance(index := _aircraft_index(context, callsign), Err):
@@ -836,7 +836,7 @@ def parse_resolved_position(
         return Ok(Parsed(waypoint.coordinates, parsed.remainder, parsed.span))
 
     index = context.traffic.idx(waypoint.name)
-    if index >= 0:
+    if index is not None:
         coordinates = LatLonDegrees(
             float(context.traffic.lat[index]), float(context.traffic.lon[index])
         )

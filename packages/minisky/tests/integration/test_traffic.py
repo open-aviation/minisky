@@ -43,7 +43,8 @@ class TestCreate:
         runtime.traffic.cre("KL002")
         assert runtime.traffic.idx("KL002") == 1
         assert runtime.traffic.idx("kl001") == 0
-        assert runtime.traffic.idx("MISSING") == -1
+        assert runtime.traffic.idx("MISSING") is None
+        assert runtime.traffic.idx(["KL001", "MISSING"]) == [0, None]
 
     def test_cre_defaults_are_25000ft_300kts(self, runtime: MiniSky, sim: Simulation) -> None:
         # Defaults used to be 25000 m / 300 m/s; they are meant as ft/kts.

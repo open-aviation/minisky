@@ -77,7 +77,7 @@ def _resolve_waypoint(
 
     name = waypoint.name
     apidx = traffic.navigation.getaptidx(name)
-    if apidx >= 0:
+    if apidx is not None:
         return Ok(
             LatLonDegrees(
                 float(traffic.navigation.aptlat[apidx]),
@@ -1313,7 +1313,9 @@ class Autopilot(TrafficArrays):
                     )
                 if not self.traffic.swlnav[i]:
                     self.traffic.swlnav[i] = True
-                    direct(self.traffic, i, route.wpname[route.findact(i)])
+                    active_waypoint = route.findact(i)
+                    assert active_waypoint is not None
+                    direct(self.traffic, i, route.wpname[active_waypoint])
             else:
                 self.traffic.swlnav[i] = False
         return Ok(f"LNAV {'ON' if flag else 'OFF'}")

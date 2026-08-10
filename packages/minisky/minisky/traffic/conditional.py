@@ -88,42 +88,43 @@ class Condition:
             return
 
         # Update indices based on list of id's
-        acidxlst = np.array(self.traffic.idx(self.id))
-        if len(acidxlst) > 0:
-            idelcond = sorted(np.where(acidxlst < 0)[0])
-            for i in idelcond[::-1]:
-                del self.id[i]
-                self.condtype = np.delete(self.condtype, i)
-                self.target = np.delete(self.target, i)
-                self.lastdif = np.delete(self.lastdif, i)
-                del self.posdata[i]
-                del self.cmd[i]
+        indices = self.traffic.idx(self.id)
+        idelcond = [i for i, index in enumerate(indices) if index is None]
+        for i in reversed(idelcond):
+            del self.id[i]
+            self.condtype = np.delete(self.condtype, i)
+            self.target = np.delete(self.target, i)
+            self.lastdif = np.delete(self.lastdif, i)
+            del self.posdata[i]
+            del self.cmd[i]
 
-            self.ncond = len(self.id)
-            if self.ncond == 0:
-                return
-            acidxlst = np.array(self.traffic.idx(self.id))
+        self.ncond = len(self.id)
+        if self.ncond == 0:
+            return
 
-        # Check condition types
-        actdist = (
-            np.ones(self.ncond) * 999e9
-        )  # Invalid number which never triggers anything is extremely large
-        for j in range(self.ncond):
-            if self.condtype[j] == postype:
-                _qdr, dist = qdrdist(
-                    self.traffic.lat[acidxlst[j]],
-                    self.traffic.lon[acidxlst[j]],
-                    self.posdata[j][0],
-                    self.posdata[j][1],
-                )
-                actdist[j] = dist  # [nm]
-
-        # Get relevant actual value using index list as index to numpy arrays
-        self.actual = (
-            (self.condtype == alttype) * self.traffic.alt[acidxlst]
-            + (self.condtype == spdtype) * self.traffic.cas[acidxlst]
-            + (self.condtype == postype) * actdist
+        # Deleted-aircraft conditions are gone, so every remaining id resolves.
+        acidxlst = np.fromiter(
+            (index for index in self.traffic.idx(self.id) if index is not None),
+            dtype=int,
+            count=self.ncond,
         )
+
+        # Get the actual value for each condition without fabricating values for
+        # condition types that do not use them.
+        self.actual = np.empty(self.ncond, dtype=float)
+        altcond = self.condtype == alttype
+        spdcond = self.condtype == spdtype
+        poscond = self.condtype == postype
+        self.actual[altcond] = self.traffic.alt[acidxlst[altcond]]
+        self.actual[spdcond] = self.traffic.cas[acidxlst[spdcond]]
+        for j in np.flatnonzero(poscond):
+            _qdr, dist = qdrdist(
+                self.traffic.lat[acidxlst[j]],
+                self.traffic.lon[acidxlst[j]],
+                self.posdata[j][0],
+                self.posdata[j][1],
+            )
+            self.actual[j] = dist  # [nm]
 
         # Compare sign of actual difference with sign of last difference
         actdif = self.target - self.actual
@@ -131,26 +132,24 @@ class Condition:
         # Make sorted arrya of indices of true conditions and their conditional commands
         idxtrue = sorted(np.where(actdif * self.lastdif <= 0.0)[0])  # Sign changed
         self.lastdif = actdif
-        if idxtrue == None or len(idxtrue) == 0:
+        if not idxtrue:
             return
 
         # Execute commands found to have true condition
         for i in idxtrue:
-            if i >= 0:
-                self.stack_command(self.cmd[i])
-                # debug
-                # self.stack_command(" ECHO Conditional command issued: "+self.cmd[i])
+            self.stack_command(self.cmd[i])
+            # debug
+            # self.stack_command(" ECHO Conditional command issued: "+self.cmd[i])
 
         # Delete executed commands to clean up arrays and lists
         # from highest index to lowest for consistency
         for i in idxtrue[::-1]:
-            if i >= 0:
-                del self.id[i]
-                self.condtype = np.delete(self.condtype, i)
-                self.target = np.delete(self.target, i)
-                self.lastdif = np.delete(self.lastdif, i)
-                del self.posdata[i]
-                del self.cmd[i]
+            del self.id[i]
+            self.condtype = np.delete(self.condtype, i)
+            self.target = np.delete(self.target, i)
+            self.lastdif = np.delete(self.lastdif, i)
+            del self.posdata[i]
+            del self.cmd[i]
 
         # Adjust number of conditions
         self.ncond = len(self.id)

@@ -277,7 +277,7 @@ class Trails(TrafficArrays):
         """Set the trail color for an aircraft."""
         # Change color per acid (pygame only)
         index = self.traffic.idx(callsign)
-        if index < 0:
+        if index is None:
             return Err(f"Aircraft with callsign {callsign} not found")
         # Change trail color
         self.changeTrailColor(color, index)

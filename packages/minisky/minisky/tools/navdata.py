@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, Protocol
 
 import numpy as np
 import pandas as pd
@@ -24,6 +24,16 @@ from minisky.tools.aero import nm
 
 if TYPE_CHECKING:
     from minisky.simulation.console import ConsoleIO
+
+
+class LatLonReference(Protocol):
+    """A position record usable as a waypoint disambiguation reference."""
+
+    @property
+    def lat(self) -> float: ...
+
+    @property
+    def lon(self) -> float: ...
 
 
 def _tolist(column: Any) -> list:
@@ -217,7 +227,8 @@ class Navdatabase:
         center = self.console.getviewctr()
         if normalized not in self.wpid:
             return Ok(f"Waypoint {normalized} does not yet exist.")
-        index = self.getwpidx(normalized, center.lat, center.lon)
+        index = self.getwpidx(normalized, center)
+        assert index is not None
         description = f"{self.wpid[index]} : {self.wplat[index]},{self.wplon[index]}"
         if self.wptype[index]:
             description += f"  {self.wptype[index]}"
@@ -280,26 +291,25 @@ class Navdatabase:
 
         return Ok(name.upper() + " deleted from navdb.")
 
-    def getwpidx(self, txt: str, reflat: float = 999999.0, reflon: float = 999999) -> int:
+    def getwpidx(self, txt: str, reference: LatLonReference | None = None) -> int | None:
         """Get waypoint index to access data.
 
         Args:
             txt: Waypoint identifier.
-            reflat: Optional reference latitude [deg]; when given, the
-                occurrence closest to the reference position is returned.
-            reflon: Optional reference longitude [deg].
+            reference: Optional reference position [deg]; when given, the
+                occurrence closest to it is returned.
 
         Returns:
-            int: Waypoint index, or -1 when not found.
+            Waypoint index, or None when not found.
         """
         name = txt.upper()
         try:
             i = self.wpid.index(name)
         except ValueError:
-            return -1
+            return None
 
         # if no pos is specified, get first occurence
-        if not reflat < 99999.0:
+        if reference is None:
             return i
 
         # If pos is specified check for more and return closest
@@ -317,17 +327,19 @@ class Navdatabase:
                 return idx[0]
             else:
                 imin = idx[0]
-                dmin = geo.kwikdist(reflat, reflon, self.wplat[imin], self.wplon[imin])
+                dmin = geo.kwikdist(
+                    reference.lat, reference.lon, self.wplat[imin], self.wplon[imin]
+                )
                 for i in idx[1:]:
-                    d = geo.kwikdist(reflat, reflon, self.wplat[i], self.wplon[i])
+                    d = geo.kwikdist(reference.lat, reference.lon, self.wplat[i], self.wplon[i])
                     if d < dmin:
                         imin = i
                         dmin = d
                 return imin
 
     def getwpindices(
-        self, txt: str, reflat: float = 999999.0, reflon: float = 999999, crit: float = 1852.0
-    ) -> list:
+        self, txt: str, reference: LatLonReference | None = None, crit: float = 1852.0
+    ) -> list[int]:
         """Get indices of a waypoint and its co-located duplicates.
 
         Finds the occurrence of the identifier closest to the reference
@@ -335,21 +347,20 @@ class Navdatabase:
 
         Args:
             txt: Waypoint identifier.
-            reflat: Optional reference latitude [deg].
-            reflon: Optional reference longitude [deg].
+            reference: Optional reference position [deg].
             crit: Co-location distance criterion [m] (default 1852 m = 1 nm).
 
         Returns:
-            list: Waypoint indices ([-1] when not found).
+            Waypoint indices, empty when not found.
         """
         name = txt.upper()
         try:
             i = self.wpid.index(name)
         except ValueError:
-            return [-1]
+            return []
 
         # if no pos is specified, get first occurence
-        if not reflat < 99999.0:
+        if reference is None:
             return [i]
 
         # If pos is specified check for more and return closest
@@ -360,9 +371,11 @@ class Navdatabase:
                 return [idx[0]]
             else:
                 imin = idx[0]
-                dmin = geo.kwikdist(reflat, reflon, self.wplat[imin], self.wplon[imin])
+                dmin = geo.kwikdist(
+                    reference.lat, reference.lon, self.wplat[imin], self.wplon[imin]
+                )
                 for i in idx[1:]:
-                    d = geo.kwikdist(reflat, reflon, self.wplat[i], self.wplon[i])
+                    d = geo.kwikdist(reference.lat, reference.lon, self.wplat[i], self.wplon[i])
                     if d < dmin:
                         imin = i
                         dmin = d
@@ -381,19 +394,19 @@ class Navdatabase:
 
                 return indices
 
-    def getaptidx(self, txt: str) -> int:
+    def getaptidx(self, txt: str) -> int | None:
         """Get the index of an airport by ICAO identifier.
 
         Args:
             txt: Airport identifier (e.g. "EHAM").
 
         Returns:
-            int: Airport index, or -1 when not found.
+            Airport index, or None when not found.
         """
         try:
             return self.aptid.index(txt.upper())
         except ValueError:
-            return -1
+            return None
 
     def getinear(
         self, wlat: np.ndarray | list, wlon: np.ndarray | list, lat: float, lon: float
