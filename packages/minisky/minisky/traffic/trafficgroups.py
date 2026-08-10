@@ -89,7 +89,7 @@ class TrafficGroups(TrafficArrays):
         if name in self.groups:
             return self.listgroup(name)
         index = self.traffic.idx(name)
-        if index >= 0:
+        if index is not None:
             return Ok(np.asarray([index], dtype=int))
         return Err(f"Aircraft or group {name} not found")
 
@@ -130,7 +130,7 @@ class TrafficGroups(TrafficArrays):
         members = (first_member, *additional_members)
         sole_member = members[0] if len(members) == 1 else None
         sole_is_selection = sole_member is not None and (
-            self.traffic.idx(sole_member) >= 0 or sole_member in self
+            self.traffic.idx(sole_member) is not None or sole_member in self
         )
         area = (
             self.shapes.areas.get(sole_member)

@@ -523,8 +523,8 @@ class ConflictDetection(TrafficArrays):
         dxinhor = np.sqrt(np.maximum(0.0, R2 - dcpa2))  # half the distance travelled inside zone
         dtinhor = dxinhor / vrel
 
-        tinhor = np.where(swhorconf, tcpa - dtinhor, 1e8)  # Set very large if no conf
-        touthor = np.where(swhorconf, tcpa + dtinhor, -1e8)  # set very large if no conf
+        tinhor = tcpa - dtinhor
+        touthor = tcpa + dtinhor
 
         # Vertical conflict --------------------------------------------------------
 

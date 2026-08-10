@@ -483,7 +483,7 @@ class CommandStack:
         targets = (target, *additional_targets)
         first = target
         stored_group = first in self.traffic.groups.groups
-        exact_aircraft = first not in {"*", "ALL"} and self.traffic.idx(first) >= 0
+        exact_aircraft = first not in {"*", "ALL"} and self.traffic.idx(first) is not None
 
         # bluesky's `acid/txt` parser resolves stored groups before aircraft and
         # only falls back to text targets such as WIND or area names afterwards.
@@ -528,7 +528,7 @@ class CommandStack:
                         return Err(error)
                 continue
             index = self.traffic.idx(target_name)
-            if index >= 0:
+            if index is not None:
                 indices.append(index)
                 continue
             return Err(f"Unknown aircraft, group, area, or DEL target: {target_name}")

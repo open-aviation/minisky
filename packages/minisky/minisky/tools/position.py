@@ -8,7 +8,7 @@ latitude/longitude coordinates [deg] via the Position class.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NamedTuple
 
 from minisky.result import Err, Ok, Result
 
@@ -17,6 +17,11 @@ from .convert import txt2lat, txt2lon
 if TYPE_CHECKING:
     from minisky.tools.navdata import Navdatabase
     from minisky.traffic import Traffic
+
+
+class _ReferencePosition(NamedTuple):
+    lat: float
+    lon: float
 
 
 def txt2pos(
@@ -145,7 +150,8 @@ class Position:
 
         # fix or navaid?
         elif navigation.wpid.count(name) > 0:
-            idx = navigation.getwpidx(name, reflat, reflon)
+            idx = navigation.getwpidx(name, _ReferencePosition(reflat, reflon))
+            assert idx is not None
             self.lat = navigation.wplat[idx]
             self.lon = navigation.wplon[idx]
             self.type = "nav"
@@ -153,6 +159,7 @@ class Position:
         # aircraft id?
         elif name in traffic.callsign:
             idx = traffic.idx(name)
+            assert idx is not None
             self.name = ""
             self.type = "latlon"
             self.lat = traffic.lat[idx]

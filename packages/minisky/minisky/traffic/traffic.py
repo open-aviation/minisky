@@ -151,7 +151,7 @@ class Traffic(TrafficArrays):
         swvnav (ndarray): Bool switch: VNAV (vertical FMS guidance) on/off.
         swvnavspd (ndarray): Bool switch: VNAV speed guidance on/off.
         swats (ndarray): Bool switch: autothrottle on/off.
-        thr (ndarray): Throttle setting [0.0-1.0]; negative = invalid/auto.
+        thr (ndarray): Fixed throttle setting [0.0-1.0], used when autothrottle is off.
         work (ndarray): Work done by the engines during the flight [J].
         translvl (float): Transition level [m].
         bphase (ndarray): Default bank angles per flight phase [rad].
@@ -269,7 +269,7 @@ class Traffic(TrafficArrays):
             self.swats = np.array(
                 [], dtype=bool
             )  # Switch indicating whether autothrottle system is on/off
-            self.thr = np.array([])  # Thottle seeting (0.0-1.0), negative = non-valid/auto
+            self.thr = np.array([])  # Fixed throttle setting (0.0-1.0) when autothrottle is off
 
             # Display information on label
             self.label = []  # Text and bitmap of traffic label
@@ -781,10 +781,10 @@ class Traffic(TrafficArrays):
         self.cr.update(self.cd, self, self)
 
     @overload
-    def idx(self, callsign: str) -> int: ...
+    def idx(self, callsign: str) -> int | None: ...
     @overload
-    def idx(self, callsign: list[str] | tuple[str, ...] | set[str]) -> list: ...
-    def idx(self, callsign: str | Iterable[str]) -> int | list:
+    def idx(self, callsign: list[str] | tuple[str, ...] | set[str]) -> list[int | None]: ...
+    def idx(self, callsign: str | Iterable[str]) -> int | None | list[int | None]:
         """Find the traffic-array index for one or more callsigns.
 
         Args:
@@ -793,23 +793,23 @@ class Traffic(TrafficArrays):
                 created aircraft.
 
         Returns:
-            int or list: Index of the aircraft (or list of indices when an
-            iterable was given); -1 for callsigns that are not found.
+            Index of the aircraft (or list of optional indices when an
+            iterable was given); None for callsigns that are not found.
         """
         if not isinstance(callsign, str):
             # for multiple callsigns
             # Fast way of finding indices of all ACID's in a given list
             tmp = {v: i for i, v in enumerate(self.callsign)}
-            return [tmp.get(acidi, -1) for acidi in callsign]
+            return [tmp.get(acidi) for acidi in callsign]
         else:
             # Catch last created id (* or # symbol)
             if callsign in ("#", "*"):
-                return self.ntraf - 1
+                return self.ntraf - 1 if self.ntraf else None
 
             try:
                 return self.callsign.index(callsign.upper())
             except ValueError:
-                return -1
+                return None
 
     @command(name="NOISE")
     def noise_status(self) -> Result[str, str]:
@@ -883,7 +883,7 @@ class Traffic(TrafficArrays):
     def position(self, name: Keyword) -> Result[str, str]:
         """Show information on an aircraft, airport, waypoint or navaid."""
         index = self.idx(name)
-        if index >= 0:
+        if index is not None:
             return self.position_aircraft(index)
         return self.position_by_name(name)
 
@@ -961,7 +961,7 @@ class Traffic(TrafficArrays):
 
         # First try airports (most used and shorter, hence faster list)
         idx_airport = self.navigation.getaptidx(name)
-        if idx_airport >= 0:
+        if idx_airport is not None:
             airport_sizes = ["large", "medium", "small"]
             airport_size = airport_sizes[max(-1, self.navigation.aptype[idx_airport] - 1)]
 
@@ -990,13 +990,13 @@ class Traffic(TrafficArrays):
 
         # try aircraft
         idx_ac = self.idx(name)
-        if idx_ac >= 0:
+        if idx_ac is not None:
             return self.position_aircraft(idx_ac)
 
         # Not found as airport, try waypoints & navaids
         else:
             idx_waypoints = self.navigation.getwpindices(name)
-            if idx_waypoints[0] >= 0:
+            if idx_waypoints:
                 typetxt = ""
                 desctxt = ""
                 lastdesc = "XXXXXXXX"
@@ -1071,15 +1071,14 @@ class Traffic(TrafficArrays):
 
         # Show what we found on airport and navaid/waypoint
 
-    def settrans(self, alt: float = -999.0) -> Result[str, str]:
+    def settrans(self, alt: AltM | None = None) -> Result[str, str]:
         """Set or show the transition level.
 
         Args:
-            alt: New transition level [m] (stack input in ft/FL). With the
-                default sentinel value the current level is reported instead.
+            alt: Optional new transition level [m] (stack input in ft/FL).
         """
-        # in case a valid value is ginve set it
-        if alt > -900.0:
+        # In case a new value is given, set it.
+        if alt is not None:
             if alt > 0.0:
                 self.translvl = alt
                 return Ok("")
@@ -1117,7 +1116,6 @@ class Traffic(TrafficArrays):
     def enable_autothrottle(self, idx: AcId, _mode: Literal["AUTO", "OFF"]) -> Result[str, str]:
         """Enable autothrottle."""
         self.swats[idx] = True
-        self.thr[idx] = -999.0
         return Ok("")
 
     @command(name="THR")

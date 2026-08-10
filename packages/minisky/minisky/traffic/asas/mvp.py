@@ -260,8 +260,10 @@ class MVP(ConflictResolution):
         # Initialize an array to store the resolution velocity vector for all A/C
         dv = np.zeros((ownship.ntraf, 3))
 
-        # Initialize an array to store time needed to resolve vertically
-        timesolveV = np.ones(ownship.ntraf) * 1e9
+        # Time needed to resolve vertically exists only for aircraft that have
+        # a current conflict resolution.
+        timesolveV = np.zeros(ownship.ntraf)
+        has_resolution_time = np.zeros(ownship.ntraf, dtype=bool)
 
         # Call MVP function to resolve conflicts-----------------------------------
         for (ac1, ac2), qdr, dist, tcpa, tLOS in zip(
@@ -270,34 +272,34 @@ class MVP(ConflictResolution):
             idx1 = ownship.callsign.index(ac1)
             idx2 = intruder.callsign.index(ac2)
 
-            # If A/C indexes are found, then apply MVP on this conflict pair
-            # Because ADSB is ON, this is done for each aircraft separately
-            if idx1 > -1 and idx2 > -1:
-                pair_resolution = self.MVP(
-                    ownship, intruder, conf, qdr, dist, tcpa, tLOS, idx1, idx2
-                )
-                dv_mvp = pair_resolution.velocity_delta
+            # Because ADSB is ON, this is done for each aircraft separately.
+            pair_resolution = self.MVP(ownship, intruder, conf, qdr, dist, tcpa, tLOS, idx1, idx2)
+            dv_mvp = pair_resolution.velocity_delta
+            if has_resolution_time[idx1]:
                 timesolveV[idx1] = min(timesolveV[idx1], pair_resolution.vertical_time)
+            else:
+                timesolveV[idx1] = pair_resolution.vertical_time
+                has_resolution_time[idx1] = True
 
-                # Use priority rules if activated
-                if self.swprio:
-                    priority = self.applyprio(
-                        dv_mvp, dv[idx1], dv[idx2], ownship.vs[idx1], intruder.vs[idx2]
-                    )
-                    dv[idx1] = priority.ownship
-                else:
-                    # since cooperative, the vertical resolution component can be halved, and then dv_mvp can be added
-                    dv_mvp[2] = 0.5 * dv_mvp[2]
-                    dv[idx1] = dv[idx1] - dv_mvp
+            # Use priority rules if activated
+            if self.swprio:
+                priority = self.applyprio(
+                    dv_mvp, dv[idx1], dv[idx2], ownship.vs[idx1], intruder.vs[idx2]
+                )
+                dv[idx1] = priority.ownship
+            else:
+                # since cooperative, the vertical resolution component can be halved, and then dv_mvp can be added
+                dv_mvp[2] = 0.5 * dv_mvp[2]
+                dv[idx1] = dv[idx1] - dv_mvp
 
-                # Check the noreso aircraft. Nobody avoids noreso aircraft.
-                # But noreso aircraft will avoid other aircraft
-                if self.noresoac[idx2]:
-                    dv[idx1] = dv[idx1] + dv_mvp
+            # Check the noreso aircraft. Nobody avoids noreso aircraft.
+            # But noreso aircraft will avoid other aircraft
+            if self.noresoac[idx2]:
+                dv[idx1] = dv[idx1] + dv_mvp
 
-                # Check the resooff aircraft. These aircraft will not do resolutions.
-                if self.resooffac[idx1]:
-                    dv[idx1] = 0.0
+            # Check the resooff aircraft. These aircraft will not do resolutions.
+            if self.resooffac[idx1]:
+                dv[idx1] = 0.0
 
         # Determine new speed and limit resolution direction for all aicraft-------
 
@@ -348,15 +350,24 @@ class MVP(ConflictResolution):
         # altitude also resolves the conflict. Because asasalttemp is calculated using
         # the time to resolve, it may result in climbing or descending more than the selected
         # altitude.
-        asasalttemp = vscapped * timesolveV + ownship.alt
+        alt = np.array(ownship.selalt, copy=True)
+        asasalttemp = np.array(ownship.selalt, copy=True)
+        asasalttemp[has_resolution_time] = (
+            vscapped[has_resolution_time] * timesolveV[has_resolution_time]
+            + ownship.alt[has_resolution_time]
+        )
         signdvs = np.sign(vscapped - ownship.ap.vs * np.sign(ownship.selalt - ownship.alt))
         signalt = np.sign(asasalttemp - ownship.selalt)
-        alt = np.where(np.logical_or(signdvs == 0, signdvs == signalt), asasalttemp, ownship.selalt)
+        use_resolution_altitude = has_resolution_time & np.logical_or(
+            signdvs == 0, signdvs == signalt
+        )
+        alt[use_resolution_altitude] = asasalttemp[use_resolution_altitude]
 
-        # To compute asas alt, timesolveV is used. timesolveV is a really big value (1e9)
-        # when there is no conflict. Therefore asas alt is only updated when its
-        # value is less than the look-ahead time, because for those aircraft are in conflict
-        altCondition = np.logical_and(timesolveV < conf.dtlookahead, np.abs(dv[2, :]) > 0.0)
+        # Update the ASAS altitude only where a vertical resolution exists
+        # within the conflict look-ahead time.
+        altCondition = (
+            has_resolution_time & (timesolveV < conf.dtlookahead) & (np.abs(dv[2, :]) > 0.0)
+        )
         alt[altCondition] = asasalttemp[altCondition]
 
         # If resolutions are limited in the horizontal direction, then asasalt should

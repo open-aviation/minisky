@@ -270,11 +270,11 @@ class ConflictResolution(TrafficArrays):
             is_bouncing = False
             idx1, idx2 = self.traffic.idx(conflict)
             # If the ownship aircraft is deleted remove its conflict from the list
-            if idx1 < 0:
+            if idx1 is None:
                 delpairs.add(conflict)
                 continue
 
-            if idx2 >= 0:
+            if idx2 is not None:
                 # Distance vector using flat earth approximation
                 re = 6371000.0
                 dist = re * np.array(
@@ -315,7 +315,7 @@ class ConflictResolution(TrafficArrays):
 
             # Start recovery for ownship if intruder is deleted, or if past CPA
             # and not in horizontal LOS or a bouncing conflict
-            if idx2 >= 0 and (not past_cpa or hor_los or is_bouncing):
+            if idx2 is not None and (not past_cpa or hor_los or is_bouncing):
                 # Enable ASAS for this aircraft
                 changeactive[idx1] = True
             else:
@@ -335,7 +335,7 @@ class ConflictResolution(TrafficArrays):
                 # Waypoint recovery after conflict: Find the next active waypoint
                 # and send the aircraft to that waypoint.
                 iwpid = self.traffic.ap.route[idx].findact(idx)
-                if iwpid != -1:  # To avoid problems if there are no waypoints
+                if iwpid is not None:  # To avoid problems if there are no waypoints
                     route.direct(self.traffic, idx, self.traffic.ap.route[idx].wpname[iwpid])
 
         # Remove pairs from the list that are past CPA or have deleted aircraft

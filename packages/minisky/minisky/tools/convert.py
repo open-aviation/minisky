@@ -186,7 +186,7 @@ def txt2spd(txt: str) -> float:
         raise ValueError(f"Could not parse {txt} as speed.") from None
 
 
-def txt2tas(txt: str, h: float) -> float:
+def txt2tas(txt: str, h: float) -> float | None:
     """Convert speed text to true airspeed at a given altitude.
 
     Mach notation ("M.8", "M95", ".95") is converted with mach2tas; plain
@@ -197,10 +197,10 @@ def txt2tas(txt: str, h: float) -> float:
         h: Altitude [m].
 
     Returns:
-        True airspeed [m/s], or -1.0 when the text cannot be parsed.
+        True airspeed [m/s], or None when the text cannot be parsed.
     """
     if len(txt) == 0:
-        return -1.0
+        return None
     try:
         if txt[0] == "M":
             M_ = float(txt[1:])
@@ -216,7 +216,7 @@ def txt2tas(txt: str, h: float) -> float:
             spd_ = float(txt) * kts
             acspd = cas2tas(spd_, h)  # m/s
     except ValueError:
-        return -1.0
+        return None
 
     return acspd
 
