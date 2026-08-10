@@ -652,7 +652,8 @@ class Autopilot(TrafficArrays):
         #    to continue descending when you get into a conflict
         #    while descending to the destination (the last waypoint)
         #    Use 0.1 nm (185.2 m) circle in case turn distance might be zero
-        self.swvnavvs = self.traffic.swvnav * np.where(
+        has_vnav_vertical_speed = ~np.ma.getmaskarray(self.traffic.actwp.vs)
+        self.swvnavvs = self.traffic.swvnav * has_vnav_vertical_speed * np.where(
             self.traffic.swlnav,
             startdescorclimb,
             distance_to_waypoint <= np.maximum(0.1 * nm, self.traffic.actwp.turndist),
