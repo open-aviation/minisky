@@ -2,8 +2,7 @@
 
 The aeronautics conversion and atmosphere library of MiniSky. It provides:
 
-- Unit conversion constants (kts, ft, fpm, inch, sqft, nm, lbs) and ISA
-  constants (g0, R, p0, rho0, T0, gamma, ...), all in SI units.
+- International Standard Atmosphere constants and aerodynamic relations in SI units.
 - The International Standard Atmosphere (ISA): pressure [Pa], density
   [kg/m3], temperature [K], and speed of sound [m/s] as a function of
   altitude [m].
@@ -23,18 +22,13 @@ from typing import NamedTuple
 
 import numpy as np
 
+from minisky import quantities as q
+
 # International standard atmpshere only up to 72000 ft / 22 km
 
 #
 # Constants Aeronautics
 #
-kts = 0.514444  # m/s  of 1 knot
-ft = 0.3048  # m    of 1 foot
-fpm = ft / 60.0  # feet per minute
-inch = 0.0254  # m    of 1 inch
-sqft = 0.09290304  # 1sqft
-nm = 1852.0  # m    of 1 nautical mile
-lbs = 0.453592  # kg   of 1 pound mass
 g0 = 9.80665  # m/s2    Sea level gravity constant
 R = 287.05287  # Used in wikipedia table: checked with 11000 m
 p0 = 101325.0  # Pa     Sea level pressure ISA
@@ -751,7 +745,7 @@ def metres_to_feet_rounded(metres: float) -> int:
     Converts metres to feet.
     Returns feet as rounded integer.
     """
-    return round(metres / ft)
+    return round(q.m_to_ft(metres))
 
 
 def metric_spd_to_knots_rounded(speed: float) -> int:
@@ -759,4 +753,4 @@ def metric_spd_to_knots_rounded(speed: float) -> int:
     Converts speed in m/s to knots.
     Returns knots as rounded integer.
     """
-    return round(speed / kts)
+    return round(q.mps_to_kt(speed))

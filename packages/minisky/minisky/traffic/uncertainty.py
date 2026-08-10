@@ -14,8 +14,8 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
+from minisky import quantities as q
 from minisky.core.trafficarrays import TrafficArrays
-from minisky.tools.aero import ft
 
 if TYPE_CHECKING:
     from minisky.simulation import Simulation
@@ -80,7 +80,7 @@ class SurveillanceUncertainty(TrafficArrays):
         self.truncated = n
         self.transerror = [
             1e-4,
-            100 * ft,
+            q.ft_to_m(100.0),
         ]  # [degree,m] standard lat/lon distance, altitude error
         self.trunctime = 0  # [s]
 

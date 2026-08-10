@@ -111,11 +111,3 @@ class TestCrossoverAltitude:
         tas_from_cas = aero.vcas2tas(cas, alt)
         tas_from_mach = aero.vmach2tas(mach, alt)
         assert tas_from_cas == pytest.approx(tas_from_mach, rel=1e-2)
-
-
-class TestUnitConstants:
-    def test_unit_constants(self):
-        assert aero.ft == pytest.approx(0.3048)
-        assert aero.kts == pytest.approx(0.514444, rel=1e-4)
-        assert aero.nm == pytest.approx(1852.0)
-        assert aero.fpm == pytest.approx(0.3048 / 60.0, rel=1e-6)

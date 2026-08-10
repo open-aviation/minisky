@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING, Annotated, Literal, overload
 import numpy as np
 from annotated_types import Ge, Le
 
+from minisky import quantities as q
 from minisky.command import (
     AcId,
     AcIdSelection,
@@ -54,9 +55,6 @@ from minisky.tools.aero import (
     DEFAULT_CASMACH_THRESHOLD,
     casormach,
     casormach2tas,
-    ft,
-    kts,
-    nm,
     tas2cas,
     vatmos,
     vcasormach,
@@ -99,6 +97,10 @@ def _parse_throttle(_context: CommandParseContext, text: str) -> ParseResult[flo
 
 
 Throttle = Annotated[float, CmdParser(_parse_throttle), Ge(0), Le(1)]
+
+
+_DEFAULT_ALTITUDE = q.ft_to_m(25000.0)
+_DEFAULT_SPEED = q.kt_to_mps(300.0)
 
 
 class Traffic(TrafficArrays):
@@ -203,7 +205,7 @@ class Traffic(TrafficArrays):
         self.wind = Wind()
         self.wind.reparent(self)
         self.turbulence = Turbulence(self, get_simulation)
-        self.translvl = 5000.0 * ft  # [m] Default transition level
+        self.translvl = q.ft_to_m(5000.0)  # [m] Default transition level
 
         # Default commands issued for an aircraft after creation
         self.crecmdlist = []
@@ -293,7 +295,7 @@ class Traffic(TrafficArrays):
             return Ok(
                 "CASMACHTHR: The current CAS/Mach threshold is "
                 f"{self.casmach_threshold} m/s "
-                f"({self.casmach_threshold / kts} kts)"
+                f"({q.mps_to_kt(self.casmach_threshold)} kts)"
             )
 
         self.casmach_threshold = threshold
@@ -331,7 +333,7 @@ class Traffic(TrafficArrays):
         self.configure_noise(False)
 
         # Reset transition level to default value
-        self.translvl = 5000.0 * ft
+        self.translvl = q.ft_to_m(5000.0)
 
     @command(name="CRE", aliases=("CREATE",))
     def command_cre(
@@ -340,8 +342,8 @@ class Traffic(TrafficArrays):
         actype: Keyword,
         position: ResolvedPositionArg,
         hdg: HeadingDeg | UseRunwayHeading | None = None,
-        alt: AltM = 25000 * ft,
-        spd: SpeedMpsOrMach = 300 * kts,
+        alt: AltM = _DEFAULT_ALTITUDE,
+        spd: SpeedMpsOrMach = _DEFAULT_SPEED,
     ) -> Result[str, str]:
         """Create an aircraft."""
         if isinstance(position, RunwayPosition):
@@ -379,8 +381,8 @@ class Traffic(TrafficArrays):
         lat: float = 53.0,
         lon: float = 4.0,
         hdg: float = 45.0,
-        alt: AltM = 25000 * ft,
-        spd: SpeedMpsOrMach = 300 * kts,
+        alt: AltM = _DEFAULT_ALTITUDE,
+        spd: SpeedMpsOrMach = _DEFAULT_SPEED,
     ) -> Result[str, str]:
         """Create a single aircraft and add it to the traffic database.
 
@@ -468,10 +470,12 @@ class Traffic(TrafficArrays):
         acalt_ = (
             np.full(n, acalt)
             if acalt is not None
-            else self.numpy_random.randint(2000, 39000, n) * ft
+            else q.ft_to_m(self.numpy_random.randint(2000, 39000, n))
         )
         acspd_ = (
-            np.full(n, acspd) if acspd is not None else self.numpy_random.randint(250, 450, n) * kts
+            np.full(n, acspd)
+            if acspd is not None
+            else q.kt_to_mps(self.numpy_random.randint(250, 450, n))
         )
 
         self.__create_aircraft(np.array(callsign), actype_, aclat, aclon, achdg, acalt_, acspd_)
@@ -543,7 +547,7 @@ class Traffic(TrafficArrays):
 
         # Wind
         if self.wind.has_wind:
-            applywind = self.alt[-n:] > 50.0 * ft
+            applywind = self.alt[-n:] > q.ft_to_m(50.0)
             self.windnorth[-n:], self.windeast[-n:] = self.wind.getdata(
                 self.lat[-n:], self.lon[-n:], self.alt[-n:]
             )
@@ -641,9 +645,9 @@ class Traffic(TrafficArrays):
         gsref = self.gs[targetidx]  # m/s
         tasref = self.tas[targetidx]  # m/s
         vsref = self.vs[targetidx]  # m/s
-        cpa = dcpa * nm
-        pzr = self.config.asas_pzr * nm
-        pzh = self.config.asas_pzh * ft
+        cpa = q.nmi_to_m(dcpa)
+        pzr = q.nmi_to_m(self.config.asas_pzr)
+        pzh = q.ft_to_m(self.config.asas_pzh)
         trk = trkref + np.radians(dpsi)
 
         if dH is None:
@@ -902,14 +906,14 @@ class Traffic(TrafficArrays):
 
         actype = self.typecode[idx]
         latlon = latlon2txt(self.lat[idx], self.lon[idx])
-        alt = round(self.alt[idx] / ft)
+        alt = round(q.m_to_ft(self.alt[idx]))
         hdg = round(self.hdg[idx])
         trk = round(self.trk[idx])
-        cas = round(self.cas[idx] / kts)
-        tas = round(self.tas[idx] / kts)
-        gs = round(self.gs[idx] / kts)
+        cas = round(q.mps_to_kt(self.cas[idx]))
+        tas = round(q.mps_to_kt(self.tas[idx]))
+        gs = round(q.mps_to_kt(self.gs[idx]))
         M = self.M[idx]
-        VS = round(self.vs[idx] / ft * 60.0)
+        VS = round(q.mps_to_fpm(self.vs[idx]))
         route = self.ap.route[idx]
 
         # Position report
@@ -977,7 +981,7 @@ class Traffic(TrafficArrays):
             lines += (
                 f"{aptname} is a {airport_size} airport in {country_name} ({country_code}):\n"
                 f"Position: {latlon2txt(aptlat, aptlon)}\n"
-                f"Elevation: {round(aptelev / ft)} ft \n"
+                f"Elevation: {round(q.m_to_ft(aptelev))} ft \n"
             )
 
             if self.navigation.aptid[idx_airport] in self.navigation.rwythresholds:
@@ -1084,7 +1088,7 @@ class Traffic(TrafficArrays):
             return Err("Transition level needs to be ft/FL and larger than zero")
 
         # In case no value is given, show it
-        tlvl = round(self.translvl / ft)
+        tlvl = round(q.m_to_ft(self.translvl))
         return Ok(f"Transition level = {tlvl}/FL{round(tlvl / 100.0)}")
 
     @command(name="BANK", aliases=("BANKLIM",))

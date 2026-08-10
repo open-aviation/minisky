@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import numpy as np
 from minisky import plugin as plugin_api
-from minisky.tools.aero import ft
+from minisky import quantities as q
 from minisky.traffic.kinematics import Kinematics
 
 from minisky_multicopter.entity import get_multicopter
@@ -79,7 +79,7 @@ class MulticopterKinematics(Kinematics):
         # with wind the difference is negligible for the energy bookkeeping.
         m = mc.ismulticopter
         trkcmd = np.radians(traf.aporasas.trk)
-        airborne = traf.alt > 50.0 * ft  # windnorth/east are zero without wind
+        airborne = traf.alt > q.ft_to_m(50.0)  # windnorth/east are zero without wind
         traf.gsnorth[m] = (traf.tas * np.cos(trkcmd) + traf.windnorth * airborne)[m]
         traf.gseast[m] = (traf.tas * np.sin(trkcmd) + traf.windeast * airborne)[m]
         # In the no-wind branch the base class aliases traf.gs to traf.tas

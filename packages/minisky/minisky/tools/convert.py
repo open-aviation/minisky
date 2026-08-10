@@ -13,7 +13,9 @@ from typing import NamedTuple
 
 import numpy as np
 
-from .aero import cas2tas, fpm, ft, kts, mach2tas
+from minisky import quantities as q
+
+from .aero import cas2tas, mach2tas
 from .geo import magdec
 
 
@@ -34,8 +36,8 @@ def txt2alt(txt: str) -> float:
     # First check for FL otherwise feet
     try:
         if txt.upper()[:2] == "FL" and len(txt) >= 4:  # Syntax check Flxxx or Flxx
-            return 100.0 * int(txt[2:]) * ft
-        return float(txt) * ft
+            return q.ft_to_m(100.0 * int(txt[2:]))
+        return q.ft_to_m(float(txt))
     except ValueError:
         pass
     raise ValueError(f'Could not parse "{txt}" as altitude"')
@@ -76,11 +78,11 @@ def txt2tim(txt: str) -> float:
 
         # MM
         if len(timlst) > 1 and timlst[-2]:
-            t += 60.0 * int(timlst[-2])
+            t += q.min_to_s(int(timlst[-2]))
 
         # HH
         if len(timlst) > 2 and timlst[-3]:
-            t += 3600.0 * int(timlst[-3])
+            t += q.hour_to_s(int(timlst[-3]))
 
         return t
     except (ValueError, IndexError):
@@ -156,7 +158,7 @@ def txt2vs(txt: str) -> float:
     Returns:
     - Vertical Speed (float) in meters per second.
     """
-    return fpm * float(txt)
+    return q.fpm_to_mps(float(txt))
 
 
 def txt2spd(txt: str) -> float:
@@ -180,7 +182,7 @@ def txt2spd(txt: str) -> float:
         spd = float(txt.replace("M0.", ".").replace("M", ".").replace("..", "."))
 
         if not (0.1 < spd < 1.0 or txt.count("M") > 0):
-            spd *= kts
+            spd = q.kt_to_mps(spd)
         return spd
     except ValueError:
         raise ValueError(f"Could not parse {txt} as speed.") from None
@@ -213,7 +215,7 @@ def txt2tas(txt: str, h: float) -> float | None:
             acspd = mach2tas(spd_, h)  # m/s
 
         else:
-            spd_ = float(txt) * kts
+            spd_ = q.kt_to_mps(float(txt))
             acspd = cas2tas(spd_, h)  # m/s
     except ValueError:
         return None
@@ -408,6 +410,7 @@ def float2degminsec(x: float) -> DegreesMinutesSeconds:
         x: Angle [deg] (positive).
     """
     deg = int(x)
-    minutes = int(x * 60.0) - deg * 60.0
-    sec = int(x * 3600.0) - deg * 3600.0 - minutes * 60.0
-    return DegreesMinutesSeconds(deg, minutes, sec)
+    fractional_arcminutes = q.deg_to_arcmin(x - deg)
+    minutes = int(fractional_arcminutes)
+    seconds = int(q.arcmin_to_arcsec(fractional_arcminutes - minutes))
+    return DegreesMinutesSeconds(deg, float(minutes), float(seconds))

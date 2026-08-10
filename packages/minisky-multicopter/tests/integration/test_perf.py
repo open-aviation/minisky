@@ -16,6 +16,7 @@ import itertools
 import numpy as np
 import pytest
 from minisky import MiniSky
+from minisky import quantities as q
 from minisky.tools.aero import g0
 from minisky_multicopter.perf import (
     LOWBATT_SPD_FACTOR,
@@ -85,7 +86,7 @@ class TestPowerModel:
     ) -> None:
         perf = hovering_mavic(mcruntime, run_mc, step_mc)
 
-        endurance_min = perf.soc[0] * perf.capacity[0] / perf.power[0] / 60.0
+        endurance_min = q.s_to_min(perf.soc[0] * perf.capacity[0] / perf.power[0])
         assert 20.0 < endurance_min < 35.0
 
     def test_fixed_wing_rows_have_no_electric_model(

@@ -43,9 +43,9 @@ from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from minisky import MiniSky
+from minisky import quantities as q
 from minisky.command import format_command_form
 from minisky.result import Err, Ok, Result
-from minisky.tools import aero
 
 
 def _get_runtime(request: Request) -> MiniSky:
@@ -141,17 +141,17 @@ def all_aircraft(runtime: Runtime) -> list[dict[str, Any]]:
             "typecode": traffic.typecode,
             "latitude": traffic.lat,
             "longitude": traffic.lon,
-            "altitude (feet)": (traffic.alt / aero.ft).astype(int),
+            "altitude (feet)": q.m_to_ft(traffic.alt).astype(int),
             "heading (degrees)": traffic.hdg.astype(int),
             "assigned heading (degrees)": traffic.aporasas.hdg.astype(int),
             "track (degrees)": traffic.trk,
-            "TAS (knots)": (traffic.tas / aero.kts).astype(int),
-            "groundspeed (knots)": (traffic.gs / aero.kts).astype(int),
-            "CAS (knots)": (traffic.cas / aero.kts).astype(int),
+            "TAS (knots)": q.mps_to_kt(traffic.tas).astype(int),
+            "groundspeed (knots)": q.mps_to_kt(traffic.gs).astype(int),
+            "CAS (knots)": q.mps_to_kt(traffic.cas).astype(int),
             "mach": traffic.M,
-            "vertical_rate (feet/minute)": (traffic.vs / aero.fpm).astype(int),
-            "target altitude (feet)": (traffic.selalt / aero.ft).astype(int),
-            "assigned speed (knots)": (traffic.selspd / aero.kts).astype(int),
+            "vertical_rate (feet/minute)": q.mps_to_fpm(traffic.vs).astype(int),
+            "target altitude (feet)": q.m_to_ft(traffic.selalt).astype(int),
+            "assigned speed (knots)": q.mps_to_kt(traffic.selspd).astype(int),
         }
     )
 
@@ -201,8 +201,8 @@ def conflicts(runtime: Runtime) -> list[dict[str, Any]] | dict[str, str]:
         conflict_info.append(
             {
                 "conflict pairs": pair,
-                "distance (nautical miles)": detection.dist[i] / aero.nm,
-                "altitude difference (feet)": detection.dalt[i] / aero.ft,
+                "distance (nautical miles)": q.m_to_nmi(detection.dist[i]),
+                "altitude difference (feet)": q.m_to_ft(detection.dalt[i]),
                 "qdr (degrees)": detection.qdr[i],
                 "tlos (seconds)": detection.tLOS[i],
                 "dcpa (meters)": detection.dcpa[i],

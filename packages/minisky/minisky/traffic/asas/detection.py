@@ -26,6 +26,7 @@ import numpy as np
 from annotated_types import Ge
 from scipy.spatial import KDTree
 
+from minisky import quantities as q
 from minisky.command import (
     AcIdSelection,
     NonNegativeFiniteFloat,
@@ -37,7 +38,6 @@ from minisky.command import (
 from minisky.core.config import MiniSkyConfig
 from minisky.core.trafficarrays import TrafficArrays
 from minisky.result import Ok, Result
-from minisky.tools.aero import ft, nm
 
 if TYPE_CHECKING:
     from minisky.traffic import Traffic
@@ -140,10 +140,10 @@ class ConflictDetection(TrafficArrays):
         self.stack_command = stack_command
         ## Default values
         # [m] Horizontal separation minimum for detection
-        self.rpz_def = self.config.asas_pzr * nm
+        self.rpz_def = q.nmi_to_m(self.config.asas_pzr)
         self.global_rpz = True
         # [m] Vertical separation minimum for detection
-        self.hpz_def = self.config.asas_pzh * ft
+        self.hpz_def = q.ft_to_m(self.config.asas_pzh)
         self.global_hpz = True
         # [s] lookahead time
         self.dtlookahead_def = self.config.asas_dtlookahead
@@ -233,8 +233,8 @@ class ConflictDetection(TrafficArrays):
         self.clearconfdb()
         self.confpairs_all.clear()
         self.lospairs_all.clear()
-        self.rpz_def = self.config.asas_pzr * nm
-        self.hpz_def = self.config.asas_pzh * ft
+        self.rpz_def = q.nmi_to_m(self.config.asas_pzr)
+        self.hpz_def = q.ft_to_m(self.config.asas_pzh)
         self.dtlookahead_def = self.config.asas_dtlookahead
         self.dtnolook_def = 0.0
         self.global_rpz = self.global_hpz = True
@@ -262,19 +262,19 @@ class ConflictDetection(TrafficArrays):
     def protected_zone_radius(self) -> Result[str, str]:
         """Report the default protected-zone radius."""
         return Ok(
-            f"ZONER [radius(nm), acid(s)/ac group]\nCurrent default PZ radius: {self.rpz_def / nm:.2f} NM"
+            f"ZONER [radius(nm), acid(s)/ac group]\nCurrent default PZ radius: {q.m_to_nmi(self.rpz_def):.2f} NM"
         )
 
     @command(name="ZONER")
     def set_protected_zone_radius(self, radius: NonNegativeFiniteFloat) -> Result[str, str]:
         """Set the default protected-zone radius in nautical miles."""
         oldradius = self.rpz_def
-        self.rpz_def = radius * nm
+        self.rpz_def = q.nmi_to_m(radius)
         if self.global_rpz:
             self.rpz[:] = self.rpz_def
         # Preserve an absolute resolution zone if it was configured before the detection zone changed.
         if not self.traffic.cr.resorrelative:
-            self.stack_command(f"RSZONER {self.traffic.cr.resofach * oldradius / nm}")
+            self.stack_command(f"RSZONER {q.m_to_nmi(self.traffic.cr.resofach * oldradius)}")
         return Ok(f"Setting default PZ radius to {radius} NM")
 
     @command(name="ZONER")
@@ -283,7 +283,7 @@ class ConflictDetection(TrafficArrays):
     ) -> Result[str, str]:
         """Set the protected-zone radius for selected aircraft."""
         idx = aircraft_indices((first, *additional))
-        self.rpz[idx] = radius * nm
+        self.rpz[idx] = q.nmi_to_m(radius)
         self.global_rpz = False
         return Ok(f"Setting PZ radius to {radius} NM for {len(idx)} aircraft")
 
@@ -291,19 +291,19 @@ class ConflictDetection(TrafficArrays):
     def protected_zone_height(self) -> Result[str, str]:
         """Report the default protected-zone half-height."""
         return Ok(
-            f"ZONEDH [height (ft), acid(s)/ac group]\nCurrent default PZ height: {self.hpz_def / ft:.2f} ft"
+            f"ZONEDH [height (ft), acid(s)/ac group]\nCurrent default PZ height: {q.m_to_ft(self.hpz_def):.2f} ft"
         )
 
     @command(name="ZONEDH")
     def set_protected_zone_height(self, height: NonNegativeFiniteFloat) -> Result[str, str]:
         """Set the default protected-zone half-height in feet."""
         oldhpz = self.hpz_def
-        self.hpz_def = height * ft
+        self.hpz_def = q.ft_to_m(height)
         if self.global_hpz:
             self.hpz[:] = self.hpz_def
         # Adjust factors for reso zone if those were set with an absolute value
         if not self.traffic.cr.resodhrelative:
-            self.stack_command(f"RSZONEDH {self.traffic.cr.resofacv * oldhpz / ft}")
+            self.stack_command(f"RSZONEDH {q.m_to_ft(self.traffic.cr.resofacv * oldhpz)}")
         return Ok(f"Setting default PZ height to {height} ft")
 
     @command(name="ZONEDH")
@@ -312,7 +312,7 @@ class ConflictDetection(TrafficArrays):
     ) -> Result[str, str]:
         """Set the protected-zone half-height for selected aircraft."""
         idx = aircraft_indices((first, *additional))
-        self.hpz[idx] = height * ft
+        self.hpz[idx] = q.ft_to_m(height)
         self.global_hpz = False
         return Ok(f"Setting PZ height to {height} ft for {len(idx)} aircraft")
 

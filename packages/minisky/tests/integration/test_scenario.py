@@ -4,9 +4,8 @@ from __future__ import annotations
 
 import pytest
 from minisky import MiniSky
+from minisky import quantities as q
 from tests._types import RunCommand, StepUntil
-
-FT = 0.3048
 
 
 class TestIcLoading:
@@ -41,7 +40,7 @@ class TestTimedCommands:
         # simt reaches 3; at t=3s ADDWPT re-enables LNAV, overriding HDG,
         # so assert exactly at simt == 3
         step_until(lambda: runtime.simulation.simt >= 3.0, max_steps=20)
-        assert runtime.traffic.selalt[0] == pytest.approx(26000 * FT, rel=1e-3)
+        assert runtime.traffic.selalt[0] == pytest.approx(q.ft_to_m(26000.0), rel=1e-3)
         # scenario wind makes the commanded track deviate a few degrees from 340
         assert runtime.traffic.ap.trk[0] == pytest.approx(340.0, abs=5.0)
 
@@ -51,7 +50,7 @@ class TestTimedCommands:
         run_cmd("IC scenarios/kl204.scn", steps=2)
         # Before t=2s the FL260 command must not have fired yet
         assert runtime.simulation.simt < 2.0
-        assert runtime.traffic.selalt[0] == pytest.approx(25000 * FT, rel=1e-3)
+        assert runtime.traffic.selalt[0] == pytest.approx(q.ft_to_m(25000.0), rel=1e-3)
 
     def test_scenario_waypoint_added(
         self, runtime: MiniSky, run_cmd: RunCommand, step_until: StepUntil

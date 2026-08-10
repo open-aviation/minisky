@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
+from minisky import quantities as q
 from minisky.command import (
     AcId,
     AcIdSelection,
@@ -42,11 +43,7 @@ from minisky.core.trafficarrays import TrafficArrays
 from minisky.result import Err, Ok, Result
 from minisky.tools import geo
 from minisky.tools.aero import (
-    fpm,
-    ft,
     g0,
-    kts,
-    nm,
     tas2cas,
     vcas2tas,
     vcasormach2tas,
@@ -146,7 +143,7 @@ class Autopilot(TrafficArrays):
         self._get_simulation = get_simulation
 
         # Standard descent steepness
-        self.steepness = 3000.0 * ft / (10.0 * nm)
+        self.steepness = q.ft_to_m(3000.0) / q.nmi_to_m(10.0)
 
         # Define object arrays
         with self.settrafarrays():
@@ -251,7 +248,7 @@ class Autopilot(TrafficArrays):
         # Traffic performance data (temporarily default values)
 
         # default vertical speed of autopilot
-        self.vsdef[-n:] = 1500.0 * fpm
+        self.vsdef[-n:] = q.fpm_to_mps(1500.0)
 
         self.bankdef[-n:] = np.radians(25.0)
 
@@ -656,7 +653,7 @@ class Autopilot(TrafficArrays):
             * np.where(
                 self.traffic.swlnav,
                 startdescorclimb,
-                distance_to_waypoint <= np.maximum(0.1 * nm, self.traffic.actwp.turndist),
+                distance_to_waypoint <= np.maximum(q.nmi_to_m(0.1), self.traffic.actwp.turndist),
             )
         )
 
@@ -900,7 +897,7 @@ class Autopilot(TrafficArrays):
         #   and climb as fast as possible, so arriving at alt earlier is ok
         # - Descend at the latest when necessary for next altitude constraint
         #   which can be many waypoints beyond current actual waypoint
-        epsalt = 2.0 * ft  # deadzone
+        epsalt = q.ft_to_m(2.0)  # deadzone
         if self.traffic.alt[idx] > toalt + epsalt:
             # Stop potential current climb (e.g. due to not making it to previous altco)
             # then stop immediately, as in: do not make it worse.
@@ -926,9 +923,20 @@ class Autopilot(TrafficArrays):
                 )  # [m] required length for descent, uses default steepness!
                 self.dist2vs[idx] = descdist - xtoalt  # [m] part of that length on this leg
 
-                # print(self.traffic.id[idx],"traf.alt =",self.traffic.alt[idx]/ft,"ft toalt = ",toalt/ft,"ft descdist =",descdist/nm,"nm")
-                # print ("d2wp = ",distance_to_waypoint/nm,"nm d2vs = ",self.dist2vs[idx]/nm,"nm")
-                # print("xtoalt =",xtoalt/nm,"nm descdist =",descdist/nm,"nm")
+                # print(
+                #     self.traffic.id[idx],
+                #     "traf.alt =", q.m_to_ft(self.traffic.alt[idx]),
+                #     "ft toalt =", q.m_to_ft(toalt),
+                #     "ft descdist =", q.m_to_nmi(descdist), "nm",
+                # )
+                # print(
+                #     "d2wp =", q.m_to_nmi(distance_to_waypoint),
+                #     "nm d2vs =", q.m_to_nmi(self.dist2vs[idx]), "nm",
+                # )
+                # print(
+                #     "xtoalt =", q.m_to_nmi(xtoalt),
+                #     "nm descdist =", q.m_to_nmi(descdist), "nm",
+                # )
 
                 # Exceptions: Descend now?
                 if (
@@ -967,7 +975,7 @@ class Autopilot(TrafficArrays):
                 # print("in else swtod for ", self.traffic.id[idx])
 
         # VNAV climb mode: climb as soon as possible (T/C logic)
-        elif self.traffic.alt[idx] < toalt - 9.9 * ft:
+        elif self.traffic.alt[idx] < toalt - q.ft_to_m(9.9):
             # Stop potential current descent (e.g. due to not making it to previous altco)
             # then stop immediately, as in: do not make it worse.
             if self.traffic.vs[idx] < -0.0001:
@@ -1085,7 +1093,7 @@ class Autopilot(TrafficArrays):
             )
 
             self.traffic.selvs[idx[oppositevs]] = 0.0
-        return Ok(f"altitude set to {alt / ft} ft")
+        return Ok(f"altitude set to {q.m_to_ft(alt)} ft")
 
     @command(name="VS")
     def selvspdcmd(self, idx: AcIdSelection, vspd: VspdMps) -> Result[str, str]:
@@ -1100,7 +1108,7 @@ class Autopilot(TrafficArrays):
         """
         self.traffic.selvs[idx] = vspd
         self.traffic.swvnav[idx] = False
-        return Ok(f"vertical speed set to {vspd / fpm} ft/min")
+        return Ok(f"vertical speed set to {q.mps_to_fpm(vspd)} ft/min")
 
     @command(name="HDG", aliases=("HEADING", "TURN"))
     def selhdgcmd(self, idx: AcIdSelection, hdg: HeadingDeg) -> Result[str, str]:  # HDG command
@@ -1138,7 +1146,9 @@ class Autopilot(TrafficArrays):
             wind_track = np.degrees(np.arctan2(taseast + wind_east, tasnorth + wind_north)) % 360.0
             # Above 50ft: compute track based on wind
             # Below 50ft: track equals heading
-            self.trk[idx] = np.where(self.traffic.alt[idx] > 50.0 * ft, wind_track, resolved_hdg)
+            self.trk[idx] = np.where(
+                self.traffic.alt[idx] > q.ft_to_m(50.0), wind_track, resolved_hdg
+            )
         else:
             self.trk[idx] = resolved_hdg
 
@@ -1170,7 +1180,7 @@ class Autopilot(TrafficArrays):
         self.traffic.swvnavspd[idx] = False
 
         if casmach > 1.0:
-            msg = f"speed set to {casmach / kts} kts"
+            msg = f"speed set to {q.mps_to_kt(casmach)} kts"
         else:
             msg = f"speed set to Mach {casmach}"
 

@@ -14,11 +14,11 @@ from typing import TYPE_CHECKING, Any, NamedTuple
 
 import numpy as np
 
+from minisky import quantities as q
 from minisky.command import AcId, command
 from minisky.core.trafficarrays import TrafficArrays
 from minisky.result import Ok, Result
 from minisky.tools import aero
-from minisky.tools.aero import fpm, ft, kts
 
 from . import coeff, thrust
 from . import phase as ph
@@ -162,7 +162,7 @@ class OpenAP(TrafficArrays):
                 self.coeff.acs_rotor[actype]["oew"] + self.coeff.acs_rotor[actype]["mtow"]
             )
             self.engnum[-n:] = int(self.coeff.acs_rotor[actype]["n_engines"])
-            self.engpower[-n:] = self.coeff.acs_rotor[actype]["engines"][0][1]
+            self.engpower[-n:] = q.kw_to_w(self.coeff.acs_rotor[actype]["engines"][0][1])
 
         else:
             # convert to known aircraft type
@@ -567,10 +567,10 @@ class OpenAP(TrafficArrays):
         """
         return Ok(
             f"Flight phase: {ph.readable_phase(FlightPhase(int(self.phase[acid])))}\n"
-            f"Thrust: {self.thrust[acid] / 1000:.0f} kN\n"
-            f"Drag: {self.drag[acid] / 1000:.0f} kN\n"
+            f"Thrust: {q.n_to_kn(self.thrust[acid]):.0f} kN\n"
+            f"Drag: {q.n_to_kn(self.drag[acid]):.0f} kN\n"
             f"Fuel flow: {self.fuelflow[acid]:.2f} kg/s\n"
-            f"Speed envelope: [{self.vmin[acid] / kts:.0f}, {self.vmax[acid] / kts:.0f}] kts\n"
-            f"Vertical speed envelope: [{self.vsmin[acid] / fpm:.0f}, {self.vsmax[acid] / fpm:.0f}] fpm\n"
-            f"Ceiling: {self.hmax[acid] / ft:.0f} ft"
+            f"Speed envelope: [{q.mps_to_kt(self.vmin[acid]):.0f}, {q.mps_to_kt(self.vmax[acid]):.0f}] kts\n"
+            f"Vertical speed envelope: [{q.mps_to_fpm(self.vsmin[acid]):.0f}, {q.mps_to_fpm(self.vsmax[acid]):.0f}] fpm\n"
+            f"Ceiling: {q.m_to_ft(self.hmax[acid]):.0f} ft"
         )

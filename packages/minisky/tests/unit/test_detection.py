@@ -17,8 +17,8 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
+from minisky import quantities as q
 from minisky.tools import geo
-from minisky.tools.aero import ft, nm
 from minisky.traffic.asas.detection import ConflictDetection
 
 
@@ -135,7 +135,7 @@ def make_traffic(
         lon=rng.uniform(*lonspan, n),
         trk=rng.uniform(0.0, 360.0, n),
         gs=rng.uniform(150.0, 260.0, n),
-        alt=rng.integers(10, 37, n) * 1000.0 * ft,  # FL100..FL360 grid
+        alt=q.ft_to_m(rng.integers(10, 37, n) * 1000.0),  # FL100..FL360 grid
         vs=vs,
         callsign=[f"AC{i:03d}" for i in range(n)],
     )
@@ -162,7 +162,7 @@ def assert_detect_equal(traf, rpz, hpz, dtlookahead):
         )
 
 
-DEFAULTS = {"rpz": 5.0 * nm, "hpz": 1000.0 * ft, "dtlookahead": 300.0}
+DEFAULTS = {"rpz": q.nmi_to_m(5.0), "hpz": q.ft_to_m(1000.0), "dtlookahead": 300.0}
 
 
 def default_params(n):
@@ -196,8 +196,8 @@ class TestDetectMatchesDenseReference:
         rng = np.random.default_rng(8)
         n = 100
         traf = make_traffic(n, 8, level_fraction=0.7)
-        rpz = rng.uniform(3.0, 8.0, n) * nm
-        hpz = rng.uniform(500.0, 1500.0, n) * ft
+        rpz = q.nmi_to_m(rng.uniform(3.0, 8.0, n))
+        hpz = q.ft_to_m(rng.uniform(500.0, 1500.0, n))
         dtlookahead = rng.uniform(120.0, 600.0, n)
         assert_detect_equal(traf, rpz, hpz, dtlookahead)
 
@@ -211,7 +211,7 @@ class TestDetectMatchesDenseReference:
             lon=np.array([4.0, 4.2]),
             trk=np.array([90.0, 270.0]),
             gs=np.array([200.0, 200.0]),
-            alt=np.array([25000.0 * ft, 26000.0 * ft]),
+            alt=np.array([q.ft_to_m(25000.0), q.ft_to_m(26000.0)]),
             vs=np.array([0.0, 0.0]),
             callsign=["OWN", "INT"],
         )

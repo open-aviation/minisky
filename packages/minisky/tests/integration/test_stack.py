@@ -10,13 +10,11 @@ from io import StringIO
 import numpy as np
 import pytest
 from minisky import Err, MiniSky, Ok
+from minisky import quantities as q
 from minisky.command import ArgumentIssue, command
 from minisky.simulation import Simulation
 from minisky.stack import ScheduledCommand
 from tests._types import RunCommand
-
-FT = 0.3048
-KTS = 0.514444
 
 
 class TestQueueing:
@@ -102,7 +100,7 @@ class TestCommands:
     def test_cre_via_stack(self, runtime: MiniSky, run_cmd: RunCommand) -> None:
         run_cmd("CRE KL204,B744,52,4,45,FL250,350")
         assert runtime.traffic.ntraf == 1
-        assert runtime.traffic.alt[0] == pytest.approx(25000 * FT, rel=1e-3)
+        assert runtime.traffic.alt[0] == pytest.approx(q.ft_to_m(25000.0), rel=1e-3)
 
     def test_pos_outputs_callsign(self, runtime: MiniSky, run_cmd: RunCommand) -> None:
         run_cmd("CRE KL204,B744,52,4,45,FL250,350")
@@ -117,7 +115,7 @@ class TestCommands:
     def test_alt_sets_selected_altitude(self, runtime: MiniSky, run_cmd: RunCommand) -> None:
         run_cmd("CRE KL204,B744,52,4,45,FL250,350")
         run_cmd("ALT KL204 FL260")
-        assert runtime.traffic.selalt[0] == pytest.approx(26000 * FT, rel=1e-3)
+        assert runtime.traffic.selalt[0] == pytest.approx(q.ft_to_m(26000.0), rel=1e-3)
 
     def test_hdg_sets_autopilot_track(self, runtime: MiniSky, run_cmd: RunCommand) -> None:
         run_cmd("CRE KL204,B744,52,4,45,FL250,350")
@@ -128,7 +126,7 @@ class TestCommands:
     def test_spd_sets_selected_speed(self, runtime: MiniSky, run_cmd: RunCommand) -> None:
         run_cmd("CRE KL204,B744,52,4,45,FL250,350")
         run_cmd("SPD KL204 300")
-        assert runtime.traffic.selspd[0] == pytest.approx(300 * KTS, rel=1e-3)
+        assert runtime.traffic.selspd[0] == pytest.approx(q.kt_to_mps(300.0), rel=1e-3)
 
     def test_del_removes_aircraft(self, runtime: MiniSky, run_cmd: RunCommand) -> None:
         run_cmd("CRE KL204,B744,52,4,45,FL250,350")
@@ -209,7 +207,9 @@ class TestTypedGrammar:
 
         run_cmd("ALT TEAM FL200")
         run_cmd("BANK TEAM 20")
-        assert runtime.traffic.selalt.tolist() == pytest.approx([20000 * FT, 20000 * FT])
+        assert runtime.traffic.selalt.tolist() == pytest.approx(
+            [q.ft_to_m(20000.0), q.ft_to_m(20000.0)]
+        )
         assert np.degrees(runtime.traffic.ap.bankdef).tolist() == pytest.approx([20.0, 20.0])
 
         result = runtime.commands.cmddict["DELRTE"]("TEAM")

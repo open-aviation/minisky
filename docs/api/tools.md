@@ -5,8 +5,8 @@ position helpers.
 
 ## Aeronautics (`aero`)
 
-Unit-conversion constants (`ft`, `kts`, `nm`, `fpm`, ...), the ISA atmosphere, and
-CAS/TAS/EAS/Mach conversions.
+The ISA atmosphere and CAS/TAS/EAS/Mach conversions. Standard unit-conversion
+callables live in [`minisky.quantities`][].
 
 ::: minisky.tools.aero
 
