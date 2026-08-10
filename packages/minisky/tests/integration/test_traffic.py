@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 from minisky import MiniSky
 from minisky.simulation import Simulation
+from minisky.traffic.wind import WindFieldKind
 from tests._types import RunCommand
 
 FT = 0.3048
@@ -188,14 +189,14 @@ class TestWind:
         wind.remove(idx)
         assert list(wind.lat) == [52.0]
         assert list(wind.lon) == [4.0]  # used to become a copy of lat
-        assert wind.winddim == 1
+        assert wind.kind is WindFieldKind.CONSTANT
 
     def test_wind_del_clears_field(self, runtime: MiniSky, sim: Simulation) -> None:
         wind = runtime.traffic.wind
         wind.addpoint(52.0, 4.0, 270.0, 20.0 * KTS)
-        assert wind.winddim > 0
+        assert wind.has_wind
         wind.clear()
-        assert wind.winddim == 0
+        assert wind.kind is WindFieldKind.NONE
         assert len(wind.lat) == 0
 
     def test_wind_via_stack_two_element_form(self, runtime: MiniSky, run_cmd: RunCommand) -> None:
@@ -210,10 +211,10 @@ class TestWind:
     def test_wind_del_via_stack(self, runtime: MiniSky, run_cmd: RunCommand) -> None:
         # WIND lat,lon,DEL used to be rejected by the altitude parser
         run_cmd("WIND 52,4,270,20")
-        assert runtime.traffic.wind.winddim > 0
+        assert runtime.traffic.wind.has_wind
         out = run_cmd("WIND 52,4,DEL")
         assert "Error" not in out
-        assert runtime.traffic.wind.winddim == 0
+        assert runtime.traffic.wind.kind is WindFieldKind.NONE
 
 
 class TestNoise:

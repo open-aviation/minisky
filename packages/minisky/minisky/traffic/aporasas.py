@@ -80,7 +80,7 @@ class APorASAS(TrafficArrays):
         """
         # --------- Input to Autopilot settings to follow: destination or ASAS ----------
         # Convert the ASAS commanded speed from ground speed to TAS
-        if self.traffic.wind.winddim > 0:
+        if self.traffic.wind.has_wind:
             vwn, vwe = self.traffic.wind.getdata(
                 self.traffic.lat, self.traffic.lon, self.traffic.alt
             )
@@ -104,7 +104,7 @@ class APorASAS(TrafficArrays):
         self.vs = np.abs(self.vs)
 
         # Compute the desired heading needed to compensate for the wind
-        if self.traffic.wind.winddim > 0:
+        if self.traffic.wind.has_wind:
             # Calculate wind correction
             vwn, vwe = self.traffic.wind.getdata(
                 self.traffic.lat, self.traffic.lon, self.traffic.alt
