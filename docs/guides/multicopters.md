@@ -31,6 +31,25 @@ or load it at runtime — from a scenario or the console with
 `PLUGINS LOAD MULTICOPTER`, or from Python with
 `await runtime.plugins.load("MULTICOPTER")`.
 
+The plugin table accepts optional, validated settings (defaults shown):
+
+```toml
+[plugins.multicopter]
+capture_radius = 10.0                       # waypoint capture radius [m]
+performance_path = "~/my/multicopter.toml"  # performance table override
+soc_low = 0.2               # state of charge below which the envelope shrinks
+lowbatt_spd_factor = 0.6    # max-speed factor below that threshold
+lowbatt_vs_factor = 0.5     # max-climb-rate factor below that threshold
+gs_hover = 0.1              # "stopped" ground speed for hover holds [m/s]
+alt_capture = 0.5           # altitude tolerance for hover holds [m]
+cruise_speed_fraction = 0.8 # cruise fraction of v_max for the energy fallback
+```
+
+`performance_path` points at a performance TOML (see
+[Adding a new multicopter type](#adding-a-new-multicopter-type)); when
+omitted, a `multicopter.toml` in the platform cache directory is read if it
+exists.
+
 On the first simulation step after loading, the plugin selects its
 implementations of five [replaceable traffic components](../architecture.md#replaceable-components)
 (kinematics, pilot logic, autopilot, waypoint capture, and performance), and
@@ -39,13 +58,16 @@ respected until the next reset.
 
 ## Which aircraft count as multicopters
 
-Membership follows the aircraft type: creating any of
+Membership follows the aircraft type: creating any typecode listed in the
+performance table produces a multicopter. The built-in table covers
 
 ```
 MAVIC  PHAN4  M100  M200  M600  MNET  AMZN  HORSEFLY
 ```
 
-produces a multicopter. Everything else — including the `EC35` helicopter —
+and a user performance TOML extends it (see
+[Adding a new multicopter type](#adding-a-new-multicopter-type)).
+Everything else — including the `EC35` helicopter —
 keeps stock behaviour. Query or override per aircraft with `MCOPT`:
 
 ```
@@ -92,7 +114,8 @@ uv run minisky run --scenario ../minisky-multicopter/scenarios/multicopter_deliv
 (scenario paths resolve relative to the `packages/minisky/` package root).
 
 Multicopters fly point-to-point: their waypoints default to fly-over with a
-fixed 10 m capture radius, and `SPD 0` is valid (the rotor envelopes have a
+fixed capture radius (10 m unless `capture_radius` is configured), and
+`SPD 0` is valid (the rotor envelopes have a
 negative minimum speed). One thing to keep in mind: LNAV commands only the
 track, so a multicopter created at rest also needs a speed source — a `SPD`
 command or waypoint speed constraints — before it starts moving.
@@ -118,9 +141,10 @@ simulation step:
 
 - **State of charge** integrates that power against a usable pack energy —
   an ideal energy tank, with no terminal-voltage or current modelling.
-- **Envelope feedback**: below 20% charge the maximum speed shrinks to 60%
-  and the maximum climb rate to 50%. Descent stays unrestricted — a low
-  battery should not keep an aircraft airborne.
+- **Envelope feedback**: below 20% charge (`soc_low`) the maximum speed
+  shrinks to 60% and the maximum climb rate to 50% (`lowbatt_spd_factor`,
+  `lowbatt_vs_factor`). Descent stays unrestricted — a low battery should
+  not keep an aircraft airborne.
 
 `BATT` reports the live state:
 
@@ -134,20 +158,42 @@ sound — hover endurance for the MAVIC comes out around 28 minutes.
 
 ## Adding a new multicopter type
 
-Three places, all keyed on the ICAO-style typecode:
+All multicopter performance data lives in a TOML table, keyed on the
+ICAO-style typecode: the plugin ships built-in entries and merges them with
+an optional user file, validated on plugin load — no source edits needed.
+The user file is `multicopter.toml` in the platform cache directory (e.g.
+`~/Library/Caches/minisky/` on macOS, `~/.cache/minisky/` on Linux), or any
+path set as `performance_path` under `[plugins.multicopter]`. A user entry
+for a built-in typecode replaces it entirely; a new typecode extends the
+membership set.
 
-1. **Performance data** — add a rotor entry to
-   `packages/minisky/minisky/data/performance/openap/rotor/aircraft.json`
-   with the masses (`oew`, `mtow`, in kg), `n_engines`, per-engine power
-   (`engines`, in kW), and the flight envelope (`v_min`/`v_max`,
-   `vs_min`/`vs_max`, `h_max`, `d_range_max`). Give `v_min` a negative value
-   so the aircraft may stop.
-2. **Membership** — add the typecode to `MULTICOPTER_TYPES` in
-   `minisky_multicopter/entity.py`.
-3. **Battery capacity** — add a `CONSTANTS` entry in
-   `minisky_multicopter/perf.py` with the usable pack energy `battery_wh`
-   (the one datum the rotor `aircraft.json` cannot carry — its `mfc` fuel
-   field is unused for electric types), plus optional `cds` (flat-plate drag
-   area, m²) and `twr` (thrust-to-weight ratio) overrides. Without an entry
-   the pack energy is derived from the envelope's `d_range_max` flown at
-   cruise speed, like the delivery-drone types that have no public pack spec.
+An entry has two parts:
+
+1. **Electric model** — the usable pack energy `battery_wh` (in Wh; the one
+   datum the rotor database cannot carry — its `mfc` fuel field is unused
+   for electric types), plus optional `cds` (flat-plate drag area, m²,
+   default 0.01) and `twr` (thrust-to-weight ratio, default 2). Without
+   `battery_wh` the pack energy is derived from the envelope's
+   `d_range_max` flown at cruise speed, like the delivery-drone types that
+   have no public pack spec.
+2. **Airframe block** — only for typecodes unknown to the shipped rotor
+   database, given all together: masses, motor count and power, and the
+   flight envelope. It becomes a full rotor entry at runtime.
+
+```toml
+[types.MYDRONE]
+battery_wh = 100.0 # usable pack energy [Wh]
+cds = 0.02         # flat-plate drag area [m2] (optional)
+twr = 2.0          # thrust-to-weight ratio (optional)
+# Airframe block, required for types the rotor database does not know:
+oew = 5.0          # empty mass [kg]
+mtow = 8.0         # maximum take-off mass [kg]
+n_engines = 4      # number of motors
+engine_kw = 0.5    # maximum power per motor [kW]
+v_min = -10.0      # minimum speed [m/s] — negative so the aircraft may stop
+v_max = 20.0       # maximum speed [m/s]
+vs_min = -5.0      # maximum descent rate [m/s]
+vs_max = 5.0       # maximum climb rate [m/s]
+h_max = 3000.0     # ceiling [m]
+d_range_max = 20.0 # maximum range [km] (optional, for the energy fallback)
+```
