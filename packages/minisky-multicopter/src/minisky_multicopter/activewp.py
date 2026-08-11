@@ -4,7 +4,8 @@ The stock waypoint-switching criterion turns at a distance derived from the
 bank-angle turn radius, which degenerates at multicopter speeds: it shrinks
 to nothing at creeping speeds, and a hovering aircraft sitting on top of its
 waypoint would never switch at all. Multicopter rows use a fixed capture
-radius instead.
+radius instead, configurable as `capture_radius` under
+`[plugins.multicopter]` (see `minisky_multicopter.config`).
 
 This must live in an
 [`ActiveWaypoint`][minisky.traffic.activewpdata.ActiveWaypoint] subclass
@@ -22,9 +23,6 @@ from minisky import quantities as q
 from minisky.traffic.activewpdata import ActiveWaypoint
 
 from minisky_multicopter.entity import get_multicopter
-
-#: Waypoint capture radius for multicopters [m].
-CAPTURE_RADIUS: q.DistanceM[float] = 10.0
 
 
 @plugin_api.replacement
@@ -58,6 +56,7 @@ class MulticopterActiveWaypoint(ActiveWaypoint):
             return swreached
 
         m = mc.ismulticopter
-        self.turndist[m] = CAPTURE_RADIUS
-        captured = np.where(m & self.traffic.swlnav & (dist < CAPTURE_RADIUS))[0]
+        radius = mc.config.capture_radius
+        self.turndist[m] = radius
+        captured = np.where(m & self.traffic.swlnav & (dist < radius))[0]
         return np.union1d(swreached, captured).astype(int)
