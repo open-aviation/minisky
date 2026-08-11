@@ -17,12 +17,12 @@ import numpy as np
 import pytest
 from minisky import MiniSky
 from minisky.tools.aero import g0
-from minisky_multicopter.perf import (
-    LOWBATT_SPD_FACTOR,
-    LOWBATT_VS_FACTOR,
-    SOC_LOW,
-    MulticopterPerf,
+from minisky_multicopter.config import (
+    DEFAULT_LOWBATT_SPD_FACTOR,
+    DEFAULT_LOWBATT_VS_FACTOR,
+    DEFAULT_SOC_LOW,
 )
+from minisky_multicopter.perf import MulticopterPerf
 from tests._types import RunCommand, StepUntil
 
 #: Installed power of the MAVIC entry in the OpenAP rotor database [W].
@@ -120,15 +120,15 @@ class TestEnvelopeFeedback:
         vmax, vsmax = perf.vmax[0], perf.vsmax[0]
         intent = (np.array([vmax]), np.array([vsmax]), np.array([100.0]), np.array([0.0]))
 
-        perf.soc[0] = SOC_LOW + 0.1
+        perf.soc[0] = DEFAULT_SOC_LOW + 0.1
         healthy = perf.limits(*intent)
         assert healthy.tas[0] == pytest.approx(vmax)
         assert healthy.vertical_speed[0] == pytest.approx(vsmax)
 
-        perf.soc[0] = SOC_LOW - 0.1
+        perf.soc[0] = DEFAULT_SOC_LOW - 0.1
         low = perf.limits(*intent)
-        assert low.tas[0] == pytest.approx(LOWBATT_SPD_FACTOR * vmax)
-        assert low.vertical_speed[0] == pytest.approx(LOWBATT_VS_FACTOR * vsmax)
+        assert low.tas[0] == pytest.approx(DEFAULT_LOWBATT_SPD_FACTOR * vmax)
+        assert low.vertical_speed[0] == pytest.approx(DEFAULT_LOWBATT_VS_FACTOR * vsmax)
 
     def test_low_battery_descent_stays_unrestricted(
         self, mcruntime: MiniSky, run_mc: RunCommand

@@ -1,86 +1,42 @@
 r"""Electric performance for multicopters.
 
-Adds the thrust computation the core
-[`OpenAP`][minisky.traffic.performance.perfoap.OpenAP] model lacks for rotor
-aircraft: required thrust from the mass and acceleration, electrical power
-from a momentum-theory scaling anchored to the installed power already
-shipped in the OpenAP rotor coefficients (`engnum * engpower`), and a
-battery state of charge that is integrated each step and feeds back into the
-flight envelope.
+Adds what the core [`OpenAP`][minisky.traffic.performance.perfoap.OpenAP]
+model lacks for rotor aircraft: required thrust from mass and acceleration,
+electrical power from a momentum-theory scaling anchored to the installed
+power (`engnum * engpower`), and a battery state of charge integrated each
+step that feeds back into the flight envelope. Fixed-wing rows keep the
+base behaviour; the plugin keeps `SELECTIMPL OPENAP MULTICOPTERPERF`
+selected.
 
-Fixed-wing rows keep the `super()` behaviour untouched. Selected with
-`SELECTIMPL OPENAP MULTICOPTERPERF` (the plugin's hooks keep this selected,
-like the other multicopter implementations).
+Per-typecode electric data comes from the validated performance table on
+the `Multicopter` entity (see `minisky_multicopter.config`); table entries
+with a full airframe block also get a rotor-database entry installed on
+this instance, so user-defined types need no edits to the shipped
+`aircraft.json`.
 
-The only data the shipped rotor `aircraft.json` lacks is battery capacity
-(`mfc` is 0 for every rotor type), supplied by the small per-typecode
-spec-sheet constants dict below; types without a public pack spec get an
-energy derived from their `d_range_max` at cruise speed. No PyThrust
-anywhere: a measured-prop-data upgrade is future work.
-
-Fidelity caveat: the power curve is momentum-theory shape
-($P = P_\text{max} (T / T_\text{max})^{1.5}$), not measured prop data, so absolute
-forward-flight power is approximate and there is no terminal-voltage or
-current modelling — the envelope feedback is keyed on state of charge
-directly. Hover figures and the qualitative trends (power against thrust,
-endurance, envelope shrink at low battery) are sound — the right level for
-a traffic simulator.
+The power curve is momentum-theory shape, not measured propeller data, so
+absolute forward-flight power is approximate and there is no voltage or
+current modelling. Hover figures and the qualitative trends are sound —
+the right level for a traffic simulator.
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, NotRequired, TypedDict
+from typing import TYPE_CHECKING
 
 import numpy as np
 from minisky import plugin as plugin_api
 from minisky import quantities as q
 from minisky.result import Err, Ok, Result
 from minisky.tools import aero
+from minisky.traffic.performance import coeff
 from minisky.traffic.performance.perfoap import OpenAP
 
-from minisky_multicopter.entity import MULTICOPTER_TYPES, get_multicopter
+from minisky_multicopter.config import MulticopterTypeSpec
+from minisky_multicopter.entity import get_multicopter
 
 if TYPE_CHECKING:
     from minisky.traffic import Traffic
-
-#: State of charge below which the flight envelope is tightened [-].
-SOC_LOW = 0.2
-
-#: Maximum-speed factor applied to low-battery multicopters [-].
-LOWBATT_SPD_FACTOR = 0.6
-
-#: Maximum-climb-rate factor applied to low-battery multicopters [-].
-LOWBATT_VS_FACTOR = 0.5
-
-#: Default thrust-to-weight ratio, typical for camera/delivery multirotors [-].
-DEFAULT_TWR = 2.0
-
-#: Default flat-plate parasite drag area [m2].
-DEFAULT_CDS: q.AreaM2[float] = 0.01
-
-#: Cruise speed as a fraction of the envelope maximum, for the
-#: range-derived battery-energy fallback [-].
-CRUISE_SPEED_FRACTION = 0.8
-
-
-#: Spec-sheet constants per multicopter typecode: usable pack energy
-#: ``battery_wh`` [Wh] (the one datum missing from the OpenAP rotor
-#: ``aircraft.json``), and optional ``cds`` [m2] / ``twr`` [-] overrides.
-#: MNET, AMZN and HORSEFLY have no public pack spec and fall back to an
-#: energy derived from ``d_range_max`` at cruise speed.
-class MulticopterSpec(TypedDict):
-    battery_wh: NotRequired[q.EnergyWh[float]]
-    cds: NotRequired[q.AreaM2[float]]
-    twr: NotRequired[float]
-
-
-CONSTANTS: dict[str, MulticopterSpec] = {
-    "MAVIC": {"battery_wh": 43.6},  # 3830 mAh 11.4 V
-    "PHAN4": {"battery_wh": 81.3},  # 5350 mAh 15.2 V
-    "M100": {"battery_wh": 99.9},  # TB47D
-    "M200": {"battery_wh": 349.2},  # 2x TB55
-    "M600": {"battery_wh": 599.4},  # 6x TB47S
-}
 
 
 @plugin_api.replacement
@@ -102,6 +58,7 @@ class MulticopterPerf(OpenAP):
 
     def __init__(self, traffic: Traffic) -> None:
         super().__init__(traffic)
+        self._install_custom_types()
         with self.settrafarrays():
             self.soc = np.array([])
             self.capacity = np.array([])
@@ -109,47 +66,101 @@ class MulticopterPerf(OpenAP):
             self.twr = np.array([])
             self.cds = np.array([])
 
+    def _typespecs(self) -> dict[str, MulticopterTypeSpec]:
+        """Return the performance table of the mounted Multicopter entity.
+
+        Empty when the implementation was selected without the plugin
+        loaded, so this class degrades to base behaviour instead of
+        crashing.
+        """
+        mc = get_multicopter(self.traffic)
+        return mc.typespecs if mc is not None else {}
+
+    def _install_custom_types(self) -> None:
+        """Install rotor-database entries for table types with airframe data.
+
+        The coefficient database is per-instance, so user-defined types from
+        the performance TOML become full rotor entries (properties and
+        envelope) without touching the shipped `aircraft.json`; an entry for
+        a shipped typecode overrides it.
+        """
+        for actype, spec in self._typespecs().items():
+            if not spec.has_airframe():
+                continue
+            envelop = {
+                "v_min": spec.v_min,
+                "v_max": spec.v_max,
+                "vs_min": spec.vs_min,
+                "vs_max": spec.vs_max,
+                "h_max": spec.h_max,
+            }
+            if spec.d_range_max is not None:
+                envelop["d_range_max"] = spec.d_range_max
+            self.coeff.acs_rotor[actype] = {
+                "name": actype,
+                "n_engines": spec.n_engines,
+                "engine_type": "TS",
+                "mtow": spec.mtow,
+                "oew": spec.oew,
+                "mfc": 0,
+                "engines": [[f"{actype}-motor", spec.engine_kw]],
+                "envelop": envelop,
+                "lifttype": coeff.LiftType.ROTORCRAFT,
+            }
+            self.coeff.limits_rotor[actype] = {
+                "vmin": spec.v_min,
+                "vmax": spec.v_max,
+                "vsmin": spec.vs_min,
+                "vsmax": spec.vs_max,
+                "hmax": spec.h_max,
+            }
+        self.coeff.actypes_rotor = list(self.coeff.acs_rotor.keys())
+
     def create(self, n: int = 1) -> None:
         """Seed the electric state of n newly created aircraft.
 
-        Multicopters start on a full battery with the pack energy, drag area
-        and thrust-to-weight ratio of their typecode; other aircraft keep
-        zeros (no battery model). Seeded per row from the typecode — unlike
-        the base class this does not assume one type per batch, so a swap
-        onto an existing mixed fleet stays correct. Membership is checked by
-        typecode because the Multicopter entity may sit after this object in
-        the traffic tree, so its arrays cannot be relied upon here.
+        Multicopters start on a full battery with their typecode's pack
+        energy, drag area and thrust-to-weight ratio; other rows keep zeros
+        (no battery model). Seeded per row rather than per batch, so a swap
+        onto a mixed fleet stays correct. Membership comes from the
+        performance table because the Multicopter entity may sit after this
+        object in the traffic tree.
 
         Args:
             n: Number of aircraft appended to the traffic arrays.
         """
         super().create(n)
+        mc = get_multicopter(self.traffic)
+        if mc is None:
+            return
         for offset, typecode in enumerate(self.traffic.typecode[-n:], start=-n):
             actype = typecode.upper()
+            spec = mc.typespecs.get(actype)
             ac = self.coeff.acs_rotor.get(actype)
-            if actype not in MULTICOPTER_TYPES or ac is None:
+            if spec is None or ac is None:
                 continue
-            spec = CONSTANTS.get(actype, {})
-            self.twr[offset] = spec.get("twr", DEFAULT_TWR)
-            self.cds[offset] = spec.get("cds", DEFAULT_CDS)
-            wh = spec.get("battery_wh")
+            self.twr[offset] = spec.twr
+            self.cds[offset] = spec.cds
+            wh = spec.battery_wh
             if wh is None:
-                wh = self._range_derived_wh(ac, self.cds[offset], self.twr[offset])
+                wh = self._range_derived_wh(ac, spec.cds, spec.twr, mc.config.cruise_speed_fraction)
             self.capacity[offset] = q.wh_to_j(wh)
             self.soc[offset] = 1.0
 
     @staticmethod
-    def _range_derived_wh(ac: dict, cds: q.AreaM2[float], twr: float) -> q.EnergyWh[float]:
-        """Derive the pack energy of an unlisted type from its range [Wh].
+    def _range_derived_wh(
+        ac: dict, cds: q.AreaM2[float], twr: float, cruise_speed_fraction: float
+    ) -> q.EnergyWh[float]:
+        """Derive the pack energy of a type without a pack spec [Wh].
 
-        Energy to fly the `d_range_max` of the OpenAP rotor entry at
-        cruise speed (a fixed fraction of the envelope maximum), evaluated
-        with the same momentum-theory power model used at runtime.
+        Energy to fly the rotor entry's `d_range_max` at cruise speed,
+        evaluated with the same momentum-theory power model used at runtime.
 
         Args:
             ac: OpenAP rotor `aircraft.json` entry for the typecode.
             cds: Flat-plate parasite drag area.
             twr: Thrust-to-weight ratio at maximum thrust.
+            cruise_speed_fraction: Cruise speed as a fraction of `v_max`.
         """
         envelop = ac["envelop"]
         d_range = q.km_to_m(envelop.get("d_range_max", 0.0))
@@ -158,7 +169,7 @@ class MulticopterPerf(OpenAP):
             return 0.0
         mass = 0.5 * (ac["oew"] + ac["mtow"])
         p_max = q.kw_to_w(int(ac["n_engines"]) * ac["engines"][0][1])
-        v_cruise = CRUISE_SPEED_FRACTION * v_max
+        v_cruise = cruise_speed_fraction * v_max
         drag = 0.5 * aero.rho0 * v_cruise**2 * cds
         thrust = float(np.hypot(mass * aero.g0, drag))
         power = p_max * min(thrust / (twr * mass * aero.g0), 1.0) ** 1.5
@@ -182,13 +193,10 @@ class MulticopterPerf(OpenAP):
     def update(self) -> None:
         r"""Update performance, then the electric model for multicopter rows.
 
-        After the base update, computes the thrust each multicopter needs to
-        support its weight and overcome parasite drag, derives the
-        electrical power from the momentum-theory scaling
-        $P = P_\text{max} (T / T_\text{max})^{1.5}$ anchored to the
-        installed power, and integrates the battery state of charge as an
-        ideal energy tank.
-
+        After the base update, computes each multicopter's required thrust,
+        derives the electrical power from the momentum-theory scaling
+        $P = P_\text{max} (T / T_\text{max})^{1.5}$, and integrates the
+        battery state of charge as an ideal energy tank.
         """
         super().update()
         mc = get_multicopter(self.traffic)
@@ -218,27 +226,21 @@ class MulticopterPerf(OpenAP):
         """Clip the intended state to the flight envelope.
 
         Runs the base envelope, then tightens the maximum speed and climb
-        rate of multicopter rows below the state-of-charge threshold, so
-        performance degrades as the battery empties. Descent stays
+        rate of multicopter rows below the state-of-charge threshold (the
+        `soc_low` / `lowbatt_*_factor` plugin settings). Descent stays
         unrestricted — a low battery should not keep an aircraft airborne.
-
-        Args:
-            intent_v_tas: Intended true airspeed.
-            intent_vs: Intended vertical speed.
-            intent_h: Intended altitude.
-            ax: Current longitudinal acceleration.
         """
         allowed = super().limits(intent_v_tas, intent_vs, intent_h, ax)
         mc = get_multicopter(self.traffic)
         if mc is None:
             return allowed
-        low = mc.ismulticopter & (self.capacity > 0.0) & (self.soc < SOC_LOW)
+        low = mc.ismulticopter & (self.capacity > 0.0) & (self.soc < mc.config.soc_low)
         if not low.any():
             return allowed
 
         tas, vs, alt = allowed
-        tas[low] = np.minimum(tas[low], LOWBATT_SPD_FACTOR * self.vmax[low])
-        vs[low] = np.minimum(vs[low], LOWBATT_VS_FACTOR * self.vsmax[low])
+        tas[low] = np.minimum(tas[low], mc.config.lowbatt_spd_factor * self.vmax[low])
+        vs[low] = np.minimum(vs[low], mc.config.lowbatt_vs_factor * self.vsmax[low])
         return self.PerformanceLimits(tas, vs, alt)
 
     def batt(self, idx: int) -> Result[str, str]:

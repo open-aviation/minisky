@@ -7,9 +7,11 @@ stack commands that read and write them (`MCOPT`, `YAW`, `YAWRATE`,
 selected (on the first simulation step after loading, and again after every
 reset, which reverts all replaceables to their core defaults).
 
-Membership is deliberately *not* `traf.perf.lifttype == LIFT_ROTOR`: that
+Membership is deliberately *not* `traf.perf.lifttype == LiftType.ROTORCRAFT`:
+that
 set also contains the EC35, a crewed helicopter, which this plugin does not
-model. It is a fixed typecode set instead, overridable per aircraft.
+model. It is the typecode set of the loaded performance table instead (see
+`minisky_multicopter.config`), overridable per aircraft with `MCOPT`.
 """
 
 from __future__ import annotations
@@ -31,13 +33,16 @@ from minisky.plugin import (
 from minisky.result import Err, Ok, Result
 from minisky.tools import geo
 
-if TYPE_CHECKING:
-    from minisky.traffic import Traffic
-
-#: OpenAP rotor typecodes minus helicopters (the EC35 is excluded on purpose).
-MULTICOPTER_TYPES = frozenset(
-    {"MAVIC", "PHAN4", "M100", "M200", "M600", "MNET", "AMZN", "HORSEFLY"}
+from minisky_multicopter.config import (
+    MulticopterConfig,
+    MulticopterTypeSpec,
+    load_type_table,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
+
+    from minisky.traffic import Traffic
 
 #: Default yaw rate for a newly created multicopter [deg/s].
 DEFAULT_YAWRATE: q.YawRateDegPerS[float] = 90.0
@@ -72,6 +77,10 @@ class Multicopter(plugin_api.Entity):
     """Per-aircraft multicopter state.
 
     Attributes:
+        typespecs (dict): Performance spec per member typecode — the loaded
+            performance table; its key set is the membership set.
+        config (MulticopterConfig): Validated plugin settings (capture
+            radius, low-battery envelope knobs).
         ismulticopter (ndarray): Bool switch: aircraft is flown as a
             multicopter (yaw-rate-limited heading, track-driven velocity).
         selhdg (ndarray): Commanded body heading [deg], decoupled from track.
@@ -83,8 +92,14 @@ class Multicopter(plugin_api.Entity):
     selhdg: q.TrueHeadingDegrees[np.ndarray]
     yawrate: q.YawRateDegPerS[np.ndarray]
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        typespecs: Mapping[str, MulticopterTypeSpec] | None = None,
+        config: MulticopterConfig | None = None,
+    ) -> None:
         super().__init__()
+        self.typespecs = dict(typespecs) if typespecs is not None else load_type_table()
+        self.config = config if config is not None else MulticopterConfig()
         self._selected = False
         with self.settrafarrays():
             self.ismulticopter = np.array([], dtype=bool)
@@ -103,7 +118,7 @@ class Multicopter(plugin_api.Entity):
         """
         super().create(n)
         self.ismulticopter[-n:] = [
-            typecode.upper() in MULTICOPTER_TYPES for typecode in self.traffic.typecode[-n:]
+            typecode.upper() in self.typespecs for typecode in self.traffic.typecode[-n:]
         ]
         self.selhdg[-n:] = self.traffic.hdg[-n:]
         self.swselhdg[-n:] = False

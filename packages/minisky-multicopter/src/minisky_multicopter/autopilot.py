@@ -28,19 +28,13 @@ from minisky.plugin import AcIdSelection, HeadingDeg
 from minisky.result import Err, Ok, Result
 from minisky.traffic.autopilot import Autopilot
 
-from minisky_multicopter.entity import MULTICOPTER_TYPES, get_multicopter
+from minisky_multicopter.entity import get_multicopter
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
     from minisky.simulation import Simulation
     from minisky.traffic import Traffic
-
-#: Ground speed below which a multicopter counts as stopped [m/s].
-GS_HOVER: q.GroundSpeedMps[float] = 0.1
-
-#: Altitude tolerance for holding the selected hover altitude [m].
-ALT_CAPTURE: q.VerticalDistanceM[float] = 0.5
 
 
 @plugin_api.replacement
@@ -89,11 +83,14 @@ class MulticopterAutopilot(Autopilot):
         self.resumevnav[-n:] = False
         self.resumevnavspd[-n:] = False
 
-        # Membership by typecode: the Multicopter entity may be created
-        # after this autopilot in the traffic tree, so its arrays cannot be
-        # relied upon here.
+        # Membership by typecode from the performance table: the Multicopter
+        # entity may be created after this autopilot in the traffic tree, so
+        # its arrays cannot be relied upon here.
+        mc = get_multicopter(self.traffic)
+        if mc is None:
+            return
         for offset, typecode in enumerate(self.traffic.typecode[-n:], start=-n):
-            if typecode.upper() in MULTICOPTER_TYPES:
+            if typecode.upper() in mc.typespecs:
                 self.route[offset].swflyby = False
 
     def update(self) -> None:
@@ -106,7 +103,8 @@ class MulticopterAutopilot(Autopilot):
         externally (LNAV is then left as commanded).
         """
         super().update()
-        if not self.swhover.any() or get_multicopter(self.traffic) is None:
+        mc = get_multicopter(self.traffic)
+        if not self.swhover.any() or mc is None:
             return
 
         traf = self.traffic
@@ -117,8 +115,8 @@ class MulticopterAutopilot(Autopilot):
         holding = (
             timed
             & ~traf.swlnav
-            & (traf.gs < GS_HOVER)
-            & (np.abs(traf.alt - traf.selalt) < ALT_CAPTURE)
+            & (traf.gs < mc.config.gs_hover)
+            & (np.abs(traf.alt - traf.selalt) < mc.config.alt_capture)
         )
         self.hovertimer.data[holding] -= self.simulation.simdt
         expired = holding & (self.hovertimer.data <= 0.0)
