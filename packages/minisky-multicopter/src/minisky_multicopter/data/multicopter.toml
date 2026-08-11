@@ -1,0 +1,27 @@
+# Built-in multicopter performance table: one `[types.<TYPECODE>]` table per
+# multicopter, and the typecodes listed here define which aircraft the plugin
+# treats as multicopters. Each type needs an OpenAP rotor entry, or a full
+# airframe block in this file (see docs/guides/multicopters.md).
+#
+# `battery_wh` is the usable pack energy [Wh]. When omitted, it is derived
+# from the envelope's `d_range_max` flown at cruise speed.
+
+[types.MAVIC]
+battery_wh = 43.6 # 3830 mAh 11.4 V
+
+[types.PHAN4]
+battery_wh = 81.3 # 5350 mAh 15.2 V
+
+[types.M100]
+battery_wh = 99.9 # TB47D
+
+[types.M200]
+battery_wh = 349.2 # 2x TB55
+
+[types.M600]
+battery_wh = 599.4 # 6x TB47S
+
+# No public pack spec: range-derived pack energy.
+[types.MNET]
+[types.AMZN]
+[types.HORSEFLY]
