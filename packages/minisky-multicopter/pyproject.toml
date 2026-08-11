@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "MiniSky plugin flying small electric multirotors with decoupled track and heading"
 readme = { text = "A MiniSky plugin for simulating small electric multirotors.", content-type = "text/markdown" }
 requires-python = ">=3.11"
-dependencies = ["minisky>=0.1.0", "numpy>=2.2.2"]
+dependencies = ["minisky>=0.1.0", "numpy>=2.2.2", "platformdirs>=4.3.6", "pydantic>=2.0"]
 classifiers = ["Private :: Do Not Upload"]
 
 [build-system]
