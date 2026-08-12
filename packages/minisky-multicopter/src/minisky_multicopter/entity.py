@@ -11,7 +11,7 @@ Membership is deliberately *not* `traf.perf.lifttype == LiftType.ROTORCRAFT`:
 that
 set also contains the EC35, a crewed helicopter, which this plugin does not
 model. It is the typecode set of the loaded performance table instead (see
-`minisky_multicopter.config`), overridable per aircraft with `MCOPT`.
+`minisky_multicopter.config`). `MCOPT` can disable and re-enable configured types.
 """
 
 from __future__ import annotations
@@ -44,12 +44,12 @@ if TYPE_CHECKING:
 
     from minisky.traffic import Traffic
 
-#: Default yaw rate for a newly created multicopter [deg/s].
 DEFAULT_YAWRATE: q.YawRateDegPerS[float] = 90.0
 
-#: Replaceable base -> multicopter implementation, selected on load and reset.
-#: Kept as names (not classes) because every implementation module imports
-#: this one for `get_multicopter`.
+# NOTE(abraham): SELECTIMPL replaces one implementation for the whole traffic
+# component. it forces the multicopter replacements to run base behaviour for
+# the full fleet and then patch only multicopter rows. a future per-archetype
+# dispatcher should make these global swaps unnecessary
 IMPLEMENTATIONS = (
     ("KINEMATICS", "MULTICOPTERKINEMATICS"),
     ("APORASAS", "MULTICOPTERAPORASAS"),
@@ -134,6 +134,9 @@ class Multicopter(plugin_api.Entity):
         Equivalent to issuing `SELECTIMPL <BASE> <IMPL>` for each entry of
         `IMPLEMENTATIONS`; replaces the live instance immediately.
         """
+        # NOTE(abraham): plugin loading should eventually register behaviour,
+        # not mutate which concrete implementation owns every aircraft.
+        # importing multicopter should not have any side effects!
         for basename, implname in IMPLEMENTATIONS:
             result = self.traffic.select_implementation(basename, implname)
             if result.is_err():
@@ -163,7 +166,7 @@ class Multicopter(plugin_api.Entity):
 
     @plugin_api.command
     def mcopt(self, idx: AcId, flag: OnOff | None = None) -> Result[str, str]:
-        """Mark an aircraft as a multicopter (or report its current setting).
+        """Toggle multicopter behavior for a configured aircraft type.
 
         Args:
             idx: Aircraft callsign.
@@ -172,6 +175,8 @@ class Multicopter(plugin_api.Entity):
         callsign = self.traffic.callsign[idx]
         if flag is None:
             return Ok(f"MCOPT {callsign}: {'ON' if self.ismulticopter[idx] else 'OFF'}")
+        if flag and self.traffic.typecode[idx].upper() not in self.typespecs:
+            return Err(f"MCOPT: {callsign} type is not configured as a multicopter")
 
         self.ismulticopter[idx] = flag
         # Multicopters fly point-to-point: newly added waypoints default to
@@ -196,7 +201,7 @@ class Multicopter(plugin_api.Entity):
         """
         if not self.ismulticopter[idx]:
             callsign = self.traffic.callsign[idx]
-            return Err(f"YAW: {callsign} is not a multicopter (use MCOPT {callsign} ON)")
+            return Err(f"YAW: {callsign} is not a multicopter")
 
         resolved_hdg = hdg.degrees
         if isinstance(hdg, MagneticHeadingDeg):
@@ -268,7 +273,7 @@ class Multicopter(plugin_api.Entity):
 
         callsign = self.traffic.callsign[idx]
         if not self.ismulticopter[idx]:
-            return Err(f"BATT: {callsign} is not a multicopter (use MCOPT {callsign} ON)")
+            return Err(f"BATT: {callsign} is not a multicopter")
         perf = self.traffic.perf
         if not isinstance(perf, MulticopterPerf):
             return Err("BATT: SELECTIMPL OPENAP MULTICOPTERPERF first")

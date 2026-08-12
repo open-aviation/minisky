@@ -1,0 +1,110 @@
+# All values are SI, except battery_energy (usable pack energy in Wh).
+
+[types.MAVIC]
+battery_energy = 43.6
+[types.MAVIC.airframe]
+oew = 0.494
+mtow = 0.734
+n_engines = 4
+engine_power = 66.9
+v_min = -18.0
+v_max = 18.0
+vs_min = -3.0
+vs_max = 5.0
+h_max = 5000.0
+range_max = 7000.0
+
+[types.PHAN4]
+battery_energy = 81.3
+[types.PHAN4.airframe]
+oew = 0.92
+mtow = 1.4
+n_engines = 4
+engine_power = 66.9
+v_min = -20.0
+v_max = 20.0
+vs_min = -4.0
+vs_max = 6.0
+h_max = 6000.0
+range_max = 5000.0
+
+[types.M100]
+battery_energy = 99.9
+[types.M100.airframe]
+oew = 1.8
+mtow = 3.6
+n_engines = 4
+engine_power = 200.0
+v_min = -22.0
+v_max = 22.0
+vs_min = -4.0
+vs_max = 5.0
+h_max = 3000.0
+range_max = 5000.0
+
+[types.M200]
+battery_energy = 349.2
+[types.M200.airframe]
+oew = 3.645
+mtow = 6.14
+n_engines = 4
+engine_power = 300.0
+v_min = -23.0
+v_max = 23.0
+vs_min = -3.0
+vs_max = 5.0
+h_max = 3000.0
+range_max = 7000.0
+
+[types.M600]
+battery_energy = 599.4
+[types.M600.airframe]
+oew = 9.1
+mtow = 15.1
+n_engines = 6
+engine_power = 482.0
+v_min = -18.0
+v_max = 18.0
+vs_min = -5.0
+vs_max = 5.0
+h_max = 2500.0
+range_max = 10000.0
+
+[types.MNET]
+[types.MNET.airframe]
+oew = 9.1
+mtow = 15.1
+n_engines = 4
+engine_power = 482.0
+v_min = -11.0
+v_max = 11.0
+vs_min = -5.0
+vs_max = 5.0
+h_max = 2500.0
+range_max = 10000.0
+
+[types.AMZN]
+[types.AMZN.airframe]
+oew = 9.1
+mtow = 20.0
+n_engines = 8
+engine_power = 482.0
+v_min = -44.0
+v_max = 44.0
+vs_min = -8.0
+vs_max = 8.0
+h_max = 2500.0
+range_max = 80000.0
+
+[types.HORSEFLY]
+[types.HORSEFLY.airframe]
+oew = 4.3
+mtow = 8.8
+n_engines = 8
+engine_power = 300.0
+v_min = -22.3
+v_max = 22.3
+vs_min = -8.0
+vs_max = 8.0
+h_max = 2500.0
+range_max = 5000.0

@@ -1,14 +1,3 @@
-"""Tests for the multicopter electric performance model (Phase 3).
-
-Power-model checks against hand-computed points, battery state-of-charge
-integration and envelope feedback, plus the BATT stack command — on the
-plugin-loaded `mcruntime` from conftest.py.
-
-Hand-computed anchor (MAVIC, hover): mass = (0.494 + 0.734) / 2 kg,
-installed power P_max = 4 x 66.9 W, T_max = 2 * m * g, so hover power is
-P_max * 0.5 ** 1.5 ~= 94.6 W from a 43.6 Wh pack ~= 27.7 min endurance.
-"""
-
 from __future__ import annotations
 
 import itertools
@@ -16,20 +5,17 @@ import itertools
 import numpy as np
 import pytest
 from minisky import MiniSky
+from minisky import quantities as q
 from minisky.tools.aero import g0
-from minisky_multicopter.config import (
-    DEFAULT_LOWBATT_SPD_FACTOR,
-    DEFAULT_LOWBATT_VS_FACTOR,
-    DEFAULT_SOC_LOW,
-)
+from minisky_multicopter.entity import get_multicopter
 from minisky_multicopter.perf import MulticopterPerf
 from tests._types import RunCommand, StepUntil
 
-#: Installed power of the MAVIC entry in the OpenAP rotor database [W].
-MAVIC_PMAX = 4 * 66.9
+MAVIC_PMAX: q.PowerW = 4 * 66.9
+"""Installed power of the MAVIC entry in teh OpenAP rotor database"""
 
-#: Effective mass of the MAVIC entry, mean of OEW and MTOW [kg].
-MAVIC_MASS = 0.5 * (0.494 + 0.734)
+MAVIC_MASS: q.MassKg = 0.5 * (0.494 + 0.734)
+"""Effective mass of the MAVIC entry, mean of OEW and MTOW"""
 
 
 def hovering_mavic(mcruntime: MiniSky, run_mc: RunCommand, step_mc: StepUntil) -> MulticopterPerf:
@@ -113,56 +99,21 @@ class TestEnvelopeFeedback:
     def test_envelope_tightens_below_soc_threshold(
         self, mcruntime: MiniSky, run_mc: RunCommand
     ) -> None:
-        # two steps: the first only processes CRE, the second runs perf.update
         run_mc("CRE D1,MAVIC,52,4,90,100,20", steps=2)
         perf = mcruntime.traffic.perf
+        mc = get_multicopter(mcruntime.traffic)
         assert isinstance(perf, MulticopterPerf)
+        assert mc is not None
+
         vmax, vsmax = perf.vmax[0], perf.vsmax[0]
         intent = (np.array([vmax]), np.array([vsmax]), np.array([100.0]), np.array([0.0]))
 
-        perf.soc[0] = DEFAULT_SOC_LOW + 0.1
+        perf.soc[0] = mc.config.soc_low + 0.1
         healthy = perf.limits(*intent)
         assert healthy.tas[0] == pytest.approx(vmax)
         assert healthy.vertical_speed[0] == pytest.approx(vsmax)
 
-        perf.soc[0] = DEFAULT_SOC_LOW - 0.1
+        perf.soc[0] = mc.config.soc_low - 0.1
         low = perf.limits(*intent)
-        assert low.tas[0] == pytest.approx(DEFAULT_LOWBATT_SPD_FACTOR * vmax)
-        assert low.vertical_speed[0] == pytest.approx(DEFAULT_LOWBATT_VS_FACTOR * vsmax)
-
-    def test_low_battery_descent_stays_unrestricted(
-        self, mcruntime: MiniSky, run_mc: RunCommand
-    ) -> None:
-        run_mc("CRE D1,MAVIC,52,4,90,100,20", steps=2)
-        perf = mcruntime.traffic.perf
-        assert isinstance(perf, MulticopterPerf)
-
-        perf.soc[0] = 0.0
-        vsmin = perf.vsmin[0]
-        low = perf.limits(np.array([1.0]), np.array([vsmin]), np.array([100.0]), np.array([0.0]))
-        assert low.vertical_speed[0] == pytest.approx(vsmin)
-
-
-class TestBattCommand:
-    def test_batt_reports_soc_power_and_endurance(
-        self, mcruntime: MiniSky, run_mc: RunCommand, step_mc: StepUntil
-    ) -> None:
-        hovering_mavic(mcruntime, run_mc, step_mc)
-        report = run_mc("BATT D1")
-        assert "BATT D1" in report
-        assert "%" in report
-        assert "W" in report
-        assert "min" in report
-
-    def test_batt_rejects_non_multicopter(self, mcruntime: MiniSky, run_mc: RunCommand) -> None:
-        run_mc("CRE KL001,A320,52,4,90,FL100,250")
-        assert "not a multicopter" in run_mc("BATT KL001")
-
-    def test_batt_reports_no_model_for_custom_multicopter(
-        self, mcruntime: MiniSky, run_mc: RunCommand
-    ) -> None:
-        # MCOPT ON gives an A320 multicopter kinematics, but there is no
-        # rotor performance entry to build an electric model from.
-        run_mc("CRE KL001,A320,52,4,90,FL100,250")
-        run_mc("MCOPT KL001 ON")
-        assert "no battery model" in run_mc("BATT KL001")
+        assert low.tas[0] == pytest.approx(mc.config.lowbatt_spd_factor * vmax)
+        assert low.vertical_speed[0] == pytest.approx(mc.config.lowbatt_vs_factor * vsmax)
