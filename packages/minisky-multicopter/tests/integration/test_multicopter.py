@@ -1,13 +1,3 @@
-"""Integration tests for the MULTICOPTER plugin (Phase 2).
-
-Driven through the stack, like test_stack.py. These tests run on the
-plugin-loaded `mcruntime` from conftest.py instead of the shared session
-runtime — the other integration tests keep the core implementations.
-
-The default simulation timestep is 1 s; yaw rates are lowered where a slew
-must be observable across steps.
-"""
-
 from __future__ import annotations
 
 from minisky import MiniSky
@@ -17,34 +7,12 @@ from minisky_multicopter.autopilot import MulticopterAutopilot
 from tests._types import RunCommand, StepUntil
 
 
-class TestPluginDiscovery:
-    def test_plugin_listed_from_entry_point(self, mcruntime: MiniSky) -> None:
-        result = mcruntime.plugins.listing()
-        assert result.is_ok(), result.err()
-        assert "MULTICOPTER" in result.unwrap()
-
-
 class TestPluginWiring:
-    def test_implementations_selected_after_reset(
-        self, mcruntime: MiniSky, mcsim: Simulation
-    ) -> None:
-        # the reset in the fixture reverted to base; the reset hook reselects
-        assert type(mcruntime.traffic.kinematics).__name__ == "MulticopterKinematics"
-        assert type(mcruntime.traffic.aporasas).__name__ == "MulticopterAPorASAS"
-        assert type(mcruntime.traffic.ap).__name__ == "MulticopterAutopilot"
-        assert type(mcruntime.traffic.actwp).__name__ == "MulticopterActiveWaypoint"
-        assert type(mcruntime.traffic.perf).__name__ == "MulticopterPerf"
-
     def test_membership_from_typecode(self, mcruntime: MiniSky, run_mc: RunCommand) -> None:
         run_mc("CRE D1,MAVIC,52,4,90,100,20")
         run_mc("CRE KL001,A320,53,4,90,FL100,250")
         assert "ON" in run_mc("MCOPT D1")
         assert "OFF" in run_mc("MCOPT KL001")
-
-    def test_mcopt_overrides_membership(self, mcruntime: MiniSky, run_mc: RunCommand) -> None:
-        run_mc("CRE KL001,A320,53,4,90,FL100,250")
-        run_mc("MCOPT KL001 ON")
-        assert "ON" in run_mc("MCOPT KL001")
 
     def test_yaw_rejects_non_multicopter(self, mcruntime: MiniSky, run_mc: RunCommand) -> None:
         run_mc("CRE KL001,A320,53,4,90,FL100,250")

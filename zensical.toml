@@ -32,6 +32,7 @@ nav = [
       { "plugin" = "api/plugin.md" },
       { "core" = "api/core.md" },
       { "tools" = "api/tools.md" },
+      { "multicopter" = "api/multicopter.md" },
       { "tangram_minisky" = "api/tangram-minisky.md" },
     ] },
   ] },
@@ -86,7 +87,7 @@ enable_inventory = true
 [project.plugins.mkdocstrings.handlers.python]
 # tangram_minisky lives in its own workspace and is not installed in the docs
 # environment; point griffe at its source so it can analyse it statically.
-paths = ["packages/minisky", "packages/tangram-minisky/src"]
+paths = ["packages/minisky", "packages/minisky-multicopter/src", "packages/tangram-minisky/src"]
 inventories = [
   "https://docs.python.org/3/objects.inv",
   "https://fastapi.tiangolo.com/objects.inv",
@@ -106,6 +107,12 @@ merge_init_into_class = true
 separate_signature = true
 show_signature_annotations = true
 signature_crossrefs = true
+# NOTE(abraham): minisky embeds invariants into types (via minisky.quantities, isqx,
+# annotated-types) and so not all mod/class attributes necessarily have docstrings.
+# ask mkdocstrings to show them regardless of whether it is documented.
+show_if_no_docstring = true
+show_attribute_values = true
+members = true
 
 [project.markdown_extensions.zensical.extensions.macros]
 module_name = "docs/macros"

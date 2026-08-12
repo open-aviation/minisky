@@ -183,7 +183,7 @@ class MulticopterAutopilot(Autopilot):
         callsign = self.traffic.callsign[idx]
         mc = get_multicopter(self.traffic)
         if mc is None or not mc.ismulticopter[idx]:
-            return Err(f"HOVER: {callsign} is not a multicopter (use MCOPT {callsign} ON)")
+            return Err(f"HOVER: {callsign} is not a multicopter")
 
         if not self.swhover[idx]:
             # Entering the hover: save the route state to resume later.

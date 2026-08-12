@@ -187,12 +187,15 @@ class OpenAP(TrafficArrays):
         # initialize aircraft / engine performance parameters
         # check fixwing or rotor, default to fixwing
         if actype in self.coeff.actypes_rotor:
+            # NOTE(abraham): OpenAP in core currently knows about the legacy
+            # rotor coefficient schema even though multicopter performance is
+            # plugin-specific
             self.lifttype[-n:] = coeff.LiftType.ROTORCRAFT
             self.mass[-n:] = 0.5 * (
                 self.coeff.acs_rotor[actype]["oew"] + self.coeff.acs_rotor[actype]["mtow"]
             )
             self.engnum[-n:] = int(self.coeff.acs_rotor[actype]["n_engines"])
-            self.engpower[-n:] = q.kw_to_w(self.coeff.acs_rotor[actype]["engines"][0][1])
+            self.engpower[-n:] = self.coeff.acs_rotor[actype]["engines"][0].power
 
         else:
             # convert to known aircraft type

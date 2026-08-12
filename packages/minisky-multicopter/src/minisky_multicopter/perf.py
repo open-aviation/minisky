@@ -8,11 +8,8 @@ step that feeds back into the flight envelope. Fixed-wing rows keep the
 base behaviour; the plugin keeps `SELECTIMPL OPENAP MULTICOPTERPERF`
 selected.
 
-Per-typecode electric data comes from the validated performance table on
-the `Multicopter` entity (see `minisky_multicopter.config`); table entries
-with a full airframe block also get a rotor-database entry installed on
-this instance, so user-defined types need no edits to the shipped
-`aircraft.json`.
+Per-typecode electric and airframe data comes from the validated performance
+table on the `Multicopter` entity (see `minisky_multicopter.config`).
 
 The power curve is momentum-theory shape, not measured propeller data, so
 absolute forward-flight power is approximate and there is no voltage or
@@ -27,12 +24,13 @@ from typing import TYPE_CHECKING
 import numpy as np
 from minisky import plugin as plugin_api
 from minisky import quantities as q
-from minisky.result import Err, Ok, Result
+from minisky.result import Ok, Result
 from minisky.tools import aero
 from minisky.traffic.performance import coeff
 from minisky.traffic.performance.perfoap import OpenAP
 
-from minisky_multicopter.config import MulticopterTypeSpec
+from minisky_multicopter import quantities as mq
+from minisky_multicopter.config import MulticopterTypeSpec, RotorAirframeSpec
 from minisky_multicopter.entity import get_multicopter
 
 if TYPE_CHECKING:
@@ -54,11 +52,14 @@ class MulticopterPerf(OpenAP):
 
     capacity: q.EnergyJ[np.ndarray]
     power: q.PowerW[np.ndarray]
-    cds: q.AreaM2[np.ndarray]
+    cds: mq.FlatPlateDragAreaM2[np.ndarray]
 
     def __init__(self, traffic: Traffic) -> None:
+        # NOTE(abraham): miniSky currently has one globally selected performance impl,
+        # in the future we should have independent performance backends operating on
+        # aircraft subsets with openap moved out of core
         super().__init__(traffic)
-        self._install_custom_types()
+        self._install_types()
         with self.settrafarrays():
             self.soc = np.array([])
             self.capacity = np.array([])
@@ -76,44 +77,37 @@ class MulticopterPerf(OpenAP):
         mc = get_multicopter(self.traffic)
         return mc.typespecs if mc is not None else {}
 
-    def _install_custom_types(self) -> None:
-        """Install rotor-database entries for table types with airframe data.
-
-        The coefficient database is per-instance, so user-defined types from
-        the performance TOML become full rotor entries (properties and
-        envelope) without touching the shipped `aircraft.json`; an entry for
-        a shipped typecode overrides it.
-        """
+    def _install_types(self) -> None:
+        # NOTE(abraham): right now we have to translate its own typed
+        # airframe model into OpenAP's coefficient database and mutate that
+        # database in place.
+        # TODO replace it with our own performance backend and dont impersonate openap
         for actype, spec in self._typespecs().items():
-            if not spec.has_airframe():
-                continue
-            envelop = {
-                "v_min": spec.v_min,
-                "v_max": spec.v_max,
-                "vs_min": spec.vs_min,
-                "vs_max": spec.vs_max,
-                "h_max": spec.h_max,
+            airframe = spec.airframe
+            envelope: coeff.RotorEnvelope = {
+                "v_min": airframe.v_min,
+                "v_max": airframe.v_max,
+                "vs_min": airframe.vs_min,
+                "vs_max": airframe.vs_max,
+                "h_max": airframe.h_max,
             }
-            if spec.d_range_max is not None:
-                envelop["d_range_max"] = spec.d_range_max
-            self.coeff.acs_rotor[actype] = {
+            aircraft: coeff.RotorAircraft = {
                 "name": actype,
-                "n_engines": spec.n_engines,
-                "engine_type": "TS",
-                "mtow": spec.mtow,
-                "oew": spec.oew,
-                "mfc": 0,
-                "engines": [[f"{actype}-motor", spec.engine_kw]],
-                "envelop": envelop,
-                "lifttype": coeff.LiftType.ROTORCRAFT,
+                "n_engines": airframe.n_engines,
+                "mtow": airframe.mtow,
+                "oew": airframe.oew,
+                "engines": [coeff.RotorEngine(f"{actype}-motor", airframe.engine_power)],
+                "envelop": envelope,
             }
-            self.coeff.limits_rotor[actype] = {
-                "vmin": spec.v_min,
-                "vmax": spec.v_max,
-                "vsmin": spec.vs_min,
-                "vsmax": spec.vs_max,
-                "hmax": spec.h_max,
+            limits: coeff.RotorLimits = {
+                "vmin": airframe.v_min,
+                "vmax": airframe.v_max,
+                "vsmin": airframe.vs_min,
+                "vsmax": airframe.vs_max,
+                "hmax": airframe.h_max,
             }
+            self.coeff.acs_rotor[actype] = aircraft
+            self.coeff.limits_rotor[actype] = limits
         self.coeff.actypes_rotor = list(self.coeff.acs_rotor.keys())
 
     def create(self, n: int = 1) -> None:
@@ -136,44 +130,32 @@ class MulticopterPerf(OpenAP):
         for offset, typecode in enumerate(self.traffic.typecode[-n:], start=-n):
             actype = typecode.upper()
             spec = mc.typespecs.get(actype)
-            ac = self.coeff.acs_rotor.get(actype)
-            if spec is None or ac is None:
+            if spec is None:
                 continue
             self.twr[offset] = spec.twr
             self.cds[offset] = spec.cds
-            wh = spec.battery_wh
-            if wh is None:
-                wh = self._range_derived_wh(ac, spec.cds, spec.twr, mc.config.cruise_speed_fraction)
-            self.capacity[offset] = q.wh_to_j(wh)
+            if (energy := spec.battery_energy) is None:
+                energy = self._range_derived_wh(
+                    spec.airframe, spec.cds, spec.twr, mc.config.cruise_speed_fraction
+                )
+            self.capacity[offset] = q.wh_to_j(energy)
             self.soc[offset] = 1.0
 
     @staticmethod
     def _range_derived_wh(
-        ac: dict, cds: q.AreaM2[float], twr: float, cruise_speed_fraction: float
+        airframe: RotorAirframeSpec,
+        cds: mq.FlatPlateDragAreaM2,
+        twr: mq.ThrustToWeightRatio,
+        cruise_speed_fraction: mq.CruiseSpeedFraction,
     ) -> q.EnergyWh[float]:
-        """Derive the pack energy of a type without a pack spec [Wh].
-
-        Energy to fly the rotor entry's `d_range_max` at cruise speed,
-        evaluated with the same momentum-theory power model used at runtime.
-
-        Args:
-            ac: OpenAP rotor `aircraft.json` entry for the typecode.
-            cds: Flat-plate parasite drag area.
-            twr: Thrust-to-weight ratio at maximum thrust.
-            cruise_speed_fraction: Cruise speed as a fraction of `v_max`.
-        """
-        envelop = ac["envelop"]
-        d_range = q.km_to_m(envelop.get("d_range_max", 0.0))
-        v_max = envelop.get("v_max", 0.0)
-        if d_range <= 0.0 or v_max <= 0.0:
-            return 0.0
-        mass = 0.5 * (ac["oew"] + ac["mtow"])
-        p_max = q.kw_to_w(int(ac["n_engines"]) * ac["engines"][0][1])
-        v_cruise = cruise_speed_fraction * v_max
+        """Derive usable pack energy from the typed airframe range envelope."""
+        mass: q.MassKg[float] = 0.5 * (airframe.oew + airframe.mtow)
+        p_max = airframe.n_engines * airframe.engine_power
+        v_cruise = cruise_speed_fraction * airframe.v_max
         drag = 0.5 * aero.rho0 * v_cruise**2 * cds
         thrust = float(np.hypot(mass * aero.g0, drag))
         power = p_max * min(thrust / (twr * mass * aero.g0), 1.0) ** 1.5
-        return q.j_to_wh(power * (d_range / v_cruise))
+        return q.j_to_wh(power * (airframe.range_max / v_cruise))
 
     def required_thrust(self) -> q.ForceN[np.ndarray]:
         r"""Return the thrust each aircraft would need as a multicopter [N].
@@ -198,6 +180,9 @@ class MulticopterPerf(OpenAP):
         $P = P_\text{max} (T / T_\text{max})^{1.5}$, and integrates the
         battery state of charge as an ideal energy tank.
         """
+        # NOTE(abraham): OpenAP updates the shared performance arrays for the
+        # entire fleet first, after which this subclass overwrites multicopter
+        # rows!
         super().update()
         mc = get_multicopter(self.traffic)
         if mc is None:
@@ -254,9 +239,6 @@ class MulticopterPerf(OpenAP):
             idx: Aircraft index.
         """
         callsign = self.traffic.callsign[idx]
-        if self.capacity[idx] <= 0.0:
-            return Err(f"BATT: no battery model for {callsign} ({self.actype[idx]})")
-
         soc = self.soc[idx]
         power = self.power[idx]
         if soc <= 0.0:

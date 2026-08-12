@@ -37,6 +37,10 @@ class MulticopterKinematics(Kinematics):
         the heading of multicopter rows at their yaw rate instead of the
         bank-angle turn rate (which explodes as TAS approaches zero).
         """
+        # NOTE(abraham): the base method mutates shared traffic state for
+        # every row before we overwrite the multicopter subset.
+        # in the future we should redesign the core so it only dispatches the
+        # relevant rows directly.
         traf = self.traffic
         mc = get_multicopter(traf)
         if mc is None or not mc.ismulticopter.any():

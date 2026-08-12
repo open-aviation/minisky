@@ -11,6 +11,7 @@ values are stored in SI units. The [`Coefficient`][] container is instantiated o
 import json
 import warnings
 from enum import IntEnum
+from typing import NamedTuple, TypedDict
 
 import numpy as np
 from openap import WRAP, drag, prop
@@ -22,6 +23,41 @@ from minisky.core.config import data
 class LiftType(IntEnum):
     FIXED_WING = 1
     ROTORCRAFT = 2
+
+
+# NOTE(abraham): core currently owns OpenAP-specific rotor data because the
+# multicopter plugin has to inherit from the core OpenAP implementation.
+# TODO move away from core
+
+
+class RotorEngine(NamedTuple):
+    name: str
+    power: q.PowerW[float]
+
+
+class RotorEnvelope(TypedDict):
+    v_min: q.VelocityMps[float]
+    v_max: q.TrueAirspeedMps[float]
+    vs_min: q.VerticalRateMps[float]
+    vs_max: q.VerticalRateMps[float]
+    h_max: q.PressureAltitudeM[float]
+
+
+class RotorAircraft(TypedDict):
+    name: str
+    n_engines: int
+    mtow: q.MtowKg[float]
+    oew: q.OewKg[float]
+    engines: list[RotorEngine]
+    envelop: RotorEnvelope
+
+
+class RotorLimits(TypedDict):
+    vmin: q.VelocityMps[float]
+    vmax: q.TrueAirspeedMps[float]
+    vsmin: q.VerticalRateMps[float]
+    vsmax: q.VerticalRateMps[float]
+    hmax: q.PressureAltitudeM[float]
 
 
 # TODO(abraham): remove the unused engine-type codes and OpenAP.engtype array?
@@ -88,17 +124,37 @@ class Coefficient:
                 acs[mdl.upper()]["engines"][e["name"]] = e.copy()
         return acs
 
-    def _load_all_rotor_flavor(self) -> dict:
-        """Load rotorcraft data from the local JSON database."""
-        # read rotor aircraft
-        with (OPENAP_DIR / "rotor/aircraft.json").open() as f:
-            acs = json.load(f)
-        acs.pop("__comment")
-        acs_ = {}
-        for mdl, ac in acs.items():
-            acs_[mdl.upper()] = ac.copy()
-            acs_[mdl.upper()]["lifttype"] = LiftType.ROTORCRAFT
-        return acs_
+    def _load_all_rotor_flavor(self) -> dict[str, RotorAircraft]:
+        # NOTE(abraham): this legacy rotor JSON has mixed units: mass is kg,
+        # speeds are m/s and altitude is m, but engine power is kW and range is
+        # km. we normalise it at this boundary
+        with (OPENAP_DIR / "rotor/aircraft.json").open() as file:
+            raw = json.load(file)
+        raw.pop("__comment")
+
+        aircraft: dict[str, RotorAircraft] = {}
+        for model, source in raw.items():
+            envelope_source = source["envelop"]
+            envelope: RotorEnvelope = {
+                "v_min": float(envelope_source["v_min"]),
+                "v_max": float(envelope_source["v_max"]),
+                "vs_min": float(envelope_source["vs_min"]),
+                "vs_max": float(envelope_source["vs_max"]),
+                "h_max": float(envelope_source["h_max"]),
+            }
+            engines = [
+                RotorEngine(str(engine[0]), q.kw_to_w(float(engine[1])))
+                for engine in source["engines"]
+            ]
+            aircraft[model.upper()] = {
+                "name": str(source["name"]),
+                "n_engines": int(source["n_engines"]),
+                "mtow": float(source["mtow"]),
+                "oew": float(source["oew"]),
+                "engines": engines,
+                "envelop": envelope,
+            }
+        return aircraft
 
     def _load_all_fixwing_envelop(self) -> dict:
         """load aircraft envelop from the openap database,
@@ -166,31 +222,20 @@ class Coefficient:
 
         return limits_fixwing
 
-    def _load_all_rotor_envelop(self) -> dict:
-        """load rotor aircraft envelop, all unit in SI
-
-        Reads speed [m/s], vertical speed [m/s], and ceiling [m] limits from
-        each rotorcraft's envelope definition; missing parameters fall back
-        to conservative defaults and print a warning.
-        """
-        limits_rotor = {}
-        for mdl, ac in self.acs_rotor.items():
-            limits_rotor[mdl] = {}
-
-            limits_rotor[mdl]["vmin"] = ac["envelop"].get("v_min", -20)
-            limits_rotor[mdl]["vmax"] = ac["envelop"].get("v_max", 20)
-            limits_rotor[mdl]["vsmin"] = ac["envelop"].get("vs_min", -5)
-            limits_rotor[mdl]["vsmax"] = ac["envelop"].get("vs_max", 5)
-            limits_rotor[mdl]["hmax"] = ac["envelop"].get("h_max", 2500)
-
-            params = ["v_min", "v_max", "vs_min", "vs_max", "h_max"]
-            if set(params) <= set(ac["envelop"].keys()):
-                pass
-            else:
-                warn = f"Warning: Some performance parameters for {mdl} are not found, default values used."
-                print(warn)
-
-        return limits_rotor
+    def _load_all_rotor_envelop(self) -> dict[str, RotorLimits]:
+        # NOTE(abraham): the same envelope is stored twice (`acs_rotor.envelop`
+        # and `limits_rotor`) because the inherited OpenAP code expects both
+        # shapes
+        return {
+            model: {
+                "vmin": aircraft["envelop"]["v_min"],
+                "vmax": aircraft["envelop"]["v_max"],
+                "vsmin": aircraft["envelop"]["vs_min"],
+                "vsmax": aircraft["envelop"]["vs_max"],
+                "hmax": aircraft["envelop"]["h_max"],
+            }
+            for model, aircraft in self.acs_rotor.items()
+        }
 
     def _load_fixedwing_dragpolar(self) -> dict:
         """Derive clean, takeoff, and landing drag polars from OpenAP.
