@@ -20,6 +20,7 @@ from __future__ import annotations
 import numpy as np
 from minisky import plugin as plugin_api
 from minisky import quantities as q
+from minisky.core.trafficarrays import VariantArray
 from minisky.traffic.activewpdata import ActiveWaypoint
 
 from minisky_multicopter.entity import get_multicopter
@@ -35,8 +36,8 @@ class MulticopterActiveWaypoint(ActiveWaypoint):
         dist: q.DistanceM[np.ndarray],
         flyby: np.ndarray,
         flyturn: np.ndarray,
-        turnrad: q.TurnRadiusM[np.ma.MaskedArray],
-        turnhdgr: q.TurnRateDegPerS[np.ma.MaskedArray],
+        turnrad: VariantArray[q.TurnRadiusM[np.ndarray]],
+        turnhdgr: VariantArray[q.TurnRateDegPerS[np.ndarray]],
         swlastwp: np.ndarray,
     ) -> np.ndarray:
         """Determine which aircraft have reached their active waypoint.
@@ -45,7 +46,7 @@ class MulticopterActiveWaypoint(ActiveWaypoint):
         distance of multicopter rows with the fixed capture radius and also
         counts them as reached when within it.
 
-        `turnrad` and `turnhdgr` are masked when unspecified. `swlastwp`
+        `turnrad` and `turnhdgr` are absent when `kind` is false. `swlastwp`
         marks aircraft whose active waypoint is their final waypoint.
 
         Returns the indices of aircraft that reached their waypoint.

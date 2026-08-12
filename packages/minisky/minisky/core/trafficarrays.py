@@ -26,7 +26,7 @@ import inspect
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import Any
+from typing import Any, Generic, TypeVar
 
 import numpy as np
 
@@ -98,6 +98,9 @@ class _ComponentSlot:
             if hasattr(replacement, name):
                 setattr(replacement, name, getattr(previous, name))
         for name in previous._LstVars:
+            if hasattr(replacement, name):
+                setattr(replacement, name, getattr(previous, name))
+        for name in previous._VariantVars:
             if hasattr(replacement, name):
                 setattr(replacement, name, getattr(previous, name))
 
@@ -260,6 +263,58 @@ class RegisterElementParameters:
         self._parent._init_trafarrays(set(self._parent.__dict__.keys()) - self.keys0)
 
 
+# using generics because we want consumers to be able to type with `minisky.quantities`
+ArrayValueT = TypeVar("ArrayValueT")
+
+
+@dataclass(slots=True)
+class VariantArray(Generic[ArrayValueT]):
+    """Vectorised enum arrays.
+
+    In minisky, we typically need to distinguish between several quantity kinds:
+    for example, pressure altitude and MSL altitude are not interchangeable.
+    One option is to use a array of structs
+    (`Sequence[tuple[float, Discriminant]]`), but to follow the philosphy of
+    data-oriented design, we wish to adopt vectorised struct of arrays instead
+    (`tuple[Sequence[float], Sequence[Discriminant]]`).
+
+    Conceptually, the internal data layout is the exact same as a
+    [numpy masked array](https://numpy.org/doc/stable/reference/maskedarray.html)
+    but with the benefit of storing more than two variants. It is also directly
+    inspired by [Julia's `Array{Union{String, Nothing}}`](https://julialang.org/blog/2018/06/missing/).
+
+    We intentionally do **not** add complex operator overloads for simplicity.
+    Users are expected to handle it themselves.
+
+    !!! note
+
+        [traffic arrays][minisky.core.TrafficArrays] by default zero-fills new
+        `kind` lanes, so make sure the '0' value used in your discriminant
+        means the default.
+
+    ## Examples
+
+    ```py
+    class SpeedVariant(IntEnum):
+        CAS = 0
+        MACH = 1
+
+    speed = VariantArray(
+        values=np.array([0.78, 240]),
+        kind=np.array([SpeedVariant.MACH, SpeedVariant.CAS])
+    )
+    # then some time in the future, to extract all Mach numbers:
+    print(speed.values[np.where(speed.kind == SpeedVariant.MACH)])
+    ```
+
+    In this case, when traffic arrays creates a new aircraft it will have a
+    speed of 0 KCAS.
+    """
+
+    values: ArrayValueT
+    kind: np.ndarray
+
+
 class TrafficArrays:
     """Parent class to use separate arrays and lists to allow
     vectorizing but still maintain and object like benefits
@@ -279,6 +334,7 @@ class TrafficArrays:
         _children: Child TrafficArrays objects of this object.
         _ArrVars: Names of the registered numpy-array parameters.
         _LstVars: Names of the registered list parameters.
+        _VariantVars: Names of registered VariantArray parameters.
     """
 
     @classmethod
@@ -306,6 +362,7 @@ class TrafficArrays:
         self._children: list[TrafficArrays] = []
         self._ArrVars: list[str] = []
         self._LstVars: list[str] = []
+        self._VariantVars: list[str] = []
         if parent is not None:
             self.reparent(parent)
 
@@ -343,16 +400,18 @@ class TrafficArrays:
     def _init_trafarrays(self, keys: set[str]) -> None:
         """Register the given attribute names as per-aircraft variables.
 
-        Lists are recorded in _LstVars, numpy arrays in _ArrVars, and
-        nested TrafficArrays objects are re-parented to this object. When
-        traffic already exists, the new arrays are immediately sized to
-        the current number of aircraft.
+        Lists are recorded in _LstVars, numpy arrays in _ArrVars,
+        VariantArray objects in _VariantVars, and nested TrafficArrays objects
+        are re-parented to this object. When traffic already exists, the new
+        arrays are immediately sized to the current number of aircraft.
         """
         for key in keys:
             if isinstance(self.__dict__[key], list):
                 self._LstVars.append(key)
             elif isinstance(self.__dict__[key], np.ndarray):
                 self._ArrVars.append(key)
+            elif isinstance(self.__dict__[key], VariantArray):
+                self._VariantVars.append(key)
             elif isinstance(self.__dict__[key], TrafficArrays):
                 self.__dict__[key].reparent(self)
 
@@ -382,11 +441,6 @@ class TrafficArrays:
 
         for v in self._ArrVars:  # Numpy array
             array = self.__dict__[v]
-            if np.ma.isMaskedArray(array):
-                extension = np.ma.masked_all(n, dtype=array.dtype)
-                self.__dict__[v] = np.ma.concatenate((array, extension))
-                continue
-
             # Preserve the declared dtype. Building defaults as a Python list
             # made NumPy promote uncommon dtypes (notably uint64 group masks)
             # through float64 before appending, which can lose high membership bits.
@@ -395,9 +449,18 @@ class TrafficArrays:
             extension = np.full(n, defaults.get(vartype, 0), dtype=array.dtype)
             self.__dict__[v] = np.append(array, extension)
 
+        for v in self._VariantVars:
+            variant = self.__dict__[v]
+            vartype = "".join(c for c in str(variant.values.dtype) if c.isalpha())
+            extension = np.full(n, defaults.get(vartype, 0), dtype=variant.values.dtype)
+            self.__dict__[v] = VariantArray(
+                np.append(variant.values, extension),
+                np.append(variant.kind, np.zeros(n, dtype=variant.kind.dtype)),
+            )
+
     def istrafarray(self, name: str) -> bool:
         """Returns true if parameter 'name' is a registered traffic array of this object."""
-        return name in self._LstVars or name in self._ArrVars
+        return name in self._LstVars or name in self._ArrVars or name in self._VariantVars
 
     def create_children(self, n: int = 1) -> None:
         """Call create (aircraft create) recursively on all children.
@@ -425,13 +488,13 @@ class TrafficArrays:
 
         for v in self._ArrVars:
             array = self.__dict__[v]
-            if np.ma.isMaskedArray(array):
-                self.__dict__[v] = np.ma.array(
-                    np.delete(array.data, idx),
-                    mask=np.delete(np.ma.getmaskarray(array), idx),
-                )
-            else:
-                self.__dict__[v] = np.delete(array, idx)
+            self.__dict__[v] = np.delete(array, idx)
+
+        for v in self._VariantVars:
+            variant = self.__dict__[v]
+            self.__dict__[v] = VariantArray(
+                np.delete(variant.values, idx), np.delete(variant.kind, idx)
+            )
 
         if self._LstVars:
             if isinstance(idx, np.ndarray):
@@ -453,10 +516,13 @@ class TrafficArrays:
 
         for v in self._ArrVars:
             array = self.__dict__[v]
-            self.__dict__[v] = (
-                np.ma.masked_all(0, dtype=array.dtype)
-                if np.ma.isMaskedArray(array)
-                else np.array([], dtype=array.dtype)
+            self.__dict__[v] = np.array([], dtype=array.dtype)
+
+        for v in self._VariantVars:
+            variant = self.__dict__[v]
+            self.__dict__[v] = VariantArray(
+                np.array([], dtype=variant.values.dtype),
+                np.array([], dtype=variant.kind.dtype),
             )
 
         for v in self._LstVars:

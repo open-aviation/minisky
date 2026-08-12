@@ -49,6 +49,7 @@ from minisky.command import (
     parse_resolved_position,
     parse_speed_value,
 )
+from minisky.core.trafficarrays import VariantArray
 from minisky.result import Err, Ok, Result
 
 # from minisky.core import Replaceable
@@ -388,7 +389,11 @@ class Route:
         # update qdr and "last waypoint switch" in traffic
         if idx is not None:
             next_qdr = self.getnextqdr()
-            self.traffic.actwp.next_qdr[iac] = np.ma.masked if next_qdr is None else next_qdr
+            if next_qdr is None:
+                self.traffic.actwp.next_qdr.kind[iac] = False
+            else:
+                self.traffic.actwp.next_qdr.values[iac] = next_qdr
+                self.traffic.actwp.next_qdr.kind[iac] = True
             self.traffic.actwp.swlastwp[iac] = self.iactwp == n_wpt - 1
 
         # Update waypoints
@@ -1226,41 +1231,55 @@ def direct(traffic: Traffic, acidx: int, wpname: str) -> bool:
     turn = acrte.wpturn[wpidx]
     traffic.actwp.flyturn[acidx] = turn is not None
     geometry = None if turn is None else turn.geometry
-    traffic.actwp.turnrad[acidx] = (
-        geometry.radius if isinstance(geometry, TurnRadius) else np.ma.masked
-    )
-    if turn is None:
-        traffic.actwp.turnspd[acidx] = np.ma.masked
+    if isinstance(geometry, TurnRadius):
+        traffic.actwp.turnrad.values[acidx] = geometry.radius
+        traffic.actwp.turnrad.kind[acidx] = True
     else:
-        traffic.actwp.turnspd[acidx] = traffic.cas[acidx] if turn.speed is None else turn.speed
-    traffic.actwp.turnhdgr[acidx] = (
-        geometry.heading_rate if isinstance(geometry, TurnHeadingRate) else np.ma.masked
-    )
+        traffic.actwp.turnrad.kind[acidx] = False
+    if turn is None:
+        traffic.actwp.turnspd.kind[acidx] = False
+    else:
+        traffic.actwp.turnspd.values[acidx] = (
+            traffic.cas[acidx] if turn.speed is None else turn.speed
+        )
+        traffic.actwp.turnspd.kind[acidx] = True
+    if isinstance(geometry, TurnHeadingRate):
+        traffic.actwp.turnhdgr.values[acidx] = geometry.heading_rate
+        traffic.actwp.turnhdgr.kind[acidx] = True
+    else:
+        traffic.actwp.turnhdgr.kind[acidx] = False
 
     next_turn = acrte.getnextturnwp()
     if next_turn is None:
-        traffic.actwp.nextturnlat[acidx] = np.ma.masked
-        traffic.actwp.nextturnlon[acidx] = np.ma.masked
-        traffic.actwp.nextturnspd[acidx] = np.ma.masked
-        traffic.actwp.nextturnrad[acidx] = np.ma.masked
-        traffic.actwp.nextturnhdgr[acidx] = np.ma.masked
-        traffic.actwp.nextturnidx[acidx] = np.ma.masked
+        traffic.actwp.nextturnlat.kind[acidx] = False
+        traffic.actwp.nextturnlon.kind[acidx] = False
+        traffic.actwp.nextturnspd.kind[acidx] = False
+        traffic.actwp.nextturnrad.kind[acidx] = False
+        traffic.actwp.nextturnhdgr.kind[acidx] = False
+        traffic.actwp.nextturnidx.kind[acidx] = False
     else:
-        traffic.actwp.nextturnlat[acidx] = next_turn.latitude
-        traffic.actwp.nextturnlon[acidx] = next_turn.longitude
-        traffic.actwp.nextturnspd[acidx] = (
-            np.ma.masked if next_turn.turn.speed is None else next_turn.turn.speed
-        )
+        traffic.actwp.nextturnlat.values[acidx] = next_turn.latitude
+        traffic.actwp.nextturnlat.kind[acidx] = True
+        traffic.actwp.nextturnlon.values[acidx] = next_turn.longitude
+        traffic.actwp.nextturnlon.kind[acidx] = True
+        traffic.actwp.nextturnidx.values[acidx] = next_turn.waypoint_index
+        traffic.actwp.nextturnidx.kind[acidx] = True
+        if next_turn.turn.speed is None:
+            traffic.actwp.nextturnspd.kind[acidx] = False
+        else:
+            traffic.actwp.nextturnspd.values[acidx] = next_turn.turn.speed
+            traffic.actwp.nextturnspd.kind[acidx] = True
         next_geometry = next_turn.turn.geometry
-        traffic.actwp.nextturnrad[acidx] = (
-            next_geometry.radius if isinstance(next_geometry, TurnRadius) else np.ma.masked
-        )
-        traffic.actwp.nextturnhdgr[acidx] = (
-            next_geometry.heading_rate
-            if isinstance(next_geometry, TurnHeadingRate)
-            else np.ma.masked
-        )
-        traffic.actwp.nextturnidx[acidx] = next_turn.waypoint_index
+        if isinstance(next_geometry, TurnRadius):
+            traffic.actwp.nextturnrad.values[acidx] = next_geometry.radius
+            traffic.actwp.nextturnrad.kind[acidx] = True
+        else:
+            traffic.actwp.nextturnrad.kind[acidx] = False
+        if isinstance(next_geometry, TurnHeadingRate):
+            traffic.actwp.nextturnhdgr.values[acidx] = next_geometry.heading_rate
+            traffic.actwp.nextturnhdgr.kind[acidx] = True
+        else:
+            traffic.actwp.nextturnhdgr.kind[acidx] = False
 
     # Determine next turn waypoint data
 
@@ -1269,18 +1288,22 @@ def direct(traffic: Traffic, acidx: int, wpname: str) -> bool:
 
     profile = acrte.wpprofile[wpidx]
     if profile.altitude is None:
-        traffic.actwp.nextaltco[acidx] = np.ma.masked
-        traffic.actwp.xtoalt[acidx] = np.ma.masked
+        traffic.actwp.nextaltco.kind[acidx] = False
+        traffic.actwp.xtoalt.kind[acidx] = False
     else:
-        traffic.actwp.nextaltco[acidx] = profile.altitude.altitude
-        traffic.actwp.xtoalt[acidx] = profile.altitude.distance
+        traffic.actwp.nextaltco.values[acidx] = profile.altitude.altitude
+        traffic.actwp.nextaltco.kind[acidx] = True
+        traffic.actwp.xtoalt.values[acidx] = profile.altitude.distance
+        traffic.actwp.xtoalt.kind[acidx] = True
 
     if profile.rta is None:
-        traffic.actwp.torta[acidx] = np.ma.masked
-        traffic.actwp.xtorta[acidx] = np.ma.masked
+        traffic.actwp.torta.kind[acidx] = False
+        traffic.actwp.xtorta.kind[acidx] = False
     else:
-        traffic.actwp.torta[acidx] = profile.rta.time
-        traffic.actwp.xtorta[acidx] = profile.rta.distance
+        traffic.actwp.torta.values[acidx] = profile.rta.time
+        traffic.actwp.torta.kind[acidx] = True
+        traffic.actwp.xtorta.values[acidx] = profile.rta.distance
+        traffic.actwp.xtorta.kind[acidx] = True
 
     # If there is a speed specified, process it
     if (speed := acrte.wpspd[wpidx]) is not None:
@@ -1291,11 +1314,12 @@ def direct(traffic: Traffic, acidx: int, wpname: str) -> bool:
         cas = mach2cas(speed, alt) if speed < 2.0 else speed
 
         # Save it for next leg
-        traffic.actwp.nextspd[acidx] = cas
+        traffic.actwp.nextspd.values[acidx] = cas
+        traffic.actwp.nextspd.kind[acidx] = True
 
     # No speed specified for next leg
     else:
-        traffic.actwp.nextspd[acidx] = np.ma.masked
+        traffic.actwp.nextspd.kind[acidx] = False
 
     qdr_result, dist_result = geo.qdrdist(
         traffic.lat[acidx],
@@ -1307,10 +1331,14 @@ def direct(traffic: Traffic, acidx: int, wpname: str) -> bool:
     leg_distance = float(np.asarray(dist_result).item())
 
     # Save leg length & direction in actwp data
-    traffic.actwp.curlegdir[acidx] = qdr_  # [deg]
-    traffic.actwp.curleglen[acidx] = leg_distance  # [m]
-    traffic.ap.qdr2wp[acidx] = qdr_ % 360.0
-    traffic.ap.dist2wp[acidx] = leg_distance
+    traffic.actwp.curlegdir.values[acidx] = qdr_  # [deg]
+    traffic.actwp.curlegdir.kind[acidx] = True
+    traffic.actwp.curleglen.values[acidx] = leg_distance  # [m]
+    traffic.actwp.curleglen.kind[acidx] = True
+    traffic.ap.qdr2wp.values[acidx] = qdr_ % 360.0
+    traffic.ap.qdr2wp.kind[acidx] = True
+    traffic.ap.dist2wp.values[acidx] = leg_distance
+    traffic.ap.dist2wp.kind[acidx] = True
 
     next_qdr = acrte.getnextqdr()
     turn_geometry = traffic.actwp.calcturn(
@@ -1318,8 +1346,14 @@ def direct(traffic: Traffic, acidx: int, wpname: str) -> bool:
         traffic.ap.bankdef[acidx],
         qdr_,
         qdr_ if next_qdr is None else next_qdr,
-        traffic.actwp.turnrad[acidx : acidx + 1],
-        traffic.actwp.turnhdgr[acidx : acidx + 1],
+        VariantArray(
+            traffic.actwp.turnrad.values[acidx : acidx + 1],
+            traffic.actwp.turnrad.kind[acidx : acidx + 1],
+        ),
+        VariantArray(
+            traffic.actwp.turnhdgr.values[acidx : acidx + 1],
+            traffic.actwp.turnhdgr.kind[acidx : acidx + 1],
+        ),
         traffic.actwp.flyturn[acidx],
     )
     turn_distance = turn_geometry.distance.item()
@@ -1461,8 +1495,8 @@ def delrte(traffic: Traffic, acidx: int) -> Result[str, str]:
     traffic.swlnav[acidx] = False
     traffic.swvnav[acidx] = False
     traffic.swvnavspd[acidx] = False
-    traffic.actwp.torta[acidx] = np.ma.masked
-    traffic.actwp.xtorta[acidx] = np.ma.masked
+    traffic.actwp.torta.kind[acidx] = False
+    traffic.actwp.xtorta.kind[acidx] = False
 
     return Ok("")
 

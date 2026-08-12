@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 from minisky import plugin as plugin_api
 from minisky import quantities as q
+from minisky.core.trafficarrays import VariantArray
 from minisky.plugin import AcIdSelection, HeadingDeg
 from minisky.result import Err, Ok, Result
 from minisky.traffic.autopilot import Autopilot
@@ -43,7 +44,7 @@ class MulticopterAutopilot(Autopilot):
 
     Attributes:
         swhover (ndarray): Bool switch: aircraft is in a commanded hover.
-        hovertimer (ndarray): Remaining hold time of an active hover [s];
+        hovertimer (VariantArray): Remaining hold time of an active hover [s];
             negative = hold indefinitely.
         resumespd (ndarray): Selected speed to restore on resume
             (CAS [m/s] or Mach [-]).
@@ -52,13 +53,13 @@ class MulticopterAutopilot(Autopilot):
         resumevnavspd (ndarray): VNAV-speed switch state to restore.
     """
 
-    hovertimer: q.DurationS[np.ma.MaskedArray]
+    hovertimer: VariantArray[q.DurationS[np.ndarray]]
 
     def __init__(self, traffic: Traffic, get_simulation: Callable[[], Simulation]) -> None:
         super().__init__(traffic, get_simulation)
         with self.settrafarrays():
             self.swhover = np.array([], dtype=bool)
-            self.hovertimer = np.ma.masked_all(0, dtype=float)
+            self.hovertimer = VariantArray(np.array([]), np.array([], dtype=bool))
             # TODO(abraham): #40 must split CAS and Mach before resumespd can carry isqx metadata.
             self.resumespd = np.array([])
             self.resumelnav = np.array([], dtype=bool)
@@ -77,7 +78,7 @@ class MulticopterAutopilot(Autopilot):
         """
         super().create(n)
         self.swhover[-n:] = False
-        self.hovertimer[-n:] = np.ma.masked
+        self.hovertimer.kind[-n:] = False
         self.resumespd[-n:] = 0.0
         self.resumelnav[-n:] = False
         self.resumevnav[-n:] = False
@@ -111,15 +112,15 @@ class MulticopterAutopilot(Autopilot):
         # LNAV was re-engaged externally: cancel those hovers.
         cancel = self.swhover & traf.swlnav
         # Timed hovers holding position and altitude: count the timer down.
-        timed = self.swhover & ~np.ma.getmaskarray(self.hovertimer)
+        timed = self.swhover & self.hovertimer.kind
         holding = (
             timed
             & ~traf.swlnav
             & (traf.gs < mc.config.gs_hover)
             & (np.abs(traf.alt - traf.selalt) < mc.config.alt_capture)
         )
-        self.hovertimer.data[holding] -= self.simulation.simdt
-        expired = holding & (self.hovertimer.data <= 0.0)
+        self.hovertimer.values[holding] -= self.simulation.simdt
+        expired = holding & (self.hovertimer.values <= 0.0)
 
         # Restore the saved route state; expiry also re-engages LNAV/VNAV.
         resume = cancel | expired
@@ -129,7 +130,7 @@ class MulticopterAutopilot(Autopilot):
         traf.swlnav = np.where(expired, self.resumelnav, traf.swlnav)
         traf.swvnav = np.where(expired, self.resumevnav & self.resumelnav, traf.swvnav)
         self.swhover = self.swhover & ~resume
-        self.hovertimer[resume] = np.ma.masked
+        self.hovertimer.kind[resume] = False
 
     def selhdgcmd(self, idx: AcIdSelection, hdg: HeadingDeg) -> Result[str, str]:
         """Select the autopilot heading; for multicopters, yaw the nose only.
@@ -193,7 +194,11 @@ class MulticopterAutopilot(Autopilot):
             result = self.selaltcmd(np.asarray([idx], dtype=int), alt)
             if isinstance(result, Err):
                 return result
-        self.hovertimer[idx] = np.ma.masked if duration is None else duration
+        if duration is None:
+            self.hovertimer.kind[idx] = False
+        else:
+            self.hovertimer.values[idx] = duration
+            self.hovertimer.kind[idx] = True
 
         if duration is None:
             return Ok(f"HOVER {callsign}: holding position (resume with LNAV {callsign} ON)")
