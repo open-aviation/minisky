@@ -13,7 +13,7 @@ import time
 from collections.abc import Callable
 from enum import IntEnum
 from random import Random
-from typing import TYPE_CHECKING, Annotated, Any, Literal
+from typing import TYPE_CHECKING, Annotated, Literal
 
 import numpy as np
 from annotated_types import Ge, Le
@@ -96,7 +96,6 @@ class Simulation:
             `TIME` and `DATE` commands.
         rtmode: Flag indicating whether the timestep may be varied to keep
             the simulation running in real time.
-        clients: Set of known client identifiers connected to this simulation.
     """
 
     simt: q.SimulationTimeS[float]
@@ -128,7 +127,7 @@ class Simulation:
         self.replaceables = replaceables
         self.stop_runner = stop_runner
         self.publish_tick = publish_tick
-        self.state = SimulationState.INIT
+        self.state: SimulationState = SimulationState.INIT
         self.prevstate: SimulationState | None = None
 
         # Simulation time [seconds]
@@ -147,9 +146,6 @@ class Simulation:
 
         # Flag indicating whether timestep can be varied to ensure realtime op
         self.rtmode: bool = False
-
-        # Keep track of known clients
-        self.clients: set[Any] = set()
 
     def step(self) -> bool:
         """Perform one simulation timestep.

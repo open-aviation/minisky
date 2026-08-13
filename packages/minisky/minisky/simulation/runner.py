@@ -10,7 +10,6 @@ instance is owned by `MiniSky`.
 from __future__ import annotations
 
 import asyncio
-import os
 from typing import TYPE_CHECKING
 
 from minisky import quantities as q
@@ -34,8 +33,6 @@ class Runner:
     the target simulation time is reached as fast as possible.
 
     Attributes:
-        node_id: Random 5-byte identifier for this simulation node.
-        host_id: Identifier of the host this node belongs to (empty by default).
         running: True while the run loop is active.
         allow_shutdown: If False, `stop` is ignored and the loop keeps
             running (used when the simulator should idle without a scenario).
@@ -59,8 +56,6 @@ class Runner:
         """
         self.simulation = simulation
         self.console = console
-        self.node_id: bytes = b"\x00" + os.urandom(4)
-        self.host_id: bytes = b""
         self.running: bool = False
         self.allow_shutdown: bool = True
         self.speed = speed
