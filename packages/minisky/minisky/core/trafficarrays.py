@@ -103,6 +103,9 @@ class _ComponentSlot:
         for name in previous._VariantVars:
             if hasattr(replacement, name):
                 setattr(replacement, name, getattr(previous, name))
+        for name in previous._OptionalVars:
+            if hasattr(replacement, name):
+                setattr(replacement, name, getattr(previous, name))
 
         setattr(self.traffic, self.attribute, replacement)
         previous.detach()
@@ -315,6 +318,24 @@ class VariantArray(Generic[ArrayValueT]):
     kind: np.ndarray
 
 
+ArrayIndex = int | slice | np.ndarray
+
+
+@dataclass(slots=True)
+class OptionalArray(Generic[ArrayValueT]):
+    """Vectorised `T | None`. See [minisky.core.trafficarrays.VariantArray][]."""
+
+    values: ArrayValueT
+    present: np.ndarray
+
+    def set(self, idx: ArrayIndex, value) -> None:
+        self.values[idx] = value  # pyright: ignore[reportIndexIssue]
+        self.present[idx] = True
+
+    def clear(self, idx: ArrayIndex) -> None:
+        self.present[idx] = False
+
+
 class TrafficArrays:
     """Parent class to use separate arrays and lists to allow
     vectorizing but still maintain and object like benefits
@@ -335,6 +356,7 @@ class TrafficArrays:
         _ArrVars: Names of the registered numpy-array parameters.
         _LstVars: Names of the registered list parameters.
         _VariantVars: Names of registered VariantArray parameters.
+        _OptionalVars: Names of registered OptionalArray parameters.
     """
 
     @classmethod
@@ -363,6 +385,7 @@ class TrafficArrays:
         self._ArrVars: list[str] = []
         self._LstVars: list[str] = []
         self._VariantVars: list[str] = []
+        self._OptionalVars: list[str] = []
         if parent is not None:
             self.reparent(parent)
 
@@ -401,8 +424,9 @@ class TrafficArrays:
         """Register the given attribute names as per-aircraft variables.
 
         Lists are recorded in _LstVars, numpy arrays in _ArrVars,
-        VariantArray objects in _VariantVars, and nested TrafficArrays objects
-        are re-parented to this object. When traffic already exists, the new
+        VariantArray objects in _VariantVars, OptionalArray objects in
+        _OptionalVars, and nested TrafficArrays objects are re-parented to this
+        object. When traffic already exists, the new
         arrays are immediately sized to the current number of aircraft.
         """
         for key in keys:
@@ -412,6 +436,8 @@ class TrafficArrays:
                 self._ArrVars.append(key)
             elif isinstance(self.__dict__[key], VariantArray):
                 self._VariantVars.append(key)
+            elif isinstance(self.__dict__[key], OptionalArray):
+                self._OptionalVars.append(key)
             elif isinstance(self.__dict__[key], TrafficArrays):
                 self.__dict__[key].reparent(self)
 
@@ -458,9 +484,23 @@ class TrafficArrays:
                 np.append(variant.kind, np.zeros(n, dtype=variant.kind.dtype)),
             )
 
+        for v in self._OptionalVars:
+            optional = self.__dict__[v]
+            vartype = "".join(c for c in str(optional.values.dtype) if c.isalpha())
+            extension = np.full(n, defaults.get(vartype, 0), dtype=optional.values.dtype)
+            self.__dict__[v] = OptionalArray(
+                np.append(optional.values, extension),
+                np.append(optional.present, np.zeros(n, dtype=bool)),
+            )
+
     def istrafarray(self, name: str) -> bool:
         """Returns true if parameter 'name' is a registered traffic array of this object."""
-        return name in self._LstVars or name in self._ArrVars or name in self._VariantVars
+        return (
+            name in self._LstVars
+            or name in self._ArrVars
+            or name in self._VariantVars
+            or name in self._OptionalVars
+        )
 
     def create_children(self, n: int = 1) -> None:
         """Call create (aircraft create) recursively on all children.
@@ -496,6 +536,12 @@ class TrafficArrays:
                 np.delete(variant.values, idx), np.delete(variant.kind, idx)
             )
 
+        for v in self._OptionalVars:
+            optional = self.__dict__[v]
+            self.__dict__[v] = OptionalArray(
+                np.delete(optional.values, idx), np.delete(optional.present, idx)
+            )
+
         if self._LstVars:
             if isinstance(idx, np.ndarray):
                 for i in idx[::-1]:
@@ -523,6 +569,13 @@ class TrafficArrays:
             self.__dict__[v] = VariantArray(
                 np.array([], dtype=variant.values.dtype),
                 np.array([], dtype=variant.kind.dtype),
+            )
+
+        for v in self._OptionalVars:
+            optional = self.__dict__[v]
+            self.__dict__[v] = OptionalArray(
+                np.array([], dtype=optional.values.dtype),
+                np.array([], dtype=bool),
             )
 
         for v in self._LstVars:
