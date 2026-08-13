@@ -302,7 +302,7 @@ class TestActiveWaypointDefaults:
         # leaving all but one new aircraft with an invalid absence state.
         run_cmd("MCRE 3")
         assert runtime.traffic.ntraf == 3
-        assert not runtime.traffic.actwp.nextaltco.kind.any()
+        assert not runtime.traffic.actwp.nextaltco.present.any()
 
 
 class TestGuidanceGeometry:
@@ -411,7 +411,7 @@ class TestWaypointSwitching:
         # Once past the fly-turn waypoint there is no upcoming turn.
         step_until(lambda: route.iactwp == 3, max_steps=600)
         assert route.getnextturnwp() is None
-        assert not runtime.traffic.actwp.nextturnidx.kind[0]
+        assert not runtime.traffic.actwp.nextturnidx.present[0]
 
     def test_flyturn_without_turn_speed_does_not_override_speed(
         self, runtime: MiniSky, run_cmd: RunCommand, aircraft: str
@@ -422,7 +422,7 @@ class TestWaypointSwitching:
         run_cmd(f"ADDWPT {aircraft} {self.WPTS[1][0]},{self.WPTS[1][1]}")
         run_cmd(f"VNAV {aircraft} ON")
 
-        assert not runtime.traffic.actwp.nextturnspd.kind[0]
+        assert not runtime.traffic.actwp.nextturnspd.present[0]
         runtime.simulation.step()
         assert runtime.traffic.selspd[0] > 0.0
 

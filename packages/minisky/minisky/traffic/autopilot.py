@@ -39,7 +39,7 @@ from minisky.command import (
     Wpt,
     command,
 )
-from minisky.core.trafficarrays import TrafficArrays, VariantArray
+from minisky.core.trafficarrays import OptionalArray, TrafficArrays
 from minisky.result import Err, Ok, Result
 from minisky.tools import geo
 from minisky.tools.aero import (
@@ -114,8 +114,8 @@ class Autopilot(TrafficArrays):
         vs (ndarray): Commanded vertical speed [m/s].
         swtoc (ndarray): Switch: Top-of-Climb logic (climb early) enabled.
         swtod (ndarray): Switch: Top-of-Descent logic (descend late) enabled.
-        dist2vs (VariantArray): Distance to the active waypoint at which a
-            delayed VNAV descent should start [m], absent when `kind` is false.
+        dist2vs (OptionalArray): Distance to the active waypoint at which a
+            delayed VNAV descent should start [m], absent when `present` is false.
         swvnavvs (ndarray): Switch: use the VNAV-computed vertical speed.
         inturn (ndarray): Switch: aircraft is currently in a turn.
         orig (list): Origin airport identifier per aircraft.
@@ -131,12 +131,12 @@ class Autopilot(TrafficArrays):
     tas: q.TrueAirspeedMps[np.ndarray]
     alt: q.PressureAltitudeM[np.ndarray]
     vs: q.VerticalRateMps[np.ndarray]
-    dist2vs: VariantArray[q.DistanceM[np.ndarray]]
+    dist2vs: OptionalArray[q.DistanceM[np.ndarray]]
     vnavvs: q.VerticalRateMps[np.ndarray]
-    qdr2wp: VariantArray[q.BearingDeg[np.ndarray]]
-    dist2wp: VariantArray[q.DistanceM[np.ndarray]]
-    qdrturn: VariantArray[q.BearingDeg[np.ndarray]]
-    dist2turn: VariantArray[q.DistanceM[np.ndarray]]
+    qdr2wp: OptionalArray[q.BearingDeg[np.ndarray]]
+    dist2wp: OptionalArray[q.DistanceM[np.ndarray]]
+    qdrturn: OptionalArray[q.BearingDeg[np.ndarray]]
+    dist2turn: OptionalArray[q.DistanceM[np.ndarray]]
     bankdef: q.BankAngleRad[np.ndarray]
     vsdef: q.VerticalRateMps[np.ndarray]
     turnphi: q.BankAngleRad[np.ndarray]
@@ -168,7 +168,7 @@ class Autopilot(TrafficArrays):
             self.swtod = np.array([], dtype=bool)
 
             # Distance from current waypoint to Top of Descent
-            self.dist2vs = VariantArray(np.array([]), np.array([], dtype=bool))
+            self.dist2vs = OptionalArray(np.array([]), np.array([], dtype=bool))
 
             # Switch to use provided vertical speed
             self.swvnavvs = np.array([], dtype=bool)
@@ -180,16 +180,16 @@ class Autopilot(TrafficArrays):
 
             # Bearing to waypoint from last check point
             # used to prevent 180-degree turns when bearing updates shortly before passing waypoint
-            self.qdr2wp = VariantArray(np.array([]), np.array([], dtype=bool))
+            self.qdr2wp = OptionalArray(np.array([]), np.array([], dtype=bool))
 
             # Distance to active waypoint [m]
-            self.dist2wp = VariantArray(np.array([]), np.array([], dtype=bool))
+            self.dist2wp = OptionalArray(np.array([]), np.array([], dtype=bool))
 
             # Bearing to next turn
-            self.qdrturn = VariantArray(np.array([]), np.array([], dtype=bool))
+            self.qdrturn = OptionalArray(np.array([]), np.array([], dtype=bool))
 
             # Distance to next turn [m]
-            self.dist2turn = VariantArray(np.array([]), np.array([], dtype=bool))
+            self.dist2turn = OptionalArray(np.array([]), np.array([], dtype=bool))
 
             # Aircraft turning status
             self.inturn = np.array([], dtype=bool)
@@ -304,9 +304,9 @@ class Autopilot(TrafficArrays):
 
         # Get speed for next leg from the waypoint we pass now and set as active speed
         actwp.spd.values[self.idxreached] = actwp.nextspd.values[self.idxreached]
-        actwp.spd.kind[self.idxreached] = actwp.nextspd.kind[self.idxreached]
+        actwp.spd.present[self.idxreached] = actwp.nextspd.present[self.idxreached]
         actwp.spdcon.values[self.idxreached] = actwp.nextspd.values[self.idxreached]
-        actwp.spdcon.kind[self.idxreached] = actwp.nextspd.kind[self.idxreached]
+        actwp.spdcon.present[self.idxreached] = actwp.nextspd.present[self.idxreached]
 
         # Event-driven part, per aircraft: stack commands attached to the passed
         # waypoint and route iteration. These mutate the Route objects and queue
@@ -371,20 +371,20 @@ class Autopilot(TrafficArrays):
             )
 
             ntransitions = len(transitions)
-            nextspd = VariantArray(np.zeros(ntransitions), np.zeros(ntransitions, dtype=bool))
-            nextaltco = VariantArray(np.zeros(ntransitions), np.zeros(ntransitions, dtype=bool))
-            xtoalt = VariantArray(np.zeros(ntransitions), np.zeros(ntransitions, dtype=bool))
-            torta = VariantArray(np.zeros(ntransitions), np.zeros(ntransitions, dtype=bool))
-            xtorta = VariantArray(np.zeros(ntransitions), np.zeros(ntransitions, dtype=bool))
-            turnrad = VariantArray(np.zeros(ntransitions), np.zeros(ntransitions, dtype=bool))
-            turnspd = VariantArray(np.zeros(ntransitions), np.zeros(ntransitions, dtype=bool))
-            turnhdgr = VariantArray(np.zeros(ntransitions), np.zeros(ntransitions, dtype=bool))
-            nextturnlat = VariantArray(np.zeros(ntransitions), np.zeros(ntransitions, dtype=bool))
-            nextturnlon = VariantArray(np.zeros(ntransitions), np.zeros(ntransitions, dtype=bool))
-            nextturnspd = VariantArray(np.zeros(ntransitions), np.zeros(ntransitions, dtype=bool))
-            nextturnrad = VariantArray(np.zeros(ntransitions), np.zeros(ntransitions, dtype=bool))
-            nextturnhdgr = VariantArray(np.zeros(ntransitions), np.zeros(ntransitions, dtype=bool))
-            nextturnidx = VariantArray(
+            nextspd = OptionalArray(np.zeros(ntransitions), np.zeros(ntransitions, dtype=bool))
+            nextaltco = OptionalArray(np.zeros(ntransitions), np.zeros(ntransitions, dtype=bool))
+            xtoalt = OptionalArray(np.zeros(ntransitions), np.zeros(ntransitions, dtype=bool))
+            torta = OptionalArray(np.zeros(ntransitions), np.zeros(ntransitions, dtype=bool))
+            xtorta = OptionalArray(np.zeros(ntransitions), np.zeros(ntransitions, dtype=bool))
+            turnrad = OptionalArray(np.zeros(ntransitions), np.zeros(ntransitions, dtype=bool))
+            turnspd = OptionalArray(np.zeros(ntransitions), np.zeros(ntransitions, dtype=bool))
+            turnhdgr = OptionalArray(np.zeros(ntransitions), np.zeros(ntransitions, dtype=bool))
+            nextturnlat = OptionalArray(np.zeros(ntransitions), np.zeros(ntransitions, dtype=bool))
+            nextturnlon = OptionalArray(np.zeros(ntransitions), np.zeros(ntransitions, dtype=bool))
+            nextturnspd = OptionalArray(np.zeros(ntransitions), np.zeros(ntransitions, dtype=bool))
+            nextturnrad = OptionalArray(np.zeros(ntransitions), np.zeros(ntransitions, dtype=bool))
+            nextturnhdgr = OptionalArray(np.zeros(ntransitions), np.zeros(ntransitions, dtype=bool))
+            nextturnidx = OptionalArray(
                 np.zeros(ntransitions, dtype=int), np.zeros(ntransitions, dtype=bool)
             )
             flyturn = np.fromiter(
@@ -393,96 +393,82 @@ class Autopilot(TrafficArrays):
 
             for k, (transition, next_turn) in enumerate(zip(transitions, next_turns, strict=True)):
                 if transition.speed is not None:
-                    nextspd.values[k] = transition.speed
-                    nextspd.kind[k] = True
+                    nextspd.set(k, transition.speed)
                 if (altitude := transition.profile.altitude) is not None:
-                    nextaltco.values[k] = altitude.altitude
-                    nextaltco.kind[k] = True
-                    xtoalt.values[k] = altitude.distance
-                    xtoalt.kind[k] = True
+                    nextaltco.set(k, altitude.altitude)
+                    xtoalt.set(k, altitude.distance)
                 if (rta := transition.profile.rta) is not None:
-                    torta.values[k] = rta.time
-                    torta.kind[k] = True
-                    xtorta.values[k] = rta.distance
-                    xtorta.kind[k] = True
+                    torta.set(k, rta.time)
+                    xtorta.set(k, rta.distance)
                 if transition.turn is not None:
                     if transition.turn.speed is not None:
-                        turnspd.values[k] = transition.turn.speed
-                        turnspd.kind[k] = True
+                        turnspd.set(k, transition.turn.speed)
                     geometry = transition.turn.geometry
                     if isinstance(geometry, TurnRadius):
-                        turnrad.values[k] = geometry.radius
-                        turnrad.kind[k] = True
+                        turnrad.set(k, geometry.radius)
                     elif isinstance(geometry, TurnHeadingRate):
-                        turnhdgr.values[k] = geometry.heading_rate
-                        turnhdgr.kind[k] = True
+                        turnhdgr.set(k, geometry.heading_rate)
                 if next_turn is not None:
-                    nextturnlat.values[k] = next_turn.latitude
-                    nextturnlat.kind[k] = True
-                    nextturnlon.values[k] = next_turn.longitude
-                    nextturnlon.kind[k] = True
-                    nextturnidx.values[k] = next_turn.waypoint_index
-                    nextturnidx.kind[k] = True
+                    nextturnlat.set(k, next_turn.latitude)
+                    nextturnlon.set(k, next_turn.longitude)
+                    nextturnidx.set(k, next_turn.waypoint_index)
                     if next_turn.turn.speed is not None:
-                        nextturnspd.values[k] = next_turn.turn.speed
-                        nextturnspd.kind[k] = True
+                        nextturnspd.set(k, next_turn.turn.speed)
                     geometry = next_turn.turn.geometry
                     if isinstance(geometry, TurnRadius):
-                        nextturnrad.values[k] = geometry.radius
-                        nextturnrad.kind[k] = True
+                        nextturnrad.set(k, geometry.radius)
                     elif isinstance(geometry, TurnHeadingRate):
-                        nextturnhdgr.values[k] = geometry.heading_rate
-                        nextturnhdgr.kind[k] = True
+                        nextturnhdgr.set(k, geometry.heading_rate)
 
             # Bearing of the leg after the new active waypoint, batched over
             # all switching aircraft; dummy coordinates keep lanes without a
             # next leg NaN-free until the ActiveWaypoint boundary conversion.
             batched_qdr, _ = geo.qdrdist(lat, lon, nextleglat, nextleglon)
-            next_qdr = VariantArray(np.asarray(batched_qdr), has_nextleg.copy())
+            next_qdr = OptionalArray(np.asarray(batched_qdr), has_nextleg.copy())
 
             actwp.nextspd.values[nxt] = nextspd.values
-            actwp.nextspd.kind[nxt] = nextspd.kind
+            actwp.nextspd.present[nxt] = nextspd.present
 
             # User-entered altitude guidance for the new waypoint/profile.
             actwp.nextaltco.values[nxt] = nextaltco.values
-            actwp.nextaltco.kind[nxt] = nextaltco.kind
+            actwp.nextaltco.present[nxt] = nextaltco.present
             actwp.xtoalt.values[nxt] = xtoalt.values
-            actwp.xtoalt.kind[nxt] = xtoalt.kind
+            actwp.xtoalt.present[nxt] = xtoalt.present
             actwp.xtorta.values[nxt] = xtorta.values
-            actwp.xtorta.kind[nxt] = xtorta.kind
+            actwp.xtorta.present[nxt] = xtorta.present
             actwp.torta.values[nxt] = torta.values
-            actwp.torta.kind[nxt] = torta.kind
+            actwp.torta.present[nxt] = torta.present
             actwp.next_qdr.values[nxt] = next_qdr.values
-            actwp.next_qdr.kind[nxt] = next_qdr.kind
+            actwp.next_qdr.present[nxt] = next_qdr.present
             actwp.swlastwp[nxt] = swlastwp
             actwp.nextturnlat.values[nxt] = nextturnlat.values
-            actwp.nextturnlat.kind[nxt] = nextturnlat.kind
+            actwp.nextturnlat.present[nxt] = nextturnlat.present
             actwp.nextturnlon.values[nxt] = nextturnlon.values
-            actwp.nextturnlon.kind[nxt] = nextturnlon.kind
+            actwp.nextturnlon.present[nxt] = nextturnlon.present
             actwp.nextturnspd.values[nxt] = nextturnspd.values
-            actwp.nextturnspd.kind[nxt] = nextturnspd.kind
+            actwp.nextturnspd.present[nxt] = nextturnspd.present
             actwp.nextturnrad.values[nxt] = nextturnrad.values
-            actwp.nextturnrad.kind[nxt] = nextturnrad.kind
+            actwp.nextturnrad.present[nxt] = nextturnrad.present
             actwp.nextturnhdgr.values[nxt] = nextturnhdgr.values
-            actwp.nextturnhdgr.kind[nxt] = nextturnhdgr.kind
+            actwp.nextturnhdgr.present[nxt] = nextturnhdgr.present
             actwp.nextturnidx.values[nxt] = nextturnidx.values
-            actwp.nextturnidx.kind[nxt] = nextturnidx.kind
+            actwp.nextturnidx.present[nxt] = nextturnidx.present
 
             tas = self.traffic.tas[nxt]
 
             # Special turns: specified by turn radius, heading rate, and/or speed.
             # If no turn speed is specified, use current speed for the active fly-turn.
-            has_turn_speed = turnspd.kind
+            has_turn_speed = turnspd.present
             active_turn_speed = np.where(has_turn_speed, turnspd.values, self.traffic.cas[nxt])
 
             # Use the previous turn geometry for bank angle in the current turn
             # (old values, from the waypoint we pass now; fancy indexing copies).
-            oldturnrad = VariantArray(actwp.turnrad.values[nxt], actwp.turnrad.kind[nxt])
-            oldturnhdgr = VariantArray(actwp.turnhdgr.values[nxt], actwp.turnhdgr.kind[nxt])
-            oldturnspd = VariantArray(actwp.turnspd.values[nxt], actwp.turnspd.kind[nxt])
-            has_oldturnrad = oldturnrad.kind
-            has_oldturnhdgr = oldturnhdgr.kind
-            has_oldturnspd = oldturnspd.kind
+            oldturnrad = OptionalArray(actwp.turnrad.values[nxt], actwp.turnrad.present[nxt])
+            oldturnhdgr = OptionalArray(actwp.turnhdgr.values[nxt], actwp.turnhdgr.present[nxt])
+            oldturnspd = OptionalArray(actwp.turnspd.values[nxt], actwp.turnspd.present[nxt])
+            has_oldturnrad = oldturnrad.present
+            has_oldturnhdgr = oldturnhdgr.present
+            has_oldturnspd = oldturnspd.present
             oldturntas = vcas2tas(
                 np.where(has_oldturnspd, oldturnspd.values, 0.0), self.traffic.alt[nxt]
             )
@@ -504,7 +490,7 @@ class Autopilot(TrafficArrays):
             # Switch off LNAV if it failed to get next waypoint data
             lnavoff = ~lnavon & self.traffic.swlnav[nxt]
             # Last waypoint: copy last waypoint values for altitude and speed in autopilot
-            uselastspd = lnavoff & self.traffic.swvnavspd[nxt] & nextspd.kind
+            uselastspd = lnavoff & self.traffic.swvnavspd[nxt] & nextspd.present
             self.traffic.selspd[nxt] = np.where(
                 uselastspd, nextspd.values, self.traffic.selspd[nxt]
             )
@@ -523,22 +509,20 @@ class Autopilot(TrafficArrays):
             qdr[nxt] = qdrnxt
             dist[nxt] = distance
 
-            actwp.curlegdir.values[nxt] = qdrnxt
-            actwp.curlegdir.kind[nxt] = True
-            actwp.curleglen.values[nxt] = dist[nxt]
-            actwp.curleglen.kind[nxt] = True
+            actwp.curlegdir.set(nxt, qdrnxt)
+            actwp.curleglen.set(nxt, dist[nxt])
 
             # VNAV speed mode: use speed of this waypoint as commanded speed
             # while passing waypoint and save next speed for passing next waypoint
             # Speed is now from speed! Next speed is ready in waypoint data
-            active_spd = VariantArray(actwp.spd.values[nxt], actwp.spd.kind[nxt])
-            usewpspd = self.traffic.swvnavspd[nxt] & active_spd.kind
+            active_spd = OptionalArray(actwp.spd.values[nxt], actwp.spd.present[nxt])
+            usewpspd = self.traffic.swvnavspd[nxt] & active_spd.present
             self.traffic.selspd[nxt] = np.where(
                 usewpspd, active_spd.values, self.traffic.selspd[nxt]
             )
 
             # Update turn distance so ComputeVNAV works, is there a next leg direction or not?
-            local_next_qdr = np.where(~next_qdr.kind, qdrnxt, next_qdr.values)
+            local_next_qdr = np.where(~next_qdr.present, qdrnxt, next_qdr.values)
 
             # Calculate turn distance (and radius which we do not use now, but later)
             actwp.turndist[nxt], _ = actwp.calcturn(
@@ -548,17 +532,17 @@ class Autopilot(TrafficArrays):
             # Get flyturn switches and data
             # old turn speed, turning by this waypoint
             actwp.oldturnspd.values[nxt] = oldturnspd.values
-            actwp.oldturnspd.kind[nxt] = oldturnspd.kind
+            actwp.oldturnspd.present[nxt] = oldturnspd.present
             actwp.flyturn[nxt] = flyturn
             actwp.turnrad.values[nxt] = turnrad.values
-            actwp.turnrad.kind[nxt] = turnrad.kind
+            actwp.turnrad.present[nxt] = turnrad.present
             actwp.turnhdgr.values[nxt] = turnhdgr.values
-            actwp.turnhdgr.kind[nxt] = turnhdgr.kind
+            actwp.turnhdgr.present[nxt] = turnhdgr.present
             # Keep both turning speeds: turn to leg and turn from leg
-            active_turnspd = VariantArray(np.zeros(len(nxt)), flyturn.copy())
+            active_turnspd = OptionalArray(np.zeros(len(nxt)), flyturn.copy())
             active_turnspd.values[flyturn] = active_turn_speed[flyturn]
             actwp.turnspd.values[nxt] = active_turnspd.values
-            actwp.turnspd.kind[nxt] = active_turnspd.kind
+            actwp.turnspd.present[nxt] = active_turnspd.present
 
             # Pass on whether currently flyturn mode:
             # at beginning of leg, copy to next waypoint to last waypoint
@@ -567,7 +551,7 @@ class Autopilot(TrafficArrays):
             actwp.turntonextwp[nxt] = False
 
             # Reduce turn distance for reduced turn speed
-            redturn = flyturn & ~turnrad.kind & ~turnhdgr.kind & has_turn_speed
+            redturn = flyturn & ~turnrad.present & ~turnhdgr.present & has_turn_speed
             turntas = vcas2tas(np.where(redturn, turnspd.values, 0.0), self.traffic.alt[nxt])
             actwp.turndist[nxt] = actwp.turndist[nxt] * np.where(
                 redturn, turntas * turntas / (tas * tas), 1.0
@@ -582,8 +566,8 @@ class Autopilot(TrafficArrays):
         # Continuous guidance when speed constraint on active leg is in update-method
 
         # If still an RTA in the route and currently no speed constraint
-        has_rta = self.traffic.actwp.torta.kind
-        has_speed_constraint = self.traffic.actwp.spdcon.kind
+        has_rta = self.traffic.actwp.torta.present
+        has_speed_constraint = self.traffic.actwp.spdcon.present
         for iac in np.where(has_rta & ~has_speed_constraint)[0]:
             iac = int(iac)
             route = self.route[iac]
@@ -604,7 +588,7 @@ class Autopilot(TrafficArrays):
                 self.setspeedforRTA(iac, self.route[iac].wpprofile[iwp].rta, distance_to_waypoint)
 
                 # If VNAV speed is on (by default coupled to VNAV), use it for speed guidance
-                if self.traffic.swvnavspd[iac] and self.traffic.actwp.spd.kind[iac]:
+                if self.traffic.swvnavspd[iac] and self.traffic.actwp.spd.present[iac]:
                     self.traffic.selspd[iac] = self.traffic.actwp.spd.values[iac]
 
     def update(self) -> None:
@@ -645,9 +629,9 @@ class Autopilot(TrafficArrays):
         # otherwise there is no meaningful active-guidance distance.
         has_route_guidance = self.traffic.swlnav | self.traffic.swvnav
         self.qdr2wp.values[:] = qdr % 360.0
-        self.qdr2wp.kind[:] = has_route_guidance
+        self.qdr2wp.present[:] = has_route_guidance
         self.dist2wp.values[:] = distance_to_waypoint
-        self.dist2wp.kind[:] = has_route_guidance
+        self.dist2wp.present[:] = has_route_guidance
 
         # ================= Continuous FMS guidance ========================
 
@@ -667,9 +651,9 @@ class Autopilot(TrafficArrays):
         # to calculate self.traffic.actwp.vs
 
         nextaltco = self.traffic.actwp.nextaltco
-        has_altitude_target = nextaltco.kind
+        has_altitude_target = nextaltco.present
         nextalt = nextaltco.values
-        has_vnav_start_distance = self.dist2vs.kind
+        has_vnav_start_distance = self.dist2vs.present
         vnav_start_distance = self.dist2vs.values
         startdescorclimb = has_altitude_target & np.logical_or(
             (self.traffic.alt > nextalt)
@@ -688,7 +672,7 @@ class Autopilot(TrafficArrays):
         #    to continue descending when you get into a conflict
         #    while descending to the destination (the last waypoint)
         #    Use 0.1 nm (185.2 m) circle in case turn distance might be zero
-        has_vnav_vertical_speed = self.traffic.actwp.vs.kind
+        has_vnav_vertical_speed = self.traffic.actwp.vs.present
         self.swvnavvs = (
             self.traffic.swvnav
             * has_vnav_vertical_speed
@@ -727,9 +711,9 @@ class Autopilot(TrafficArrays):
         # use the turn speed
 
         # Is turn speed specified and are we not already slow enough? We only decelerate for turns, not accel.
-        has_next_turn = self.traffic.actwp.nextturnidx.kind
+        has_next_turn = self.traffic.actwp.nextturnidx.present
         nextturnspd = self.traffic.actwp.nextturnspd
-        has_turn_speed = has_next_turn & nextturnspd.kind
+        has_turn_speed = has_next_turn & nextturnspd.present
         turncas = np.where(has_turn_speed, nextturnspd.values, self.traffic.selspd)
         turntas = np.where(
             has_turn_speed,
@@ -750,7 +734,7 @@ class Autopilot(TrafficArrays):
         # a calibrated airspeed, it can only be converted from Mach / CAS [kts] to TAS [m/s]
         # once the altitude is known.
         nextspd = self.traffic.actwp.nextspd
-        has_next_speed = nextspd.kind
+        has_next_speed = nextspd.present
         nextspeed = np.where(has_next_speed, nextspd.values, self.traffic.selspd)
         nexttas = vcasormach2tas(
             nextspeed,
@@ -772,9 +756,9 @@ class Autopilot(TrafficArrays):
 
         # Where we don't have a turn waypoint, there is no turn bearing or distance.
         self.qdrturn.values[:] = qdrturn
-        self.qdrturn.kind[:] = has_next_turn
+        self.qdrturn.present[:] = has_next_turn
         self.dist2turn.values[:] = dist2turn
-        self.dist2turn.kind[:] = has_next_turn
+        self.dist2turn.present[:] = has_next_turn
 
         # Check also whether VNAVSPD is on, if not, SPD SEL has override for next leg
         # and same for turn logic
@@ -805,12 +789,12 @@ class Autopilot(TrafficArrays):
         # Which CAS/Mach do we have to keep? VNAV, last turn or next turn?
         oncurrentleg = abs(degto180(self.traffic.trk - qdr)) < 2.0  # [deg]
         oldturnspd = self.traffic.actwp.oldturnspd
-        has_oldturnspd = oldturnspd.kind
+        has_oldturnspd = oldturnspd.present
         inoldturn = has_oldturnspd & np.logical_not(oncurrentleg)
 
         # Avoid using old turning speeds when turning of this leg to the next leg
         # by disabling (old) turningspd when on leg
-        self.traffic.actwp.oldturnspd.kind[oncurrentleg & has_oldturnspd] = False
+        self.traffic.actwp.oldturnspd.clear(oncurrentleg & has_oldturnspd)
 
         # turnfromlastwp can only be switched off here, not on (latter happens upon passing wp)
         self.traffic.actwp.turnfromlastwp = np.logical_and(
@@ -820,7 +804,7 @@ class Autopilot(TrafficArrays):
         # Select speed: turn sped, next speed constraint, or current speed constraint
         spdcon = self.traffic.actwp.spdcon
         spd = self.traffic.actwp.spd
-        has_speed_constraint = spdcon.kind & spd.kind
+        has_speed_constraint = spdcon.present & spd.present
         self.traffic.selspd = np.where(
             useturnspd,
             nextturnspd.values,
@@ -890,23 +874,21 @@ class Autopilot(TrafficArrays):
         # Check whether active waypoint speed needs to be adjusted for RTA.
         # setspeedforRTA sets self.traffic.actwp.spd if necessary.
         self.setspeedforRTA(idx, profile.rta, distance_to_waypoint)
-        self.dist2vs.kind[idx] = False
+        self.dist2vs.clear(idx)
 
         # Check if there is a target altitude and VNAV is on, else return doing nothing.
         altitude_target = profile.altitude
         if altitude_target is None:
-            self.traffic.actwp.nextaltco.kind[idx] = False
-            self.traffic.actwp.xtoalt.kind[idx] = False
-            self.traffic.actwp.vs.kind[idx] = False
+            self.traffic.actwp.nextaltco.clear(idx)
+            self.traffic.actwp.xtoalt.clear(idx)
+            self.traffic.actwp.vs.clear(idx)
             return
 
         toalt = altitude_target.altitude
         xtoalt = altitude_target.distance
-        self.traffic.actwp.nextaltco.values[idx] = toalt
-        self.traffic.actwp.nextaltco.kind[idx] = True
-        self.traffic.actwp.xtoalt.values[idx] = xtoalt
-        self.traffic.actwp.xtoalt.kind[idx] = True
-        self.traffic.actwp.vs.kind[idx] = False
+        self.traffic.actwp.nextaltco.set(idx, toalt)
+        self.traffic.actwp.xtoalt.set(idx, xtoalt)
+        self.traffic.actwp.vs.clear(idx)
 
         if not self.traffic.swvnav[idx]:
             return
@@ -958,10 +940,8 @@ class Autopilot(TrafficArrays):
             # Descent modes: VNAV (= swtod/Top of Descent logic) or aiming at next alt constraint
 
             # Calculate max allowed altitude at next wp (above toalt)
-            self.traffic.actwp.nextaltco.values[idx] = toalt
-            self.traffic.actwp.nextaltco.kind[idx] = True
-            self.traffic.actwp.xtoalt.values[idx] = xtoalt
-            self.traffic.actwp.xtoalt.kind[idx] = True
+            self.traffic.actwp.nextaltco.set(idx, toalt)
+            self.traffic.actwp.xtoalt.set(idx, xtoalt)
 
             # VNAV ToD logic
             if self.swtod[idx]:
@@ -969,8 +949,7 @@ class Autopilot(TrafficArrays):
                 descdist = (
                     abs(self.traffic.alt[idx] - toalt) / self.steepness
                 )  # [m] required length for descent, uses default steepness!
-                self.dist2vs.values[idx] = descdist - xtoalt
-                self.dist2vs.kind[idx] = True
+                self.dist2vs.set(idx, descdist - xtoalt)
 
                 # Exceptions: Descend now?
                 if (
@@ -981,24 +960,25 @@ class Autopilot(TrafficArrays):
                     self.alt[idx] = self.traffic.actwp.nextaltco.values[idx]
                     # dial in altitude of next waypoint as calculated
                     t2go = distance_to_waypoint / max(0.01, self.traffic.gs[idx])
-                    self.traffic.actwp.vs.values[idx] = (self.traffic.alt[idx] - toalt) / max(
-                        0.01, t2go
+                    self.traffic.actwp.vs.set(
+                        idx, (self.traffic.alt[idx] - toalt) / max(0.01, t2go)
                     )
-                    self.traffic.actwp.vs.kind[idx] = True
 
                 elif xtoalt < descdist:  # Not on this leg, no descending is needed at next waypoint
                     # Top of decent needs to be on this leg, as next wp is in descent
-                    self.traffic.actwp.vs.values[idx] = -abs(self.steepness) * (
-                        self.traffic.gs[idx]
-                        + (self.traffic.gs[idx] < 0.2 * self.traffic.tas[idx])
-                        * self.traffic.tas[idx]
+                    self.traffic.actwp.vs.set(
+                        idx,
+                        -abs(self.steepness)
+                        * (
+                            self.traffic.gs[idx]
+                            + (self.traffic.gs[idx] < 0.2 * self.traffic.tas[idx])
+                            * self.traffic.tas[idx]
+                        ),
                     )
-                    self.traffic.actwp.vs.kind[idx] = True
 
                 else:
                     # else still level
-                    self.traffic.actwp.vs.values[idx] = 0.0
-                    self.traffic.actwp.vs.kind[idx] = True
+                    self.traffic.actwp.vs.set(idx, 0.0)
 
             else:
                 # We are higher but swtod = False, so there is no ToD descent logic, simply aim at next altco
@@ -1006,11 +986,15 @@ class Autopilot(TrafficArrays):
                 steepness_ = (
                     self.traffic.alt[idx] - self.traffic.actwp.nextaltco.values[idx]
                 ) / max(0.01, distance_to_waypoint + xtoalt)
-                self.traffic.actwp.vs.values[idx] = -abs(steepness_) * (
-                    self.traffic.gs[idx]
-                    + (self.traffic.gs[idx] < 0.2 * self.traffic.tas[idx]) * self.traffic.tas[idx]
+                self.traffic.actwp.vs.set(
+                    idx,
+                    -abs(steepness_)
+                    * (
+                        self.traffic.gs[idx]
+                        + (self.traffic.gs[idx] < 0.2 * self.traffic.tas[idx])
+                        * self.traffic.tas[idx]
+                    ),
                 )
-                self.traffic.actwp.vs.kind[idx] = True
 
         # VNAV climb mode: climb as soon as possible (T/C logic)
         elif self.traffic.alt[idx] < toalt - q.ft_to_m(9.9):
@@ -1023,10 +1007,8 @@ class Autopilot(TrafficArrays):
                     self.traffic.selalt[idx] = self.traffic.alt[idx]
 
             # Altitude we want to climb to: next alt constraint in our route (could be further down the route)
-            self.traffic.actwp.nextaltco.values[idx] = toalt
-            self.traffic.actwp.nextaltco.kind[idx] = True
-            self.traffic.actwp.xtoalt.values[idx] = xtoalt
-            self.traffic.actwp.xtoalt.kind[idx] = True
+            self.traffic.actwp.nextaltco.set(idx, toalt)
+            self.traffic.actwp.xtoalt.set(idx, xtoalt)
             self.alt[idx] = self.traffic.actwp.nextaltco.values[idx]
             # Climb starts immediately; no distance threshold needs to be armed.
             t2go = max(0.1, distance_to_waypoint + xtoalt) / max(0.01, self.traffic.gs[idx])
@@ -1037,14 +1019,16 @@ class Autopilot(TrafficArrays):
                     self.traffic.alt[idx] - self.traffic.actwp.nextaltco.values[idx]
                 ) / max(0.01, distance_to_waypoint + xtoalt)
 
-            self.traffic.actwp.vs.values[idx] = np.maximum(
-                steepness_ * self.traffic.gs[idx],
-                (self.traffic.actwp.nextaltco.values[idx] - self.traffic.alt[idx]) / t2go,
+            self.traffic.actwp.vs.set(
+                idx,
+                np.maximum(
+                    steepness_ * self.traffic.gs[idx],
+                    (self.traffic.actwp.nextaltco.values[idx] - self.traffic.alt[idx]) / t2go,
+                ),
             )
-            self.traffic.actwp.vs.kind[idx] = True
         # Level leg: never start V/S
         else:
-            self.traffic.actwp.vs.kind[idx] = False
+            self.traffic.actwp.vs.clear(idx)
 
         return
 
@@ -1085,17 +1069,16 @@ class Autopilot(TrafficArrays):
             rtacas = tas2cas(gsrta - tailwind, self.traffic.alt[idx])
 
             # Performance limits on speed will be applied in traf.update
-            if not self.traffic.actwp.spdcon.kind[idx] and self.traffic.swvnavspd[idx]:
-                self.traffic.actwp.spd.values[idx] = rtacas
-                self.traffic.actwp.spd.kind[idx] = True
+            if not self.traffic.actwp.spdcon.present[idx] and self.traffic.swvnavspd[idx]:
+                self.traffic.actwp.spd.set(idx, rtacas)
                 # print("setspeedforRTA: xtorta =",xtorta)
 
             return rtacas
 
         # FIXME(abraham): BlueSky f352d73 (2019-07-14) left the previous RTA-derived
         # speed active after the RTA became infeasible; clear computed speed when no constraint owns it.
-        if not self.traffic.actwp.spdcon.kind[idx]:
-            self.traffic.actwp.spd.kind[idx] = False
+        if not self.traffic.actwp.spdcon.present[idx]:
+            self.traffic.actwp.spd.clear(idx)
         return None
 
     @command(name="ALT")
@@ -1336,14 +1319,12 @@ class Autopilot(TrafficArrays):
                         )
                     ).item()
                 )
-                self.dist2wp.values[i] = distance_to_waypoint
-                self.dist2wp.kind[i] = True
+                self.dist2wp.set(i, distance_to_waypoint)
                 self.ComputeVNAV(i, profile, distance_to_waypoint)
                 if profile.altitude is None:
-                    self.traffic.actwp.nextaltco.kind[i] = False
+                    self.traffic.actwp.nextaltco.clear(i)
                 else:
-                    self.traffic.actwp.nextaltco.values[i] = profile.altitude.altitude
-                    self.traffic.actwp.nextaltco.kind[i] = True
+                    self.traffic.actwp.nextaltco.set(i, profile.altitude.altitude)
             else:
                 self.traffic.swvnav[i] = False
                 self.traffic.swvnavspd[i] = False
