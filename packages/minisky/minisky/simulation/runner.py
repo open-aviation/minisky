@@ -22,13 +22,18 @@ if TYPE_CHECKING:
 
 MIN_UPDATE_INTERVAL: q.DurationS[float] = 0.0001
 
+# A fast-forward jump ends this many timesteps short of the requested time, so
+# that the final approach to the target runs at the configured speed.
+JUMP_SETTLE_STEPS = 2
+
 
 class Runner:
     """Asyncio loop that drives the simulation at a configurable speed.
 
     Each loop iteration performs a call to `self.simulation.step()` (which
-    advances simulation time by `simdt`) and then sleeps so that steps
-    occur every `1 / speed` wall-clock seconds. During a fast-forward jump
+    advances simulation time by `simdt`) and then sleeps so that simulated
+    time advances `speed` times faster than wall-clock time, i.e. a step
+    every `simdt / speed` wall-clock seconds. During a fast-forward jump
     (see `forward`) the sleep is shortened to the minimum interval so
     the target simulation time is reached as fast as possible.
 
@@ -37,13 +42,12 @@ class Runner:
         allow_shutdown: If False, `stop` is ignored and the loop keeps
             running (used when the simulator should idle without a scenario).
         speed: Simulation speed factor relative to real time; the loop targets
-            a simulation step every `1 / speed` wall-clock seconds.
-        jump: Remaining fast-forward request [s of simulation time]; 0 when
-            no jump is active.
-        jump_to: Target simulation time of the active fast-forward jump [s].
+            a simulation step every `simdt / speed` wall-clock seconds.
+        jumping: True while a fast-forward jump is active.
+        jump_to: Simulation time at which the active fast-forward jump ends [s].
     """
 
-    jump: q.DurationS[float]
+    jumping: bool
     jump_to: q.SimulationTimeS[float]
 
     def __init__(self, simulation: Simulation, console: ConsoleIO, speed: float = 1) -> None:
@@ -59,27 +63,28 @@ class Runner:
         self.running: bool = False
         self.allow_shutdown: bool = True
         self.speed = speed
-        self.jump = 0.0
+        self.jumping = False
         self.jump_to = 0.0
 
     def forward(self, seconds: q.DurationS[float]) -> None:
         """Fast-forward the simulation by a number of simulation seconds.
 
         Activates a jump: the run loop switches to the minimum sleep interval
-        until simulation time reaches the target. The target is set 2 s short
-        of the full jump as an action margin.
+        until simulation time reaches the target. The jump stops
+        `JUMP_SETTLE_STEPS` timesteps short of the requested time, so the
+        final approach runs at the configured speed.
 
         Args:
             seconds: Amount of simulation time to jump forward [s].
         """
-        self.jump_to = self.simulation.simt + seconds - 2  # -2 for the action margin
-        self.jump = seconds
+        self.jump_to = self.simulation.simt + seconds - JUMP_SETTLE_STEPS * self.simulation.simdt
+        self.jumping = True
 
     @command(name="DTMULT", aliases=("RTF",))
     def setspeed(self, mult: PositiveFiniteFloat) -> Result[str, str]:
         """Set the simulation speed multiplier.
 
-        The loop targets a simulation step every `1 / speed` wall-clock
+        The loop targets a simulation step every `simdt / speed` wall-clock
         seconds, so a larger multiplier makes simulated time advance faster
         relative to the wall clock. This is the wall-clock-pacing equivalent of
         BlueSky's `DTMULT`.
@@ -104,7 +109,7 @@ class Runner:
         """Run the main simulation loop until stopped.
 
         Repeatedly steps the simulation, sleeping between steps so that steps
-        occur every `1 / speed` wall-clock seconds. While a fast-forward
+        occur every `simdt / speed` wall-clock seconds. While a fast-forward
         jump is active the sleep interval is reduced to the minimum until the
         target simulation time is reached. The loop exits when
         `stop` sets `running` to False (and shutdown is allowed).
@@ -117,15 +122,15 @@ class Runner:
         try:
             while self.running:
                 # Check if jump is active
-                if self.jump > 0:
+                if self.jumping:
                     update_interval = MIN_UPDATE_INTERVAL
 
                     # Check if jump is completed
                     if self.jump_to <= self.simulation.simt:
-                        self.jump = 0
+                        self.jumping = False
                         self.jump_to = 0
                 else:
-                    update_interval = 1 / self.speed
+                    update_interval = self.simulation.simdt / self.speed
 
                 next_time = asyncio.get_event_loop().time() + update_interval
 
