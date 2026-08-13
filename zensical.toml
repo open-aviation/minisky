@@ -91,6 +91,7 @@ enable_inventory = true
 paths = ["packages/minisky", "packages/minisky-multicopter/src", "packages/tangram-minisky/src"]
 inventories = [
   "https://docs.python.org/3/objects.inv",
+  "https://numpy.org/doc/stable/objects.inv",
   "https://fastapi.tiangolo.com/objects.inv",
   "https://abc8747.github.io/isqx/objects.inv",
 ]
