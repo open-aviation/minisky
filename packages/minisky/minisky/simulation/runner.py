@@ -1,10 +1,9 @@
-"""Node encapsulates the sim process, and manages process I/O.
+"""Asyncio main loop that drives the simulation at a configurable speed.
 
-Defines the `Runner`, the asyncio-based main loop of MiniSky. It calls
-`self.simulation.step()` repeatedly at an interval derived from the requested
-simulation speed, and supports fast-forward jumps where the sleep interval is
-reduced to a minimum until a target simulation time is reached. A single
-instance is owned by `MiniSky`.
+Defines the `Runner`. It calls `self.simulation.step()` repeatedly at an
+interval derived from the requested simulation speed, and supports
+fast-forward jumps where the sleep interval is reduced to a minimum until a
+target simulation time is reached. Each `MiniSky` runtime owns an instance.
 """
 
 from __future__ import annotations
@@ -38,11 +37,14 @@ class Runner:
     the target simulation time is reached as fast as possible.
 
     Attributes:
+        simulation: Simulation stepped by the run loop.
+        console: Output channel used for lifecycle messages.
+        speed: Simulation speed factor relative to real time; the loop targets
+            a simulation step every `simdt / speed` wall-clock seconds. Also
+            settable at runtime with the `DTMULT` command.
         running: True while the run loop is active.
         allow_shutdown: If False, `stop` is ignored and the loop keeps
             running (used when the simulator should idle without a scenario).
-        speed: Simulation speed factor relative to real time; the loop targets
-            a simulation step every `simdt / speed` wall-clock seconds.
         jumping: True while a fast-forward jump is active.
         jump_to: Simulation time at which the active fast-forward jump ends [s].
     """
@@ -51,13 +53,6 @@ class Runner:
     jump_to: q.SimulationTimeS[float]
 
     def __init__(self, simulation: Simulation, console: ConsoleIO, speed: float = 1) -> None:
-        """Initialize the runner.
-
-        Args:
-            simulation: Simulation stepped by the run loop.
-            console: Output channel used for lifecycle messages.
-            speed: Simulation speed factor relative to real time, default 1.
-        """
         self.simulation = simulation
         self.console = console
         self.running: bool = False
@@ -75,7 +70,7 @@ class Runner:
         final approach runs at the configured speed.
 
         Args:
-            seconds: Amount of simulation time to jump forward [s].
+            seconds: Duration of simulated time to jump forward [s].
         """
         self.jump_to = self.simulation.simt + seconds - JUMP_SETTLE_STEPS * self.simulation.simdt
         self.jumping = True
@@ -86,8 +81,7 @@ class Runner:
 
         The loop targets a simulation step every `simdt / speed` wall-clock
         seconds, so a larger multiplier makes simulated time advance faster
-        relative to the wall clock. This is the wall-clock-pacing equivalent of
-        BlueSky's `DTMULT`.
+        relative to the wall clock.
 
         Args:
             mult: Simulation speed factor relative to real time; must be
@@ -99,9 +93,10 @@ class Runner:
     def prevent_shutdown(self) -> None:
         """Disable shutdown so that `stop` requests are ignored.
 
-        Used when the simulator runs without a scenario (e.g. behind the HTTP
-        API) and should keep accepting commands even after a scenario ends or
-        a QUIT/STOP command is issued.
+        Used when the runtime starts without a scenario (e.g. behind the HTTP
+        API) and should keep accepting commands even after a `QUIT` command is
+        issued. The simulation still moves to `END` and simulated time stops
+        advancing; resume with the `OP` command.
         """
         self.allow_shutdown = False
 
@@ -111,8 +106,9 @@ class Runner:
         Repeatedly steps the simulation, sleeping between steps so that steps
         occur every `simdt / speed` wall-clock seconds. While a fast-forward
         jump is active the sleep interval is reduced to the minimum until the
-        target simulation time is reached. The loop exits when
-        `stop` sets `running` to False (and shutdown is allowed).
+        target simulation time is reached. The loop exits when `running` is
+        cleared either by `shutdown` or by `stop` if shutdown has not been
+        disabled with `prevent_shutdown`.
         """
         if self.running:
             raise RuntimeError("Simulation runner is already running")

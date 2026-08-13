@@ -1,9 +1,9 @@
-"""BlueSky simulation control object.
+"""Simulation clock and state machine that steps the simulator.
 
-Defines the `Simulation` class, the central clock and state machine of
-the simulator. It advances simulation time, processes the command stack,
-triggers plugin pre-/post-update hooks, and updates all aircraft in the
-traffic object once per timestep. Each `MiniSky` runtime owns an instance.
+Defines the `Simulation`. Each timestep processes the command stack,
+advances simulation time, runs the plugin `preupdate` hooks, updates all
+aircraft in the traffic object, and runs the plugin `update` hooks. Each
+`MiniSky` runtime owns an instance.
 """
 
 from __future__ import annotations
@@ -41,9 +41,16 @@ class SimulationState(IntEnum):
     """Simulation lifecycle states."""
 
     INIT = 0
+    """Freshly created or reset, waiting for the first traffic or scenario command."""
+
     HOLD = 1
+    """Paused: commands still run, but simulated time is frozen."""
+
     OP = 2
+    """Running: simulated time advances and traffic is updated each step."""
+
     END = 3
+    """Stopped for good: the run is over and time never advances again."""
 
 
 # Minimum sleep interval
@@ -77,25 +84,41 @@ def _calendar_datetime(
 
 
 class Simulation:
-    """The simulation object: clock, state machine, and per-step update driver.
+    """Clock, state machine and per-step update driver of the simulator.
 
-    Holds simulation time and state, and advances the simulation one timestep
-    at a time. Each `step` processes pending stack commands and, while
-    operating, increments simulation time, triggers plugin hooks and updates
-    the traffic. State transitions are driven by the `OP`/`HOLD`/`RESET`
-    and `QUIT` stack commands, which map onto `op`, `hold`,
-    `reset` and `stop`.
+    Each call to `step` processes the pending stack commands and, while in
+    `OP`, advances `simt` and the simulated UTC clock by `simdt`, runs the
+    plugin `preupdate` hooks, updates the traffic and runs the plugin
+    `update` hooks. State transitions are driven by the `OP`/`HOLD`/`RESET`
+    and `QUIT` stack commands, which map onto `op`, `hold`, `reset` and
+    `stop`.
 
     Attributes:
+        traffic: Traffic object updated once per operating step.
+        navigation: Navigation database, reset along with the simulation.
+        python_random: Shared `random.Random`, reseeded by the `SEED` command.
+        numpy_random: Shared NumPy generator, reseeded by the `SEED` command.
+        console: Output channel used for lifecycle messages.
+        commands: Command stack processed at the start of every step.
+        shapes: Area and line geometry store, reset along with the simulation.
+        plugins: Plugin manager driving the `preupdate`, `update`, `hold` and
+            `reset` hooks.
+        replaceables: Manager for replaceable entities (autopilot,
+            performance models), reset along with the simulation.
+        stop_runner: Callback asking the runner to leave its loop.
+        publish_tick: Callback publishing the stream snapshot, called once
+            per step.
         state: Current [`SimulationState`][minisky.simulation.simulation.SimulationState] value.
         prevstate: Previous simulation state (unused placeholder).
         simt: Elapsed simulation time [s].
-        simdt: Simulation timestep [s].
-        syst: System (wall-clock) time reference [s].
-        utc: Simulated UTC clock time as a `datetime`; settable with the
-            `TIME` and `DATE` commands.
-        rtmode: Flag indicating whether the timestep may be varied to keep
-            the simulation running in real time.
+        simdt: Simulation timestep [s], added to `simt` per operating step.
+        syst: Wall-clock reference re-anchored by `op` and `hold` and cleared
+            by `reset`; nothing reads it (the runner paces itself).
+        utc: Simulated UTC clock time as a `datetime`, advanced by `simdt`
+            each operating step; settable with the `TIME` and `DATE`
+            commands.
+        rtmode: Realtime flag set and reported by the `REALTIME` command. It
+            records the request only — no code varies the timestep on it.
     """
 
     simt: q.SimulationTimeS[float]
@@ -150,18 +173,24 @@ class Simulation:
     def step(self) -> bool:
         """Perform one simulation timestep.
 
-        Call this function instead of update if you don't want to run with a fixed
-        real-time rate.
+        Call this directly to advance the simulation yourself; `Runner` calls
+        it on a wall-clock schedule instead.
 
         A step consists of:
 
         1. Auto-start: while in `INIT`, switch to `OP` as soon as there is
            traffic or there are pending scenario commands.
-        2. Process the command stack (always, in every state).
+        2. Process the command stack (always, in every state). An awaitable
+           command that has not finished ends the step here.
         3. While in `OP`: advance `simt` and the simulated UTC clock by
            `simdt` seconds, run plugin `preupdate` hooks (including
            timers), update all aircraft, then run plugin `update` hooks.
-        4. Publish the runtime stream snapshot when subscribers are present.
+        4. Publish the runtime stream snapshot (a no-op without subscribers,
+           and rate-capped), on this and on the early-return path.
+
+        Returns:
+            bool: False if an awaitable stack command still owns the step
+                boundary, meaning time did not advance; True otherwise.
         """
         # Simulation starts as soon as there is traffic, or pending commands
         if self.state == SimulationState.INIT and (
@@ -232,7 +261,7 @@ class Simulation:
 
     @command(name="RESET")
     def reset(self) -> None:
-        """Reset all simulation objects (stack RESET command).
+        """Reset all simulation objects (stack `RESET` command).
 
         Returns the simulation to its initial state: simulation time back to
         0 s, timestep back to 1 s, the simulated UTC clock to today at
