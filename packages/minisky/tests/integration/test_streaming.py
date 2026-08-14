@@ -19,7 +19,7 @@ def test_snapshot_structure_and_units(
     runtime: MiniSky, sim: Simulation, run_cmd: RunCommand
 ) -> None:
     # Two steps: the first creates the aircraft, the second flips INIT -> OP.
-    run_cmd("CRE KL001 A320 52.0 4.0 90 FL100 250", steps=2)
+    run_cmd("CRE KL001 A320 52.0 4.0 90 FL100 250KT[CAS]", steps=2)
 
     snap = build_snapshot(runtime.simulation, runtime.traffic, runtime.runner, runtime.commands)
     assert set(snap) == {"siminfo", "acdata"}
@@ -54,7 +54,7 @@ def test_snapshot_structure_and_units(
 def test_snapshot_is_json_serialisable(
     runtime: MiniSky, sim: Simulation, run_cmd: RunCommand
 ) -> None:
-    run_cmd("CRE KL001 A320 52.0 4.0 90 FL100 250")
+    run_cmd("CRE KL001 A320 52.0 4.0 90 FL100 250KT[CAS]")
     # Must not raise: no numpy scalars leak into the snapshot.
     json.dumps(
         build_snapshot(runtime.simulation, runtime.traffic, runtime.runner, runtime.commands)

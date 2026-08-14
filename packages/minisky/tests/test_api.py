@@ -14,7 +14,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from minisky import MiniSky, MiniSkyConfig
-from minisky.values import StdPressureAltM
+from minisky.values import CasMps, StdPressureAltM
 
 pytestmark = pytest.mark.api
 
@@ -59,11 +59,19 @@ def test_all_empty_traffic(client: TestClient) -> None:
 
 
 def test_all_reflects_created_aircraft(client: TestClient, runtime: MiniSky) -> None:
-    runtime.traffic.cre("KL001", "A320", lat=52.0, lon=4.0, hdg=90, alt=StdPressureAltM(3000), spd=150)
+    runtime.traffic.cre(
+        "KL001",
+        "A320",
+        lat=52.0,
+        lon=4.0,
+        hdg=90,
+        alt=StdPressureAltM(3000.0),
+        airspeed=CasMps(150.0),
+    )
     resp = client.get("/all")
     assert resp.status_code == 200
-    callsigns = [ac["callsign"] for ac in resp.json()]
-    assert "KL001" in callsigns
+    aircraft = next(ac for ac in resp.json() if ac["callsign"] == "KL001")
+    assert aircraft["selected airspeed"] == {"kind": "CAS", "mps": 150.0}
 
 
 def test_speed_endpoint(client: TestClient) -> None:

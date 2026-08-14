@@ -35,7 +35,6 @@ from minisky.command import (
     ResolvedPositionArg,
     RunwayHeadingRequest,
     RunwayPosition,
-    SpeedMpsOrMach,
     Text,
     TimeS,
     UseRunwayHeading,
@@ -44,21 +43,30 @@ from minisky.command import (
     command,
 )
 from minisky.core.config import MiniSkyConfig
-from minisky.core.trafficarrays import TrafficArrays
+from minisky.core.trafficarrays import TrafficArrays, VariantArray
 from minisky.result import Err, Ok, Result
 from minisky.tools import geo
 from minisky.tools.aero import (
     DEFAULT_CASMACH_THRESHOLD,
-    casormach,
-    casormach2tas,
+    cas2tas,
+    mach2tas,
     tas2cas,
+    tas2mach,
     vatmos,
-    vcasormach,
+    vcasmach2tas,
+    vtas2cas,
+    vtas2mach,
 )
 from minisky.tools.convert import latlon2txt
 from minisky.tools.shapes import Shapes
 from minisky.traffic.asas import ConflictDetection, ConflictResolution
-from minisky.values import MagneticHeadingDeg, StdPressureAltM
+from minisky.values import (
+    AirspeedKind,
+    CasMps,
+    Mach,
+    MagneticHeadingDeg,
+    StdPressureAltM,
+)
 
 from .activewpdata import ActiveWaypoint
 from .aporasas import APorASAS
@@ -97,7 +105,7 @@ BankLimitDeg = Annotated[q.BankAngleDeg[PositiveFiniteFloat], Lt(90)]
 
 
 _DEFAULT_ALTITUDE = StdPressureAltM(q.ft_to_m(25000.0))
-_DEFAULT_SPEED = q.kt_to_mps(300.0)
+_DEFAULT_AIRSPEED = CasMps(q.kt_to_mps(300.0))
 
 
 class Traffic(TrafficArrays):
@@ -120,18 +128,18 @@ class Traffic(TrafficArrays):
 
     Attributes:
         ntraf (int): Number of aircraft currently in the simulation.
-        casmach_threshold: Upper bound below which positive speed values are
-            interpreted as Mach numbers.
         callsign (list): Aircraft identifier (callsign) strings.
         typecode (list): ICAO aircraft type designators (e.g. "A320").
         gsnorth (ndarray): North component of ground speed [m/s].
         gseast (ndarray): East component of ground speed [m/s].
         windnorth (ndarray): Wind north component at aircraft position [m/s].
         windeast (ndarray): Wind east component at aircraft position [m/s].
-        selspd (ndarray): Selected speed: CAS [m/s] or Mach [-].
+        selected_airspeed (VariantArray): Selected [`CAS` in m/s][minisky.values.CasMps]
+            or [`Mach`][minisky.values.Mach] value and its
+            [`AirspeedKind`][minisky.values.AirspeedKind].
         swlnav (ndarray): Bool switch: LNAV (lateral FMS guidance) on/off.
         swvnav (ndarray): Bool switch: VNAV (vertical FMS guidance) on/off.
-        swvnavspd (ndarray): Bool switch: VNAV speed guidance on/off.
+        swvnavairspeed (ndarray): Bool switch: VNAV airspeed guidance on/off.
         swats (ndarray): Bool switch: autothrottle on/off.
         thr (ndarray): Fixed throttle setting [0.0-1.0], used when autothrottle is off.
         crecmdlist (list): Command lines issued for each new aircraft.
@@ -165,6 +173,7 @@ class Traffic(TrafficArrays):
     gseast: q.GroundSpeedMps[np.ndarray]
     cas: q.CalibratedAirspeedMps[np.ndarray]
     M: q.MachNumber[np.ndarray]
+    selected_airspeed: VariantArray[np.ndarray]
     vs: q.VerticalRateMps[np.ndarray]
     p: q.StaticPressurePa[np.ndarray]
     rho: q.DensityKgPerM3[np.ndarray]
@@ -174,6 +183,7 @@ class Traffic(TrafficArrays):
     aptas: q.TrueAirspeedMps[np.ndarray]
     selalt: q.PressureAltitudeM[np.ndarray]
     selvs: q.VerticalRateMps[np.ndarray]
+    swvnavairspeed: np.ndarray
     work: q.EnergyJ[np.ndarray]
 
     def __init__(
@@ -243,8 +253,7 @@ class Traffic(TrafficArrays):
             self.windeast = np.array([])  # wind speed east component a/c pos [m/s]
 
             # Traffic autopilot settings
-            # TODO(abraham): #40 must split selected CAS and Mach before selspd can carry isqx metadata.
-            self.selspd = np.array([])  # selected CAS or Mach
+            self.selected_airspeed = VariantArray(np.array([]), np.array([], dtype=np.uint8))
             self.aptas = np.array([])  # just for initializing
             self.selalt = np.array([])
             self.selvs = np.array([])
@@ -252,7 +261,7 @@ class Traffic(TrafficArrays):
             # Whether to perform LNAV and VNAV
             self.swlnav = np.array([], dtype=bool)
             self.swvnav = np.array([], dtype=bool)
-            self.swvnavspd = np.array([], dtype=bool)
+            self.swvnavairspeed = np.array([], dtype=bool)
 
             # Flight Models
             self.cd = ConflictDetection(config, self, stack_command)
@@ -284,18 +293,13 @@ class Traffic(TrafficArrays):
 
     @command(name="CASMACHTHR")
     def casmachthr(self, threshold: float | None = None) -> Result[str, str]:
-        """Get or set this runtime's CAS/Mach interpretation threshold.
-
-        Positive speed values below this threshold are interpreted as Mach
-        numbers by CRE, MOVE, route, and autopilot speed conversions.
-        """
+        """Get or set the legacy CAS/Mach interpretation threshold."""
         if threshold is None:
             return Ok(
                 "CASMACHTHR: The current CAS/Mach threshold is "
                 f"{self.casmach_threshold} m/s "
                 f"({q.mps_to_kt(self.casmach_threshold)} kts)"
             )
-
         self.casmach_threshold = threshold
         return Ok(f"CASMACHTHR: Set CAS/Mach threshold to {threshold}")
 
@@ -341,7 +345,7 @@ class Traffic(TrafficArrays):
         position: ResolvedPositionArg,
         hdg: HeadingDeg | UseRunwayHeading | None = None,
         alt: StdPressureAltM = _DEFAULT_ALTITUDE,
-        spd: SpeedMpsOrMach = _DEFAULT_SPEED,
+        airspeed: CasMps | Mach = _DEFAULT_AIRSPEED,
     ) -> Result[str, str]:
         """Create an aircraft."""
         if isinstance(position, RunwayPosition):
@@ -369,7 +373,7 @@ class Traffic(TrafficArrays):
             coordinates.lon,
             heading,
             alt,
-            spd,
+            airspeed,
         )
 
     def cre(
@@ -380,7 +384,7 @@ class Traffic(TrafficArrays):
         lon: q.LongitudeDeg[float] = 4.0,
         hdg: q.TrueHeadingDegrees[float] = 45.0,
         alt: StdPressureAltM = _DEFAULT_ALTITUDE,
-        spd: SpeedMpsOrMach = _DEFAULT_SPEED,
+        airspeed: CasMps | Mach = _DEFAULT_AIRSPEED,
     ) -> Result[str, str]:
         """Create a single aircraft and add it to the traffic database.
 
@@ -396,8 +400,8 @@ class Traffic(TrafficArrays):
             hdg: Initial heading [deg].
             alt: Initial altitude [m] (stack input is given in ft/FL);
                 defaults to 25000 ft.
-            spd: Initial speed: CAS [m/s] or Mach [-] (stack input in kts);
-                defaults to 300 kts.
+            airspeed: Initial [`CAS` in m/s][minisky.values.CasMps] or
+                [`Mach`][minisky.values.Mach] command; defaults to 300 kt CAS.
         """
 
         name_error = self._aircraft_name_collision(callsign)
@@ -411,9 +415,18 @@ class Traffic(TrafficArrays):
         lon_ = np.array([lon])
         alt_ = np.array([alt.value])
         hdg_ = np.array([hdg])
-        spd_ = np.array([spd])
+        match airspeed:
+            case CasMps(value):
+                airspeed_value = value
+                airspeed_kind = AirspeedKind.CAS
+            case Mach(value):
+                airspeed_value = value
+                airspeed_kind = AirspeedKind.MACH
+        selected_airspeed = VariantArray(
+            np.array([airspeed_value]), np.array([airspeed_kind], dtype=np.uint8)
+        )
 
-        self.__create_aircraft(acid_, actype_, lat_, lon_, hdg_, alt_, spd_)
+        self.__create_aircraft(acid_, actype_, lat_, lon_, hdg_, alt_, selected_airspeed)
 
         return Ok(f"Aircraft {callsign} created")
 
@@ -427,14 +440,14 @@ class Traffic(TrafficArrays):
         lon_max: LongitudeArg = 10.0,
         actype: Keyword = "A320",
         acalt: StdPressureAltM | None = None,
-        acspd: SpeedMpsOrMach | None = None,
+        airspeed: CasMps | Mach | None = None,
     ) -> Result[str, str]:
         """Create multiple aircraft at random positions in a lat/lon box.
 
         Implements the MCRE stack command. Callsigns are generated randomly
         (two letters plus a sequence number). Heading is drawn uniformly from
         1-360 deg; when not given, altitude is drawn from 2000-39000 ft and
-        speed from 250-450 kts. The default area is the North Sea region.
+        calibrated airspeed from 250-450 kts. The default area is the North Sea region.
 
         Args:
             n: Number of aircraft to create.
@@ -444,7 +457,8 @@ class Traffic(TrafficArrays):
             lon_max: Eastern boundary of the creation area [deg].
             actype: ICAO aircraft type designator for all aircraft.
             acalt: Optional fixed altitude [m]; random when None.
-            acspd: Optional fixed speed, CAS [m/s] or Mach; random when None.
+            airspeed: Optional fixed [`CAS` in m/s][minisky.values.CasMps] or
+                [`Mach`][minisky.values.Mach] command; random CAS when None.
         """
 
         # Generate random callsigns
@@ -470,13 +484,27 @@ class Traffic(TrafficArrays):
             if acalt is not None
             else q.ft_to_m(self.numpy_random.randint(2000, 39000, n))
         )
-        acspd_ = (
-            np.full(n, acspd)
-            if acspd is not None
-            else q.kt_to_mps(self.numpy_random.randint(250, 450, n))
-        )
+        if airspeed is None:
+            airspeed_value = q.kt_to_mps(self.numpy_random.randint(250, 450, n))
+            airspeed_kind = np.full(n, AirspeedKind.CAS, dtype=np.uint8)
+        else:
+            match airspeed:
+                case CasMps(value):
+                    airspeed_value = np.full(n, value)
+                    airspeed_kind = np.full(n, AirspeedKind.CAS, dtype=np.uint8)
+                case Mach(value):
+                    airspeed_value = np.full(n, value)
+                    airspeed_kind = np.full(n, AirspeedKind.MACH, dtype=np.uint8)
 
-        self.__create_aircraft(np.array(callsign), actype_, aclat, aclon, achdg, acalt_, acspd_)
+        self.__create_aircraft(
+            np.array(callsign),
+            actype_,
+            aclat,
+            aclon,
+            achdg,
+            acalt_,
+            VariantArray(airspeed_value, airspeed_kind),
+        )
 
         return Ok(f"{n} aircraft created")
 
@@ -500,15 +528,16 @@ class Traffic(TrafficArrays):
         lon: q.LongitudeDeg[np.ndarray],
         hdg: q.TrueHeadingDegrees[np.ndarray],
         alt: q.PressureAltitudeM[np.ndarray],
-        spd: np.ndarray,
+        selected_airspeed: VariantArray[np.ndarray],
     ) -> None:
         """Append one or more aircraft to all traffic arrays.
 
         Common backend for cre() and mcre(): resizes all (child) traffic
         arrays, initializes position, heading, speeds, atmosphere and wind
         for the new aircraft, and stacks any CRECMD default commands.
-        All array arguments must have the same length; alt is in [m],
-        spd is CAS [m/s] or Mach [-].
+        All array arguments must have the same length. `selected_airspeed.values` contains
+        [`CAS` in m/s][minisky.values.CasMps] or [`Mach`][minisky.values.Mach],
+        disambiguated by [`AirspeedKind`][minisky.values.AirspeedKind] in `kind`.
         """
 
         n = len(acid)
@@ -534,7 +563,11 @@ class Traffic(TrafficArrays):
         self.trk[-n:] = hdg
 
         # Velocities
-        self.tas[-n:], self.cas[-n:], self.M[-n:] = vcasormach(spd, alt, self.casmach_threshold)
+        is_mach = selected_airspeed.kind == AirspeedKind.MACH
+        tas = vcasmach2tas(selected_airspeed.values, is_mach, alt)
+        self.tas[-n:] = tas
+        self.cas[-n:] = np.where(is_mach, vtas2cas(tas, alt), selected_airspeed.values)
+        self.M[-n:] = np.where(is_mach, selected_airspeed.values, vtas2mach(tas, alt))
         self.gs[-n:] = self.tas[-n:]
         hdgrad = np.radians(hdg)
         self.gsnorth[-n:] = self.tas[-n:] * np.cos(hdgrad)
@@ -545,6 +578,7 @@ class Traffic(TrafficArrays):
 
         # Wind
         if self.wind.has_wind:
+            # TODO(abraham): use AGL (see issue #22)
             applywind = self.alt[-n:] > q.ft_to_m(50.0)
             self.windnorth[-n:], self.windeast[-n:] = self.wind.getdata(
                 self.lat[-n:], self.lon[-n:], self.alt[-n:]
@@ -560,7 +594,8 @@ class Traffic(TrafficArrays):
             self.windeast[-n:] = 0.0
 
         # Traffic autopilot settings
-        self.selspd[-n:] = self.cas[-n:]
+        self.selected_airspeed.values[-n:] = selected_airspeed.values
+        self.selected_airspeed.kind[-n:] = selected_airspeed.kind
         self.aptas[-n:] = self.tas[-n:]
         self.selalt[-n:] = self.alt[-n:]
 
@@ -609,12 +644,12 @@ class Traffic(TrafficArrays):
         tlosh: TimeS,
         dH: VerticalDistanceM | None = None,
         tlosv: TimeS | None = None,
-        spd: SpeedMpsOrMach | None = None,
+        airspeed: CasMps | Mach | None = None,
     ) -> None:
         """Create an aircraft in conflict with a target aircraft.
 
         Implements the CRECONFS stack command. The intruder position, track
-        and speed are computed such that, relative to the target aircraft,
+        and airspeed are computed such that, relative to the target aircraft,
         separation is lost after the given time with the given distance at
         the closest point of approach. The protected-zone radius and height
         from the config (asas_pzr, asas_pzh) are taken into account.
@@ -631,8 +666,8 @@ class Traffic(TrafficArrays):
                 (stack input in ft); level conflict when None.
             tlosv: Optional vertical time to loss of separation [s];
                 defaults to tlosh.
-            spd: Optional speed of the new aircraft, CAS [m/s] or Mach [-]
-                (stack input in kts/-); ownship ground speed when omitted.
+            airspeed: Optional [`CAS` in m/s][minisky.values.CasMps] or
+                [`Mach`][minisky.values.Mach] command; ownship ground speed when omitted.
         """
         latref = self.lat[targetidx]  # deg
         lonref = self.lon[targetidx]  # deg
@@ -653,10 +688,14 @@ class Traffic(TrafficArrays):
             tlosv = tlosh if tlosv is None else tlosv
             acvs = vsref - np.sign(dH) * (abs(dH) - pzh) / tlosv
 
-        if spd:
-            # CAS or Mach provided: convert to groundspeed, assuming that
-            # wind at intruder position is similar to wind at ownship position
-            tas = casormach2tas(spd, acalt, self.casmach_threshold)
+        if airspeed is not None:
+            # Convert the explicit airspeed command to groundspeed, assuming that
+            # wind at intruder position is similar to wind at ownship position.
+            tas = (
+                cas2tas(airspeed.value, acalt)
+                if isinstance(airspeed, CasMps)
+                else mach2tas(airspeed.value, acalt)
+            )
             tasn, tase = tas * np.cos(trk), tas * np.sin(trk)
             wind_north, wind_east = self.wind.getdata(latref, lonref, acalt)
             gsn, gse = tasn + wind_north, tase + wind_east
@@ -686,7 +725,7 @@ class Traffic(TrafficArrays):
         # intruder position
         wind_north, wind_east = self.wind.getdata(aclat_scalar, aclon_scalar, acalt)
         tasn, tase = gsn - wind_north, gse - wind_east
-        acspd = tas2cas(np.sqrt(tasn * tasn + tase * tase), acalt)
+        derived_cas = tas2cas(np.sqrt(tasn * tasn + tase * tase), acalt)
         achdg = np.degrees(np.atan2(tase, tasn))
 
         # Create and, when necessary, set vertical speed
@@ -697,11 +736,9 @@ class Traffic(TrafficArrays):
             aclon_scalar,
             float(achdg),
             StdPressureAltM(float(acalt)),
-            float(acspd),
+            CasMps(float(derived_cas)),
         )
-        self.ap.selaltcmd(
-            np.asarray([len(self.lat) - 1]), StdPressureAltM(float(altref)), acvs
-        )
+        self.ap.selaltcmd(np.asarray([len(self.lat) - 1]), StdPressureAltM(float(altref)), acvs)
         self.vs[-1] = acvs
 
     def delete(self, idx: int | np.ndarray) -> bool:  # type: ignore[override]
@@ -840,7 +877,7 @@ class Traffic(TrafficArrays):
         position: LatLonDeg,
         alt: StdPressureAltM | None = None,
         hdg: HeadingDeg | None = None,
-        casmach: SpeedMpsOrMach | None = None,
+        airspeed: CasMps | Mach | None = None,
         vspd: VspdMps | None = None,
     ) -> None:
         """Instantaneously move an aircraft to a new position/state.
@@ -853,7 +890,8 @@ class Traffic(TrafficArrays):
             position: New latitude and longitude [deg].
             alt: Optional new altitude [m]; also sets the selected altitude.
             hdg: Optional new heading [deg]; also sets the autopilot track.
-            casmach: Optional new speed, CAS [m/s] or Mach [-].
+            airspeed: Optional [`CAS` in m/s][minisky.values.CasMps] or
+                [`Mach`][minisky.values.Mach] command.
             vspd: Optional new vertical speed [m/s].
         """
         self.lat[idx] = position.lat
@@ -872,9 +910,23 @@ class Traffic(TrafficArrays):
             self.hdg[idx] = heading
             self.ap.trk[idx] = heading
 
-        if casmach is not None:
+        if airspeed is not None:
             h = alt.value if alt is not None else float(self.alt[idx])
-            self.tas[idx], self.selspd[idx], _ = casormach(casmach, h, self.casmach_threshold)
+            if isinstance(airspeed, CasMps):
+                tas = cas2tas(airspeed.value, h)
+                cas = airspeed.value
+                mach = tas2mach(tas, h)
+            else:
+                tas = mach2tas(airspeed.value, h)
+                cas = tas2cas(tas, h)
+                mach = airspeed.value
+            self.tas[idx] = tas
+            self.cas[idx] = cas
+            self.M[idx] = mach
+            self.selected_airspeed.values[idx] = airspeed.value
+            self.selected_airspeed.kind[idx] = (
+                AirspeedKind.CAS if isinstance(airspeed, CasMps) else AirspeedKind.MACH
+            )
 
         if vspd is not None:
             self.vs[idx] = vspd
@@ -926,7 +978,7 @@ class Traffic(TrafficArrays):
         # FMS AP modes
         if self.swlnav[idx] and route.wpname and (active_idx := route.iactwp) is not None:
             if self.swvnav[idx]:
-                if self.swvnavspd[idx]:
+                if self.swvnavairspeed[idx]:
                     info = info + "VNAV (incl.VNAVSPD), "
                 else:
                     info = info + "VNAV (NOT VNAVSPD), "

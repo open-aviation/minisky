@@ -1,4 +1,4 @@
-"""Conditional commands triggered by altitude, speed, or distance crossings."""
+"""Conditional commands triggered by altitude, airspeed, or distance crossings."""
 
 from __future__ import annotations
 
@@ -11,12 +11,11 @@ from minisky.command import (
     AcId,
     LatLonDeg,
     NonNegativeFiniteFloat,
-    SpeedMpsOrMach,
     Text,
     command,
 )
 from minisky.tools.geo import qdrdist
-from minisky.values import LatLonDegrees, StdPressureAltM
+from minisky.values import CasMps, LatLonDegrees, Mach, StdPressureAltM
 
 if TYPE_CHECKING:
     from minisky.traffic import Traffic
@@ -33,12 +32,11 @@ class AltitudeCondition:
 
 
 @dataclass(slots=True)
-class SpeedCondition:
-    """Pending crossing of a legacy CAS-or-Mach speed target."""
+class AirspeedCondition:
+    """Pending crossing of an explicit [`CAS` in m/s][minisky.values.CasMps] or [`Mach`][minisky.values.Mach] target."""
 
     callsign: str
-    # TODO(abraham): #40 must split CAS and Mach command values at runtime.
-    target: q.MachNumber[float] | q.CalibratedAirspeedMps[float]
+    target: CasMps | Mach
     last_difference: float
     command: str
 
@@ -54,14 +52,14 @@ class DistanceCondition:
     reference: LatLonDegrees
 
 
-PendingCondition: TypeAlias = AltitudeCondition | SpeedCondition | DistanceCondition
+PendingCondition: TypeAlias = AltitudeCondition | AirspeedCondition | DistanceCondition
 
 
 class Condition:
     """Administration of pending ATALT, ATSPD, and ATDIST commands.
 
     Each pending condition is one typed record, so a distance reference cannot
-    be attached to an altitude/speed condition and values with different units
+    be attached to an altitude/airspeed condition and values with different units
     cannot share one numeric array.
     """
 
@@ -81,8 +79,10 @@ class Condition:
     def _actual(self, condition: PendingCondition, acidx: int) -> float:
         if isinstance(condition, AltitudeCondition):
             return float(self.traffic.alt[acidx])
-        if isinstance(condition, SpeedCondition):
-            return float(self.traffic.cas[acidx])
+        if isinstance(condition, AirspeedCondition):
+            if isinstance(condition.target, CasMps):
+                return float(self.traffic.cas[acidx])
+            return float(self.traffic.M[acidx])
         _bearing, distance = qdrdist(
             self.traffic.lat[acidx],
             self.traffic.lon[acidx],
@@ -99,7 +99,12 @@ class Condition:
             if acidx is None:
                 continue
             actual = self._actual(condition, acidx)
-            difference = condition.target - actual
+            target = (
+                condition.target.value
+                if isinstance(condition, AirspeedCondition)
+                else condition.target
+            )
+            difference = target - actual
             if difference * condition.last_difference <= 0.0:
                 self.stack_command(condition.command)
                 continue
@@ -118,13 +123,15 @@ class Condition:
         return True
 
     @command(name="ATSPD")
-    def atspdcmd(self, acidx: AcId, targspd: SpeedMpsOrMach, cmdtxt: Text) -> bool:
-        """Schedule a command for when an aircraft crosses a speed."""
-        # TODO(abraham): #40 should make ATSPD explicitly CAS or Mach. Until
-        # then the parser still returns the legacy threshold-encoded float.
+    def atspdcmd(self, acidx: AcId, target: CasMps | Mach, cmdtxt: Text) -> bool:
+        """Schedule a command for crossing an explicit [`CAS` in m/s][minisky.values.CasMps] or [`Mach`][minisky.values.Mach] target."""
         callsign = self.traffic.callsign[acidx]
-        actual: q.CalibratedAirspeedMps[float] = float(self.traffic.cas[acidx])
-        self.conditions.append(SpeedCondition(callsign, targspd, targspd - actual, cmdtxt))
+        actual = (
+            float(self.traffic.cas[acidx])
+            if isinstance(target, CasMps)
+            else float(self.traffic.M[acidx])
+        )
+        self.conditions.append(AirspeedCondition(callsign, target, target.value - actual, cmdtxt))
         return True
 
     @command(name="ATDIST")

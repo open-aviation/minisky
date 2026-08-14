@@ -24,7 +24,7 @@ class TestIcLoading:
         assert runtime.traffic.ntraf == 0
 
     def test_ic_resets_previous_state(self, runtime: MiniSky, run_cmd: RunCommand) -> None:
-        run_cmd("CRE OLD1,A320,50,3,90,FL100,250")
+        run_cmd("CRE OLD1,A320,50,3,90,FL100,250KT[CAS]")
         assert runtime.traffic.ntraf == 1
         run_cmd("IC scenarios/kl204.scn", steps=2)
         assert "OLD1" not in runtime.traffic.callsign

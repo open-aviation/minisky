@@ -57,7 +57,6 @@ from minisky.tools.convert import (
     txt2bool,
     txt2lat,
     txt2lon,
-    txt2spd,
     txt2tim,
     txt2vs,
 )
@@ -471,15 +470,6 @@ def parse_field(
     return Ok(token.map(value))
 
 
-def _convert_value(
-    value: str, converter: Callable[[str], MappedT], expected: str
-) -> Result[MappedT, ArgumentIssue]:
-    try:
-        return Ok(converter(value))
-    except ValueError:
-        return Err(ArgumentIssue.expected(expected, value))
-
-
 def parse_token(_context: CommandParseContext, cursor: CommandCursor) -> ParseResult[str]:
     result = cursor.next_value("a non-empty argument")
     if isinstance(result, Err):
@@ -567,6 +557,8 @@ _NUMBER_RE = rf"[+-]?{_UNSIGNED_NUMBER_RE}"
 _ALTITUDE_VALUE = re.compile(rf"(?P<value>{_NUMBER_RE})(?P<unit>FT|M)?", re.IGNORECASE)
 _MSL_ALTITUDE = re.compile(rf"(?P<value>{_NUMBER_RE})(?P<unit>FT|M)?\[MSL\]", re.IGNORECASE)
 _FLIGHT_LEVEL = re.compile(r"FL(?P<level>\d+)", re.IGNORECASE)
+_CAS = re.compile(rf"(?P<value>{_UNSIGNED_NUMBER_RE})(?P<unit>KT|MPS)\[CAS\]", re.IGNORECASE)
+_MACH = re.compile(r"M(?P<value>(?:\d+\.\d+|\.\d+))", re.IGNORECASE)
 
 
 def _vertical_metres(value: str, unit: str | None) -> float:
@@ -606,17 +598,28 @@ VerticalDistanceM = Annotated[
     ),
 ]
 
-def parse_speed_value(
-    value: str,
-) -> Result[q.MachNumber[float] | q.CalibratedAirspeedMps[float], ArgumentIssue]:
-    return _convert_value(value, txt2spd, "a speed")
+def _parse_cas(value: str) -> value_types.CasMps:
+    if (match := _CAS.fullmatch(value)) is None:
+        raise ValueError
+    magnitude = float(match.group("value"))
+    if match.group("unit").upper() == "KT":
+        magnitude = q.kt_to_mps(magnitude)
+    return value_types.CasMps(magnitude)
 
 
-# TODO(abraham): #40 must split calibrated airspeed and Mach at runtime.
-SpeedMpsOrMach = Annotated[
-    q.MachNumber[float] | q.CalibratedAirspeedMps[float],
-    CmdParser.value(txt2spd, "a speed"),
-]
+def _parse_mach(value: str) -> value_types.Mach:
+    if (match := _MACH.fullmatch(value)) is None:
+        raise ValueError
+    mach = float(match.group("value"))
+    if mach <= 0.0:
+        raise ValueError
+    return value_types.Mach(mach)
+
+
+def parse_selected_airspeed_value(value: str) -> value_types.CasMps | value_types.Mach:
+    return _parse_mach(value) if value.upper().startswith("M") else _parse_cas(value)
+
+
 VspdMps = Annotated[q.VerticalRateMps[float], CmdParser.value(txt2vs, "a vertical speed")]
 TimeS = Annotated[q.DurationS[float], CmdParser.value(txt2tim, "a time")]
 SimTimeS = Annotated[q.SimulationTimeS[float], CmdParser.value(txt2tim, "a time")]
@@ -913,6 +916,12 @@ _VALUE_PARSERS: dict[Any, CmdParser[Any]] = {
     bool: _ON_OFF_PARSER,
     int: _INT_PARSER,
     float: _FLOAT_PARSER,
+    value_types.CasMps: CmdParser.value(
+        _parse_cas, "CAS such as 250KT[CAS] or 128MPS[CAS]", field="CAS"
+    ),
+    value_types.Mach: CmdParser.value(
+        _parse_mach, "Mach such as M0.78 or M.78", field="Mach"
+    ),
     value_types.StdPressureAltM: CmdParser.value(
         parse_pressure_altitude_value,
         "pressure altitude such as FL100, 10000, 10000FT, or 3048M",

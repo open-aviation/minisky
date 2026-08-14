@@ -364,7 +364,7 @@ def test_nullable_overload_can_accept_omitted_field_after_required_fails(runtime
 
 
 def test_cre_omitted_heading_field(run_cmd: RunCommand, runtime: MiniSky) -> None:
-    output = run_cmd("CRE COMPAT1,B738,52,4,,FL100,250")
+    output = run_cmd("CRE COMPAT1,B738,52,4,,FL100,250KT[CAS]")
 
     assert "created" in output.lower()
     index = runtime.traffic.idx("COMPAT1")
@@ -375,7 +375,7 @@ def test_cre_omitted_heading_field(run_cmd: RunCommand, runtime: MiniSky) -> Non
 def test_cre_explicit_runway_heading_marker_is_resolved_by_command(
     run_cmd: RunCommand, runtime: MiniSky
 ) -> None:
-    output = run_cmd("CRE RWYREF,A320,EHAM,RWY18L,*,0,250")
+    output = run_cmd("CRE RWYREF,A320,EHAM,RWY18L,*,0,250KT[CAS]")
 
     assert "created" in output.lower()
     index = runtime.traffic.idx("RWYREF")
@@ -386,7 +386,7 @@ def test_cre_explicit_runway_heading_marker_is_resolved_by_command(
 def test_heading_wildcard_is_not_global_heading_syntax(
     runtime: MiniSky, run_cmd: RunCommand
 ) -> None:
-    run_cmd("CRE HDGREF,A320,52,4,90,FL100,250")
+    run_cmd("CRE HDGREF,A320,52,4,90,FL100,250KT[CAS]")
     heading = runtime.commands.cmddict["HDG"]
 
     result = heading.parse_arguments("HDGREF *")
@@ -396,7 +396,7 @@ def test_heading_wildcard_is_not_global_heading_syntax(
 
 
 def test_cre_runway_heading_marker_requires_runway(runtime: MiniSky) -> None:
-    result = runtime.commands.cmddict["CRE"]("NORWY,A320,52,4,*,0,250")
+    result = runtime.commands.cmddict["CRE"]("NORWY,A320,52,4,*,0,250KT[CAS]")
 
     assert isinstance(result, Err)
     assert result.err() == "CRE: heading * requires a runway position"
@@ -414,7 +414,7 @@ def test_wind_error_span_points_to_invalid_profile_field(runtime: MiniSky) -> No
 def test_route_waypoint_membership_is_validated_by_route_command(
     runtime: MiniSky, run_cmd: RunCommand
 ) -> None:
-    run_cmd("CRE ROUTE1,A320,52,4,90,FL100,250")
+    run_cmd("CRE ROUTE1,A320,52,4,90,FL100,250KT[CAS]")
     direct = runtime.commands.cmddict["DIRECT"]
 
     parsed = direct.parse_arguments("ROUTE1 MISSING")

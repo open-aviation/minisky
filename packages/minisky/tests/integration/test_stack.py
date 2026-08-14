@@ -14,16 +14,17 @@ from minisky import quantities as q
 from minisky.command import ArgumentIssue, command
 from minisky.simulation import Simulation
 from minisky.stack import ScheduledCommand
+from minisky.values import AirspeedKind
 from tests._types import RunCommand
 
 
 class TestQueueing:
     def test_stack_only_queues(self, runtime: MiniSky, sim: Simulation) -> None:
-        runtime.commands.stack("CRE KL204,B744,52,4,45,FL250,350")
+        runtime.commands.stack("CRE KL204,B744,52,4,45,FL250,350KT[CAS]")
         assert runtime.traffic.ntraf == 0  # not executed yet
 
     def test_command_executes_on_step(self, runtime: MiniSky, sim: Simulation) -> None:
-        runtime.commands.stack("CRE KL204,B744,52,4,45,FL250,350")
+        runtime.commands.stack("CRE KL204,B744,52,4,45,FL250,350KT[CAS]")
         runtime.simulation.step()
         assert runtime.traffic.ntraf == 1
         assert runtime.traffic.callsign[0] == "KL204"
@@ -37,7 +38,7 @@ class TestQueueing:
         runtime.commands.stack("ECHO first")
         drain = runtime.commands.commands()
         assert next(drain) == "ECHO first"
-        runtime.commands.stack("CRE KL204,B744,52,4,45,FL250,350")  # racing append
+        runtime.commands.stack("CRE KL204,B744,52,4,45,FL250,350KT[CAS]")  # racing append
         with pytest.raises(StopIteration):
             next(drain)
         runtime.simulation.step()
@@ -98,38 +99,46 @@ class TestQueueing:
 
 class TestCommands:
     def test_cre_via_stack(self, runtime: MiniSky, run_cmd: RunCommand) -> None:
-        run_cmd("CRE KL204,B744,52,4,45,FL250,350")
+        run_cmd("CRE KL204,B744,52,4,45,FL250,350KT[CAS]")
         assert runtime.traffic.ntraf == 1
         assert runtime.traffic.alt[0] == pytest.approx(q.ft_to_m(25000.0), rel=1e-3)
 
     def test_pos_outputs_callsign(self, runtime: MiniSky, run_cmd: RunCommand) -> None:
-        run_cmd("CRE KL204,B744,52,4,45,FL250,350")
+        run_cmd("CRE KL204,B744,52,4,45,FL250,350KT[CAS]")
         output = run_cmd("POS KL204")
         assert "KL204" in output
 
     def test_bare_callsign_defaults_to_pos(self, runtime: MiniSky, run_cmd: RunCommand) -> None:
-        run_cmd("CRE KL204,B744,52,4,45,FL250,350")
+        run_cmd("CRE KL204,B744,52,4,45,FL250,350KT[CAS]")
         output = run_cmd("KL204")
         assert "KL204" in output
 
     def test_alt_sets_selected_altitude(self, runtime: MiniSky, run_cmd: RunCommand) -> None:
-        run_cmd("CRE KL204,B744,52,4,45,FL250,350")
+        run_cmd("CRE KL204,B744,52,4,45,FL250,350KT[CAS]")
         run_cmd("ALT KL204 FL260")
         assert runtime.traffic.selalt[0] == pytest.approx(q.ft_to_m(26000.0), rel=1e-3)
 
     def test_hdg_sets_autopilot_track(self, runtime: MiniSky, run_cmd: RunCommand) -> None:
-        run_cmd("CRE KL204,B744,52,4,45,FL250,350")
+        run_cmd("CRE KL204,B744,52,4,45,FL250,350KT[CAS]")
         run_cmd("HDG KL204 340")
         assert runtime.traffic.ap.trk[0] == pytest.approx(340.0)
         assert not runtime.traffic.swlnav[0]
 
-    def test_spd_sets_selected_speed(self, runtime: MiniSky, run_cmd: RunCommand) -> None:
-        run_cmd("CRE KL204,B744,52,4,45,FL250,350")
-        run_cmd("SPD KL204 300")
-        assert runtime.traffic.selspd[0] == pytest.approx(q.kt_to_mps(300.0), rel=1e-3)
+    def test_spd_preserves_explicit_airspeed_reference(
+        self, runtime: MiniSky, run_cmd: RunCommand
+    ) -> None:
+        run_cmd("CRE KL204,B744,52,4,45,FL250,350KT[CAS]")
+
+        run_cmd("SPD KL204 300KT[CAS]")
+        assert runtime.traffic.selected_airspeed.values[0] == pytest.approx(q.kt_to_mps(300.0))
+        assert runtime.traffic.selected_airspeed.kind[0] == AirspeedKind.CAS
+
+        run_cmd("SPD KL204 M0.78")
+        assert runtime.traffic.selected_airspeed.values[0] == pytest.approx(0.78)
+        assert runtime.traffic.selected_airspeed.kind[0] == AirspeedKind.MACH
 
     def test_del_removes_aircraft(self, runtime: MiniSky, run_cmd: RunCommand) -> None:
-        run_cmd("CRE KL204,B744,52,4,45,FL250,350")
+        run_cmd("CRE KL204,B744,52,4,45,FL250,350KT[CAS]")
         assert runtime.traffic.ntraf == 1
         run_cmd("DEL KL204")
         assert runtime.traffic.ntraf == 0
@@ -201,8 +210,8 @@ class TestTypedGrammar:
     def test_group_selection_is_kept_for_compatible_commands(
         self, runtime: MiniSky, run_cmd: RunCommand
     ) -> None:
-        run_cmd("CRE ONE A320 52 4 90 FL100 250")
-        run_cmd("CRE TWO A320 53 5 90 FL100 250")
+        run_cmd("CRE ONE A320 52 4 90 FL100 250KT[CAS]")
+        run_cmd("CRE TWO A320 53 5 90 FL100 250KT[CAS]")
         run_cmd("GROUP TEAM ONE TWO")
 
         run_cmd("ALT TEAM FL200")
@@ -234,14 +243,14 @@ class TestReadscn:
 
 class TestVarExplorer:
     def test_variable_get_without_index(self, runtime: MiniSky, run_cmd: RunCommand) -> None:
-        run_cmd("CRE KL204,B744,52,4,45,FL250,350")
+        run_cmd("CRE KL204,B744,52,4,45,FL250,350KT[CAS]")
         v = runtime.variables.findvar("traf.ntraf")
         assert v is not None
         assert v.get() == 1
         assert v.get_type() == "int"
 
     def test_variable_get_with_index(self, runtime: MiniSky, run_cmd: RunCommand) -> None:
-        run_cmd("CRE KL204,B744,52,4,45,FL250,350")
+        run_cmd("CRE KL204,B744,52,4,45,FL250,350KT[CAS]")
         v = runtime.variables.findvar("traf.callsign[0]")
         assert v is not None
         assert v.get() == ["KL204"]
@@ -268,5 +277,5 @@ class TestErrors:
 
     def test_sim_survives_bad_command(self, runtime: MiniSky, run_cmd: RunCommand) -> None:
         run_cmd("THISDOESNOTEXIST")
-        run_cmd("CRE KL204,B744,52,4,45,FL250,350")
+        run_cmd("CRE KL204,B744,52,4,45,FL250,350KT[CAS]")
         assert runtime.traffic.ntraf == 1

@@ -14,10 +14,11 @@ import numpy as np
 import pytest
 from minisky import Err, MiniSky, MiniSkyConfig, Ok, Result
 from minisky import plugin as plugin_api
+from minisky import quantities as q
 from minisky.simulation import Simulation
 from minisky.traffic import Traffic
 from minisky.traffic.autopilot import Autopilot
-from minisky.values import StdPressureAltM
+from minisky.values import CasMps, StdPressureAltM
 from pydantic import BaseModel
 
 
@@ -108,7 +109,7 @@ async def test_entity_backfill_follows_lifespan_startup(
     load_task = asyncio.create_task(runtime.plugins.load("CALLSIGNS"))
     try:
         await entered.wait()
-        runtime.traffic.cre("KL001", alt=StdPressureAltM(3000.0), spd=150.0)
+        runtime.traffic.cre("KL001", alt=StdPressureAltM(3000.0), airspeed=CasMps(150.0))
         release.set()
         result = await load_task
         assert result.is_ok(), result.err()
@@ -273,7 +274,12 @@ async def test_replacement_arrays_size_existing_traffic(
             with self.settrafarrays():
                 self.plugin_value = np.array([])
 
-        def selaltcmd(self, idx: np.ndarray, alt: float, vspd: float | None = None):
+        def selaltcmd(
+            self,
+            idx: np.ndarray,
+            alt: StdPressureAltM,
+            vspd: q.VerticalRateMps[float] | None = None,
+        ):
             self.alt_commands += 1
             return super().selaltcmd(idx, alt, vspd)
 
@@ -283,7 +289,7 @@ async def test_replacement_arrays_size_existing_traffic(
     install(monkeypatch, FakeEntryPoint("arrays", plugin_api.Plugin(build=build)))
     runtime = MiniSky(MiniSkyConfig())
     try:
-        runtime.traffic.cre("KL001", alt=StdPressureAltM(3000.0), spd=150.0)
+        runtime.traffic.cre("KL001", alt=StdPressureAltM(3000.0), airspeed=CasMps(150.0))
         result = await runtime.plugins.load("ARRAYS")
         assert result.is_ok(), result.err()
         alt_callback = runtime.commands.cmddict["ALT"].forms[0].callback

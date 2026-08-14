@@ -11,13 +11,14 @@ from minisky import quantities as q
 from minisky.tools import geo
 from minisky.traffic import route as route_commands
 from minisky.traffic.route import Route, TurnHeadingRate
+from minisky.values import CasMps
 from tests._types import RunCommand, StepUntil
 
 
 @pytest.fixture
 def aircraft(runtime: MiniSky, run_cmd: RunCommand) -> str:
     """A single aircraft at (52, 4) heading east at FL100."""
-    run_cmd("CRE KL001,A320,52,4,90,FL100,250")
+    run_cmd("CRE KL001,A320,52,4,90,FL100,250KT[CAS]")
     assert runtime.traffic.ntraf == 1
     return "KL001"
 
@@ -30,7 +31,7 @@ class TestAddwpt:
         assert route.wplat[0] == pytest.approx(52.5)
         assert route.wplon[0] == pytest.approx(5.0)
         assert route.wpalt[0] is None
-        assert route.wpspd[0] is None
+        assert route.wpairspeed[0] is None
         assert route.wprta[0] is None
         assert route.wpprofile[0].altitude is None
         assert route.wpprofile[0].rta is None
@@ -181,10 +182,12 @@ class TestRouteEditing:
         run_cmd(f"ADDWPT {aircraft} 52.5,5.0")
         run_cmd(f"ADDWPT {aircraft} 53.0,6.0")
         route = runtime.traffic.ap.route[0]
-        output = run_cmd(f"{aircraft} AT {route.wpname[1]} FL090/250")
+        output = run_cmd(f"{aircraft} AT {route.wpname[1]} FL090/250KT[CAS]")
         assert "Error" not in output
         assert route.wpalt[1] == pytest.approx(q.ft_to_m(9000.0), rel=1e-3)
-        assert route.wpspd[1] == pytest.approx(q.kt_to_mps(250.0), rel=1e-3)
+        airspeed = route.wpairspeed[1]
+        assert isinstance(airspeed, CasMps)
+        assert airspeed.value == pytest.approx(q.kt_to_mps(250.0), rel=1e-3)
 
     def test_rta_profile_pairs_time_and_distance(
         self, runtime: MiniSky, run_cmd: RunCommand, aircraft: str
@@ -229,19 +232,6 @@ class TestRouteEditing:
         output = run_cmd(f"{aircraft} AT {waypoint} STACK ALT 95")
         assert "Error" not in output
         assert route.wpstack[0][-1] == "ALT 95"
-
-    def test_at_via_stack_sets_constraints(
-        self, runtime: MiniSky, run_cmd: RunCommand, aircraft: str
-    ) -> None:
-        # The AT registration used help text as its argument spec, so the
-        # command never reached the AT implementation from the stack
-        run_cmd(f"ADDWPT {aircraft} 52.5,5.0")
-        run_cmd(f"ADDWPT {aircraft} 53.0,6.0")
-        route = runtime.traffic.ap.route[0]
-        out = run_cmd(f"{aircraft} AT {route.wpname[1]} FL090/250")
-        assert "Error" not in out
-        assert route.wpalt[1] == pytest.approx(q.ft_to_m(9000.0), rel=1e-3)
-        assert route.wpspd[1] == pytest.approx(q.kt_to_mps(250.0), rel=1e-3)
 
     def test_direct_via_stack(self, runtime: MiniSky, run_cmd: RunCommand, aircraft: str) -> None:
         # The DIRECT argument spec had a stray space (" wpt"), dropping the
@@ -302,7 +292,7 @@ class TestActiveWaypointDefaults:
         # leaving all but one new aircraft with an invalid absence state.
         run_cmd("MCRE 3")
         assert runtime.traffic.ntraf == 3
-        assert not runtime.traffic.actwp.nextaltco.present.any()
+        assert (~runtime.traffic.actwp.nextaltco.present).all()
 
 
 class TestGuidanceGeometry:
@@ -393,18 +383,18 @@ class TestWaypointSwitching:
         next_turn = route.getnextturnwp()
         assert next_turn is not None
         assert next_turn.waypoint_index == 2
-        assert next_turn.turn.speed == pytest.approx(q.kt_to_mps(250.0), rel=1e-3)
+        assert next_turn.turn.cas == pytest.approx(q.kt_to_mps(250.0), rel=1e-3)
         assert runtime.traffic.actwp.nextturnidx.values[0] == 2
         assert runtime.traffic.actwp.nextturnlat.values[0] == pytest.approx(self.WPTS[2][0])
         assert runtime.traffic.actwp.nextturnlon.values[0] == pytest.approx(self.WPTS[2][1])
-        assert runtime.traffic.actwp.nextturnspd.values[0] == pytest.approx(
+        assert runtime.traffic.actwp.next_turn_cas.values[0] == pytest.approx(
             q.kt_to_mps(250.0), rel=1e-3
         )
 
         # The active waypoint itself counts: still index 2 while flying to it
         step_until(lambda: route.iactwp == 2, max_steps=200)
         assert runtime.traffic.actwp.nextturnidx.values[0] == 2
-        assert runtime.traffic.actwp.turnspd.values[0] == pytest.approx(
+        assert runtime.traffic.actwp.turn_cas.values[0] == pytest.approx(
             q.kt_to_mps(250.0), rel=1e-3
         )
 
@@ -422,9 +412,9 @@ class TestWaypointSwitching:
         run_cmd(f"ADDWPT {aircraft} {self.WPTS[1][0]},{self.WPTS[1][1]}")
         run_cmd(f"VNAV {aircraft} ON")
 
-        assert not runtime.traffic.actwp.nextturnspd.present[0]
+        assert not runtime.traffic.actwp.next_turn_cas.present[0]
         runtime.simulation.step()
-        assert runtime.traffic.selspd[0] > 0.0
+        assert runtime.traffic.selected_airspeed.values[0] > 0.0
 
     def test_first_waypoint_turn_speed_keeps_index_zero_valid(
         self, runtime: MiniSky, run_cmd: RunCommand, aircraft: str
@@ -436,7 +426,7 @@ class TestWaypointSwitching:
 
         assert route.iactwp == 0
         assert runtime.traffic.actwp.nextturnidx.values[0] == 0
-        assert runtime.traffic.actwp.nextturnspd.values[0] == pytest.approx(
+        assert runtime.traffic.actwp.next_turn_cas.values[0] == pytest.approx(
             q.kt_to_mps(200.0), rel=1e-3
         )
 

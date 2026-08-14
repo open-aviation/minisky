@@ -1,7 +1,7 @@
 """Route implementation for the BlueSky FMS.
 
 Contains the per-aircraft [`Route`][minisky.traffic.route.Route] class (the flight plan: an ordered
-list of waypoints with optional altitude, speed, RTA and turn constraints)
+list of waypoints with optional altitude, airspeed, RTA and turn constraints)
 plus the route-editing functions used by [`RouteCommands`][minisky.traffic.route.RouteCommands],
 the runtime-owned command component for ADDWPT, ADDWPTMODE, AFTER, BEFORE,
 AT, DIRECT, RTA, LISTRTE, DELRTE and DELWPT.
@@ -38,23 +38,28 @@ from minisky.command import (
     RunwayPosition,
     SimTimeS,
     Spanned,
-    SpeedMpsOrMach,
     Text,
     Wpt,
     command,
     parse_pressure_altitude_value,
     parse_resolved_position,
-    parse_speed_value,
+    parse_selected_airspeed_value,
 )
 from minisky.core.trafficarrays import OptionalArray
 from minisky.result import Err, Ok, Result
 
 # from minisky.core import Replaceable
 from minisky.tools import geo
-from minisky.tools.aero import casormach2tas, g0, mach2cas, vcas2tas
+from minisky.tools.aero import cas2tas, g0, mach2tas, vcas2tas
 from minisky.tools.convert import degto180
 from minisky.tools.position import AirportPosition, NavaidPosition, ResolvedRunwayPosition, txt2pos
-from minisky.values import LatLonDegrees, StdPressureAltM
+from minisky.values import (
+    CasMps,
+    LatLonDegrees,
+    Mach,
+    OptionalAirspeedKind,
+    StdPressureAltM,
+)
 
 if TYPE_CHECKING:
     from minisky.traffic import Traffic
@@ -90,7 +95,7 @@ TurnGeometry: TypeAlias = TurnRadius | TurnHeadingRate
 
 class TurnParameters(NamedTuple):
     geometry: TurnGeometry | None = None
-    speed: q.CalibratedAirspeedMps[float] | None = None
+    cas: q.CalibratedAirspeedMps[float] | None = None
 
 
 class NextTurn(NamedTuple):
@@ -123,9 +128,9 @@ class Route:
     """Flight plan (route) of a single aircraft: basic FMS functionality.
 
     A Route is an ordered list of waypoints, each with an optional altitude
-    constraint, speed constraint, required time of arrival (RTA), turn
-    specification (fly-by/fly-over/fly-turn with radius, speed or heading
-    rate) and stack commands to execute when the waypoint is passed. One
+    constraint, airspeed constraint, required time of arrival (RTA), turn
+    specification (fly-by/fly-over/fly-turn with radius, [`CAS` in m/s][minisky.values.CasMps]
+    or heading rate) and stack commands to execute when the waypoint is passed. One
     Route object is kept per aircraft in [`runtime.traffic.ap.route`][minisky.traffic.route.Route].
 
     Waypoints from the navigation database are resolved to the entry
@@ -136,7 +141,8 @@ class Route:
         acid (str): Callsign of the aircraft this route belongs to.
         wpname (list): Waypoint names.
         wptype (list): Waypoint types.
-        wpspd (list): Optional speed constraints, CAS [m/s] or Mach [-].
+        wpairspeed (list): Optional explicit [`CAS` in m/s][minisky.values.CasMps]
+            or [`Mach`][minisky.values.Mach] constraints.
         wpflyby (list): Fly-by (True) / fly-over (False) switch.
         wpturn (list): Optional fly-turn parameters per waypoint.
         wpstack (list): Stack command lines executed when passing each
@@ -158,8 +164,7 @@ class Route:
     wplat: list[q.LatitudeDeg[float]]
     wplon: list[q.LongitudeDeg[float]]
     wpalt: list[q.PressureAltitudeM[float] | None]
-    # TODO(abraham): #40 must split route CAS and Mach constraints at runtime.
-    wpspd: list[q.MachNumber[float] | q.CalibratedAirspeedMps[float] | None]
+    wpairspeed: list[CasMps | Mach | None]
     wprta: list[q.SimulationTimeS[float] | None]
     wpdirfrom: list[q.BearingDeg[float]]
     wpdirto: list[q.BearingDeg[float]]
@@ -176,12 +181,12 @@ class Route:
         self.wplat = []
         self.wplon = []
         self.wpalt = []
-        self.wpspd = []
+        self.wpairspeed = []
         self.wprta = []
         self.wpflyby = []  # Flyby (True)/flyover(False) switch
         self.wpstack = []  # Stack with command execured when passing this waypoint
 
-        # Made for drones: fly turn mode, means use specified turn radius and optionally turn speed
+        # Made for drones: fly turn mode, means use specified turn radius and optionally turn CAS
         self.wpturn: list[TurnParameters | None] = []
 
         # Current actual waypoint
@@ -213,7 +218,7 @@ class Route:
         wplon: q.LongitudeDeg[float],
         wptype: WaypointType,
         wpalt: q.PressureAltitudeM[float] | None,
-        wpspd: q.MachNumber[float] | q.CalibratedAirspeedMps[float] | None,
+        wpairspeed: CasMps | Mach | None,
     ) -> None:
         """Insert a new waypoint record at a given index in the route.
 
@@ -226,14 +231,15 @@ class Route:
             wpname: Waypoint name.
             wptype: Waypoint type.
             wpalt: Optional altitude constraint.
-            wpspd: Optional speed constraint; legacy CAS-or-Mach representation pending #40.
+            wpairspeed: Optional explicit [`CAS` in m/s][minisky.values.CasMps]
+                or [`Mach`][minisky.values.Mach] constraint.
         """
 
         self.wpname.insert(wpidx, wpname)
         self.wplat.insert(wpidx, wplat)
         self.wplon.insert(wpidx, wplon)
         self.wpalt.insert(wpidx, wpalt)
-        self.wpspd.insert(wpidx, wpspd)
+        self.wpairspeed.insert(wpidx, wpairspeed)
         self.wptype.insert(wpidx, wptype)
         self.wpflyby.insert(wpidx, self.swflyby)
         self.wpturn.insert(wpidx, self.turn if self.swflyturn else None)
@@ -248,7 +254,7 @@ class Route:
         lat: q.LatitudeDeg[float],
         lon: q.LongitudeDeg[float],
         alt: q.PressureAltitudeM[float] | None = None,
-        spd: q.MachNumber | q.CalibratedAirspeedMps | None = None,
+        airspeed: CasMps | Mach | None = None,
         afterwp: str = "",
         beforewp: str = "",
     ) -> int | None:
@@ -268,7 +274,8 @@ class Route:
             name: Waypoint name, or callsign for a lat/lon waypoint.
             wptype: Waypoint type.
             alt: Optional altitude constraint.
-            spd: Optional speed constraint; legacy CAS-or-Mach representation pending #40.
+            airspeed: Optional explicit [`CAS` in m/s][minisky.values.CasMps]
+                or [`Mach`][minisky.values.Mach] constraint.
             afterwp: Optional waypoint after which to insert.
             beforewp: Optional waypoint before which to insert.
 
@@ -280,8 +287,6 @@ class Route:
         n_wpt = len(self.wplat)
 
         name = name.upper().strip()
-        spd = None if spd is None or spd <= 0.0 else spd
-
         wplat = (lat + 90.0) % 180.0 - 90.0
         wplon = (lon + 180.0) % 360.0 - 180.0
 
@@ -304,6 +309,8 @@ class Route:
                 wplon = self.navigation.aptlon[i]
 
             if not orig and alt is None:
+                # TODO(abraham): #22 replace this zero pressure-altitude endpoint
+                # with airport MSL elevation through an explicit reference conversion.
                 alt = 0.0
 
             # Overwrite existing origin/dest
@@ -313,7 +320,7 @@ class Route:
                 self.wplat[wpidx] = wplat
                 self.wplon[wpidx] = wplon
                 self.wpalt[wpidx] = alt
-                self.wpspd[wpidx] = spd
+                self.wpairspeed[wpidx] = airspeed
                 self.wptype[wpidx] = wptype
                 # also apply other current settings
                 self.wpflyby[wpidx] = self.swflyby
@@ -324,7 +331,7 @@ class Route:
             # Or add before first waypoint/append to end
             else:
                 wpidx = 0 if orig else len(self.wplat)
-                self.insert_wpt_data(wpidx, wprtename, wplat, wplon, wptype, alt, spd)
+                self.insert_wpt_data(wpidx, wprtename, wplat, wplon, wptype, alt, airspeed)
 
                 n_wpt += 1
                 if orig and (active_idx := self.iactwp) is not None:
@@ -372,7 +379,7 @@ class Route:
                         else n_wpt
                     )
 
-                self.insert_wpt_data(wpidx, newname, wplat, wplon, wptype, alt, spd)
+                self.insert_wpt_data(wpidx, newname, wplat, wplon, wptype, alt, airspeed)
                 if (active_idx := self.iactwp) is not None and active_idx >= wpidx:
                     self.iactwp = active_idx + 1
 
@@ -422,8 +429,8 @@ class Route:
 
         position: LatLonDegrees
         """Active waypoint position [deg]."""
-        speed: q.MachNumber[float] | q.CalibratedAirspeedMps[float] | None
-        """Optional speed constraint, calibrated airspeed [m/s] or Mach number [-]."""
+        airspeed: CasMps | Mach | None
+        """Optional [`CAS` in m/s][minisky.values.CasMps] or [`Mach`][minisky.values.Mach] constraint."""
         profile: RouteProfile
         """Altitude and RTA guidance targets ahead of the active waypoint."""
         lnav_enabled: bool
@@ -476,14 +483,16 @@ class Route:
             self.traffic.stack_command("HDG " + str(self.acid) + " " + str(wphdg))
 
             # start decelerating
-            self.traffic.stack_command("DELAY " + "10 " + "SPD " + str(self.acid) + " " + "10")
+            self.traffic.stack_command(
+                "DELAY " + "10 " + "SPD " + str(self.acid) + " " + "10KT[CAS]"
+            )
 
             # delete aircraft
             self.traffic.stack_command("DELAY " + "42 " + "DEL " + str(self.acid))
 
             return self.WaypointTransition(
                 LatLonDegrees(self.wplat[active_idx], self.wplon[active_idx]),
-                self.wpspd[active_idx],
+                self.wpairspeed[active_idx],
                 self.wpprofile[active_idx],
                 lnavon,
                 self.wpflyby[active_idx],
@@ -524,7 +533,7 @@ class Route:
 
         return self.WaypointTransition(
             LatLonDegrees(self.wplat[active_idx], self.wplon[active_idx]),
-            self.wpspd[active_idx],
+            self.wpairspeed[active_idx],
             self.wpprofile[active_idx],
             lnavon,
             self.wpflyby[active_idx],
@@ -553,7 +562,7 @@ class Route:
         self.wplat.insert(i, 0.0)
         self.wplon.insert(i, 0.0)
         self.wpalt.insert(i, None)
-        self.wpspd.insert(i, None)
+        self.wpairspeed.insert(i, None)
         self.wptype.insert(i, WaypointType.CALCULATED)
 
     def calcfp(self) -> None:
@@ -564,8 +573,8 @@ class Route:
         its index ial and the value (toalt). Same logic is used for time constraint.
 
         Note: No Top of Descent or Top of Climb can inserted here as this depends on
-        the speed, which might be undefined (often is). Guidance in autpilot.py takes
-        care of ToD and ToC logic while flying using current speed.
+        the airspeed, which might be undefined (often is). Guidance in autpilot.py takes
+        care of ToD and ToC logic while flying using current airspeed.
 
         Recomputes, per waypoint: leg directions [deg] and lengths [m]
         (wpdirfrom, wpdirto, wpdistto), plus typed altitude and RTA guidance
@@ -640,14 +649,14 @@ class Route:
             if (rta := self.wprta[i]) is not None:
                 rta_target = RtaTarget(rta, 0.0)
             elif rta_target is not None and i != n_wpt - 1:
-                # No speed or rta constraint: add to distance
-                if (speed := self.wpspd[i]) is None:
+                # No airspeed or RTA constraint: add to distance
+                if (airspeed := self.wpairspeed[i]) is None:
                     rta_target = RtaTarget(
                         rta_target.time,
                         rta_target.distance + self.wpdistto[i + 1],
                     )
                 else:
-                    # speed constraint on this leg: shift RTA time to account for this
+                    # airspeed constraint on this leg: shift RTA time to account for this
                     # altitude unknown; use the next altitude constraint for this waypoint
                     # or default to 10000 ft when no altitude constraint is present
                     altitude_target = self.wpprofile[i].altitude
@@ -656,10 +665,14 @@ class Route:
                         if altitude_target is not None and altitude_target.altitude > 0.0
                         else q.ft_to_m(10000.0)
                     )
-                    legtas = casormach2tas(speed, altitude, self.traffic.casmach_threshold)
+                    legtas = (
+                        cas2tas(airspeed.value, altitude)
+                        if isinstance(airspeed, CasMps)
+                        else mach2tas(airspeed.value, altitude)
+                    )
                     # TODO(abraham): account for wind at this position by adding wind vectors to waypoints?
 
-                    # This fixed-speed leg is excluded from RTA distance, so subtract its
+                    # This fixed-airspeed leg is excluded from RTA distance, so subtract its
                     # travel time from the target time instead.
                     legtime = self.wpdistto[i + 1] / legtas
                     rta_target = RtaTarget(rta_target.time - legtime, rta_target.distance)
@@ -789,7 +802,7 @@ class WaypointMode(Enum):
 
 class TurnParameter(Enum):
     RADIUS = auto()
-    SPEED = auto()
+    CAS = auto()
     HEADING_RATE = auto()
 
 
@@ -817,8 +830,8 @@ _WAYPOINT_MODES = {
 _TURN_PARAMETERS = {
     "TURNRAD": TurnParameter.RADIUS,
     "TURNRADIUS": TurnParameter.RADIUS,
-    "TURNSPD": TurnParameter.SPEED,
-    "TURNSPEED": TurnParameter.SPEED,
+    "TURNSPD": TurnParameter.CAS,
+    "TURNSPEED": TurnParameter.CAS,
     "TURNHDG": TurnParameter.HEADING_RATE,
     "TURNHDGR": TurnParameter.HEADING_RATE,
     "TURNHDGRATE": TurnParameter.HEADING_RATE,
@@ -839,9 +852,8 @@ TurnParameterArg = Annotated[
     CmdParser.keywords(_TURN_PARAMETERS, "a supported turn parameter"),
 ]
 
-
 TurnRadiusNMArg = q.DistanceNM[PositiveFiniteFloat]
-TurnSpeedKtArg = q.CalibratedAirspeedKt[PositiveFiniteFloat]
+TurnCasKtArg = q.CalibratedAirspeedKt[PositiveFiniteFloat]
 TurnHeadingRateArg = q.TurnRateDegPerS[PositiveFiniteFloat]
 
 
@@ -894,9 +906,9 @@ def _set_turn_radius(
     return Ok("")
 
 
-def _set_turn_speed(traffic: Traffic, acidx: int, value: TurnSpeedKtArg | None) -> Result[str, str]:
+def _set_turn_cas(traffic: Traffic, acidx: int, value: TurnCasKtArg | None) -> Result[str, str]:
     acrte = traffic.ap.route[acidx]
-    acrte.turn = acrte.turn._replace(speed=None if value is None else q.kt_to_mps(value))
+    acrte.turn = acrte.turn._replace(cas=None if value is None else q.kt_to_mps(value))
     acrte.swflyby = False
     acrte.swflyturn = True
     return Ok("")
@@ -922,8 +934,8 @@ def _clear_turn_parameter(
 ) -> Result[str, str]:
     if parameter is TurnParameter.RADIUS:
         return _set_turn_radius(traffic, acidx, None)
-    if parameter is TurnParameter.SPEED:
-        return _set_turn_speed(traffic, acidx, None)
+    if parameter is TurnParameter.CAS:
+        return _set_turn_cas(traffic, acidx, None)
     return _set_turn_heading_rate(traffic, acidx, None)
 
 
@@ -981,7 +993,7 @@ def _add_route_waypoint(
     acidx: int,
     waypoint: Wpt,
     altitude: StdPressureAltM | None = None,
-    speed: SpeedMpsOrMach | None = None,
+    airspeed: CasMps | Mach | None = None,
     insertion: WaypointInsertion | None = None,
 ) -> Result[str, str]:
     """Apply already-parsed waypoint insertion request."""
@@ -1006,7 +1018,6 @@ def _add_route_waypoint(
             reflon = acrte.wplon[-2]
 
     alt = None if altitude is None else altitude.value
-    spd = speed
     afterwp = ""
     beforewp = ""
 
@@ -1019,7 +1030,7 @@ def _add_route_waypoint(
         case NamedWaypoint(name):
             takeoffwpt = name.replace("-", "") == "TAKEOFF"
             if takeoffwpt:
-                if altitude is not None or speed is not None or insertion is not None:
+                if altitude is not None or airspeed is not None or insertion is not None:
                     return Err("TAKEOFF does not accept waypoint constraints")
                 return _add_takeoff_waypoint(traffic, acidx)
 
@@ -1047,7 +1058,7 @@ def _add_route_waypoint(
             pass
 
     # Add waypoint
-    if acrte.add_waypoint(acidx, name, wptype, lat, lon, alt, spd, afterwp, beforewp) is None:
+    if acrte.add_waypoint(acidx, name, wptype, lat, lon, alt, airspeed, afterwp, beforewp) is None:
         return Err(f"Waypoint {name} not added.")
 
     # Recalculate flight plan
@@ -1075,28 +1086,27 @@ class AtQuery(Enum):
 
     ALL = auto()
     ALTITUDE = auto()
-    SPEED = auto()
+    AIRSPEED = auto()
     STACK = auto()
 
 
 @dataclass(frozen=True, slots=True)
 class AtConstraints:
-    """A complete altitude/speed pair; None means an explicit clear."""
+    """A complete altitude/airspeed pair; None means an explicit clear."""
 
     altitude: q.PressureAltitudeM[float] | None
-    # TODO(abraham): #40 must split CAS and Mach at runtime.
-    speed: q.MachNumber[float] | q.CalibratedAirspeedMps[float] | None
+    airspeed: CasMps | Mach | None
 
 
 def _parse_at_constraints(
     _context: CommandParseContext, cursor: CommandCursor
 ) -> ParseResult[AtConstraints]:
-    result = cursor.next_value("altitude/speed")
+    result = cursor.next_value("altitude/airspeed")
     if isinstance(result, Err):
         return result
     token = result.ok()
     if token.value.count("/") != 1:
-        return Err(ArgumentIssue.expected("altitude/speed", token.value, token.span))
+        return Err(ArgumentIssue.expected("altitude/airspeed", token.value, token.span))
     altitude_text, speed_text = token.value.split("/", maxsplit=1)
 
     def cleared(value: str) -> bool:
@@ -1111,19 +1121,20 @@ def _parse_at_constraints(
         except ValueError:
             return Err(ArgumentIssue.expected("a pressure altitude", altitude_text, token.span))
 
-    speed: q.MachNumber[float] | q.CalibratedAirspeedMps[float] | None
+    airspeed: CasMps | Mach | None
     if cleared(speed_text):
-        speed = None
+        airspeed = None
     else:
-        if isinstance(parsed_speed := parse_speed_value(speed_text), Err):
-            return Err(parsed_speed.err().with_span(token.span))
-        speed = parsed_speed.ok()
+        try:
+            airspeed = parse_selected_airspeed_value(speed_text)
+        except ValueError:
+            return Err(ArgumentIssue.expected("CAS or Mach", speed_text, token.span))
 
-    return Ok(Spanned(AtConstraints(altitude, speed), token.span))
+    return Ok(Spanned(AtConstraints(altitude, airspeed), token.span))
 
 
 AtConstraintsArg = Annotated[
-    AtConstraints, CmdParser.fields(_parse_at_constraints, ("altitude/speed",))
+    AtConstraints, CmdParser.fields(_parse_at_constraints, ("altitude/airspeed",))
 ]
 
 
@@ -1157,7 +1168,7 @@ def _finish_at_mutation(traffic: Traffic, acidx: int, target: _AtWaypoint) -> Re
 
 def _format_at_query(acrte: Route, wpidx: int, atwp: str, query: AtQuery) -> str:
     show_altitude = query in {AtQuery.ALL, AtQuery.ALTITUDE}
-    show_speed = query in {AtQuery.ALL, AtQuery.SPEED}
+    show_airspeed = query in {AtQuery.ALL, AtQuery.AIRSPEED}
     show_stack = query in {AtQuery.ALL, AtQuery.STACK}
     text = f"{atwp} : "
 
@@ -1169,14 +1180,20 @@ def _format_at_query(acrte: Route, wpidx: int, atwp: str, query: AtQuery) -> str
             text += f"FL{round(q.m_to_ft(altitude) / 100.0)}"
         else:
             text += str(round(q.m_to_ft(altitude)))
-        if show_speed:
+        if show_airspeed:
             text += "/"
 
-    if show_speed:
-        speed = acrte.wpspd[wpidx]
-        text += "---" if speed is None else str(round(q.mps_to_kt(speed)))
+    if show_airspeed:
+        airspeed = acrte.wpairspeed[wpidx]
+        match airspeed:
+            case None:
+                text += "---"
+            case CasMps(value):
+                text += f"{q.mps_to_kt(value):.0f}KT[CAS]"
+            case Mach(value):
+                text += f"M{value:g}"
 
-    if show_altitude and show_speed:
+    if show_altitude and show_airspeed:
         if acrte.wptype[wpidx] == WaypointType.ORIGIN:
             text += "[orig]"
         elif acrte.wptype[wpidx] == WaypointType.DESTINATION:
@@ -1195,7 +1212,7 @@ def direct(traffic: Traffic, acidx: int, wpname: str) -> bool:
     given waypoint the active waypoint, copies its data (position, fly-by/
     fly-turn settings, next-turn data) into the active-waypoint arrays,
     recalculates the flight plan and the VNAV profile, sets the next-leg
-    speed from any speed constraint, computes the turn distance for the
+    airspeed from any airspeed constraint, computes the turn distance for the
     new leg, and engages LNAV.
 
     Args:
@@ -1220,10 +1237,12 @@ def direct(traffic: Traffic, acidx: int, wpname: str) -> bool:
         traffic.actwp.turnrad.set(acidx, geometry.radius)
     else:
         traffic.actwp.turnrad.clear(acidx)
+
     if turn is None:
-        traffic.actwp.turnspd.clear(acidx)
+        traffic.actwp.turn_cas.clear(acidx)
     else:
-        traffic.actwp.turnspd.set(acidx, traffic.cas[acidx] if turn.speed is None else turn.speed)
+        traffic.actwp.turn_cas.set(acidx, traffic.cas[acidx] if turn.cas is None else turn.cas)
+
     if isinstance(geometry, TurnHeadingRate):
         traffic.actwp.turnhdgr.set(acidx, geometry.heading_rate)
     else:
@@ -1233,18 +1252,17 @@ def direct(traffic: Traffic, acidx: int, wpname: str) -> bool:
     if next_turn is None:
         traffic.actwp.nextturnlat.clear(acidx)
         traffic.actwp.nextturnlon.clear(acidx)
-        traffic.actwp.nextturnspd.clear(acidx)
+        traffic.actwp.next_turn_cas.clear(acidx)
         traffic.actwp.nextturnrad.clear(acidx)
         traffic.actwp.nextturnhdgr.clear(acidx)
         traffic.actwp.nextturnidx.clear(acidx)
     else:
         traffic.actwp.nextturnlat.set(acidx, next_turn.latitude)
         traffic.actwp.nextturnlon.set(acidx, next_turn.longitude)
-        traffic.actwp.nextturnidx.set(acidx, next_turn.waypoint_index)
-        if next_turn.turn.speed is None:
-            traffic.actwp.nextturnspd.clear(acidx)
+        if next_turn.turn.cas is None:
+            traffic.actwp.next_turn_cas.clear(acidx)
         else:
-            traffic.actwp.nextturnspd.set(acidx, next_turn.turn.speed)
+            traffic.actwp.next_turn_cas.set(acidx, next_turn.turn.cas)
         next_geometry = next_turn.turn.geometry
         if isinstance(next_geometry, TurnRadius):
             traffic.actwp.nextturnrad.set(acidx, next_geometry.radius)
@@ -1254,6 +1272,7 @@ def direct(traffic: Traffic, acidx: int, wpname: str) -> bool:
             traffic.actwp.nextturnhdgr.set(acidx, next_geometry.heading_rate)
         else:
             traffic.actwp.nextturnhdgr.clear(acidx)
+        traffic.actwp.nextturnidx.set(acidx, next_turn.waypoint_index)
 
     # Determine next turn waypoint data
 
@@ -1275,20 +1294,13 @@ def direct(traffic: Traffic, acidx: int, wpname: str) -> bool:
         traffic.actwp.torta.set(acidx, profile.rta.time)
         traffic.actwp.xtorta.set(acidx, profile.rta.distance)
 
-    # If there is a speed specified, process it
-    if (speed := acrte.wpspd[wpidx]) is not None:
-        altitude = acrte.wpalt[wpidx]
-        alt = traffic.alt[acidx] if altitude is None else altitude
-
-        # Check for valid Mach or CAS
-        cas = mach2cas(speed, alt) if speed < 2.0 else speed
-
-        # Save it for next leg
-        traffic.actwp.nextspd.set(acidx, cas)
-
-    # No speed specified for next leg
+    if (airspeed := acrte.wpairspeed[wpidx]) is None:
+        traffic.actwp.next_airspeed.kind[acidx] = OptionalAirspeedKind.NONE
     else:
-        traffic.actwp.nextspd.clear(acidx)
+        traffic.actwp.next_airspeed.values[acidx] = airspeed.value
+        traffic.actwp.next_airspeed.kind[acidx] = (
+            OptionalAirspeedKind.CAS if isinstance(airspeed, CasMps) else OptionalAirspeedKind.MACH
+        )
 
     qdr_result, dist_result = geo.qdrdist(
         traffic.lat[acidx],
@@ -1300,8 +1312,8 @@ def direct(traffic: Traffic, acidx: int, wpname: str) -> bool:
     leg_distance = float(np.asarray(dist_result).item())
 
     # Save leg length & direction in actwp data
-    traffic.actwp.curlegdir.set(acidx, qdr_)  # [deg]
-    traffic.actwp.curleglen.set(acidx, leg_distance)  # [m]
+    traffic.actwp.curlegdir.set(acidx, qdr_)
+    traffic.actwp.curleglen.set(acidx, leg_distance)
     traffic.ap.qdr2wp.set(acidx, qdr_ % 360.0)
     traffic.ap.dist2wp.set(acidx, leg_distance)
 
@@ -1322,8 +1334,8 @@ def direct(traffic: Traffic, acidx: int, wpname: str) -> bool:
         traffic.actwp.flyturn[acidx],
     )
     turn_distance = turn_geometry.distance.item()
-    if turn is not None and turn.geometry is None and turn.speed is not None:
-        turn_tas = vcas2tas(turn.speed, traffic.alt[acidx])
+    if turn is not None and turn.geometry is None and turn.cas is not None:
+        turn_tas = vcas2tas(turn.cas, traffic.alt[acidx])
         turn_distance *= turn_tas * turn_tas / (traffic.tas[acidx] * traffic.tas[acidx])
     traffic.actwp.turndist[acidx] = (
         np.logical_or(traffic.actwp.flyby[acidx], traffic.actwp.flyturn[acidx]) * turn_distance
@@ -1348,7 +1360,7 @@ def set_rta(
 
     Implements the RTA stack command: `RTA acid, wpname, time`. The RTA
     is stored with the waypoint and the guidance to the active waypoint is
-    recomputed so the autopilot can adjust its speed schedule.
+    recomputed so the autopilot can adjust its airspeed schedule.
 
     Args:
         acidx: Aircraft index.
@@ -1375,7 +1387,8 @@ def listrte(traffic: Traffic, acidx: int, ipagetxt: str = "0") -> Result[None, s
 
     Implements the LISTRTE stack command: `LISTRTE acid, [pagenr]`.
     Each line shows the waypoint name (active waypoint marked with `*`),
-    its altitude constraint (ft or FL), speed constraint (kts or Mach) and
+    its altitude constraint (ft or FL), airspeed constraint
+    ([`CAS` in m/s][minisky.values.CasMps] or [`Mach`][minisky.values.Mach]) and
     type ([orig], [dest], [C] fly-by, [|] fly-over, [U] fly-turn). Seven
     waypoints are shown per page.
 
@@ -1413,14 +1426,14 @@ def listrte(traffic: Traffic, acidx: int, ipagetxt: str = "0") -> Result[None, s
             else:
                 txt += str(round(q.m_to_ft(altitude))) + "/"
 
-            # Speed
-            speed = acrte.wpspd[i]
-            if speed is None:
+            # Airspeed
+            airspeed = acrte.wpairspeed[i]
+            if airspeed is None:
                 txt += "---"
-            elif speed > 2.0:
-                txt += str(round(q.mps_to_kt(speed)))
+            elif isinstance(airspeed, CasMps):
+                txt += f"{q.mps_to_kt(airspeed.value):.0f}KT[CAS]"
             else:
-                txt += "M" + str(speed)
+                txt += f"M{airspeed.value:g}"
 
             # Type: orig, dest, C = flyby, | = flyover, U = flyturn
             if acrte.wptype[i] == WaypointType.ORIGIN:
@@ -1459,7 +1472,7 @@ def delrte(traffic: Traffic, acidx: int) -> Result[str, str]:
     # Also disable LNAV,VNAV if route is deleted
     traffic.swlnav[acidx] = False
     traffic.swvnav[acidx] = False
-    traffic.swvnavspd[acidx] = False
+    traffic.swvnavairspeed[acidx] = False
     traffic.actwp.torta.clear(acidx)
     traffic.actwp.xtorta.clear(acidx)
 
@@ -1499,7 +1512,7 @@ def delwpt(traffic: Traffic, acidx: int, wpname: str) -> Result[str, str]:
     del acrte.wplat[wpidx]
     del acrte.wplon[wpidx]
     del acrte.wpalt[wpidx]
-    del acrte.wpspd[wpidx]
+    del acrte.wpairspeed[wpidx]
     del acrte.wprta[wpidx]
     del acrte.wptype[wpidx]
     del acrte.wpflyby[wpidx]
@@ -1515,7 +1528,7 @@ def delwpt(traffic: Traffic, acidx: int, wpname: str) -> Result[str, str]:
     if n_wpt == 0 and (acidx or acidx == 0):
         traffic.swlnav[acidx] = False
         traffic.swvnav[acidx] = False
-        traffic.swvnavspd[acidx] = False
+        traffic.swvnavairspeed[acidx] = False
 
     return Ok("")
 
@@ -1547,14 +1560,14 @@ class RouteCommands:
         return _set_turn_radius(self.traffic, acidx, value)
 
     @command(name="ADDWPTMODE")
-    def set_turn_speed(
+    def set_turn_cas(
         self,
         acidx: AcId,
         _parameter: Literal["TURNSPD", "TURNSPEED"],
-        value: TurnSpeedKtArg,
+        value: TurnCasKtArg,
     ) -> Result[str, str]:
-        """Set the default fly-turn calibrated airspeed in knots."""
-        return _set_turn_speed(self.traffic, acidx, value)
+        """Set the default fly-turn [`CAS`][minisky.values.CasMps] from knots."""
+        return _set_turn_cas(self.traffic, acidx, value)
 
     @command(name="ADDWPTMODE")
     def set_turn_heading_rate(
@@ -1570,7 +1583,7 @@ class RouteCommands:
     def clear_turn_parameter(
         self, acidx: AcId, parameter: TurnParameterArg, _off: Literal["OFF"]
     ) -> Result[str, str]:
-        """Clear a route turn radius, speed, or heading-rate default."""
+        """Clear a route turn radius, [`CAS`][minisky.values.CasMps], or heading-rate default."""
         return _clear_turn_parameter(self.traffic, acidx, parameter)
 
     @command(name="ADDWPT")
@@ -1596,14 +1609,14 @@ class RouteCommands:
         return _set_turn_radius(self.traffic, acidx, value)
 
     @command(name="ADDWPT")
-    def add_waypoint_turn_speed(
+    def add_waypoint_turn_cas(
         self,
         acidx: AcId,
         _parameter: Literal["TURNSPD", "TURNSPEED"],
-        value: TurnSpeedKtArg,
+        value: TurnCasKtArg,
     ) -> Result[str, str]:
-        """Set a fly-turn speed through ADDWPT, in knots CAS."""
-        return _set_turn_speed(self.traffic, acidx, value)
+        """Set a fly-turn calibrated airspeed through ADDWPT, in knots."""
+        return _set_turn_cas(self.traffic, acidx, value)
 
     @command(name="ADDWPT")
     def add_waypoint_turn_heading_rate(
@@ -1633,7 +1646,7 @@ class RouteCommands:
         acidx: AcId,
         waypoint: Wpt,
         altitude: StdPressureAltM | None,
-        speed: SpeedMpsOrMach | None,
+        airspeed: CasMps | Mach | None,
         _after: Omitted,
         before: Keyword,
     ) -> Result[str, str]:
@@ -1643,7 +1656,7 @@ class RouteCommands:
             acidx,
             waypoint,
             altitude,
-            speed,
+            airspeed,
             InsertBefore(before),
         )
 
@@ -1653,7 +1666,7 @@ class RouteCommands:
         acidx: AcId,
         waypoint: Wpt,
         altitude: StdPressureAltM | None,
-        speed: SpeedMpsOrMach | None,
+        airspeed: CasMps | Mach | None,
         after: Keyword,
     ) -> Result[str, str]:
         """Insert a route waypoint after an existing waypoint."""
@@ -1662,7 +1675,7 @@ class RouteCommands:
             acidx,
             waypoint,
             altitude,
-            speed,
+            airspeed,
             InsertAfter(after),
         )
 
@@ -1672,10 +1685,10 @@ class RouteCommands:
         acidx: AcId,
         waypoint: Wpt,
         altitude: StdPressureAltM | None = None,
-        speed: SpeedMpsOrMach | None = None,
+        airspeed: CasMps | Mach | None = None,
     ) -> Result[str, str]:
-        """Append a route waypoint with optional altitude and speed constraints."""
-        return _add_route_waypoint(self.traffic, acidx, waypoint, altitude, speed)
+        """Append a route waypoint with optional altitude and airspeed constraints."""
+        return _add_route_waypoint(self.traffic, acidx, waypoint, altitude, airspeed)
 
     @command(name="BEFORE")
     def insert_before(
@@ -1685,17 +1698,19 @@ class RouteCommands:
         _keyword: Literal["ADDWPT"],
         waypoint: Wpt,
         alt: StdPressureAltM | None = None,
-        spd: SpeedMpsOrMach | None = None,
+        airspeed: CasMps | Mach | None = None,
     ) -> Result[str, str]:
         """Insert a waypoint before an existing route waypoint.
 
-        Implements `acid BEFORE waypoint ADDWPT new-waypoint [altitude speed]`.
+        Implements `acid BEFORE waypoint ADDWPT new-waypoint [altitude airspeed]`.
         The ADDWPT keyword is part of the command grammar; insertion
         uses the same typed mutation path as ADDWPT.
         """
         if isinstance(found := _route_waypoint_index(self.traffic, acidx, beforewp), Err):
             return found
-        return _add_route_waypoint(self.traffic, acidx, waypoint, alt, spd, InsertBefore(beforewp))
+        return _add_route_waypoint(
+            self.traffic, acidx, waypoint, alt, airspeed, InsertBefore(beforewp)
+        )
 
     @command(name="AFTER")
     def insert_after(
@@ -1705,17 +1720,19 @@ class RouteCommands:
         _keyword: Literal["ADDWPT"],
         waypoint: Wpt,
         alt: StdPressureAltM | None = None,
-        spd: SpeedMpsOrMach | None = None,
+        airspeed: CasMps | Mach | None = None,
     ) -> Result[str, str]:
         """Insert a waypoint after an existing route waypoint.
 
-        Implements `acid AFTER waypoint ADDWPT new-waypoint [altitude speed]`.
+        Implements `acid AFTER waypoint ADDWPT new-waypoint [altitude airspeed]`.
         The ADDWPT keyword is part of the command grammar; insertion
         uses the same typed mutation path as ADDWPT.
         """
         if isinstance(found := _route_waypoint_index(self.traffic, acidx, afterwp), Err):
             return found
-        return _add_route_waypoint(self.traffic, acidx, waypoint, alt, spd, InsertAfter(afterwp))
+        return _add_route_waypoint(
+            self.traffic, acidx, waypoint, alt, airspeed, InsertAfter(afterwp)
+        )
 
     @command(name="AT")
     def at_all(self, acidx: AcId, atwp: Keyword) -> Result[str, str]:
@@ -1737,11 +1754,11 @@ class RouteCommands:
     def at_speed(
         self, acidx: AcId, atwp: Keyword, _action: Literal["SPD", "SPEED"]
     ) -> Result[str, str]:
-        """Show the speed constraint at a route waypoint."""
+        """Show the airspeed constraint at a route waypoint."""
         if isinstance(target_result := _at_waypoint(self.traffic, acidx, atwp), Err):
             return target_result
         target = target_result.ok()
-        return Ok(_format_at_query(target.route, target.index, atwp, AtQuery.SPEED))
+        return Ok(_format_at_query(target.route, target.index, atwp, AtQuery.AIRSPEED))
 
     @command(name="AT")
     def at_stack(
@@ -1770,27 +1787,27 @@ class RouteCommands:
         acidx: AcId,
         atwp: Keyword,
         _action: Literal["SPD", "SPEED"],
-        value: SpeedMpsOrMach,
+        value: CasMps | Mach,
     ) -> Result[str, str]:
-        """Set the speed constraint at a route waypoint."""
+        """Set the airspeed constraint at a route waypoint."""
         if isinstance(target_result := _at_waypoint(self.traffic, acidx, atwp), Err):
             return target_result
         target = target_result.ok()
-        target.route.wpspd[target.index] = None if value <= 0.0 else value
+        target.route.wpairspeed[target.index] = value
         return _finish_at_mutation(self.traffic, acidx, target)
 
     @command(name="AT")
     def set_at_constraints(
         self, acidx: AcId, atwp: Keyword, constraints: AtConstraintsArg
     ) -> Result[str, str]:
-        """Set or clear the altitude/speed constraint pair at a route waypoint."""
+        """Set or clear the altitude/airspeed constraint pair at a route waypoint."""
         if isinstance(target_result := _at_waypoint(self.traffic, acidx, atwp), Err):
             return target_result
         target = target_result.ok()
         altitude = constraints.altitude
-        speed = constraints.speed
+        airspeed = constraints.airspeed
         target.route.wpalt[target.index] = altitude
-        target.route.wpspd[target.index] = None if speed is None or speed <= 0.0 else speed
+        target.route.wpairspeed[target.index] = airspeed
         return _finish_at_mutation(self.traffic, acidx, target)
 
     @command(name="AT")
@@ -1816,11 +1833,11 @@ class RouteCommands:
         _action: Literal["DEL", "DELETE", "CLR", "CLEAR"],
         _target: Literal["SPD", "SPEED"],
     ) -> Result[str, str]:
-        """Clear a waypoint speed constraint."""
+        """Clear a waypoint airspeed constraint."""
         if isinstance(target_result := _at_waypoint(self.traffic, acidx, atwp), Err):
             return target_result
         target = target_result.ok()
-        target.route.wpspd[target.index] = None
+        target.route.wpairspeed[target.index] = None
         return _finish_at_mutation(self.traffic, acidx, target)
 
     @command(name="AT")
@@ -1831,12 +1848,12 @@ class RouteCommands:
         _action: Literal["DEL", "DELETE", "CLR", "CLEAR"],
         _target: Literal["BOTH"],
     ) -> Result[str, str]:
-        """Clear waypoint altitude and speed constraints."""
+        """Clear waypoint altitude and airspeed constraints."""
         if isinstance(target_result := _at_waypoint(self.traffic, acidx, atwp), Err):
             return target_result
         target = target_result.ok()
         target.route.wpalt[target.index] = None
-        target.route.wpspd[target.index] = None
+        target.route.wpairspeed[target.index] = None
         return _finish_at_mutation(self.traffic, acidx, target)
 
     @command(name="AT")
@@ -1852,7 +1869,7 @@ class RouteCommands:
             return target_result
         target = target_result.ok()
         target.route.wpalt[target.index] = None
-        target.route.wpspd[target.index] = None
+        target.route.wpairspeed[target.index] = None
         target.route.wpstack[target.index] = []
         return _finish_at_mutation(self.traffic, acidx, target)
 
@@ -1877,8 +1894,8 @@ class RouteCommands:
 
             The same rule applies to nested conditional commands. A BlueSky
             scenario line such as
-            `HX2 AT WPT9D STACK ATSPD 0 HX2 ALT 100` should be
-            `HX2 AT WPT9D STACK HX2 ATSPD 0 HX2 ALT 100` in minisky:
+            `HX2 AT WPT9D STACK ATSPD 200KT[CAS] HX2 ALT 100` should be
+            `HX2 AT WPT9D STACK HX2 ATSPD 200KT[CAS] HX2 ALT 100` in minisky:
             the deferred `ATSPD` command must itself be complete.
 
         See also:

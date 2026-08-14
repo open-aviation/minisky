@@ -14,8 +14,8 @@ from tests._types import RunCommand, StepUntil
 def converging(runtime: MiniSky, run_cmd: RunCommand) -> None:
     """Two converging aircraft at the same flight level (from 2ac_converging.scn)."""
     run_cmd("ASAS ON")
-    run_cmd("CRE FLIGHT1,B744,0.6655,0.0,180,FL200,290")
-    run_cmd("CRE FLIGHT2,B744,0.4706,0.4706,225,FL200,290")
+    run_cmd("CRE FLIGHT1,B744,0.6655,0.0,180,FL200,290KT[CAS]")
+    run_cmd("CRE FLIGHT2,B744,0.4706,0.4706,225,FL200,290KT[CAS]")
     assert runtime.traffic.ntraf == 2
 
 
@@ -109,17 +109,17 @@ class TestResolutionCommands:
 
 class TestDetectionCommands:
     def test_zoner_status_query(self, runtime: MiniSky, run_cmd: RunCommand) -> None:
-        run_cmd("CRE KL204,B744,52,4,45,FL250,350")
+        run_cmd("CRE KL204,B744,52,4,45,FL250,350KT[CAS]")
         output = run_cmd("ZONER")
         assert "Current default PZ radius" in output
 
     def test_zonedh_status_query(self, runtime: MiniSky, run_cmd: RunCommand) -> None:
-        run_cmd("CRE KL204,B744,52,4,45,FL250,350")
+        run_cmd("CRE KL204,B744,52,4,45,FL250,350KT[CAS]")
         output = run_cmd("ZONEDH")
         assert "Current default PZ height" in output
 
     def test_sethpz_status_uses_default(self, runtime: MiniSky, run_cmd: RunCommand) -> None:
-        run_cmd("CRE KL204,B744,52,4,45,FL250,350")
+        run_cmd("CRE KL204,B744,52,4,45,FL250,350KT[CAS]")
         output = run_cmd("ZONEDH")
         assert f"{q.m_to_ft(runtime.traffic.cd.hpz_def):.2f} ft" in output
 
@@ -132,7 +132,7 @@ class TestDetectionCommands:
     ) -> None:
         # The ZONER/ZONEDH specs had an unparseable "callsign..." token,
         # so per-aircraft zone sizes could not be set from the stack
-        run_cmd("CRE KL204,B744,52,4,45,FL250,350")
+        run_cmd("CRE KL204,B744,52,4,45,FL250,350KT[CAS]")
         out = run_cmd("ZONER 6.0,KL204")
         assert "Error" not in out
         assert runtime.traffic.cd.rpz[0] == pytest.approx(q.nmi_to_m(6.0))
@@ -140,7 +140,7 @@ class TestDetectionCommands:
     def test_resooff_with_callsign_sets_flag(self, runtime: MiniSky, run_cmd: RunCommand) -> None:
         # The RESOOFF/NORESO specs had an unparseable "callsign..." token,
         # so the per-aircraft variants of these commands never worked
-        run_cmd("CRE KL204,B744,52,4,45,FL250,350")
+        run_cmd("CRE KL204,B744,52,4,45,FL250,350KT[CAS]")
         out = run_cmd("RESOOFF KL204")
         assert "Error" not in out
         assert runtime.traffic.cr.resooffac[0]
@@ -152,7 +152,7 @@ class TestDetectionCommands:
 class TestNoConflict:
     def test_single_aircraft_no_conflicts(self, runtime: MiniSky, run_cmd: RunCommand) -> None:
         run_cmd("ASAS ON")
-        run_cmd("CRE SOLO,A320,52,4,90,FL100,250")
+        run_cmd("CRE SOLO,A320,52,4,90,FL100,250KT[CAS]")
         for _ in range(50):
             runtime.simulation.step()
         assert len(runtime.traffic.cd.confpairs) == 0
@@ -162,8 +162,8 @@ class TestNoConflict:
     ) -> None:
         run_cmd("ASAS ON")
         # Same converging geometry but 10000 ft apart vertically
-        run_cmd("CRE HIGH1,B744,0.6655,0.0,180,FL300,290")
-        run_cmd("CRE LOW1,B744,0.4706,0.4706,225,FL200,290")
+        run_cmd("CRE HIGH1,B744,0.6655,0.0,180,FL300,290KT[CAS]")
+        run_cmd("CRE LOW1,B744,0.4706,0.4706,225,FL200,290KT[CAS]")
         for _ in range(100):
             runtime.simulation.step()
         assert len(runtime.traffic.cd.confpairs) == 0

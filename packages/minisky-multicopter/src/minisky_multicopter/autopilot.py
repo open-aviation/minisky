@@ -24,11 +24,11 @@ from typing import TYPE_CHECKING
 import numpy as np
 from minisky import plugin as plugin_api
 from minisky import quantities as q
-from minisky.core.trafficarrays import OptionalArray
+from minisky.core.trafficarrays import OptionalArray, VariantArray
 from minisky.plugin import AcIdSelection, HeadingDeg
 from minisky.result import Err, Ok, Result
 from minisky.traffic.autopilot import Autopilot
-from minisky.values import StdPressureAltM
+from minisky.values import AirspeedKind, StdPressureAltM
 
 from minisky_multicopter.entity import get_multicopter
 
@@ -45,27 +45,26 @@ class MulticopterAutopilot(Autopilot):
 
     Attributes:
         swhover (ndarray): Bool switch: aircraft is in a commanded hover.
-        hovertimer (OptionalArray): Remaining hold time of an active hover [s];
-            negative = hold indefinitely.
-        resumespd (ndarray): Selected speed to restore on resume
-            (CAS [m/s] or Mach [-]).
-        resumelnav (ndarray): LNAV switch state to restore on resume.
-        resumevnav (ndarray): VNAV switch state to restore on resume.
-        resumevnavspd (ndarray): VNAV-speed switch state to restore.
+        hovertimer (OptionalArray): Optional remaining hold time of an active hover [s].
+        resume_airspeed (VariantArray): Selected [`CAS` in m/s][minisky.values.CasMps]
+            or [`Mach`][minisky.values.Mach] value and kind to restore.
+        resume_lnav (ndarray): LNAV switch state to restore on resume.
+        resume_vnav (ndarray): VNAV switch state to restore on resume.
+        resume_vnav_airspeed (ndarray): VNAV airspeed-guidance switch state to restore.
     """
 
     hovertimer: OptionalArray[q.DurationS[np.ndarray]]
+    resume_airspeed: VariantArray[np.ndarray]
 
     def __init__(self, traffic: Traffic, get_simulation: Callable[[], Simulation]) -> None:
         super().__init__(traffic, get_simulation)
         with self.settrafarrays():
             self.swhover = np.array([], dtype=bool)
             self.hovertimer = OptionalArray(np.array([]), np.array([], dtype=bool))
-            # TODO(abraham): #40 must split CAS and Mach before resumespd can carry isqx metadata.
-            self.resumespd = np.array([])
-            self.resumelnav = np.array([], dtype=bool)
-            self.resumevnav = np.array([], dtype=bool)
-            self.resumevnavspd = np.array([], dtype=bool)
+            self.resume_airspeed = VariantArray(np.array([]), np.array([], dtype=np.uint8))
+            self.resume_lnav = np.array([], dtype=bool)
+            self.resume_vnav = np.array([], dtype=bool)
+            self.resume_vnav_airspeed = np.array([], dtype=bool)
 
     def create(self, n: int = 1) -> None:
         """Seed the hover state of n newly created aircraft.
@@ -79,11 +78,11 @@ class MulticopterAutopilot(Autopilot):
         """
         super().create(n)
         self.swhover[-n:] = False
-        self.hovertimer.present[-n:] = False
-        self.resumespd[-n:] = 0.0
-        self.resumelnav[-n:] = False
-        self.resumevnav[-n:] = False
-        self.resumevnavspd[-n:] = False
+        self.resume_airspeed.values[-n:] = 0.0
+        self.resume_airspeed.kind[-n:] = AirspeedKind.CAS
+        self.resume_lnav[-n:] = False
+        self.resume_vnav[-n:] = False
+        self.resume_vnav_airspeed[-n:] = False
 
         # Membership by typecode from the performance table: the Multicopter
         # entity may be created after this autopilot in the traffic tree, so
@@ -113,7 +112,7 @@ class MulticopterAutopilot(Autopilot):
         # LNAV was re-engaged externally: cancel those hovers.
         cancel = self.swhover & traf.swlnav
         # Timed hovers holding position and altitude: count the timer down.
-        timed = self.swhover & self.hovertimer.present
+        timed = self.swhover & (self.hovertimer.present)
         holding = (
             timed
             & ~traf.swlnav
@@ -125,11 +124,16 @@ class MulticopterAutopilot(Autopilot):
 
         # Restore the saved route state; expiry also re-engages LNAV/VNAV.
         resume = cancel | expired
-        traf.selspd = np.where(resume, self.resumespd, traf.selspd)
-        traf.swvnavspd = np.where(resume, self.resumevnavspd, traf.swvnavspd)
-        traf.swvnav = np.where(cancel, self.resumevnav, traf.swvnav)
-        traf.swlnav = np.where(expired, self.resumelnav, traf.swlnav)
-        traf.swvnav = np.where(expired, self.resumevnav & self.resumelnav, traf.swvnav)
+        traf.selected_airspeed.values[:] = np.where(
+            resume, self.resume_airspeed.values, traf.selected_airspeed.values
+        )
+        traf.selected_airspeed.kind[:] = np.where(
+            resume, self.resume_airspeed.kind, traf.selected_airspeed.kind
+        ).astype(np.uint8)
+        traf.swvnavairspeed = np.where(resume, self.resume_vnav_airspeed, traf.swvnavairspeed)
+        traf.swvnav = np.where(cancel, self.resume_vnav, traf.swvnav)
+        traf.swlnav = np.where(expired, self.resume_lnav, traf.swlnav)
+        traf.swvnav = np.where(expired, self.resume_vnav & self.resume_lnav, traf.swvnav)
         self.swhover = self.swhover & ~resume
         self.hovertimer.clear(resume)
 
@@ -207,12 +211,14 @@ class MulticopterAutopilot(Autopilot):
     def _suspend_route(self, idx: int) -> None:
         """Save the route state of one aircraft and command a hover."""
         traf = self.traffic
-        self.resumelnav[idx] = traf.swlnav[idx]
-        self.resumevnav[idx] = traf.swvnav[idx]
-        self.resumevnavspd[idx] = traf.swvnavspd[idx]
-        self.resumespd[idx] = traf.selspd[idx]
+        self.resume_lnav[idx] = traf.swlnav[idx]
+        self.resume_vnav[idx] = traf.swvnav[idx]
+        self.resume_vnav_airspeed[idx] = traf.swvnavairspeed[idx]
+        self.resume_airspeed.values[idx] = traf.selected_airspeed.values[idx]
+        self.resume_airspeed.kind[idx] = traf.selected_airspeed.kind[idx]
         traf.swlnav[idx] = False
         traf.swvnav[idx] = False
-        traf.swvnavspd[idx] = False
-        traf.selspd[idx] = 0.0
+        traf.swvnavairspeed[idx] = False
+        traf.selected_airspeed.values[idx] = 0.0
+        traf.selected_airspeed.kind[idx] = AirspeedKind.CAS
         traf.selalt[idx] = traf.alt[idx]
