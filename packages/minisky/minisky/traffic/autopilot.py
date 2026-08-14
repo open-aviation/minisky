@@ -26,11 +26,8 @@ from minisky import quantities as q
 from minisky.command import (
     AcId,
     AcIdSelection,
-    AltM,
     CoordinateWaypoint,
     HeadingDeg,
-    LatLonDegrees,
-    MagneticHeadingDeg,
     NamedWaypoint,
     OnOff,
     SpeedMpsOrMach,
@@ -50,6 +47,7 @@ from minisky.tools.aero import (
 )
 from minisky.tools.convert import degto180
 from minisky.tools.position import txt2pos
+from minisky.values import LatLonDegrees, MagneticHeadingDeg, StdPressureAltM
 
 from .route import Route, RouteProfile, RtaTarget, TurnHeadingRate, TurnRadius, WaypointType, direct
 
@@ -1083,7 +1081,7 @@ class Autopilot(TrafficArrays):
 
     @command(name="ALT")
     def selaltcmd(
-        self, idx: AcIdSelection, alt: AltM, vspd: VspdMps | None = None
+        self, idx: AcIdSelection, alt: StdPressureAltM, vspd: VspdMps | None = None
     ) -> Result[str, str]:
         """Select the autopilot altitude, optionally with a vertical speed.
 
@@ -1098,14 +1096,14 @@ class Autopilot(TrafficArrays):
             alt: Selected altitude [m] (stack input in ft/FL).
             vspd: Optional vertical speed [m/s] (stack input in fpm).
         """
-        self.traffic.selalt[idx] = alt
+        self.traffic.selalt[idx] = alt.value
         self.traffic.swvnav[idx] = False
 
         # Check for optional VS argument
         if vspd:
             self.traffic.selvs[idx] = vspd
         else:
-            delalt = alt - self.traffic.alt[idx]
+            delalt = alt.value - self.traffic.alt[idx]
             # Check for VS with opposite sign => use default vs
             # by setting autopilot vs to zero
             oppositevs = np.logical_and(
@@ -1114,7 +1112,7 @@ class Autopilot(TrafficArrays):
             )
 
             self.traffic.selvs[idx[oppositevs]] = 0.0
-        return Ok(f"altitude set to {q.m_to_ft(alt)} ft")
+        return Ok(f"altitude set to {q.m_to_ft(alt.value)} ft")
 
     @command(name="VS")
     def selvspdcmd(self, idx: AcIdSelection, vspd: VspdMps) -> Result[str, str]:

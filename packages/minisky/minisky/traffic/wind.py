@@ -23,7 +23,6 @@ from scipy.interpolate import LinearNDInterpolator, interp1d
 
 from minisky import quantities as q
 from minisky.command import (
-    AltM,
     ArgumentIssue,
     CmdParser,
     CommandCursor,
@@ -36,11 +35,12 @@ from minisky.command import (
     SourceSpan,
     Spanned,
     command,
-    parse_altitude_value,
     parse_field,
+    parse_pressure_altitude_value,
 )
 from minisky.core.trafficarrays import TrafficArrays
 from minisky.result import Err, Ok, Result
+from minisky.values import StdPressureAltM
 
 WindDirectionArg = q.WindDirectionDeg[FiniteFloat]
 WindSpeedKtArg = q.WindSpeedKt[NonNegativeFiniteFloat]
@@ -445,9 +445,10 @@ def _parse_wind_level(
     if isinstance(altitude_text, Err):
         return altitude_text
     altitude_token = altitude_text.ok()
-    if isinstance(altitude_result := parse_altitude_value(altitude_token.value), Err):
-        return Err(altitude_result.err().with_span(altitude_token.span))
-    altitude = altitude_result.ok()
+    try:
+        altitude = parse_pressure_altitude_value(altitude_token.value).value
+    except ValueError:
+        return Err(ArgumentIssue.expected("a finite altitude", altitude_token.value, altitude_token.span))
     if not isfinite(altitude):
         return Err(ArgumentIssue.expected("a finite altitude", altitude_token.value, altitude_token.span))
 
@@ -537,9 +538,11 @@ class Wind(TrafficArrays, Windfield):
         return Ok("")
 
     @command(name="GETWIND")
-    def report(self, position: LatLonDeg, alt: AltM | None = None) -> Result[str, str]:
+    def report(self, position: LatLonDeg, alt: StdPressureAltM | None = None) -> Result[str, str]:
         """Report wind at an aviation position and optional altitude."""
-        north, east = self.getdata(position.lat, position.lon, alt)
+        north, east = self.getdata(
+            position.lat, position.lon, None if alt is None else alt.value
+        )
         direction = (np.degrees(np.arctan2(east, north)) + 180.0) % 360.0
         speed = np.sqrt(north * north + east * east)
         return Ok(

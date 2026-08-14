@@ -7,23 +7,29 @@ from typing import Annotated, Any, Literal
 import pytest
 from annotated_types import Gt
 from minisky import MiniSky
+from minisky import quantities as q
 from minisky.command import (
     ArgumentIssue,
     CommandCursor,
     CoordinateWaypoint,
     HeadingDeg,
     LatLonDeg,
-    LatLonDegrees,
-    MagneticHeadingDeg,
     NamedWaypoint,
     RunwayHeadingRequest,
     SourceSpan,
-    TrueHeadingDeg,
     UseRunwayHeading,
     Wpt,
     command,
 )
 from minisky.result import Err, Ok
+from minisky.values import (
+    GroundTrackDeg,
+    LatLonDegrees,
+    MagneticHeadingDeg,
+    MslAltM,
+    StdPressureAltM,
+    TrueHeadingDeg,
+)
 from tests._types import RunCommand
 
 
@@ -177,6 +183,25 @@ def test_variadic_is_zero_or_more(runtime: MiniSky) -> None:
     assert isinstance(empty, Ok)
     assert isinstance(multiple, Ok)
     assert received == [(), (1, 2, 3)]
+
+
+def test_altitude_reference_is_preserved(runtime: MiniSky) -> None:
+    def record(value: StdPressureAltM | MslAltM) -> None:
+        pass
+
+    prepared = runtime.commands.prepare_command(record, name="TESTALTREF")
+    assert prepared.parse_arguments("FL100") == Ok((StdPressureAltM(q.ft_to_m(10000.0)),))
+    assert prepared.parse_arguments("3048M") == Ok((StdPressureAltM(3048.0),))
+    assert prepared.parse_arguments("3048M[MSL]") == Ok((MslAltM(3048.0),))
+
+
+def test_ground_track_requires_explicit_reference(runtime: MiniSky) -> None:
+    def record(value: GroundTrackDeg) -> None:
+        pass
+
+    prepared = runtime.commands.prepare_command(record, name="TESTTRK")
+    assert prepared.parse_arguments("090TRK") == Ok((GroundTrackDeg(90.0),))
+    assert isinstance(prepared.parse_arguments("090"), Err)
 
 
 def test_waypoint_parser_preserves_named_and_coordinate_structure(runtime: MiniSky) -> None:

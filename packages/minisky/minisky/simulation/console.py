@@ -11,7 +11,8 @@ from typing import Self
 
 from colorama import Fore, Style
 
-from minisky.command import LatLonDegrees, Text, command
+from minisky.command import Text, command
+from minisky.values import LatLonDegrees
 
 ConsoleCallback = Callable[[str], None]
 

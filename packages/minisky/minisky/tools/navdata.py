@@ -137,8 +137,8 @@ class Navdatabase:
     aptlat: q.LatitudeDeg[np.ndarray]
     aptlon: q.LongitudeDeg[np.ndarray]
     aptmaxrwy: q.LengthM[np.ndarray]
-    wpelev: list[q.GeometricAltitudeM[float]]
-    aptelev: list[q.GeometricAltitudeM[float]]
+    wpelev: list[q.MslAltitudeM[float]]
+    aptelev: list[q.MslAltitudeM[float]]
 
     def __init__(self, data_path: Path, console: ConsoleIO) -> None:
         """The navigation database: Contains waypoint, airport, airway, and sector data, but also

@@ -25,14 +25,12 @@ import numpy as np
 from minisky import quantities as q
 from minisky.command import (
     AcId,
-    AltM,
     ArgumentIssue,
     CmdParser,
     CommandCursor,
     CommandParseContext,
     CoordinateWaypoint,
     Keyword,
-    LatLonDegrees,
     NamedWaypoint,
     Omitted,
     ParseResult,
@@ -44,7 +42,7 @@ from minisky.command import (
     Text,
     Wpt,
     command,
-    parse_altitude_value,
+    parse_pressure_altitude_value,
     parse_resolved_position,
     parse_speed_value,
 )
@@ -56,6 +54,7 @@ from minisky.tools import geo
 from minisky.tools.aero import casormach2tas, g0, mach2cas, vcas2tas
 from minisky.tools.convert import degto180
 from minisky.tools.position import AirportPosition, NavaidPosition, ResolvedRunwayPosition, txt2pos
+from minisky.values import LatLonDegrees, StdPressureAltM
 
 if TYPE_CHECKING:
     from minisky.traffic import Traffic
@@ -981,7 +980,7 @@ def _add_route_waypoint(
     traffic: Traffic,
     acidx: int,
     waypoint: Wpt,
-    altitude: AltM | None = None,
+    altitude: StdPressureAltM | None = None,
     speed: SpeedMpsOrMach | None = None,
     insertion: WaypointInsertion | None = None,
 ) -> Result[str, str]:
@@ -1006,7 +1005,7 @@ def _add_route_waypoint(
             reflat = acrte.wplat[-2]
             reflon = acrte.wplon[-2]
 
-    alt = altitude
+    alt = None if altitude is None else altitude.value
     spd = speed
     afterwp = ""
     beforewp = ""
@@ -1107,9 +1106,10 @@ def _parse_at_constraints(
     if cleared(altitude_text):
         altitude = None
     else:
-        if isinstance(parsed_altitude := parse_altitude_value(altitude_text), Err):
-            return Err(parsed_altitude.err().with_span(token.span))
-        altitude = parsed_altitude.ok()
+        try:
+            altitude = parse_pressure_altitude_value(altitude_text).value
+        except ValueError:
+            return Err(ArgumentIssue.expected("a pressure altitude", altitude_text, token.span))
 
     speed: q.MachNumber[float] | q.CalibratedAirspeedMps[float] | None
     if cleared(speed_text):
@@ -1632,7 +1632,7 @@ class RouteCommands:
         self,
         acidx: AcId,
         waypoint: Wpt,
-        altitude: AltM | None,
+        altitude: StdPressureAltM | None,
         speed: SpeedMpsOrMach | None,
         _after: Omitted,
         before: Keyword,
@@ -1652,7 +1652,7 @@ class RouteCommands:
         self,
         acidx: AcId,
         waypoint: Wpt,
-        altitude: AltM | None,
+        altitude: StdPressureAltM | None,
         speed: SpeedMpsOrMach | None,
         after: Keyword,
     ) -> Result[str, str]:
@@ -1671,7 +1671,7 @@ class RouteCommands:
         self,
         acidx: AcId,
         waypoint: Wpt,
-        altitude: AltM | None = None,
+        altitude: StdPressureAltM | None = None,
         speed: SpeedMpsOrMach | None = None,
     ) -> Result[str, str]:
         """Append a route waypoint with optional altitude and speed constraints."""
@@ -1684,7 +1684,7 @@ class RouteCommands:
         beforewp: Keyword,
         _keyword: Literal["ADDWPT"],
         waypoint: Wpt,
-        alt: AltM | None = None,
+        alt: StdPressureAltM | None = None,
         spd: SpeedMpsOrMach | None = None,
     ) -> Result[str, str]:
         """Insert a waypoint before an existing route waypoint.
@@ -1704,7 +1704,7 @@ class RouteCommands:
         afterwp: Keyword,
         _keyword: Literal["ADDWPT"],
         waypoint: Wpt,
-        alt: AltM | None = None,
+        alt: StdPressureAltM | None = None,
         spd: SpeedMpsOrMach | None = None,
     ) -> Result[str, str]:
         """Insert a waypoint after an existing route waypoint.
@@ -1755,13 +1755,13 @@ class RouteCommands:
 
     @command(name="AT")
     def set_at_altitude(
-        self, acidx: AcId, atwp: Keyword, _action: Literal["ALT"], value: AltM
+        self, acidx: AcId, atwp: Keyword, _action: Literal["ALT"], value: StdPressureAltM
     ) -> Result[str, str]:
         """Set the altitude constraint at a route waypoint."""
         if isinstance(target_result := _at_waypoint(self.traffic, acidx, atwp), Err):
             return target_result
         target = target_result.ok()
-        target.route.wpalt[target.index] = value
+        target.route.wpalt[target.index] = value.value
         return _finish_at_mutation(self.traffic, acidx, target)
 
     @command(name="AT")

@@ -9,15 +9,14 @@ from typing import TYPE_CHECKING, TypeAlias
 from minisky import quantities as q
 from minisky.command import (
     AcId,
-    AltM,
     LatLonDeg,
-    LatLonDegrees,
     NonNegativeFiniteFloat,
     SpeedMpsOrMach,
     Text,
     command,
 )
 from minisky.tools.geo import qdrdist
+from minisky.values import LatLonDegrees, StdPressureAltM
 
 if TYPE_CHECKING:
     from minisky.traffic import Traffic
@@ -109,11 +108,13 @@ class Condition:
         self.conditions = remaining
 
     @command(name="ATALT")
-    def ataltcmd(self, acidx: AcId, targalt: AltM, cmdtxt: Text) -> bool:
+    def ataltcmd(self, acidx: AcId, targalt: StdPressureAltM, cmdtxt: Text) -> bool:
         """Schedule a command for when an aircraft crosses an altitude."""
         callsign = self.traffic.callsign[acidx]
         actual = float(self.traffic.alt[acidx])
-        self.conditions.append(AltitudeCondition(callsign, targalt, targalt - actual, cmdtxt))
+        self.conditions.append(
+            AltitudeCondition(callsign, targalt.value, targalt.value - actual, cmdtxt)
+        )
         return True
 
     @command(name="ATSPD")

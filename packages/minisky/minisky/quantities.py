@@ -74,7 +74,9 @@ LengthM = Annotated[_T, isqx.LENGTH(isqx.M)]
 
 PressureAltitudeM = Annotated[_T, aerospace.PRESSURE_ALTITUDE(isqx.M)]
 PressureAltitudeFt = Annotated[_T, aerospace.PRESSURE_ALTITUDE(isqx.usc.FT)]
-GeometricAltitudeM = Annotated[_T, aerospace.GEOMETRIC_ALTITUDE(isqx.M)]
+MslAltitudeM = Annotated[_T, isqx.ALTITUDE["above_mean_sea_level"](isqx.M)]
+BarometricHeightM = Annotated[_T, isqx.HEIGHT["barometric"](isqx.M)]
+AglHeightM = Annotated[_T, aerospace.HEIGHT_ABOVE_GROUND_LEVEL(isqx.M)]
 
 #
 # speed/rate

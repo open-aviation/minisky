@@ -23,15 +23,14 @@ from minisky import plugin as plugin_api
 from minisky import quantities as q
 from minisky.plugin import (
     AcId,
-    AltM,
     HeadingDeg,
-    MagneticHeadingDeg,
     OnOff,
     PositiveFiniteFloat,
     TimeS,
 )
 from minisky.result import Err, Ok, Result
 from minisky.tools import geo
+from minisky.values import MagneticHeadingDeg, StdPressureAltM
 
 from minisky_multicopter.config import (
     MulticopterConfig,
@@ -235,7 +234,7 @@ class Multicopter(plugin_api.Entity):
         self,
         idx: AcId,
         duration: TimeS | None = None,
-        alt: AltM | None = None,
+        alt: StdPressureAltM | None = None,
     ) -> Result[str, str]:
         """Hold position, optionally for a fixed time at a given altitude.
 

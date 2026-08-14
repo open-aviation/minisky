@@ -28,6 +28,7 @@ from minisky.core.trafficarrays import OptionalArray
 from minisky.plugin import AcIdSelection, HeadingDeg
 from minisky.result import Err, Ok, Result
 from minisky.traffic.autopilot import Autopilot
+from minisky.values import StdPressureAltM
 
 from minisky_multicopter.entity import get_multicopter
 
@@ -168,7 +169,7 @@ class MulticopterAutopilot(Autopilot):
         self,
         idx: int,
         duration: q.DurationS[float] | None = None,
-        alt: q.PressureAltitudeM[float] | None = None,
+        alt: StdPressureAltM | None = None,
     ) -> Result[str, str]:
         """Hold position, optionally for a fixed time at a given altitude.
 

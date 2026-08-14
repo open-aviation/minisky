@@ -25,13 +25,11 @@ from minisky import quantities as q
 from minisky.command import (
     AcId,
     AcIdSelection,
-    AltM,
     CmdParser,
     FiniteFloat,
     HeadingDeg,
     Keyword,
     LatLonDeg,
-    MagneticHeadingDeg,
     OnOff,
     PositiveFiniteFloat,
     ResolvedPositionArg,
@@ -41,6 +39,7 @@ from minisky.command import (
     Text,
     TimeS,
     UseRunwayHeading,
+    VerticalDistanceM,
     VspdMps,
     command,
 )
@@ -59,6 +58,7 @@ from minisky.tools.aero import (
 from minisky.tools.convert import latlon2txt
 from minisky.tools.shapes import Shapes
 from minisky.traffic.asas import ConflictDetection, ConflictResolution
+from minisky.values import MagneticHeadingDeg, StdPressureAltM
 
 from .activewpdata import ActiveWaypoint
 from .aporasas import APorASAS
@@ -96,7 +96,7 @@ ConflictDistanceNM = q.DistanceNM[FiniteFloat]
 BankLimitDeg = Annotated[q.BankAngleDeg[PositiveFiniteFloat], Lt(90)]
 
 
-_DEFAULT_ALTITUDE: q.PressureAltitudeM[float] = q.ft_to_m(25000.0)
+_DEFAULT_ALTITUDE = StdPressureAltM(q.ft_to_m(25000.0))
 _DEFAULT_SPEED = q.kt_to_mps(300.0)
 
 
@@ -340,7 +340,7 @@ class Traffic(TrafficArrays):
         actype: Keyword,
         position: ResolvedPositionArg,
         hdg: HeadingDeg | UseRunwayHeading | None = None,
-        alt: AltM = _DEFAULT_ALTITUDE,
+        alt: StdPressureAltM = _DEFAULT_ALTITUDE,
         spd: SpeedMpsOrMach = _DEFAULT_SPEED,
     ) -> Result[str, str]:
         """Create an aircraft."""
@@ -379,7 +379,7 @@ class Traffic(TrafficArrays):
         lat: q.LatitudeDeg[float] = 53.0,
         lon: q.LongitudeDeg[float] = 4.0,
         hdg: q.TrueHeadingDegrees[float] = 45.0,
-        alt: AltM = _DEFAULT_ALTITUDE,
+        alt: StdPressureAltM = _DEFAULT_ALTITUDE,
         spd: SpeedMpsOrMach = _DEFAULT_SPEED,
     ) -> Result[str, str]:
         """Create a single aircraft and add it to the traffic database.
@@ -409,7 +409,7 @@ class Traffic(TrafficArrays):
         actype_ = np.array([actype])
         lat_ = np.array([lat])
         lon_ = np.array([lon])
-        alt_ = np.array([alt])
+        alt_ = np.array([alt.value])
         hdg_ = np.array([hdg])
         spd_ = np.array([spd])
 
@@ -426,7 +426,7 @@ class Traffic(TrafficArrays):
         lat_max: LatitudeArg = 60.0,
         lon_max: LongitudeArg = 10.0,
         actype: Keyword = "A320",
-        acalt: AltM | None = None,
+        acalt: StdPressureAltM | None = None,
         acspd: SpeedMpsOrMach | None = None,
     ) -> Result[str, str]:
         """Create multiple aircraft at random positions in a lat/lon box.
@@ -466,7 +466,7 @@ class Traffic(TrafficArrays):
         aclon = self.numpy_random.rand(n) * (lon_max - lon_min) + lon_min
         achdg = self.numpy_random.randint(1, 360, n)
         acalt_ = (
-            np.full(n, acalt)
+            np.full(n, acalt.value)
             if acalt is not None
             else q.ft_to_m(self.numpy_random.randint(2000, 39000, n))
         )
@@ -607,7 +607,7 @@ class Traffic(TrafficArrays):
         dpsi: ConflictAngleDeg,
         dcpa: ConflictDistanceNM,
         tlosh: TimeS,
-        dH: AltM | None = None,
+        dH: VerticalDistanceM | None = None,
         tlosv: TimeS | None = None,
         spd: SpeedMpsOrMach | None = None,
     ) -> None:
@@ -696,10 +696,12 @@ class Traffic(TrafficArrays):
             aclat_scalar,
             aclon_scalar,
             float(achdg),
-            acalt,
+            StdPressureAltM(float(acalt)),
             float(acspd),
         )
-        self.ap.selaltcmd(np.asarray([len(self.lat) - 1]), altref, acvs)
+        self.ap.selaltcmd(
+            np.asarray([len(self.lat) - 1]), StdPressureAltM(float(altref)), acvs
+        )
         self.vs[-1] = acvs
 
     def delete(self, idx: int | np.ndarray) -> bool:  # type: ignore[override]
@@ -836,7 +838,7 @@ class Traffic(TrafficArrays):
         self,
         idx: AcId,
         position: LatLonDeg,
-        alt: AltM | None = None,
+        alt: StdPressureAltM | None = None,
         hdg: HeadingDeg | None = None,
         casmach: SpeedMpsOrMach | None = None,
         vspd: VspdMps | None = None,
@@ -858,8 +860,8 @@ class Traffic(TrafficArrays):
         self.lon[idx] = position.lon
 
         if alt is not None:
-            self.alt[idx] = alt
-            self.selalt[idx] = alt
+            self.alt[idx] = alt.value
+            self.selalt[idx] = alt.value
 
         if hdg is not None:
             heading = (
@@ -871,7 +873,7 @@ class Traffic(TrafficArrays):
             self.ap.trk[idx] = heading
 
         if casmach is not None:
-            h = alt if alt is not None else float(self.alt[idx])
+            h = alt.value if alt is not None else float(self.alt[idx])
             self.tas[idx], self.selspd[idx], _ = casormach(casmach, h, self.casmach_threshold)
 
         if vspd is not None:
@@ -1069,7 +1071,7 @@ class Traffic(TrafficArrays):
 
         # Show what we found on airport and navaid/waypoint
 
-    def settrans(self, alt: AltM | None = None) -> Result[str, str]:
+    def settrans(self, alt: StdPressureAltM | None = None) -> Result[str, str]:
         """Set or show the transition level.
 
         Args:
@@ -1077,8 +1079,8 @@ class Traffic(TrafficArrays):
         """
         # In case a new value is given, set it.
         if alt is not None:
-            if alt > 0.0:
-                self.translvl = alt
+            if alt.value > 0.0:
+                self.translvl = alt.value
                 return Ok("")
             return Err("Transition level needs to be ft/FL and larger than zero")
 
