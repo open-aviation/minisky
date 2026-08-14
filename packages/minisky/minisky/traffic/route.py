@@ -28,24 +28,23 @@ from minisky.command import (
     AltM,
     ArgumentIssue,
     CmdParser,
+    CommandCursor,
     CommandParseContext,
     CoordinateWaypoint,
     Keyword,
     LatLonDegrees,
     NamedWaypoint,
     Omitted,
-    Parsed,
     ParseResult,
     PositiveFiniteFloat,
     RunwayPosition,
     SimTimeS,
+    Spanned,
     SpeedMpsOrMach,
     Text,
     Wpt,
     command,
-    next_argument,
     parse_altitude_value,
-    parse_keyword,
     parse_resolved_position,
     parse_speed_value,
 )
@@ -830,49 +829,33 @@ _TURN_PARAMETERS = {
 # silently discard behavior. add them only when that state is represented.
 
 
-def _parse_waypoint_mode(context: CommandParseContext, text: str) -> ParseResult[WaypointMode]:
-    if isinstance(result := parse_keyword(context, text), Err):
-        return result
-    token = result.ok()
-    mode = _WAYPOINT_MODES.get(token.value)
-    if mode is None:
-        return Err(ArgumentIssue.expected("FLYBY, FLYOVER, or FLYTURN", token.value, token.span))
-    return Ok(Parsed(mode, token.remainder, token.span))
-
-
 WaypointModeArg = Annotated[
     WaypointMode,
-    CmdParser.literals(_parse_waypoint_mode, tuple(_WAYPOINT_MODES)),
+    CmdParser.keywords(_WAYPOINT_MODES, "FLYBY, FLYOVER, or FLYTURN"),
 ]
-
-
-def _parse_turn_parameter(context: CommandParseContext, text: str) -> ParseResult[TurnParameter]:
-    if isinstance(result := parse_keyword(context, text), Err):
-        return result
-    token = result.ok()
-    parameter = _TURN_PARAMETERS.get(token.value)
-    if parameter is None:
-        return Err(ArgumentIssue.expected("a supported turn parameter", token.value, token.span))
-    return Ok(Parsed(parameter, token.remainder, token.span))
 
 
 TurnParameterArg = Annotated[
     TurnParameter,
-    CmdParser.literals(_parse_turn_parameter, tuple(_TURN_PARAMETERS)),
+    CmdParser.keywords(_TURN_PARAMETERS, "a supported turn parameter"),
 ]
+
 
 TurnRadiusNMArg = q.DistanceNM[PositiveFiniteFloat]
 TurnSpeedKtArg = q.CalibratedAirspeedKt[PositiveFiniteFloat]
 TurnHeadingRateArg = q.TurnRateDegPerS[PositiveFiniteFloat]
 
 
-def _parse_runway(context: CommandParseContext, text: str) -> ParseResult[RunwayPosition]:
-    if isinstance(result := parse_resolved_position(context, text), Err):
+def _parse_runway(
+    context: CommandParseContext, cursor: CommandCursor
+) -> ParseResult[RunwayPosition]:
+    if isinstance(result := parse_resolved_position(context, cursor), Err):
         return result
     parsed = result.ok()
     if not isinstance(parsed.value, RunwayPosition):
-        return Err(ArgumentIssue.expected("a runway", text, parsed.span))
-    return Ok(Parsed(parsed.value, parsed.remainder, parsed.span))
+        actual = cursor.text[parsed.span.start : parsed.span.end]
+        return Err(ArgumentIssue.expected("a runway", actual, parsed.span))
+    return Ok(Spanned(parsed.value, parsed.span))
 
 
 RunwayArg = Annotated[RunwayPosition, CmdParser(_parse_runway)]
@@ -1106,8 +1089,11 @@ class AtConstraints:
     speed: q.MachNumber[float] | q.CalibratedAirspeedMps[float] | None
 
 
-def _parse_at_constraints(_context: CommandParseContext, text: str) -> ParseResult[AtConstraints]:
-    if isinstance(result := next_argument(text), Err):
+def _parse_at_constraints(
+    _context: CommandParseContext, cursor: CommandCursor
+) -> ParseResult[AtConstraints]:
+    result = cursor.next_value("altitude/speed")
+    if isinstance(result, Err):
         return result
     token = result.ok()
     if token.value.count("/") != 1:
@@ -1133,7 +1119,7 @@ def _parse_at_constraints(_context: CommandParseContext, text: str) -> ParseResu
             return Err(parsed_speed.err().with_span(token.span))
         speed = parsed_speed.ok()
 
-    return Ok(Parsed(AtConstraints(altitude, speed), token.remainder, token.span))
+    return Ok(Spanned(AtConstraints(altitude, speed), token.span))
 
 
 AtConstraintsArg = Annotated[

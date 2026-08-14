@@ -9,6 +9,7 @@ from annotated_types import Gt
 from minisky import MiniSky
 from minisky.command import (
     ArgumentIssue,
+    CommandCursor,
     CoordinateWaypoint,
     HeadingDeg,
     LatLonDeg,
@@ -16,44 +17,47 @@ from minisky.command import (
     MagneticHeadingDeg,
     NamedWaypoint,
     RunwayHeadingRequest,
+    SourceSpan,
     TrueHeadingDeg,
     UseRunwayHeading,
     Wpt,
     command,
-    next_argument,
-    split_commands,
 )
 from minisky.result import Err, Ok
 from tests._types import RunCommand
 
 
 @pytest.mark.parametrize(
-    ("text", "value", "remainder"),
+    ("text", "value", "remaining"),
     [
         ("ONE TWO", "ONE", "TWO"),
         ("ONE, TWO", "ONE", "TWO"),
         ("ONE ,TWO", "ONE", "TWO"),
-        (",TWO", "", "TWO"),
+        (",TWO", None, "TWO"),
+        ('"",TWO', "", "TWO"),
         ("ONE,,TWO", "ONE", ",TWO"),
         ('"ONE TWO",THREE', "ONE TWO", "THREE"),
         ("'ONE,TWO' THREE", "ONE,TWO", "THREE"),
         ("N52'14'12' E004'23'10'", "N52'14'12'", "E004'23'10'"),
     ],
 )
-def test_separators(text: str, value: str, remainder: str) -> None:
-    result = next_argument(text)
+def test_cursor_field_grammar(text: str, value: str | None, remaining: str) -> None:
+    cursor = CommandCursor(text)
+    result = cursor.next_field()
     assert isinstance(result, Ok)
-    parsed = result.ok()
-    assert parsed.value == value
-    assert parsed.remainder == remainder
+    field = result.ok()
+    assert field is not None
+    assert field.value == value
+    assert cursor.remaining == remaining
 
 
 def test_quoted_span() -> None:
-    result = next_argument('  "ONE TWO",THREE')
+    cursor = CommandCursor('  "ONE TWO",THREE')
+    result = cursor.next_field()
     assert isinstance(result, Ok)
-    span = result.ok().span
-    assert span is not None
-    assert (span.start, span.end) == (2, 11)
+    field = result.ok()
+    assert field is not None
+    assert (field.span.start, field.span.end) == (2, 11)
 
 
 @pytest.mark.parametrize(
@@ -65,20 +69,33 @@ def test_quoted_span() -> None:
         (" ; OP ;; HOLD ; ", ("OP", "HOLD")),
     ],
 )
-def test_semicolons_ignored(text: str, commands: tuple[str, ...]) -> None:
-    result = split_commands(text)
-    assert isinstance(result, Ok)
-    assert result.ok() == commands
+def test_cursor_command_grammar(text: str, commands: tuple[str, ...]) -> None:
+    cursor = CommandCursor(text)
+    parsed: list[str] = []
+    while True:
+        result = cursor.next_command()
+        assert isinstance(result, Ok)
+        command = result.ok()
+        if command is None:
+            break
+        parsed.append(command.value)
+    assert tuple(parsed) == commands
 
 
-def test_unclosed_quote() -> None:
-    result = split_commands('ECHO "unfinished')
+def test_unclosed_quote_has_source_span() -> None:
+    text = 'OP\nECHO "unfinished'
+    cursor = CommandCursor(text, 3)
+    result = cursor.next_command()
     assert isinstance(result, Err)
     issue = result.err()
     assert issue.message == 'expected a closing " quote, but got end of input'
-    assert issue.source_text == 'ECHO "unfinished'
-    assert issue.span is not None
-    assert issue.span.start == 5
+    assert issue.span == SourceSpan(8, len(text))
+
+
+def test_command_cursor_failed_read_does_not_advance() -> None:
+    cursor = CommandCursor('"unfinished')
+    assert isinstance(cursor.next_field(), Err)
+    assert cursor.pos == 0
 
 
 def test_empty_comma_field_uses_parameter_default(runtime: MiniSky) -> None:
@@ -364,9 +381,9 @@ def test_wind_error_span_points_to_invalid_profile_field(runtime: MiniSky) -> No
     result = runtime.commands.cmddict["WIND"].parse_arguments("52 4 100 180 BAD")
     assert isinstance(result, Err)
     issue = result.err()
-    assert issue.source_text == "WIND 52 4 100 180 BAD"
+    text = "WIND 52 4 100 180 BAD"
     assert issue.span is not None
-    assert issue.source_text[issue.span.start : issue.span.end] == "BAD"
+    assert text[issue.span.start : issue.span.end] == "BAD"
 
 
 def test_route_waypoint_membership_is_validated_by_route_command(

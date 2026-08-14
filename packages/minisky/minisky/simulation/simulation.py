@@ -20,14 +20,9 @@ from annotated_types import Ge, Le
 
 from minisky import quantities as q
 from minisky.command import (
-    ArgumentIssue,
     CmdParser,
-    CommandParseContext,
     OnOff,
-    Parsed,
-    ParseResult,
     command,
-    next_argument,
 )
 from minisky.result import Err, Ok, Result
 from minisky.stack import ScenarioData
@@ -60,28 +55,15 @@ Month = Annotated[int, Ge(1), Le(12)]
 Year = Annotated[int, Ge(1)]
 
 
-def _clock_time(value: str) -> Result[datetime.time, ArgumentIssue]:
-    try:
-        parsed = (
-            datetime.datetime.strptime(value, "%H:%M:%S.%f" if "." in value else "%H:%M:%S")
-            .replace(tzinfo=datetime.UTC)
-            .time()
-        )
-    except ValueError:
-        return Err(ArgumentIssue.expected("a UTC time", value))
-    return Ok(parsed)
+def _parse_clock_time(value: str) -> datetime.time:
+    return (
+        datetime.datetime.strptime(value, "%H:%M:%S.%f" if "." in value else "%H:%M:%S")
+        .replace(tzinfo=datetime.UTC)
+        .time()
+    )
 
 
-def _parse_clock_time(_context: CommandParseContext, text: str) -> ParseResult[datetime.time]:
-    if isinstance(result := next_argument(text), Err):
-        return result
-    token = result.ok()
-    if isinstance(clock := _clock_time(token.value), Err):
-        return Err(clock.err().with_span(token.span))
-    return Ok(Parsed(clock.ok(), token.remainder, token.span))
-
-
-ClockTimeArg = Annotated[datetime.time, CmdParser(_parse_clock_time)]
+ClockTimeArg = Annotated[datetime.time, CmdParser.value(_parse_clock_time, "a UTC time")]
 
 
 def _calendar_datetime(
