@@ -1,13 +1,13 @@
 """Autopilot Implementation.
 
 Contains the [`Autopilot`][minisky.traffic.autopilot.Autopilot] class, which combines classic autopilot
-modes (selected heading, altitude, vertical speed and speed) with FMS
+modes (selected heading, altitude, vertical speed and airspeed) with FMS
 guidance along the aircraft route: LNAV (lateral navigation towards the
 active waypoint, including fly-by/fly-over/fly-turn logic) and VNAV
-(Top-of-Climb/Top-of-Descent logic, altitude and speed constraints, and
-required-time-of-arrival (RTA) speed scheduling).
+(Top-of-Climb/Top-of-Descent logic, altitude and airspeed constraints, and
+required-time-of-arrival (RTA) airspeed scheduling).
 
-The autopilot output (commanded track, speed, altitude and vertical speed)
+The autopilot output (commanded track, true airspeed, altitude and vertical speed)
 is combined with conflict-resolution commands in
 [`APorASAS`][minisky.traffic.aporasas.APorASAS] before being flown by
 [`Traffic`][minisky.traffic.traffic.Traffic]. Many methods implement stack
@@ -30,24 +30,26 @@ from minisky.command import (
     HeadingDeg,
     NamedWaypoint,
     OnOff,
-    SpeedMpsOrMach,
     VspdMps,
     WaypointSpec,
     Wpt,
     command,
 )
-from minisky.core.trafficarrays import OptionalArray, TrafficArrays
+from minisky.core.trafficarrays import OptionalArray, TrafficArrays, VariantArray
 from minisky.result import Err, Ok, Result
 from minisky.tools import geo
-from minisky.tools.aero import (
-    g0,
-    tas2cas,
-    vcas2tas,
-    vcasormach2tas,
-)
+from minisky.tools.aero import g0, tas2cas, vcas2tas, vcasmach2tas
 from minisky.tools.convert import degto180
 from minisky.tools.position import txt2pos
-from minisky.values import LatLonDegrees, MagneticHeadingDeg, StdPressureAltM
+from minisky.values import (
+    AirspeedKind,
+    CasMps,
+    LatLonDegrees,
+    Mach,
+    MagneticHeadingDeg,
+    OptionalAirspeedKind,
+    StdPressureAltM,
+)
 
 from .route import Route, RouteProfile, RtaTarget, TurnHeadingRate, TurnRadius, WaypointType, direct
 
@@ -98,7 +100,7 @@ class Autopilot(TrafficArrays):
     """BlueSky Autopilot implementation.
 
     Computes, per aircraft, the commanded track, altitude, vertical speed
-    and speed from the selected (pilot) values and, when LNAV/VNAV are
+    and true airspeed from the selected pilot airspeed reference and, when LNAV/VNAV are
     engaged, from the route stored in the per-aircraft [`Route`][minisky.traffic.route.Route]
     objects. Waypoint switching is event driven (see wppassingcheck()),
     while the continuous guidance in update() is fully vectorized over all
@@ -106,14 +108,13 @@ class Autopilot(TrafficArrays):
 
     Attributes:
         trk (ndarray): Commanded track angle [deg].
-        spd (ndarray): Commanded speed, CAS [m/s] or Mach [-].
         tas (ndarray): Commanded true airspeed [m/s].
         alt (ndarray): Commanded altitude [m].
         vs (ndarray): Commanded vertical speed [m/s].
         swtoc (ndarray): Switch: Top-of-Climb logic (climb early) enabled.
         swtod (ndarray): Switch: Top-of-Descent logic (descend late) enabled.
-        dist2vs (OptionalArray): Distance to the active waypoint at which a
-            delayed VNAV descent should start [m], absent when `present` is false.
+        dist2vs (OptionalArray): Optional distance to the active waypoint at
+            which a delayed VNAV descent should start [m].
         swvnavvs (ndarray): Switch: use the VNAV-computed vertical speed.
         inturn (ndarray): Switch: aircraft is currently in a turn.
         orig (list): Origin airport identifier per aircraft.
@@ -152,8 +153,6 @@ class Autopilot(TrafficArrays):
         with self.settrafarrays():
             # FMS directions
             self.trk = np.array([])
-            # TODO(abraham): #40 must split commanded CAS and Mach before spd can carry isqx metadata.
-            self.spd = np.array([])
             self.tas = np.array([])
             self.alt = np.array([])
             self.vs = np.array([])
@@ -220,7 +219,7 @@ class Autopilot(TrafficArrays):
     def create(self, n: int = 1) -> None:
         """Initialize autopilot state for n newly created aircraft.
 
-        Copies the initial track, speed and altitude from the traffic
+        Copies the initial track, airspeed and altitude from the traffic
         arrays, enables ToC/ToD logic, sets the default vertical speed
         (1500 fpm) and bank limit (25 deg), and creates an empty Route
         object for each new aircraft.
@@ -263,7 +262,7 @@ class Autopilot(TrafficArrays):
     def wppassingcheck(self, qdr: q.BearingDeg[np.ndarray], dist: q.DistanceM[np.ndarray]) -> None:
         """
         The actwp is the interface between the list of waypoint data in the route object and the autopilot guidance
-        when LNAV is on (heading) and optionally VNAV is on (speed & altitude)
+        when LNAV is on (heading) and optionally VNAV is on (airspeed & altitude)
 
         actwp data contains traffic arrays, to allow vectorizing the guidance logic.
 
@@ -295,16 +294,18 @@ class Autopilot(TrafficArrays):
 
         actwp = self.traffic.actwp
 
-        # Save current waypoint speed for use on next leg when we pass this waypoint
+        # Save current waypoint airspeed for use on the next leg when we pass this waypoint
         # VNAV speeds are always FROM-speeds, so we accelerate/decelerate at the waypoint
-        # where this speed is specified, so we need to save it for use now
+        # where this airspeed is specified, so we need to save it for use now
         # before getting the new data for the next waypoint
 
-        # Get speed for next leg from the waypoint we pass now and set as active speed
-        actwp.spd.values[self.idxreached] = actwp.nextspd.values[self.idxreached]
-        actwp.spd.present[self.idxreached] = actwp.nextspd.present[self.idxreached]
-        actwp.spdcon.values[self.idxreached] = actwp.nextspd.values[self.idxreached]
-        actwp.spdcon.present[self.idxreached] = actwp.nextspd.present[self.idxreached]
+        # Get airspeed for the next leg from the waypoint we pass now and set it active
+        actwp.airspeed.values[self.idxreached] = actwp.next_airspeed.values[self.idxreached]
+        actwp.airspeed.kind[self.idxreached] = actwp.next_airspeed.kind[self.idxreached]
+        actwp.airspeed_constraint.values[self.idxreached] = actwp.next_airspeed.values[
+            self.idxreached
+        ]
+        actwp.airspeed_constraint.kind[self.idxreached] = actwp.next_airspeed.kind[self.idxreached]
 
         # Event-driven part, per aircraft: stack commands attached to the passed
         # waypoint and route iteration. These mutate the Route objects and queue
@@ -331,7 +332,7 @@ class Autopilot(TrafficArrays):
             last = np.array(idxlast)
             self.traffic.swlnav[last] = False
             self.traffic.swvnav[last] = False
-            self.traffic.swvnavspd[last] = False
+            self.traffic.swvnavairspeed[last] = False
 
         # Vectorized leg data update for guidance, over the aircraft that
         # switched to a new waypoint
@@ -369,17 +370,21 @@ class Autopilot(TrafficArrays):
             )
 
             ntransitions = len(transitions)
-            nextspd = OptionalArray(np.zeros(ntransitions), np.zeros(ntransitions, dtype=bool))
+            next_airspeed = VariantArray(
+                np.zeros(ntransitions), np.zeros(ntransitions, dtype=np.uint8)
+            )
             nextaltco = OptionalArray(np.zeros(ntransitions), np.zeros(ntransitions, dtype=bool))
             xtoalt = OptionalArray(np.zeros(ntransitions), np.zeros(ntransitions, dtype=bool))
             torta = OptionalArray(np.zeros(ntransitions), np.zeros(ntransitions, dtype=bool))
             xtorta = OptionalArray(np.zeros(ntransitions), np.zeros(ntransitions, dtype=bool))
             turnrad = OptionalArray(np.zeros(ntransitions), np.zeros(ntransitions, dtype=bool))
-            turnspd = OptionalArray(np.zeros(ntransitions), np.zeros(ntransitions, dtype=bool))
+            turn_cas = OptionalArray(np.zeros(ntransitions), np.zeros(ntransitions, dtype=bool))
             turnhdgr = OptionalArray(np.zeros(ntransitions), np.zeros(ntransitions, dtype=bool))
             nextturnlat = OptionalArray(np.zeros(ntransitions), np.zeros(ntransitions, dtype=bool))
             nextturnlon = OptionalArray(np.zeros(ntransitions), np.zeros(ntransitions, dtype=bool))
-            nextturnspd = OptionalArray(np.zeros(ntransitions), np.zeros(ntransitions, dtype=bool))
+            next_turn_cas = OptionalArray(
+                np.zeros(ntransitions), np.zeros(ntransitions, dtype=bool)
+            )
             nextturnrad = OptionalArray(np.zeros(ntransitions), np.zeros(ntransitions, dtype=bool))
             nextturnhdgr = OptionalArray(np.zeros(ntransitions), np.zeros(ntransitions, dtype=bool))
             nextturnidx = OptionalArray(
@@ -390,8 +395,13 @@ class Autopilot(TrafficArrays):
             )
 
             for k, (transition, next_turn) in enumerate(zip(transitions, next_turns, strict=True)):
-                if transition.speed is not None:
-                    nextspd.set(k, transition.speed)
+                if transition.airspeed is not None:
+                    next_airspeed.values[k] = transition.airspeed.value
+                    next_airspeed.kind[k] = (
+                        OptionalAirspeedKind.CAS
+                        if isinstance(transition.airspeed, CasMps)
+                        else OptionalAirspeedKind.MACH
+                    )
                 if (altitude := transition.profile.altitude) is not None:
                     nextaltco.set(k, altitude.altitude)
                     xtoalt.set(k, altitude.distance)
@@ -399,8 +409,8 @@ class Autopilot(TrafficArrays):
                     torta.set(k, rta.time)
                     xtorta.set(k, rta.distance)
                 if transition.turn is not None:
-                    if transition.turn.speed is not None:
-                        turnspd.set(k, transition.turn.speed)
+                    if transition.turn.cas is not None:
+                        turn_cas.set(k, transition.turn.cas)
                     geometry = transition.turn.geometry
                     if isinstance(geometry, TurnRadius):
                         turnrad.set(k, geometry.radius)
@@ -410,8 +420,8 @@ class Autopilot(TrafficArrays):
                     nextturnlat.set(k, next_turn.latitude)
                     nextturnlon.set(k, next_turn.longitude)
                     nextturnidx.set(k, next_turn.waypoint_index)
-                    if next_turn.turn.speed is not None:
-                        nextturnspd.set(k, next_turn.turn.speed)
+                    if next_turn.turn.cas is not None:
+                        next_turn_cas.set(k, next_turn.turn.cas)
                     geometry = next_turn.turn.geometry
                     if isinstance(geometry, TurnRadius):
                         nextturnrad.set(k, geometry.radius)
@@ -424,8 +434,8 @@ class Autopilot(TrafficArrays):
             batched_qdr, _ = geo.qdrdist(lat, lon, nextleglat, nextleglon)
             next_qdr = OptionalArray(np.asarray(batched_qdr), has_nextleg.copy())
 
-            actwp.nextspd.values[nxt] = nextspd.values
-            actwp.nextspd.present[nxt] = nextspd.present
+            actwp.next_airspeed.values[nxt] = next_airspeed.values
+            actwp.next_airspeed.kind[nxt] = next_airspeed.kind
 
             # User-entered altitude guidance for the new waypoint/profile.
             actwp.nextaltco.values[nxt] = nextaltco.values
@@ -443,8 +453,8 @@ class Autopilot(TrafficArrays):
             actwp.nextturnlat.present[nxt] = nextturnlat.present
             actwp.nextturnlon.values[nxt] = nextturnlon.values
             actwp.nextturnlon.present[nxt] = nextturnlon.present
-            actwp.nextturnspd.values[nxt] = nextturnspd.values
-            actwp.nextturnspd.present[nxt] = nextturnspd.present
+            actwp.next_turn_cas.values[nxt] = next_turn_cas.values
+            actwp.next_turn_cas.present[nxt] = next_turn_cas.present
             actwp.nextturnrad.values[nxt] = nextturnrad.values
             actwp.nextturnrad.present[nxt] = nextturnrad.present
             actwp.nextturnhdgr.values[nxt] = nextturnhdgr.values
@@ -454,21 +464,21 @@ class Autopilot(TrafficArrays):
 
             tas = self.traffic.tas[nxt]
 
-            # Special turns: specified by turn radius, heading rate, and/or speed.
-            # If no turn speed is specified, use current speed for the active fly-turn.
-            has_turn_speed = turnspd.present
-            active_turn_speed = np.where(has_turn_speed, turnspd.values, self.traffic.cas[nxt])
+            # Special turns: specified by turn radius, heading rate, and/or CAS.
+            # If no turn CAS is specified, use current airspeed for the active fly-turn.
+            has_turn_speed = turn_cas.present
+            active_turn_speed = np.where(has_turn_speed, turn_cas.values, self.traffic.cas[nxt])
 
             # Use the previous turn geometry for bank angle in the current turn
             # (old values, from the waypoint we pass now; fancy indexing copies).
             oldturnrad = OptionalArray(actwp.turnrad.values[nxt], actwp.turnrad.present[nxt])
             oldturnhdgr = OptionalArray(actwp.turnhdgr.values[nxt], actwp.turnhdgr.present[nxt])
-            oldturnspd = OptionalArray(actwp.turnspd.values[nxt], actwp.turnspd.present[nxt])
+            old_turn_cas = OptionalArray(actwp.turn_cas.values[nxt], actwp.turn_cas.present[nxt])
             has_oldturnrad = oldturnrad.present
             has_oldturnhdgr = oldturnhdgr.present
-            has_oldturnspd = oldturnspd.present
+            has_old_turn_cas = old_turn_cas.present
             oldturntas = vcas2tas(
-                np.where(has_oldturnspd, oldturnspd.values, 0.0), self.traffic.alt[nxt]
+                np.where(has_old_turn_cas, old_turn_cas.values, 0.0), self.traffic.alt[nxt]
             )
             oldradius = np.where(
                 has_oldturnrad,
@@ -477,7 +487,7 @@ class Autopilot(TrafficArrays):
                 * 360.0
                 / (2.0 * np.pi * np.where(has_oldturnhdgr, oldturnhdgr.values, 1.0)),
             )
-            useoldturn = has_oldturnspd & (has_oldturnrad | has_oldturnhdgr)
+            useoldturn = has_old_turn_cas & (has_oldturnrad | has_oldturnhdgr)
             self.turnphi[nxt] = np.where(
                 useoldturn,
                 np.arctan(oldturntas * oldturntas / (np.where(useoldturn, oldradius, 1.0) * g0)),
@@ -487,10 +497,23 @@ class Autopilot(TrafficArrays):
             # Check LNAV switch returned by getnextwp
             # Switch off LNAV if it failed to get next waypoint data
             lnavoff = ~lnavon & self.traffic.swlnav[nxt]
-            # Last waypoint: copy last waypoint values for altitude and speed in autopilot
-            uselastspd = lnavoff & self.traffic.swvnavspd[nxt] & nextspd.present
-            self.traffic.selspd[nxt] = np.where(
-                uselastspd, nextspd.values, self.traffic.selspd[nxt]
+            # Last waypoint: copy last waypoint altitude and airspeed into the autopilot
+            has_next_airspeed = next_airspeed.kind != OptionalAirspeedKind.NONE
+            use_last_airspeed = lnavoff & self.traffic.swvnavairspeed[nxt] & has_next_airspeed
+            self.traffic.selected_airspeed.values[nxt] = np.where(
+                use_last_airspeed,
+                next_airspeed.values,
+                self.traffic.selected_airspeed.values[nxt],
+            )
+            next_selected_kind = np.where(
+                next_airspeed.kind == OptionalAirspeedKind.MACH,
+                AirspeedKind.MACH,
+                AirspeedKind.CAS,
+            )
+            self.traffic.selected_airspeed.kind[nxt] = np.where(
+                use_last_airspeed,
+                next_selected_kind,
+                self.traffic.selected_airspeed.kind[nxt],
             )
             self.traffic.swlnav[nxt] = self.traffic.swlnav[nxt] & lnavon
 
@@ -510,13 +533,27 @@ class Autopilot(TrafficArrays):
             actwp.curlegdir.set(nxt, qdrnxt)
             actwp.curleglen.set(nxt, dist[nxt])
 
-            # VNAV speed mode: use speed of this waypoint as commanded speed
-            # while passing waypoint and save next speed for passing next waypoint
-            # Speed is now from speed! Next speed is ready in waypoint data
-            active_spd = OptionalArray(actwp.spd.values[nxt], actwp.spd.present[nxt])
-            usewpspd = self.traffic.swvnavspd[nxt] & active_spd.present
-            self.traffic.selspd[nxt] = np.where(
-                usewpspd, active_spd.values, self.traffic.selspd[nxt]
+            # VNAV airspeed mode: use this waypoint airspeed as the commanded airspeed
+            # while passing waypoint and save next airspeed for passing next waypoint
+            # The next waypoint airspeed is already prepared in the waypoint data.
+            active_airspeed = VariantArray(actwp.airspeed.values[nxt], actwp.airspeed.kind[nxt])
+            use_waypoint_airspeed = self.traffic.swvnavairspeed[nxt] & (
+                active_airspeed.kind != OptionalAirspeedKind.NONE
+            )
+            self.traffic.selected_airspeed.values[nxt] = np.where(
+                use_waypoint_airspeed,
+                active_airspeed.values,
+                self.traffic.selected_airspeed.values[nxt],
+            )
+            active_selected_kind = np.where(
+                active_airspeed.kind == OptionalAirspeedKind.MACH,
+                AirspeedKind.MACH,
+                AirspeedKind.CAS,
+            )
+            self.traffic.selected_airspeed.kind[nxt] = np.where(
+                use_waypoint_airspeed,
+                active_selected_kind,
+                self.traffic.selected_airspeed.kind[nxt],
             )
 
             # Update turn distance so ComputeVNAV works, is there a next leg direction or not?
@@ -528,19 +565,17 @@ class Autopilot(TrafficArrays):
             )  # update turn distance for VNAV
 
             # Get flyturn switches and data
-            # old turn speed, turning by this waypoint
-            actwp.oldturnspd.values[nxt] = oldturnspd.values
-            actwp.oldturnspd.present[nxt] = oldturnspd.present
+            # old turn CAS, turning by this waypoint
+            actwp.old_turn_cas.values[nxt] = old_turn_cas.values
+            actwp.old_turn_cas.present[nxt] = old_turn_cas.present
             actwp.flyturn[nxt] = flyturn
             actwp.turnrad.values[nxt] = turnrad.values
             actwp.turnrad.present[nxt] = turnrad.present
             actwp.turnhdgr.values[nxt] = turnhdgr.values
             actwp.turnhdgr.present[nxt] = turnhdgr.present
             # Keep both turning speeds: turn to leg and turn from leg
-            active_turnspd = OptionalArray(np.zeros(len(nxt)), flyturn.copy())
-            active_turnspd.values[flyturn] = active_turn_speed[flyturn]
-            actwp.turnspd.values[nxt] = active_turnspd.values
-            actwp.turnspd.present[nxt] = active_turnspd.present
+            actwp.turn_cas.values[nxt] = active_turn_speed
+            actwp.turn_cas.present[nxt] = flyturn
 
             # Pass on whether currently flyturn mode:
             # at beginning of leg, copy to next waypoint to last waypoint
@@ -548,9 +583,9 @@ class Autopilot(TrafficArrays):
             actwp.turnfromlastwp[nxt] = actwp.turntonextwp[nxt]
             actwp.turntonextwp[nxt] = False
 
-            # Reduce turn distance for reduced turn speed
-            redturn = flyturn & ~turnrad.present & ~turnhdgr.present & has_turn_speed
-            turntas = vcas2tas(np.where(redturn, turnspd.values, 0.0), self.traffic.alt[nxt])
+            # Reduce turn distance for reduced turn CAS
+            redturn = flyturn & (~turnrad.present) & (~turnhdgr.present) & has_turn_speed
+            turntas = vcas2tas(np.where(redturn, turn_cas.values, 0.0), self.traffic.alt[nxt])
             actwp.turndist[nxt] = actwp.turndist[nxt] * np.where(
                 redturn, turntas * turntas / (tas * tas), 1.0
             )
@@ -561,16 +596,18 @@ class Autopilot(TrafficArrays):
 
         # End of the waypoint switching update
 
-        # Continuous guidance when speed constraint on active leg is in update-method
+        # Continuous guidance when airspeed constraint on active leg is in update-method
 
-        # If still an RTA in the route and currently no speed constraint
+        # If still an RTA in the route and currently no airspeed constraint
         has_rta = self.traffic.actwp.torta.present
-        has_speed_constraint = self.traffic.actwp.spdcon.present
+        has_speed_constraint = (
+            self.traffic.actwp.airspeed_constraint.kind != OptionalAirspeedKind.NONE
+        )
         for iac in np.where(has_rta & ~has_speed_constraint)[0]:
             iac = int(iac)
             route = self.route[iac]
             if (iwp := route.iactwp) is not None and route.wprta[iwp] is not None:
-                # For all aircraft flying to an RTA waypoint, recalculate speed more often
+                # For all aircraft flying to an RTA waypoint, recalculate the RTA airspeed more often
                 distance_to_waypoint = float(
                     np.asarray(
                         geo.kwikdist(
@@ -582,12 +619,24 @@ class Autopilot(TrafficArrays):
                     ).item()
                 )
 
-                # Set self.traffic.actwp.spd to RTA speed, if necessary
-                self.setspeedforRTA(iac, self.route[iac].wpprofile[iwp].rta, distance_to_waypoint)
+                # Set self.traffic.actwp.airspeed to the RTA airspeed, if necessary
+                self.set_airspeed_for_rta(
+                    iac, self.route[iac].wpprofile[iwp].rta, distance_to_waypoint
+                )
 
-                # If VNAV speed is on (by default coupled to VNAV), use it for speed guidance
-                if self.traffic.swvnavspd[iac] and self.traffic.actwp.spd.present[iac]:
-                    self.traffic.selspd[iac] = self.traffic.actwp.spd.values[iac]
+                # If VNAV airspeed guidance is on (by default coupled to VNAV), use it for airspeed guidance
+                if (
+                    self.traffic.swvnavairspeed[iac]
+                    and self.traffic.actwp.airspeed.kind[iac] != OptionalAirspeedKind.NONE
+                ):
+                    self.traffic.selected_airspeed.values[iac] = self.traffic.actwp.airspeed.values[
+                        iac
+                    ]
+                    self.traffic.selected_airspeed.kind[iac] = (
+                        AirspeedKind.MACH
+                        if self.traffic.actwp.airspeed.kind[iac] == OptionalAirspeedKind.MACH
+                        else AirspeedKind.CAS
+                    )
 
     def update(self) -> None:
         """Run the continuous FMS/autopilot guidance for all aircraft.
@@ -600,9 +649,10 @@ class Autopilot(TrafficArrays):
           of the active waypoint (using the vertical speed prepared by
           ComputeVNAV()).
         - LNAV track guidance: command the bearing to the active waypoint.
-        - FMS speed guidance: anticipate deceleration for upcoming turn
-          waypoints and acceleration/deceleration for speed constraints on
-          the next leg, and select the appropriate CAS/Mach command.
+        - FMS airspeed guidance: anticipate deceleration for upcoming turn
+          waypoints and acceleration/deceleration for airspeed constraints on
+          the next leg, and select the appropriate [`CAS` in m/s][minisky.values.CasMps]
+          or [`Mach`][minisky.values.Mach] command.
 
         The results are stored in the commanded-state arrays (trk, alt, vs,
         tas) and in the traffic selected-state arrays where applicable.
@@ -629,7 +679,7 @@ class Autopilot(TrafficArrays):
         self.qdr2wp.values[:] = qdr % 360.0
         self.qdr2wp.present[:] = has_route_guidance
         self.dist2wp.values[:] = distance_to_waypoint
-        self.dist2wp.present[:] = has_route_guidance
+        self.dist2wp.present[:] = self.qdr2wp.present
 
         # ================= Continuous FMS guidance ========================
 
@@ -701,18 +751,18 @@ class Autopilot(TrafficArrays):
         # LNAV commanded track angle
         self.trk = np.where(self.traffic.swlnav, qdr % 360.0, self.trk)
 
-        # FMS speed guidance: anticipate accel/decel distance for next leg or turn
+        # FMS airspeed guidance: anticipate accel/decel distance for next leg or turn
 
-        # Calculate actual distance it takes to decelerate/accelerate based on two cases: turning speed (decel)
+        # Calculate actual distance it takes to decelerate/accelerate based on two cases: turn CAS (deceleration)
 
-        # Normally next leg speed (actwp.spd) but in case we fly turns with a specified turn speed
-        # use the turn speed
+        # Normally next-leg airspeed (actwp.airspeed) but in case we fly turns with a specified turn CAS
+        # use the turn CAS
 
-        # Is turn speed specified and are we not already slow enough? We only decelerate for turns, not accel.
+        # Is turn CAS specified and are we not already slow enough? We only decelerate for turns, not accel.
         has_next_turn = self.traffic.actwp.nextturnidx.present
-        nextturnspd = self.traffic.actwp.nextturnspd
-        has_turn_speed = has_next_turn & nextturnspd.present
-        turncas = np.where(has_turn_speed, nextturnspd.values, self.traffic.selspd)
+        next_turn_cas = self.traffic.actwp.next_turn_cas
+        has_turn_speed = has_next_turn & (next_turn_cas.present)
+        turncas = np.where(has_turn_speed, next_turn_cas.values, self.traffic.cas)
         turntas = np.where(
             has_turn_speed,
             vcas2tas(turncas, self.traffic.alt),
@@ -720,26 +770,36 @@ class Autopilot(TrafficArrays):
         )
 
         # FIXME(abraham): BlueSky 55c641e (2023-06-21) used next-turn presence
-        # as turn-speed presence, so a fly-turn without TURNSPD could select missing speed.
+        # as turn-speed presence, so a fly-turn without TURNSPD could select missing CAS.
         # FIXME(abraham): the same commit used nextturnidx > 0, rejecting route index 0;
         # BlueSky 08194fa (2023-06-22) later corrected that check to >= 0.
 
         # t = (v1-v0)/a ; x = v0*t+1/2*a*t*t => dx = (v1*v1-v0*v0)/ (2a)
-        dxturnspdchg = distaccel(turntas, self.traffic.tas, self.traffic.perf.axmax)
+        dxturn_caschg = distaccel(turntas, self.traffic.tas, self.traffic.perf.axmax)
 
-        # Decelerate or accelerate for next required speed because of speed constraint or RTA speed
-        # Note that because nextspd comes from the stack, and can be either a mach number or
-        # a calibrated airspeed, it can only be converted from Mach / CAS [kts] to TAS [m/s]
-        # once the altitude is known.
-        nextspd = self.traffic.actwp.nextspd
-        has_next_speed = nextspd.present
-        nextspeed = np.where(has_next_speed, nextspd.values, self.traffic.selspd)
-        nexttas = vcasormach2tas(
-            nextspeed,
-            self.traffic.alt,
-            self.traffic.casmach_threshold,
+        # Decelerate or accelerate for the next explicit CAS/Mach constraint.
+        # Convert the explicit CAS/Mach constraint to TAS only once altitude is known.
+        next_airspeed = self.traffic.actwp.next_airspeed
+        has_next_airspeed = next_airspeed.kind != OptionalAirspeedKind.NONE
+        next_airspeed_kind = np.where(
+            next_airspeed.kind == OptionalAirspeedKind.MACH,
+            AirspeedKind.MACH,
+            AirspeedKind.CAS,
         )
-        dxspdconchg = distaccel(self.traffic.tas, nexttas, self.traffic.perf.axmax)
+        next_airspeed_value = np.where(
+            has_next_airspeed,
+            next_airspeed.values,
+            self.traffic.selected_airspeed.values,
+        )
+        next_airspeed_kind = np.where(
+            has_next_airspeed, next_airspeed_kind, self.traffic.selected_airspeed.kind
+        ).astype(np.uint8)
+        next_tas = vcasmach2tas(
+            next_airspeed_value, next_airspeed_kind == AirspeedKind.MACH, self.traffic.alt
+        )
+        distance_for_airspeed_change = distaccel(
+            self.traffic.tas, next_tas, self.traffic.perf.axmax
+        )
 
         qdrturn = np.zeros_like(self.traffic.lat)
         dist2turn = np.zeros_like(self.traffic.lat)
@@ -756,81 +816,104 @@ class Autopilot(TrafficArrays):
         self.qdrturn.values[:] = qdrturn
         self.qdrturn.present[:] = has_next_turn
         self.dist2turn.values[:] = dist2turn
-        self.dist2turn.present[:] = has_next_turn
+        self.dist2turn.present[:] = self.qdrturn.present
 
         # Check also whether VNAVSPD is on, if not, SPD SEL has override for next leg
         # and same for turn logic
-        usenextspdcon = (
-            (distance_to_waypoint < dxspdconchg)
-            & has_next_speed
-            & self.traffic.swvnavspd
+        use_next_airspeed = (
+            (distance_to_waypoint < distance_for_airspeed_change)
+            & has_next_airspeed
+            & self.traffic.swvnavairspeed
             & self.traffic.swvnav
             & self.traffic.swlnav
         )
 
-        useturnspd = (
+        useturn_cas = (
             np.logical_or(
                 self.traffic.actwp.turntonextwp,
-                has_next_turn & (dist2turn < (dxturnspdchg + self.traffic.actwp.turndist)),
+                has_next_turn & (dist2turn < (dxturn_caschg + self.traffic.actwp.turndist)),
             )
             & has_turn_speed
-            & self.traffic.swvnavspd
+            & self.traffic.swvnavairspeed
             & self.traffic.swvnav
             & self.traffic.swlnav
         )
 
         # Hold turn mode can only be switched on here, cannot be switched off here (happeps upon passing wp)
         self.traffic.actwp.turntonextwp = self.traffic.swlnav & np.logical_or(
-            self.traffic.actwp.turntonextwp, useturnspd
+            self.traffic.actwp.turntonextwp, useturn_cas
         )
 
         # Which CAS/Mach do we have to keep? VNAV, last turn or next turn?
         oncurrentleg = abs(degto180(self.traffic.trk - qdr)) < 2.0  # [deg]
-        oldturnspd = self.traffic.actwp.oldturnspd
-        has_oldturnspd = oldturnspd.present
-        inoldturn = has_oldturnspd & np.logical_not(oncurrentleg)
+        old_turn_cas = self.traffic.actwp.old_turn_cas
+        has_old_turn_cas = old_turn_cas.present
+        inoldturn = has_old_turn_cas & np.logical_not(oncurrentleg)
 
         # Avoid using old turning speeds when turning of this leg to the next leg
         # by disabling (old) turningspd when on leg
-        self.traffic.actwp.oldturnspd.clear(oncurrentleg & has_oldturnspd)
+        self.traffic.actwp.old_turn_cas.clear(oncurrentleg & has_old_turn_cas)
 
         # turnfromlastwp can only be switched off here, not on (latter happens upon passing wp)
         self.traffic.actwp.turnfromlastwp = np.logical_and(
             self.traffic.actwp.turnfromlastwp, inoldturn
         )
 
-        # Select speed: turn sped, next speed constraint, or current speed constraint
-        spdcon = self.traffic.actwp.spdcon
-        spd = self.traffic.actwp.spd
-        has_speed_constraint = spdcon.present & spd.present
-        self.traffic.selspd = np.where(
-            useturnspd,
-            nextturnspd.values,
+        # Select turn CAS, next route airspeed, active route airspeed, or keep selection.
+        active_constraint = self.traffic.actwp.airspeed_constraint
+        active_airspeed = self.traffic.actwp.airspeed
+        has_active_airspeed = (active_constraint.kind != OptionalAirspeedKind.NONE) & (
+            active_airspeed.kind != OptionalAirspeedKind.NONE
+        )
+        use_active_airspeed = has_active_airspeed & self.traffic.swvnavairspeed
+        active_airspeed_kind = np.where(
+            active_airspeed.kind == OptionalAirspeedKind.MACH,
+            AirspeedKind.MACH,
+            AirspeedKind.CAS,
+        )
+        self.traffic.selected_airspeed.values[:] = np.where(
+            useturn_cas,
+            next_turn_cas.values,
             np.where(
-                usenextspdcon,
-                nextspd.values,
+                use_next_airspeed,
+                next_airspeed.values,
                 np.where(
-                    has_speed_constraint & self.traffic.swvnavspd,
-                    spd.values,
-                    self.traffic.selspd,
+                    use_active_airspeed,
+                    active_airspeed.values,
+                    self.traffic.selected_airspeed.values,
                 ),
             ),
         )
+        self.traffic.selected_airspeed.kind[:] = np.where(
+            useturn_cas,
+            AirspeedKind.CAS,
+            np.where(
+                use_next_airspeed,
+                next_airspeed_kind,
+                np.where(
+                    use_active_airspeed,
+                    active_airspeed_kind,
+                    self.traffic.selected_airspeed.kind,
+                ),
+            ),
+        ).astype(np.uint8)
 
-        # Temporary override when still in old turn
-        self.traffic.selspd = np.where(
-            inoldturn & self.traffic.swvnavspd & self.traffic.swvnav & self.traffic.swlnav,
-            oldturnspd.values,
-            self.traffic.selspd,
+        # A fly-turn CAS is always calibrated airspeed.
+        use_old_turn_airspeed = (
+            inoldturn & self.traffic.swvnavairspeed & self.traffic.swvnav & self.traffic.swlnav
         )
+        self.traffic.selected_airspeed.values[:] = np.where(
+            use_old_turn_airspeed, old_turn_cas.values, self.traffic.selected_airspeed.values
+        )
+        self.traffic.selected_airspeed.kind[:] = np.where(
+            use_old_turn_airspeed, AirspeedKind.CAS, self.traffic.selected_airspeed.kind
+        ).astype(np.uint8)
 
-        self.inturn = np.logical_or(useturnspd, inoldturn)
-
-        # Below crossover altitude: CAS=const, above crossover altitude: Mach = const
-        self.tas = vcasormach2tas(
-            self.traffic.selspd,
+        self.inturn = np.logical_or(useturn_cas, inoldturn)
+        self.tas = vcasmach2tas(
+            self.traffic.selected_airspeed.values,
+            self.traffic.selected_airspeed.kind == AirspeedKind.MACH,
             self.traffic.alt,
-            self.traffic.casmach_threshold,
         )
 
     def ComputeVNAV(
@@ -869,9 +952,9 @@ class Autopilot(TrafficArrays):
             distance_to_waypoint: Current distance to the active waypoint [m].
         """
 
-        # Check whether active waypoint speed needs to be adjusted for RTA.
-        # setspeedforRTA sets self.traffic.actwp.spd if necessary.
-        self.setspeedforRTA(idx, profile.rta, distance_to_waypoint)
+        # Check whether active waypoint airspeed needs to be adjusted for RTA.
+        # set_airspeed_for_rta sets self.traffic.actwp.airspeed if necessary.
+        self.set_airspeed_for_rta(idx, profile.rta, distance_to_waypoint)
         self.dist2vs.clear(idx)
 
         # Check if there is a target altitude and VNAV is on, else return doing nothing.
@@ -1030,16 +1113,16 @@ class Autopilot(TrafficArrays):
 
         return
 
-    def setspeedforRTA(
+    def set_airspeed_for_rta(
         self, idx: int, target: RtaTarget | None, distance_to_waypoint: q.DistanceM[float]
     ) -> q.CalibratedAirspeedMps[float] | None:
-        """Compute and set the speed required to meet an RTA constraint.
+        """Compute and set the [`CAS` in m/s][minisky.values.CasMps] required to meet an RTA constraint.
 
         Calculates the ground speed needed to cover the remaining distance
         to the RTA waypoint exactly at the required time (see calcvrta()),
         corrects for the tailwind component and converts to CAS. When no
-        explicit speed constraint is active and VNAV speed guidance is on,
-        the result is stored as the active waypoint speed command.
+        explicit airspeed constraint is active and VNAV airspeed guidance is on,
+        the result is stored as the active waypoint airspeed command.
 
         Args:
             idx: Aircraft index (scalar).
@@ -1047,7 +1130,7 @@ class Autopilot(TrafficArrays):
             distance_to_waypoint: Distance to the active waypoint [m].
 
         Returns:
-            Required CAS [m/s], or None when there is no feasible RTA.
+            Required [`CAS` in m/s][minisky.values.CasMps], or None when there is no feasible RTA.
         """
         if target is None:
             return None
@@ -1066,17 +1149,20 @@ class Autopilot(TrafficArrays):
             # Convert to CAS
             rtacas = tas2cas(gsrta - tailwind, self.traffic.alt[idx])
 
-            # Performance limits on speed will be applied in traf.update
-            if not self.traffic.actwp.spdcon.present[idx] and self.traffic.swvnavspd[idx]:
-                self.traffic.actwp.spd.set(idx, rtacas)
-                # print("setspeedforRTA: xtorta =",xtorta)
+            # Performance airspeed limits will be applied in traf.update
+            if (
+                self.traffic.actwp.airspeed_constraint.kind[idx] == OptionalAirspeedKind.NONE
+                and self.traffic.swvnavairspeed[idx]
+            ):
+                self.traffic.actwp.airspeed.values[idx] = rtacas
+                self.traffic.actwp.airspeed.kind[idx] = OptionalAirspeedKind.CAS
 
             return rtacas
 
         # FIXME(abraham): BlueSky f352d73 (2019-07-14) left the previous RTA-derived
-        # speed active after the RTA became infeasible; clear computed speed when no constraint owns it.
-        if not self.traffic.actwp.spdcon.present[idx]:
-            self.traffic.actwp.spd.clear(idx)
+        # stale RTA airspeed active after the RTA became infeasible; clear it when no constraint owns it.
+        if self.traffic.actwp.airspeed_constraint.kind[idx] == OptionalAirspeedKind.NONE:
+            self.traffic.actwp.airspeed.kind[idx] = OptionalAirspeedKind.NONE
         return None
 
     @command(name="ALT")
@@ -1163,8 +1249,8 @@ class Autopilot(TrafficArrays):
                 self.traffic.lat[idx], self.traffic.lon[idx], self.traffic.alt[idx]
             )
             wind_track = np.degrees(np.arctan2(taseast + wind_east, tasnorth + wind_north)) % 360.0
-            # Above 50ft: compute track based on wind
-            # Below 50ft: track equals heading
+            # TODO: switch above 50 ft AGL is inherited from bluesky
+            # and is scheduled for removal when we implement #22 (AGL)
             self.trk[idx] = np.where(
                 self.traffic.alt[idx] > q.ft_to_m(50.0), wind_track, resolved_hdg
             )
@@ -1175,35 +1261,17 @@ class Autopilot(TrafficArrays):
         return Ok(f"heading set to {resolved_hdg} deg")
 
     @command(name="SPD", aliases=("SPEED",))
-    def selspdcmd(
-        self, idx: AcIdSelection, casmach: SpeedMpsOrMach
-    ) -> Result[str, str]:  # SPD command
-        """Select the autopilot speed.
-
-        Implements the SPD stack command: `SPD acid, casmach`. Switches
-        off VNAV speed guidance, as a manually selected speed overrides the
-        FMS speed. Whether CAS or Mach is held during altitude changes
-        depends on the position relative to the crossover altitude.
-
-        Args:
-            idx: Aircraft index.
-            casmach: Selected speed: CAS [m/s] or Mach [-] (values above 1.0
-                are interpreted as CAS; stack input in kts or Mach).
-        """
-        # Depending on or position relative to crossover altitude,
-        # we will maintain CAS or Mach when altitude changes
-        # We will convert values when needed
-        self.traffic.selspd[idx] = casmach
-
-        # Used to be: Switch off VNAV: SPD command overrides
-        self.traffic.swvnavspd[idx] = False
-
-        if casmach > 1.0:
-            msg = f"speed set to {q.mps_to_kt(casmach)} kts"
+    def select_airspeed(self, idx: AcIdSelection, airspeed: CasMps | Mach) -> Result[str, str]:
+        """Select [`CAS` in m/s][minisky.values.CasMps] or [`Mach`][minisky.values.Mach] explicitly."""
+        self.traffic.selected_airspeed.values[idx] = airspeed.value
+        if isinstance(airspeed, CasMps):
+            self.traffic.selected_airspeed.kind[idx] = AirspeedKind.CAS
+            message = f"airspeed set to {q.mps_to_kt(airspeed.value):g} kt CAS"
         else:
-            msg = f"speed set to Mach {casmach}"
-
-        return Ok(msg)
+            self.traffic.selected_airspeed.kind[idx] = AirspeedKind.MACH
+            message = f"airspeed set to Mach {airspeed.value:g}"
+        self.traffic.swvnavairspeed[idx] = False
+        return Ok(message)
 
     @command(name="DEST")
     def show_destination(self, acidx: AcId) -> Result[str, str]:
@@ -1212,15 +1280,16 @@ class Autopilot(TrafficArrays):
 
     @command(name="DEST")
     def set_destination(
-        self, acidx: AcId, waypoint: Wpt, casmach: SpeedMpsOrMach | None = None
+        self, acidx: AcId, waypoint: Wpt, airspeed: CasMps | Mach | None = None
     ) -> Result[str, str]:
-        """Set the destination of an aircraft, with an optional speed constraint."""
+        """Set the destination with an optional [`CAS` in m/s][minisky.values.CasMps] or [`Mach`][minisky.values.Mach] constraint."""
         route = self.route[acidx]
         wpname = _waypoint_name(waypoint)
         if isinstance(position := _resolve_waypoint(self.traffic, acidx, route, waypoint), Err):
             return Err("DEST: " + position.err())
         coordinates = position.ok()
         self.dest[acidx] = wpname
+        # TODO(abraham): use MSL elevation (see issue #22)
         if (
             iwp := route.add_waypoint(
                 acidx,
@@ -1229,7 +1298,7 @@ class Autopilot(TrafficArrays):
                 coordinates.lat,
                 coordinates.lon,
                 0.0,
-                casmach,
+                airspeed,
             )
         ) is None:
             return Err("DEST position" + self.dest[acidx] + " not found.")
@@ -1259,6 +1328,7 @@ class Autopilot(TrafficArrays):
 
         # Origin: bookkeeping only for now, store in route as origin
         self.orig[acidx] = wpname
+        # TODO(abraham): use MSL elevation (see issue #22)
         if (
             route.add_waypoint(
                 acidx,
@@ -1267,7 +1337,7 @@ class Autopilot(TrafficArrays):
                 coordinates.lat,
                 coordinates.lon,
                 0.0,
-                self.traffic.cas[acidx],
+                CasMps(float(self.traffic.cas[acidx])),
             )
             is None
         ):
@@ -1281,7 +1351,7 @@ class Autopilot(TrafficArrays):
         output: list[str] = []
         for i in idx:
             msg = f"{self.traffic.callsign[i]}: VNAV is {'ON' if self.traffic.swvnav[i] else 'OFF'}"
-            if not self.traffic.swvnavspd[i]:
+            if not self.traffic.swvnavairspeed[i]:
                 msg += " but VNAVSPD is OFF"
             output.append(msg)
         return Ok("\n".join(output))
@@ -1302,7 +1372,7 @@ class Autopilot(TrafficArrays):
                         + ": no waypoints or destination specified"
                     )
                 self.traffic.swvnav[i] = True
-                self.traffic.swvnavspd[i] = True
+                self.traffic.swvnavairspeed[i] = True
                 route.calcfp()
                 actwpidx = route.iactwp
                 assert actwpidx is not None
@@ -1325,7 +1395,7 @@ class Autopilot(TrafficArrays):
                     self.traffic.actwp.nextaltco.set(i, profile.altitude.altitude)
             else:
                 self.traffic.swvnav[i] = False
-                self.traffic.swvnavspd[i] = False
+                self.traffic.swvnavairspeed[i] = False
         return Ok(f"VNAV {'ON' if flag else 'OFF'}")
 
     @command(name="LNAV")

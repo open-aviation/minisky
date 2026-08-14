@@ -7,15 +7,23 @@ import pytest
 from minisky import MiniSky
 from minisky import quantities as q
 from minisky.simulation import Simulation
-from minisky.traffic.conditional import AltitudeCondition, SpeedCondition
+from minisky.traffic.conditional import AirspeedCondition, AltitudeCondition
 from minisky.traffic.wind import WindFieldKind
-from minisky.values import StdPressureAltM
+from minisky.values import CasMps, Mach, StdPressureAltM
 from tests._types import RunCommand
 
 
 class TestCreate:
     def test_cre_single(self, runtime: MiniSky, sim: Simulation) -> None:
-        result = runtime.traffic.cre("KL001", "A320", lat=52.0, lon=4.0, hdg=90, alt=StdPressureAltM(3000), spd=150)
+        result = runtime.traffic.cre(
+            "KL001",
+            "A320",
+            lat=52.0,
+            lon=4.0,
+            hdg=90,
+            alt=StdPressureAltM(3000.0),
+            airspeed=CasMps(150.0),
+        )
         assert result.is_ok()
         assert runtime.traffic.ntraf == 1
         assert runtime.traffic.callsign[0] == "KL001"
@@ -63,7 +71,7 @@ class TestCreate:
 
     def test_cre_echoes_confirmation(self, runtime: MiniSky, run_cmd: RunCommand) -> None:
         # Command results must reach the output buffer (scr.echo), not stdout only
-        out = run_cmd("CRE KL204,B744,52,4,45,FL250,350")
+        out = run_cmd("CRE KL204,B744,52,4,45,FL250,350KT[CAS]")
         assert out == "Aircraft KL204 created"
 
 
@@ -76,7 +84,7 @@ class TestArrays:
         assert len(runtime.traffic.callsign) == n
 
     def test_speed_arrays_initialized(self, runtime: MiniSky, sim: Simulation) -> None:
-        runtime.traffic.cre("KL001", spd=150, alt=StdPressureAltM(3000))
+        runtime.traffic.cre("KL001", airspeed=CasMps(150.0), alt=StdPressureAltM(3000.0))
         assert runtime.traffic.tas[0] > 0
         assert runtime.traffic.gs[0] == pytest.approx(runtime.traffic.tas[0])
 
@@ -126,7 +134,14 @@ class TestStep:
         assert runtime.simulation.simt == 0
 
     def test_aircraft_moves_when_stepped(self, runtime: MiniSky, sim: Simulation) -> None:
-        runtime.traffic.cre("KL001", lat=52.0, lon=4.0, hdg=90, alt=StdPressureAltM(q.ft_to_m(10000.0)), spd=250)
+        runtime.traffic.cre(
+            "KL001",
+            lat=52.0,
+            lon=4.0,
+            hdg=90,
+            alt=StdPressureAltM(q.ft_to_m(10000.0)),
+            airspeed=CasMps(250.0),
+        )
         for _ in range(10):
             runtime.simulation.step()
         # eastbound: longitude increases, latitude nearly constant
@@ -136,8 +151,8 @@ class TestStep:
 
 class TestCreCmd:
     def test_clrcrecmd_with_pending_commands(self, runtime: MiniSky, run_cmd: RunCommand) -> None:
-        run_cmd("CRECMD SPD 250")
-        assert runtime.traffic.crecmdlist == ["SPD 250"]
+        run_cmd("CRECMD SPD 250KT[CAS]")
+        assert runtime.traffic.crecmdlist == ["SPD 250KT[CAS]"]
         out = run_cmd("CLRCRECMD")
         assert runtime.traffic.crecmdlist == []
         assert "All 1 crecmd commands deleted" in out
@@ -149,25 +164,26 @@ class TestCreCmd:
 
 
 class TestConditional:
-    def test_atspd_seeds_condition_with_cas(self, runtime: MiniSky, sim: Simulation) -> None:
-        runtime.traffic.cre("KL001", alt=StdPressureAltM(q.ft_to_m(25000.0)), spd=150)
-        cas, tas = runtime.traffic.cas[0], runtime.traffic.tas[0]
-        assert tas > cas  # TAS exceeds CAS at altitude
-        # Target between current CAS and TAS: not crossed in CAS terms
-        target = 0.5 * (cas + tas)
+    def test_atspd_mach_target_uses_actual_mach(self, runtime: MiniSky, sim: Simulation) -> None:
+        runtime.traffic.cre(
+            "KL001", alt=StdPressureAltM(q.ft_to_m(25000.0)), airspeed=CasMps(150.0)
+        )
+        actual_mach = float(runtime.traffic.M[0])
+        target = Mach(actual_mach + 0.05)
+
         runtime.traffic.cond.atspdcmd(0, target, "KL001 LNAV ON")
-        # Seed must be based on CAS, like the comparison in update().
         condition = runtime.traffic.cond.conditions[-1]
-        assert isinstance(condition, SpeedCondition)
-        assert condition.last_difference == pytest.approx(target - cas)
-        # The speed did not cross the target, so nothing may trigger
-        ncond = runtime.traffic.cond.ncond
+        assert isinstance(condition, AirspeedCondition)
+        assert condition.last_difference == pytest.approx(0.05)
+
         runtime.traffic.cond.update()
-        assert runtime.traffic.cond.ncond == ncond
+        assert runtime.traffic.cond.ncond == 1
 
     def test_renameac_updates_pending_conditions(self, runtime: MiniSky, sim: Simulation) -> None:
-        runtime.traffic.cre("KL001", alt=StdPressureAltM(q.ft_to_m(10000.0)), spd=150)
-        runtime.traffic.cond.ataltcmd(0, StdPressureAltM(q.ft_to_m(5000.0)), "KL001 SPD 200")
+        runtime.traffic.cre(
+            "KL001", alt=StdPressureAltM(q.ft_to_m(10000.0)), airspeed=CasMps(150.0)
+        )
+        runtime.traffic.cond.ataltcmd(0, StdPressureAltM(q.ft_to_m(5000.0)), "KL001 SPD 200KT[CAS]")
         runtime.traffic.cond.renameac("KL001", "KL999")
         condition = runtime.traffic.cond.conditions[-1]
         assert isinstance(condition, AltitudeCondition)
@@ -238,7 +254,7 @@ class TestNoise:
     def test_noise_on_via_stack_steps_without_crash(
         self, runtime: MiniSky, run_cmd: RunCommand
     ) -> None:
-        run_cmd("CRE KL001,A320,52,4,90,FL250,300")
+        run_cmd("CRE KL001,A320,52,4,90,FL250,300KT[CAS]")
         run_cmd("NOISE ON")
         assert runtime.traffic.turbulence.active
         for _ in range(5):
@@ -260,7 +276,7 @@ class TestTrails:
             runtime.traffic._children.remove(trails)
 
     def test_trail_on_update_and_buffer(self, runtime: MiniSky, run_cmd: RunCommand) -> None:
-        run_cmd("CRE KL001,A320,52,4,90,FL250,300")
+        run_cmd("CRE KL001,A320,52,4,90,FL250,300KT[CAS]")
         run_cmd("TRAIL ON 1")
         assert runtime.traffic.trails.active
         for _ in range(5):

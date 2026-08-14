@@ -9,18 +9,18 @@ from tests._types import RunCommand, StepUntil
 
 class TestPluginWiring:
     def test_membership_from_typecode(self, mcruntime: MiniSky, run_mc: RunCommand) -> None:
-        run_mc("CRE D1,MAVIC,52,4,90,100,20")
-        run_mc("CRE KL001,A320,53,4,90,FL100,250")
+        run_mc("CRE D1,MAVIC,52,4,90,100,20KT[CAS]")
+        run_mc("CRE KL001,A320,53,4,90,FL100,250KT[CAS]")
         assert "ON" in run_mc("MCOPT D1")
         assert "OFF" in run_mc("MCOPT KL001")
 
     def test_yaw_rejects_non_multicopter(self, mcruntime: MiniSky, run_mc: RunCommand) -> None:
-        run_mc("CRE KL001,A320,53,4,90,FL100,250")
+        run_mc("CRE KL001,A320,53,4,90,FL100,250KT[CAS]")
         assert "not a multicopter" in run_mc("YAW KL001 90")
         assert "not a multicopter" in run_mc("HOVER KL001")
 
     def test_yawrate_set_and_report(self, mcruntime: MiniSky, run_mc: RunCommand) -> None:
-        run_mc("CRE D1,MAVIC,52,4,90,100,20")
+        run_mc("CRE D1,MAVIC,52,4,90,100,20KT[CAS]")
         run_mc("YAWRATE D1 45")
         assert "45" in run_mc("YAWRATE D1")
 
@@ -30,8 +30,8 @@ class TestHoverAndYaw:
         self, mcruntime: MiniSky, run_mc: RunCommand, step_mc: StepUntil
     ) -> None:
         traf = mcruntime.traffic
-        run_mc("CRE D1,MAVIC,52,4,90,100,20")
-        run_mc("SPD D1 0")
+        run_mc("CRE D1,MAVIC,52,4,90,100,20KT[CAS]")
+        run_mc("SPD D1 0KT[CAS]")
         step_mc(lambda: traf.gs[0] == 0.0, 20)
 
         lat0, lon0 = float(traf.lat[0]), float(traf.lon[0])
@@ -45,8 +45,8 @@ class TestHoverAndYaw:
         self, mcruntime: MiniSky, run_mc: RunCommand, step_mc: StepUntil
     ) -> None:
         traf = mcruntime.traffic
-        run_mc("CRE D1,MAVIC,52,4,0,100,20")
-        run_mc("SPD D1 0")
+        run_mc("CRE D1,MAVIC,52,4,0,100,20KT[CAS]")
+        run_mc("SPD D1 0KT[CAS]")
         step_mc(lambda: traf.gs[0] == 0.0, 20)
         run_mc("YAWRATE D1 10")
         lat0, lon0 = float(traf.lat[0]), float(traf.lon[0])
@@ -65,7 +65,7 @@ class TestHoverAndYaw:
         self, mcruntime: MiniSky, run_mc: RunCommand, step_mc: StepUntil
     ) -> None:
         traf = mcruntime.traffic
-        run_mc("CRE D1,MAVIC,52,4,90,100,20")
+        run_mc("CRE D1,MAVIC,52,4,90,100,20KT[CAS]")
         run_mc("YAWRATE D1 30")
         lon0 = float(traf.lon[0])
 
@@ -82,7 +82,7 @@ class TestRouteFollowing:
         self, mcruntime: MiniSky, run_mc: RunCommand, step_mc: StepUntil
     ) -> None:
         traf = mcruntime.traffic
-        run_mc("CRE D1,MAVIC,52,4,90,100,30")
+        run_mc("CRE D1,MAVIC,52,4,90,100,30KT[CAS]")
         run_mc("ADDWPT D1 52,4.005")
         run_mc("ADDWPT D1 52.005,4.005")
         run_mc("LNAV D1 ON")
@@ -107,7 +107,7 @@ class TestRouteFollowing:
         self, mcruntime: MiniSky, run_mc: RunCommand, step_mc: StepUntil
     ) -> None:
         traf = mcruntime.traffic
-        run_mc("CRE D1,MAVIC,52,4,90,100,30")
+        run_mc("CRE D1,MAVIC,52,4,90,100,30KT[CAS]")
         run_mc("ADDWPT D1 52,4.02")
         run_mc("LNAV D1 ON")
         step_mc(lambda: traf.gs[0] > 5.0, 10)
@@ -133,7 +133,7 @@ class TestRouteFollowing:
         traf = mcruntime.traffic
         ap = traf.ap
         assert isinstance(ap, MulticopterAutopilot)
-        run_mc("CRE D1,MAVIC,52,4,90,400,20")
+        run_mc("CRE D1,MAVIC,52,4,90,400,20KT[CAS]")
         run_mc("ADDWPT D1 52,4.02")
         run_mc("LNAV D1 ON")
         step_mc(lambda: traf.gs[0] > 5.0, 10)
@@ -161,7 +161,7 @@ class TestRouteFollowing:
         """A delivery profile written in scenario commands: hover, ALT down,
         ALT back up, LNAV ON to resume."""
         traf = mcruntime.traffic
-        run_mc("CRE D1,MAVIC,52,4,90,400,20")
+        run_mc("CRE D1,MAVIC,52,4,90,400,20KT[CAS]")
         run_mc("ADDWPT D1 52,4.02")
         run_mc("LNAV D1 ON")
         step_mc(lambda: traf.gs[0] > 5.0, 10)
@@ -197,12 +197,12 @@ class TestFixedWingRegression:
         multicopter to exercise the fleet-wide override paths.
         """
         commands = [
-            "CRE KL001,A320,52,4,90,FL100,250",
+            "CRE KL001,A320,52,4,90,FL100,250KT[CAS]",
             "ALT KL001 FL120",
-            "SPD KL001 280",
+            "SPD KL001 280KT[CAS]",
         ]
-        mcruntime.commands.stack("CRE D2,MAVIC,52.1,4,90,100,20")
-        mcruntime.commands.stack("SPD D2 0")
+        mcruntime.commands.stack("CRE D2,MAVIC,52.1,4,90,100,20KT[CAS]")
+        mcruntime.commands.stack("SPD D2 0KT[CAS]")
         for cmd in commands:
             mcruntime.commands.stack(cmd)
             runtime.commands.stack(cmd)

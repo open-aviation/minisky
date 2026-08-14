@@ -27,7 +27,6 @@ from minisky.command import (
     RunwayHeadingRequest,
     SimTimeS,
     Spanned,
-    SpeedMpsOrMach,
     Text,
     TimeS,
     Token,
@@ -50,8 +49,11 @@ from minisky.plugin.plugin import (
 )
 from minisky.plugin.plugin_decorators import HookName, hook, replacement
 from minisky.values import (
+    AirspeedKind,
+    CasMps,
     GroundTrackDeg,
     LatLonDegrees,
+    Mach,
     MagneticHeadingDeg,
     MslAltM,
     StdPressureAltM,
@@ -61,7 +63,9 @@ from minisky.values import (
 __all__ = (
     "AcId",
     "AcIdSelection",
+    "AirspeedKind",
     "ArgumentIssue",
+    "CasMps",
     "CmdParser",
     "CommandCursor",
     "CommandField",
@@ -75,6 +79,7 @@ __all__ = (
     "Keyword",
     "LatLonDeg",
     "LatLonDegrees",
+    "Mach",
     "MagneticHeadingDeg",
     "MslAltM",
     "NamedWaypoint",
@@ -92,7 +97,6 @@ __all__ = (
     "RunwayHeadingRequest",
     "SimTimeS",
     "Spanned",
-    "SpeedMpsOrMach",
     "StdPressureAltM",
     "Text",
     "TimeS",

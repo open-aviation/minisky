@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, NamedTuple
 import numpy as np
 
 from minisky import quantities as q
-from minisky.core.trafficarrays import OptionalArray, TrafficArrays
+from minisky.core.trafficarrays import OptionalArray, TrafficArrays, VariantArray
 from minisky.tools.aero import g0, vcas2tas
 from minisky.tools.convert import degto180
 
@@ -28,42 +28,42 @@ class ActiveWaypoint(TrafficArrays):
 
     The autopilot copies waypoint data from the route into these arrays
     upon waypoint switching (see Autopilot.wppassingcheck() and
-    route.direct()), so the continuous guidance can be vectorized. Optional
-    per-aircraft values use `OptionalArray` where `present = False` means
-    the corresponding guidance value is not available for that aircraft.
+    route.direct()), so the continuous guidance can be vectorized. Simple optional
+    per-aircraft values use `OptionalArray`; optional [`CAS` in m/s][minisky.values.CasMps]
+    or [`Mach`][minisky.values.Mach] values use `VariantArray`.
 
     Attributes:
         lat (ndarray): Active waypoint latitude [deg].
         lon (ndarray): Active waypoint longitude [deg].
         nextturnlat (ndarray): Next turn waypoint latitude [deg].
         nextturnlon (ndarray): Next turn waypoint longitude [deg].
-        nextturnspd (ndarray): Next turn waypoint turn speed (CAS) [m/s].
+        next_turn_cas (ndarray): Next turn waypoint turn [`CAS` in m/s][minisky.values.CasMps].
         nextturnrad (ndarray): Next turn waypoint turn radius [m].
         nextturnhdgr (ndarray): Next turn waypoint heading rate [deg/s].
         nextturnidx (ndarray): Route index of the next turn waypoint.
         nextaltco (ndarray): Next altitude constraint [m].
         xtoalt (ndarray): Distance to the next altitude constraint [m].
-        nextspd (ndarray): Speed for the next leg, from the current
-            waypoint: CAS [m/s] or Mach [-].
-        spd (ndarray): Active speed command (constraint or computed):
-            CAS [m/s] or Mach [-].
-        spdcon (ndarray): Active waypoint speed constraint:
-            CAS [m/s] or Mach [-].
+        next_airspeed (VariantArray): Optional [`CAS` in m/s][minisky.values.CasMps]
+            or [`Mach`][minisky.values.Mach] value for the next leg.
+        airspeed (VariantArray): Optional active [`CAS` in m/s][minisky.values.CasMps]
+            or [`Mach`][minisky.values.Mach] value.
+        airspeed_constraint (VariantArray): Optional active waypoint [`CAS` in m/s][minisky.values.CasMps]
+            or [`Mach`][minisky.values.Mach] constraint.
         vs (ndarray): Vertical speed to use in VNAV climb/descent [m/s].
         turndist (ndarray): Distance before the waypoint at which to start
             the turn [m].
         flyby (ndarray): Fly-by switch; when False, fly-over (turndist 0).
         flyturn (ndarray): Fly-turn switch (use specified turn parameters).
         turnrad (ndarray): Turn radius at the active waypoint [m].
-        turnspd (ndarray): Turn speed (CAS) at the active waypoint [m/s].
+        turn_cas (ndarray): [`CAS` in m/s][minisky.values.CasMps] held through the active fly-turn.
         turnhdgr (ndarray): Turn heading rate at the active waypoint
             [deg/s].
-        oldturnspd (ndarray): CAS held while completing the previous turn [m/s].
+        old_turn_cas (ndarray): [`CAS` in m/s][minisky.values.CasMps] held while completing the previous turn.
         turnfromlastwp (ndarray): In fly-turn mode from the last waypoint
             (old turn, beginning of leg).
         turntonextwp (ndarray): In fly-turn mode towards the next waypoint
             (new turn, end of leg).
-        torta (OptionalArray): Next required time of arrival [s], absent when `present` is false.
+        torta (OptionalArray): Optional next required time of arrival [s].
         xtorta (ndarray): Distance to the next RTA waypoint [m].
         next_qdr (ndarray): Track angle of the next leg [deg].
         swlastwp (ndarray): Bool switch: active waypoint is the last one.
@@ -77,17 +77,21 @@ class ActiveWaypoint(TrafficArrays):
     lon: q.LongitudeDeg[np.ndarray]
     nextturnlat: OptionalArray[q.LatitudeDeg[np.ndarray]]
     nextturnlon: OptionalArray[q.LongitudeDeg[np.ndarray]]
-    nextturnspd: OptionalArray[q.CalibratedAirspeedMps[np.ndarray]]
+    next_airspeed: VariantArray[np.ndarray]
+    airspeed: VariantArray[np.ndarray]
+    airspeed_constraint: VariantArray[np.ndarray]
+    next_turn_cas: OptionalArray[q.CalibratedAirspeedMps[np.ndarray]]
     nextturnrad: OptionalArray[q.TurnRadiusM[np.ndarray]]
     nextturnhdgr: OptionalArray[q.TurnRateDegPerS[np.ndarray]]
+    nextturnidx: OptionalArray[np.ndarray]
     nextaltco: OptionalArray[q.PressureAltitudeM[np.ndarray]]
     xtoalt: OptionalArray[q.DistanceM[np.ndarray]]
     vs: OptionalArray[q.VerticalRateMps[np.ndarray]]
     turndist: q.DistanceM[np.ndarray]
     turnrad: OptionalArray[q.TurnRadiusM[np.ndarray]]
-    turnspd: OptionalArray[q.CalibratedAirspeedMps[np.ndarray]]
+    turn_cas: OptionalArray[q.CalibratedAirspeedMps[np.ndarray]]
     turnhdgr: OptionalArray[q.TurnRateDegPerS[np.ndarray]]
-    oldturnspd: OptionalArray[q.CalibratedAirspeedMps[np.ndarray]]
+    old_turn_cas: OptionalArray[q.CalibratedAirspeedMps[np.ndarray]]
     torta: OptionalArray[q.SimulationTimeS[np.ndarray]]
     xtorta: OptionalArray[q.DistanceM[np.ndarray]]
     next_qdr: OptionalArray[q.BearingDeg[np.ndarray]]
@@ -102,17 +106,15 @@ class ActiveWaypoint(TrafficArrays):
             self.lon = np.array([])  # [deg] Active WP longitude
             self.nextturnlat = OptionalArray(np.array([]), np.array([], dtype=bool))
             self.nextturnlon = OptionalArray(np.array([]), np.array([], dtype=bool))
-            self.nextturnspd = OptionalArray(np.array([]), np.array([], dtype=bool))
+            self.next_turn_cas = OptionalArray(np.array([]), np.array([], dtype=bool))
             self.nextturnrad = OptionalArray(np.array([]), np.array([], dtype=bool))
             self.nextturnhdgr = OptionalArray(np.array([]), np.array([], dtype=bool))
             self.nextturnidx = OptionalArray(np.array([], dtype=int), np.array([], dtype=bool))
             self.nextaltco = OptionalArray(np.array([]), np.array([], dtype=bool))
             self.xtoalt = OptionalArray(np.array([]), np.array([], dtype=bool))
-            # TODO(abraham): #40 must split CAS and Mach before these three
-            # guidance arrays can carry truthful isqx quantity metadata.
-            self.nextspd = OptionalArray(np.array([]), np.array([], dtype=bool))
-            self.spd = OptionalArray(np.array([]), np.array([], dtype=bool))
-            self.spdcon = OptionalArray(np.array([]), np.array([], dtype=bool))
+            self.next_airspeed = VariantArray(np.array([]), np.array([], dtype=np.uint8))
+            self.airspeed = VariantArray(np.array([]), np.array([], dtype=np.uint8))
+            self.airspeed_constraint = VariantArray(np.array([]), np.array([], dtype=np.uint8))
             self.vs = OptionalArray(np.array([]), np.array([], dtype=bool))
             self.turndist = np.array([])  # [m] Distance when to turn to next waypoint
             self.flyby = np.array(
@@ -122,9 +124,9 @@ class ActiveWaypoint(TrafficArrays):
                 [], dtype=bool
             )  # Flyturn switch, customised turn parameters; when False, use flyby/flyover
             self.turnrad = OptionalArray(np.array([]), np.array([], dtype=bool))
-            self.turnspd = OptionalArray(np.array([]), np.array([], dtype=bool))
+            self.turn_cas = OptionalArray(np.array([]), np.array([], dtype=bool))
             self.turnhdgr = OptionalArray(np.array([]), np.array([], dtype=bool))
-            self.oldturnspd = OptionalArray(np.array([]), np.array([], dtype=bool))
+            self.old_turn_cas = OptionalArray(np.array([]), np.array([], dtype=bool))
             self.turnfromlastwp = np.array(
                 [], dtype=bool
             )  # Currently in flyturn-mode from last waypoint (old turn, beginning of leg)
@@ -141,8 +143,8 @@ class ActiveWaypoint(TrafficArrays):
     def create(self, n: int = 1) -> None:
         """Initialize active-waypoint data for n newly created aircraft.
 
-        Optional values start absent; required state uses neutral defaults
-        until a route waypoint is activated.
+        Optional values start absent; required state uses neutral defaults until a route
+        waypoint is activated.
 
         Args:
             n: Number of aircraft that were appended to the traffic arrays.
@@ -190,8 +192,8 @@ class ActiveWaypoint(TrafficArrays):
             dist: Distance to the active waypoint [m].
             flyby: Fly-by switch per aircraft.
             flyturn: Fly-turn switch per aircraft.
-            turnrad: Optional specified turn radius, absent when `present` is false.
-            turnhdgr: Optional specified turn heading rate, absent when `present` is false.
+            turnrad: Optional specified turn radius.
+            turnhdgr: Optional specified turn heading rate.
             swlastwp: Switch: active waypoint is the last waypoint.
 
         Returns:
@@ -207,9 +209,9 @@ class ActiveWaypoint(TrafficArrays):
 
         # First calculate turn distance
         next_qdr = np.where(~self.next_qdr.present, qdr, self.next_qdr.values)
-        has_turn_speed = self.turnspd.present
+        has_turn_speed = self.turn_cas.present
         specified_turn_tas = vcas2tas(
-            np.where(has_turn_speed, self.turnspd.values, 0.0), self.traffic.alt
+            np.where(has_turn_speed, self.turn_cas.values, 0.0), self.traffic.alt
         )
         turntas = np.where(has_turn_speed, specified_turn_tas, self.traffic.tas)
         flybyturndist, turnrad = self.calcturn(
@@ -275,13 +277,13 @@ class ActiveWaypoint(TrafficArrays):
         which the turn must start to roll out on the next leg:
         R * tan(delta_hdg / 2).
 
-        `turnrad` and `turnhdgr` are absent when `present` is false; `flyturn` selects
-        whether explicit turn parameters are active.
+        `turnrad` and `turnhdgr` are absent when unspecified; `flyturn` selects whether
+        explicit turn parameters are active.
         """
 
         # Tas is also used ti
 
-        # Calculate turn radius in meters using current speed or use specified turnradius in m
+        # Calculate turn radius in meters using current true airspeed or use specified turnradius in m
         has_radius = np.logical_and(flyturn, turnrad.present)
         has_heading_rate = np.logical_and(flyturn, turnhdgr.present)
         radius = np.where(

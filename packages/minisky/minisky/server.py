@@ -45,6 +45,7 @@ from minisky import MiniSky
 from minisky import quantities as q
 from minisky.command import format_command_form
 from minisky.result import Err, Ok, Result
+from minisky.values import AirspeedKind
 
 
 def _get_runtime(request: Request) -> MiniSky:
@@ -76,6 +77,19 @@ class ErrResultResponse(TypedDict):
 ResultResponse: TypeAlias = OkResultResponse | ErrResultResponse
 
 
+class SelectedCasResponse(TypedDict):
+    kind: Literal["CAS"]
+    mps: q.CalibratedAirspeedMps[float]
+
+
+class SelectedMachResponse(TypedDict):
+    kind: Literal["MACH"]
+    mach: q.MachNumber[float]
+
+
+SelectedAirspeedResponse: TypeAlias = SelectedCasResponse | SelectedMachResponse
+
+
 StackResponse = TypedDict("StackResponse", {"command to minisky": str, "message": str})
 
 
@@ -96,9 +110,7 @@ AircraftResponse = TypedDict(
         "mach": q.MachNumber[float],
         "vertical_rate (feet/minute)": q.VerticalRateFpm[int],
         "target altitude (feet)": q.PressureAltitudeFt[int],
-        # TODO(abraham): #40 must split selected CAS and Mach before this
-        # legacy API field can carry truthful quantity metadata.
-        "assigned speed (knots)": int,
+        "selected airspeed": SelectedAirspeedResponse,
     },
 )
 
@@ -183,7 +195,16 @@ def all_aircraft(runtime: Runtime) -> list[AircraftResponse]:
         cas_kt: q.CalibratedAirspeedKt[float] = q.mps_to_kt(float(traffic.cas[i]))
         vertical_rate_fpm: q.VerticalRateFpm[float] = q.mps_to_fpm(float(traffic.vs[i]))
         target_altitude_ft: q.PressureAltitudeFt[float] = q.m_to_ft(float(traffic.selalt[i]))
-        assigned_speed_kt = q.mps_to_kt(float(traffic.selspd[i]))
+        if traffic.selected_airspeed.kind[i] == AirspeedKind.CAS:
+            selected_airspeed: SelectedAirspeedResponse = {
+                "kind": "CAS",
+                "mps": float(traffic.selected_airspeed.values[i]),
+            }
+        else:
+            selected_airspeed = {
+                "kind": "MACH",
+                "mach": float(traffic.selected_airspeed.values[i]),
+            }
         aircraft.append(
             {
                 "callsign": callsign,
@@ -200,7 +221,7 @@ def all_aircraft(runtime: Runtime) -> list[AircraftResponse]:
                 "mach": float(traffic.M[i]),
                 "vertical_rate (feet/minute)": int(vertical_rate_fpm),
                 "target altitude (feet)": int(target_altitude_ft),
-                "assigned speed (knots)": int(assigned_speed_kt),
+                "selected airspeed": selected_airspeed,
             }
         )
     return aircraft

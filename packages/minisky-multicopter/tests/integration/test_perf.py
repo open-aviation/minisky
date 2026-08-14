@@ -21,8 +21,8 @@ MAVIC_MASS: q.MassKg = 0.5 * (0.494 + 0.734)
 def hovering_mavic(mcruntime: MiniSky, run_mc: RunCommand, step_mc: StepUntil) -> MulticopterPerf:
     """Create a MAVIC, bring it to a stationary hover, return the perf."""
     traf = mcruntime.traffic
-    run_mc("CRE D1,MAVIC,52,4,90,100,20")
-    run_mc("SPD D1 0")
+    run_mc("CRE D1,MAVIC,52,4,90,100,20KT[CAS]")
+    run_mc("SPD D1 0KT[CAS]")
     kin = traf.kinematics
     step_mc(lambda: traf.gs[0] == 0.0 and traf.vs[0] == 0.0 and kin.az[0] == 0.0, 30)
     mcruntime.simulation.step()  # one settled step so power reflects the hover
@@ -46,7 +46,7 @@ class TestPowerModel:
         self, mcruntime: MiniSky, run_mc: RunCommand, step_mc: StepUntil
     ) -> None:
         traf = mcruntime.traffic
-        run_mc("CRE D1,MAVIC,52,4,90,100,30")
+        run_mc("CRE D1,MAVIC,52,4,90,100,30KT[CAS]")
         step_mc(lambda: traf.gs[0] > 10.0, 20)
         perf = traf.perf
         assert isinstance(perf, MulticopterPerf)
@@ -77,7 +77,7 @@ class TestPowerModel:
     def test_fixed_wing_rows_have_no_electric_model(
         self, mcruntime: MiniSky, run_mc: RunCommand
     ) -> None:
-        run_mc("CRE KL001,A320,52,4,90,FL100,250", steps=5)
+        run_mc("CRE KL001,A320,52,4,90,FL100,250KT[CAS]", steps=5)
         perf = mcruntime.traffic.perf
         assert isinstance(perf, MulticopterPerf)
         assert perf.capacity[0] == 0.0
@@ -88,7 +88,7 @@ class TestPowerModel:
         self, mcruntime: MiniSky, run_mc: RunCommand
     ) -> None:
         # AMZN has no public pack spec: energy derives from d_range_max
-        run_mc("CRE D1,AMZN,52,4,90,100,20")
+        run_mc("CRE D1,AMZN,52,4,90,100,20KT[CAS]")
         perf = mcruntime.traffic.perf
         assert isinstance(perf, MulticopterPerf)
         assert perf.capacity[0] > 0.0
@@ -99,7 +99,7 @@ class TestEnvelopeFeedback:
     def test_envelope_tightens_below_soc_threshold(
         self, mcruntime: MiniSky, run_mc: RunCommand
     ) -> None:
-        run_mc("CRE D1,MAVIC,52,4,90,100,20", steps=2)
+        run_mc("CRE D1,MAVIC,52,4,90,100,20KT[CAS]", steps=2)
         perf = mcruntime.traffic.perf
         mc = get_multicopter(mcruntime.traffic)
         assert isinstance(perf, MulticopterPerf)

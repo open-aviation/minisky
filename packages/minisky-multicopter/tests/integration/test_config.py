@@ -52,7 +52,7 @@ def test_user_defined_type(user_toml: Path) -> None:
         result = asyncio.run(instance.plugins.load("MULTICOPTER"))
         assert result.is_ok(), result.err()
         instance.simulation.reset()
-        instance.commands.stack("CRE D1,MYDRONE,52,4,90,50,10")
+        instance.commands.stack("CRE D1,MYDRONE,52,4,90,50,10KT[CAS]")
         for _ in range(3):
             instance.simulation.step()
 

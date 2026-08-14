@@ -4,7 +4,7 @@ from typing import cast
 
 import pytest
 from minisky import Err, MiniSky, MiniSkyConfig
-from minisky.values import StdPressureAltM
+from minisky.values import CasMps, StdPressureAltM
 from minisky_example import Example
 
 
@@ -24,7 +24,7 @@ async def test_commands_and_entity_are_runtime_owned() -> None:
         assert record.loaded
         assert tuple(runtime.plugins.loaded_plugins) == ("EXAMPLE",)
 
-        run_command(runtime, "CRE KL001,A320,52,4,90,FL100,250")
+        run_command(runtime, "CRE KL001,A320,52,4,90,FL100,250KT[CAS]")
         assert "150" in run_command(runtime, "PASSENGERS KL001 150")
         assert "150" in run_command(runtime, "PASSENGERS KL001")
         assert "expected" in run_command(runtime, "PASSENGERS KL001 -1").lower()
@@ -39,7 +39,15 @@ async def test_commands_and_entity_are_runtime_owned() -> None:
 @pytest.mark.anyio
 async def test_entity_sizes_existing_traffic_and_retires() -> None:
     runtime = MiniSky(MiniSkyConfig())
-    runtime.traffic.cre("KL001", "A320", lat=52.0, lon=4.0, hdg=90, alt=StdPressureAltM(3000), spd=150)
+    runtime.traffic.cre(
+        "KL001",
+        "A320",
+        lat=52.0,
+        lon=4.0,
+        hdg=90,
+        alt=StdPressureAltM(3000.0),
+        airspeed=CasMps(150.0),
+    )
     result = await runtime.plugins.load("EXAMPLE")
     assert result.is_ok(), result.err()
     record = runtime.plugins.plugins["EXAMPLE"]
