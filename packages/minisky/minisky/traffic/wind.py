@@ -26,17 +26,18 @@ from minisky.command import (
     AltM,
     ArgumentIssue,
     CmdParser,
+    CommandCursor,
     CommandParseContext,
     FiniteFloat,
     LatLonDeg,
     NonNegativeFiniteFloat,
     Omitted,
-    Parsed,
     ParseResult,
     SourceSpan,
+    Spanned,
     command,
-    next_argument,
     parse_altitude_value,
+    parse_field,
 )
 from minisky.core.trafficarrays import TrafficArrays
 from minisky.result import Err, Ok, Result
@@ -437,64 +438,37 @@ class WindLevel:
     speed_meters_per_second: q.WindSpeedMps[float]
 
 
-def _parse_wind_level(_context: CommandParseContext, text: str) -> ParseResult[WindLevel]:
-    if isinstance(altitude_token_result := next_argument(text), Err):
-        return altitude_token_result
-    altitude_token = altitude_token_result.ok()
+def _parse_wind_level(
+    _context: CommandParseContext, cursor: CommandCursor
+) -> ParseResult[WindLevel]:
+    altitude_text = cursor.next_value("a finite altitude")
+    if isinstance(altitude_text, Err):
+        return altitude_text
+    altitude_token = altitude_text.ok()
     if isinstance(altitude_result := parse_altitude_value(altitude_token.value), Err):
         return Err(altitude_result.err().with_span(altitude_token.span))
     altitude = altitude_result.ok()
     if not isfinite(altitude):
-        return Err(
-            ArgumentIssue.expected("a finite altitude", altitude_token.value, altitude_token.span)
-        )
+        return Err(ArgumentIssue.expected("a finite altitude", altitude_token.value, altitude_token.span))
 
-    direction_offset = len(text) - len(altitude_token.remainder)
-    if isinstance(direction_token_result := next_argument(altitude_token.remainder), Err):
-        return Err(direction_token_result.err().offset_by(direction_offset))
-    direction_token = direction_token_result.ok()
-    try:
-        direction = float(direction_token.value)
-    except ValueError:
-        return Err(
-            ArgumentIssue.expected(
-                "a finite direction", direction_token.value, direction_token.span
-            ).offset_by(direction_offset)
-        )
+    direction_result = parse_field(cursor, float, "a finite direction")
+    if isinstance(direction_result, Err):
+        return direction_result
+    direction_token = direction_result.ok()
+    direction = direction_token.value
     if not isfinite(direction):
-        return Err(
-            ArgumentIssue.expected(
-                "a finite direction", direction_token.value, direction_token.span
-            ).offset_by(direction_offset)
-        )
+        return Err(ArgumentIssue.expected("a finite direction", direction, direction_token.span))
 
-    speed_offset = len(text) - len(direction_token.remainder)
-    if isinstance(speed_token_result := next_argument(direction_token.remainder), Err):
-        return Err(speed_token_result.err().offset_by(speed_offset))
-    speed_token = speed_token_result.ok()
-    try:
-        speed = float(speed_token.value)
-    except ValueError:
-        return Err(
-            ArgumentIssue.expected(
-                "a non-negative finite speed", speed_token.value, speed_token.span
-            ).offset_by(speed_offset)
-        )
+    speed_result = parse_field(cursor, float, "a non-negative finite speed")
+    if isinstance(speed_result, Err):
+        return speed_result
+    speed_token = speed_result.ok()
+    speed = speed_token.value
     if not isfinite(speed) or speed < 0:
-        return Err(
-            ArgumentIssue.expected(
-                "a non-negative finite speed", speed_token.value, speed_token.span
-            ).offset_by(speed_offset)
-        )
+        return Err(ArgumentIssue.expected("a non-negative finite speed", speed, speed_token.span))
 
-    consumed = len(text) - len(speed_token.remainder)
-    return Ok(
-        Parsed(
-            WindLevel(altitude, direction % 360.0, q.kt_to_mps(speed)),
-            speed_token.remainder,
-            SourceSpan(0, consumed),
-        )
-    )
+    span = SourceSpan(altitude_token.span.start, speed_token.span.end)
+    return Ok(Spanned(WindLevel(altitude, direction % 360.0, q.kt_to_mps(speed)), span))
 
 
 WindLevelArg = Annotated[

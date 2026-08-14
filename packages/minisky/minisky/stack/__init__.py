@@ -42,6 +42,7 @@ import numpy as np
 from minisky import quantities as q
 from minisky.command import (
     ArgumentIssue,
+    CommandCursor,
     CommandParseContext,
     Keyword,
     Parameter,
@@ -53,8 +54,6 @@ from minisky.command import (
     compile_parameter,
     declared_commands,
     format_command_form,
-    next_argument,
-    split_commands,
 )
 from minisky.identifiers import normalize_command_name
 from minisky.result import Err, Ok, Result
@@ -121,14 +120,15 @@ class Command:
         return Ok(resolved.ok().arguments)
 
     def _resolve(self, argstring: str) -> Result[_CommandCall, ArgumentIssue]:
-        source = self.name + (f" {argstring}" if argstring else "")
-        argument_offset = len(self.name) + (1 if argstring else 0)
+        text = self.name + (f" {argstring}" if argstring else "")
+        argument_start = len(self.name) + (1 if argstring else 0)
         failure: ArgumentIssue | None = None
 
         # match Pydantic's left-to-right union rule: first complete parse wins.
         # we dont use its "smart" algorithm for simplicity
         for form in self.forms:
-            parsed = _parse_form(form, argstring, self.parse_context, source, argument_offset)
+            cursor = CommandCursor(text, argument_start)
+            parsed = _parse_form(form, cursor, self.parse_context)
             if isinstance(parsed, Ok):
                 return Ok(_CommandCall(form, parsed.ok()))
             failure = parsed.err()
@@ -179,33 +179,28 @@ def _format_command_help(command: Command) -> str:
 
 def _parse_form(
     form: CommandForm,
-    argstring: str,
+    cursor: CommandCursor,
     context: CommandParseContext,
-    source: str,
-    argument_offset: int,
 ) -> Result[tuple[object, ...], ArgumentIssue]:
     arguments: list[object] = []
-    remainder = argstring
     for parameter in form.parameters:
-        offset = argument_offset + len(argstring) - len(remainder)
-        result = parameter.parse(context, remainder, source_text=source, offset=offset)
+        result = parameter.parse(context, cursor)
         if isinstance(result, Err):
             return result
-        parsed = result.ok()
-        arguments.extend(parsed.values)
-        remainder = parsed.remainder
+        arguments.extend(result.ok().values)
 
-    if remainder:
-        offset = argument_offset + len(argstring) - len(remainder)
-        token_result = next_argument(remainder)
+    if not cursor.at_end:
+        extra_start = cursor.pos
+        token_result = cursor.next_field()
         if isinstance(token_result, Err):
             issue = token_result.err()
         else:
             token = token_result.ok()
-            issue = ArgumentIssue.expected("the end of the command", token.value, token.span)
-        return Err(
-            issue.at_argument("extra", source, offset, SourceSpan(0, max(1, len(remainder))))
-        )
+            actual = token.value if token is not None else "end of input"
+            span = token.span if token is not None else SourceSpan(extra_start, extra_start)
+            issue = ArgumentIssue.expected("the end of the command", actual, span)
+        fallback = SourceSpan(extra_start, max(extra_start + 1, extra_start))
+        return Err(issue.at_argument("extra", fallback))
     return Ok(tuple(arguments))
 
 
@@ -560,25 +555,32 @@ class CommandStack:
             cmdline = queued.text
             self.current = cmdline
             self.sender_rte = queued.sender_id
-            # Get first argument from command line and check if it's a command.
-            if isinstance(parsed_result := next_argument(cmdline), Err):
+            cursor = CommandCursor(cmdline)
+            parsed_result = cursor.next_value("a command")
+            if isinstance(parsed_result, Err):
                 self.console.echo(f"error: {parsed_result.err()}")
                 continue
-            parsed = parsed_result.ok()
-            cmd = parsed.value
-            argstring = parsed.remainder
+            cmd = parsed_result.ok().value
+            argstring = cursor.remaining
             cmdu = cmd.upper()
             cmdobj = self.cmddict.get(cmdu)
 
-            # BlueSky shorthand permits `CALLSIGN COMMAND ...`.
+            # bluesky shorthand permits `CALLSIGN COMMAND ...`
+            # a bare callsign is the POS query form.
             if not cmdobj and cmdu in self.traffic.callsign:
-                if isinstance(parsed_result := next_argument(argstring), Err):
-                    self.console.echo(f"error: {parsed_result.err()}")
-                    continue
-                parsed = parsed_result.ok()
-                cmd = parsed.value
-                argstring = f"{cmdu} {parsed.remainder}"
-                cmdu = cmd.upper() if cmd else "POS"
+                acid = cmdu
+                if cursor.at_end:
+                    cmd = ""
+                    argstring = acid
+                    cmdu = "POS"
+                else:
+                    parsed_result = cursor.next_value("a command")
+                    if isinstance(parsed_result, Err):
+                        self.console.echo(f"error: {parsed_result.err()}")
+                        continue
+                    cmd = parsed_result.ok().value
+                    argstring = f"{acid} {cursor.remaining}"
+                    cmdu = cmd.upper()
                 cmdobj = self.cmddict.get(cmdu)
 
             if cmdobj is None:
@@ -883,13 +885,16 @@ class CommandStack:
         """
         queued: list[QueuedCommand] = []
         for cmdline in cmdlines:
-            text = cmdline.strip()
-            if not text:
-                continue
-            if isinstance(result := split_commands(text), Err):
-                self.console.echo(f"error: {result.err()}")
-                continue
-            queued.extend(QueuedCommand(line, sender_id) for line in result.ok())
+            cursor = CommandCursor(cmdline)
+            while True:
+                result = cursor.next_command()
+                if isinstance(result, Err):
+                    self.console.echo(f"error: {result.err()}")
+                    break
+                line = result.ok()
+                if line is None:
+                    break
+                queued.append(QueuedCommand(line.value, sender_id))
         with self._queue_lock:
             self.cmdstack.extend(queued)
 

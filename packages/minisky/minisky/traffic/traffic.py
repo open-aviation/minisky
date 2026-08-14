@@ -26,17 +26,13 @@ from minisky.command import (
     AcId,
     AcIdSelection,
     AltM,
-    ArgumentIssue,
     CmdParser,
-    CommandParseContext,
     FiniteFloat,
     HeadingDeg,
     Keyword,
     LatLonDeg,
     MagneticHeadingDeg,
     OnOff,
-    Parsed,
-    ParseResult,
     PositiveFiniteFloat,
     ResolvedPositionArg,
     RunwayHeadingRequest,
@@ -47,7 +43,6 @@ from minisky.command import (
     UseRunwayHeading,
     VspdMps,
     command,
-    next_argument,
 )
 from minisky.core.config import MiniSkyConfig
 from minisky.core.trafficarrays import TrafficArrays
@@ -82,23 +77,17 @@ if TYPE_CHECKING:
     from minisky.tools.navdata import Navdatabase
 
 
-def _parse_throttle(_context: CommandParseContext, text: str) -> ParseResult[float]:
-    if isinstance(result := next_argument(text), Err):
-        return result
-    token = result.ok()
-    value = token.value
+def _parse_throttle(value: str) -> float:
     factor = 0.01 if value.endswith("%") else 1.0
     number = value.removesuffix("%")
     if "%" in number:
-        return Err(ArgumentIssue.expected("a throttle fraction or percentage", value, token.span))
-    try:
-        throttle = factor * float(number)
-    except ValueError:
-        return Err(ArgumentIssue.expected("a throttle fraction or percentage", value, token.span))
-    return Ok(Parsed(throttle, token.remainder, token.span))
+        raise ValueError
+    return factor * float(number)
 
 
-Throttle = Annotated[float, CmdParser(_parse_throttle), Ge(0), Le(1)]
+Throttle = Annotated[
+    float, CmdParser.value(_parse_throttle, "a throttle fraction or percentage"), Ge(0), Le(1)
+]
 
 LatitudeArg = Annotated[q.LatitudeDeg[float], Ge(-90), Le(90)]
 LongitudeArg = Annotated[q.LongitudeDeg[float], Ge(-180), Le(180)]
