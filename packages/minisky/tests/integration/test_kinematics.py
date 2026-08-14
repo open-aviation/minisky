@@ -10,6 +10,7 @@ from __future__ import annotations
 from minisky import MiniSky
 from minisky.simulation import Simulation
 from minisky.traffic.kinematics import Kinematics
+from minisky.values import StdPressureAltM
 
 
 class TaggedKinematics(Kinematics):
@@ -27,13 +28,13 @@ class TaggedKinematics(Kinematics):
 
 class TestKinematicsEntity:
     def test_kinematics_owns_ax_array(self, runtime: MiniSky, sim: Simulation) -> None:
-        runtime.traffic.cre("KL001", "A320", lat=52.0, lon=4.0, hdg=90, alt=3000, spd=150)
+        runtime.traffic.cre("KL001", "A320", lat=52.0, lon=4.0, hdg=90, alt=StdPressureAltM(3000), spd=150)
         sim.step()
         # acceleration array lives on the kinematics entity, sized per-aircraft
         assert len(runtime.traffic.kinematics.ax) == 1
 
     def test_base_kinematics_integrates_position(self, runtime: MiniSky, sim: Simulation) -> None:
-        runtime.traffic.cre("KL001", "A320", lat=52.0, lon=4.0, hdg=90, alt=3000, spd=150)
+        runtime.traffic.cre("KL001", "A320", lat=52.0, lon=4.0, hdg=90, alt=StdPressureAltM(3000), spd=150)
         lon0 = float(runtime.traffic.lon[0])
         sim.step()
         # heading 090 at positive ground speed advances longitude eastward
@@ -47,7 +48,7 @@ class TestKinematicsEntity:
     def test_select_subclass_takes_effect_and_reverts_on_reset(
         self, runtime: MiniSky, sim: Simulation
     ) -> None:
-        runtime.traffic.cre("KL001", "A320", lat=52.0, lon=4.0, hdg=90, alt=3000, spd=150)
+        runtime.traffic.cre("KL001", "A320", lat=52.0, lon=4.0, hdg=90, alt=StdPressureAltM(3000), spd=150)
 
         prepared = runtime.replaceables.prepare(TaggedKinematics)
         runtime.replaceables.validate((prepared,))

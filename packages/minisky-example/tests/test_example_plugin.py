@@ -4,6 +4,7 @@ from typing import cast
 
 import pytest
 from minisky import Err, MiniSky, MiniSkyConfig
+from minisky.values import StdPressureAltM
 from minisky_example import Example
 
 
@@ -38,7 +39,7 @@ async def test_commands_and_entity_are_runtime_owned() -> None:
 @pytest.mark.anyio
 async def test_entity_sizes_existing_traffic_and_retires() -> None:
     runtime = MiniSky(MiniSkyConfig())
-    runtime.traffic.cre("KL001", "A320", lat=52.0, lon=4.0, hdg=90, alt=3000, spd=150)
+    runtime.traffic.cre("KL001", "A320", lat=52.0, lon=4.0, hdg=90, alt=StdPressureAltM(3000), spd=150)
     result = await runtime.plugins.load("EXAMPLE")
     assert result.is_ok(), result.err()
     record = runtime.plugins.plugins["EXAMPLE"]

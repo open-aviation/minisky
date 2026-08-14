@@ -11,15 +11,14 @@ import shapely
 
 from minisky import quantities as q
 from minisky.command import (
-    AltM,
     Keyword,
     LatLonDeg,
-    LatLonDegrees,
     NonNegativeFiniteFloat,
     command,
 )
 from minisky.result import Err, Ok, Result
 from minisky.tools.geo import kwikdist
+from minisky.values import LatLonDegrees, StdPressureAltM
 
 CircleRadiusNM = q.DistanceNM[NonNegativeFiniteFloat]
 
@@ -49,11 +48,19 @@ class Shapes:
         name: Keyword,
         first: LatLonDeg,
         second: LatLonDeg,
-        top: AltM | None = None,
-        bottom: AltM | None = None,
+        top: StdPressureAltM | None = None,
+        bottom: StdPressureAltM | None = None,
     ) -> Result[str, str]:
         """Define a box-shaped area from two opposite corners."""
-        self._store_area(name, Box(first, second, top, bottom))
+        self._store_area(
+            name,
+            Box(
+                first,
+                second,
+                None if top is None else top.value,
+                None if bottom is None else bottom.value,
+            ),
+        )
         return Ok(f"Created BOX {name}")
 
     @command(name="CIRCLE")
@@ -62,11 +69,19 @@ class Shapes:
         name: Keyword,
         center: LatLonDeg,
         radius: CircleRadiusNM,
-        top: AltM | None = None,
-        bottom: AltM | None = None,
+        top: StdPressureAltM | None = None,
+        bottom: StdPressureAltM | None = None,
     ) -> Result[str, str]:
         """Define a circular area from a center and radius in nautical miles."""
-        self._store_area(name, Circle(center, q.nmi_to_m(radius), top, bottom))
+        self._store_area(
+            name,
+            Circle(
+                center,
+                q.nmi_to_m(radius),
+                None if top is None else top.value,
+                None if bottom is None else bottom.value,
+            ),
+        )
         return Ok(f"Created CIRCLE {name}")
 
     @command(name="LINE")
@@ -89,14 +104,14 @@ class Shapes:
     def define_polyalt(
         self,
         name: Keyword,
-        top: AltM,
-        bottom: AltM,
+        top: StdPressureAltM,
+        bottom: StdPressureAltM,
         first: LatLonDeg,
         *additional: LatLonDeg,
     ) -> Result[str, str]:
         """Define a polygon between top and bottom altitudes."""
         try:
-            area = Poly((first, *additional), top, bottom)
+            area = Poly((first, *additional), top.value, bottom.value)
         except ValueError as error:
             return Err(str(error))
         self._store_area(name, area)
