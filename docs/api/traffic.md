@@ -43,10 +43,6 @@ routes, conflict detection and resolution, aircraft performance, wind, and turbu
 
 ::: minisky.traffic.uncertainty.SurveillanceUncertainty
 
-## Trails
-
-::: minisky.traffic.trails.Trails
-
 ## Groups
 
 ::: minisky.traffic.trafficgroups.TrafficGroups

@@ -12,7 +12,6 @@ from typing import Self
 from colorama import Fore, Style
 
 from minisky.command import Text, command
-from minisky.values import LatLonDegrees
 
 ConsoleCallback = Callable[[str], None]
 
@@ -147,21 +146,6 @@ class ConsoleIO:
 
     def _unsubscribe(self, token: int) -> None:
         self._subscribers.pop(token, None)
-
-    def getviewctr(self) -> LatLonDegrees:
-        """Return the reference point for navigation lookups.
-
-        Stub for non-GUI mode: with no map view there is no centre to report,
-        so lookups that pick the nearest of several same-named waypoints
-        always measure from the origin.
-        """
-        return LatLonDegrees(0.0, 0.0)
-
-    def addnavwpt(self, name: str, lat: float, lon: float) -> None:
-        """Do nothing. Stub for non-GUI mode, which draws no waypoint markers."""
-
-    def removenavwpt(self, name: str) -> None:
-        """Do nothing. Stub for non-GUI mode, which draws no waypoint markers."""
 
     def read_output_buffer(self) -> str:
         """Return and clear buffered console output."""

@@ -50,7 +50,7 @@ class MiniSky:
         self.python_random = Random()
         self.numpy_random = np.random.RandomState()
         self.console = ConsoleIO(lambda: self.simulation.state == SimulationState.OP)
-        self.navigation = Navdatabase(data("navigation"), self.console)
+        self.navigation = Navdatabase(data("navigation"))
         self.shapes = Shapes()
         self.variables = VariableExplorer()
         self.traffic = Traffic(
@@ -128,7 +128,6 @@ class MiniSky:
                 self.traffic.cd,
                 self.traffic.cr,
                 self.traffic.ap,
-                self.traffic.trails,
                 self.traffic.perf,
                 self.traffic.groups,
                 self.replaceables,

@@ -13,7 +13,7 @@ from __future__ import annotations
 import json
 from enum import IntEnum
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal, Protocol
+from typing import Literal, Protocol
 
 import numpy as np
 import pandas as pd
@@ -22,10 +22,6 @@ from minisky import quantities as q
 from minisky.command import Keyword, LatLonDeg, command
 from minisky.result import Err, Ok, Result
 from minisky.tools import geo
-
-if TYPE_CHECKING:
-    from minisky.simulation.console import ConsoleIO
-
 
 _COLOCATED_DISTANCE: q.DistanceM[float] = q.nmi_to_m(1.0)
 
@@ -140,11 +136,10 @@ class Navdatabase:
     wpelev: list[q.MslAltitudeM[float]]
     aptelev: list[q.MslAltitudeM[float]]
 
-    def __init__(self, data_path: Path, console: ConsoleIO) -> None:
+    def __init__(self, data_path: Path) -> None:
         """The navigation database: Contains waypoint, airport, airway, and sector data, but also
         geographical graphics data."""
         self.data_path = data_path
-        self.console = console
         self.reset()
 
     def reset(self) -> None:
@@ -247,11 +242,9 @@ class Navdatabase:
     def describe_waypoint(self, name: str) -> Result[str, str]:
         """Describe a waypoint or report that its name is available."""
         normalized = name.upper()
-        center = self.console.getviewctr()
         if normalized not in self.wpid:
             return Ok(f"Waypoint {normalized} does not yet exist.")
-        index = self.getwpidx(normalized, center)
-        assert index is not None
+        index = len(self.wpid) - self.wpid[::-1].index(normalized) - 1
         description = f"{self.wpid[index]} : {self.wplat[index]},{self.wplon[index]}"
         if self.wptype[index]:
             description += f"  {self.wptype[index]}"
@@ -281,8 +274,6 @@ class Navdatabase:
         self.wpfreq.append(0.0)  # frequency [kHz/MHz]
         self.wpdesc.append("Custom waypoint")  # description
 
-        # Update screen info
-        self.console.addnavwpt(normalized, lat, lon)
         return Ok(f"{normalized} added to navdb.")
 
     def delwpt(self, name: str) -> Result[str, str]:
@@ -308,9 +299,6 @@ class Navdatabase:
         del self.wpvar[idx]  # magn variation [deg]
         del self.wpfreq[idx]  # frequency [kHz/MHz]
         del self.wpdesc[idx]  # description
-
-        # Update screen info 9delete necessary there?)
-        self.console.removenavwpt(name.upper())
 
         return Ok(name.upper() + " deleted from navdb.")
 
