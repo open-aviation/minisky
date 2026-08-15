@@ -18,3 +18,7 @@ console output.
 ## ConsoleIO
 
 ::: minisky.simulation.console.ConsoleIO
+
+## Console subscription
+
+::: minisky.simulation.console.ConsoleSubscription
