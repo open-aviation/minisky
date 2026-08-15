@@ -26,6 +26,7 @@ from minisky.command import (
     AcId,
     AcIdSelection,
     CmdParser,
+    DistanceM,
     FiniteFloat,
     HeadingDeg,
     Keyword,
@@ -38,7 +39,6 @@ from minisky.command import (
     Text,
     TimeS,
     UseRunwayHeading,
-    VerticalDistanceM,
     VspdMps,
     command,
 )
@@ -99,7 +99,6 @@ Throttle = Annotated[
 LatitudeArg = Annotated[q.LatitudeDeg[float], Ge(-90), Le(90)]
 LongitudeArg = Annotated[q.LongitudeDeg[float], Ge(-180), Le(180)]
 ConflictAngleDeg = q.AngleDeg[FiniteFloat]
-ConflictDistanceNM = q.DistanceNM[FiniteFloat]
 BankLimitDeg = Annotated[q.BankAngleDeg[PositiveFiniteFloat], Lt(90)]
 
 
@@ -347,9 +346,9 @@ class Traffic(TrafficArrays):
         elif hdg is None:
             heading = default_heading
         elif isinstance(hdg, MagneticHeadingDeg):
-            heading = (hdg.degrees + geo.magdec(coordinates.lat, coordinates.lon)) % 360.0
+            heading = (hdg.value + geo.magdec(coordinates.lat, coordinates.lon)) % 360.0
         else:
-            heading = hdg.degrees
+            heading = hdg.value
 
         return self.cre(
             callsign,
@@ -625,9 +624,9 @@ class Traffic(TrafficArrays):
         actype: Keyword,
         targetidx: AcId,
         dpsi: ConflictAngleDeg,
-        dcpa: ConflictDistanceNM,
+        dcpa: DistanceM,
         tlosh: TimeS,
-        dH: VerticalDistanceM | None = None,
+        dH: DistanceM | None = None,
         tlosv: TimeS | None = None,
         airspeed: CasMps | Mach | None = None,
     ) -> None:
@@ -644,11 +643,11 @@ class Traffic(TrafficArrays):
             actype: ICAO aircraft type designator of the new aircraft.
             targetidx: Index of the target (ownship) aircraft.
             dpsi: Conflict angle between ownship and intruder tracks [deg].
-            dcpa: Predicted distance at closest point of approach [nm].
+            dcpa: Predicted distance at closest point of approach [m].
             tlosh: Horizontal time to loss of separation [s]
                 (stack input as (hh:mm:)sec).
-            dH: Optional vertical offset of the intruder [m]
-                (stack input in ft); level conflict when None.
+            dH: Optional vertical offset of the intruder [m]. Stack input requires
+                an explicit unit such as `3000FT`; level conflict when None.
             tlosv: Optional vertical time to loss of separation [s];
                 defaults to tlosh.
             airspeed: Optional [`CAS` in m/s][minisky.values.CasMps] or
@@ -660,7 +659,7 @@ class Traffic(TrafficArrays):
         trkref = np.radians(self.trk[targetidx])
         gsref = self.gs[targetidx]  # m/s
         vsref = self.vs[targetidx]  # m/s
-        cpa = q.nmi_to_m(dcpa)
+        cpa = dcpa
         pzr = q.nmi_to_m(self.config.asas_pzr)
         pzh = q.ft_to_m(self.config.asas_pzh)
         trk = trkref + np.radians(dpsi)
@@ -888,9 +887,9 @@ class Traffic(TrafficArrays):
 
         if hdg is not None:
             heading = (
-                (hdg.degrees + geo.magdec(position.lat, position.lon)) % 360.0
+                (hdg.value + geo.magdec(position.lat, position.lon)) % 360.0
                 if isinstance(hdg, MagneticHeadingDeg)
-                else hdg.degrees
+                else hdg.value
             )
             self.hdg[idx] = heading
             self.ap.trk[idx] = heading
@@ -1112,7 +1111,7 @@ class Traffic(TrafficArrays):
         """Set or show the transition level.
 
         Args:
-            alt: Optional new transition level [m] (stack input in ft/FL).
+            alt: Optional new transition level [m].
         """
         # In case a new value is given, set it.
         if alt is not None:

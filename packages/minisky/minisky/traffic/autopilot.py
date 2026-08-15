@@ -1179,8 +1179,8 @@ class Autopilot(TrafficArrays):
 
         Args:
             idx: Aircraft index (or collection of indices).
-            alt: Selected altitude [m] (stack input in ft/FL).
-            vspd: Optional vertical speed [m/s] (stack input in fpm).
+            alt: Selected altitude [m].
+            vspd: Optional vertical speed [m/s].
         """
         self.traffic.selalt[idx] = alt.value
         self.traffic.swvnav[idx] = False
@@ -1209,7 +1209,7 @@ class Autopilot(TrafficArrays):
 
         Args:
             idx: Aircraft index.
-            vspd: Selected vertical speed [m/s] (stack input in fpm).
+            vspd: Selected vertical speed [m/s].
         """
         self.traffic.selvs[idx] = vspd
         self.traffic.swvnav[idx] = False
@@ -1234,13 +1234,13 @@ class Autopilot(TrafficArrays):
         if isinstance(hdg, MagneticHeadingDeg):
             resolved_hdg = np.fromiter(
                 (
-                    (hdg.degrees + geo.magdec(float(lat), float(lon))) % 360.0
+                    (hdg.value + geo.magdec(float(lat), float(lon))) % 360.0
                     for lat, lon in zip(self.traffic.lat[idx], self.traffic.lon[idx], strict=True)
                 ),
                 dtype=float,
             )
         else:
-            resolved_hdg = hdg.degrees
+            resolved_hdg = hdg.value
 
         if self.traffic.wind.has_wind:
             tasnorth = self.traffic.tas[idx] * np.cos(np.radians(resolved_hdg))

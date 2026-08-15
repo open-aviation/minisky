@@ -19,6 +19,7 @@ from math import isfinite
 from typing import Annotated, Literal
 
 import numpy as np
+from annotated_types import Ge
 from scipy.interpolate import LinearNDInterpolator, interp1d
 
 from minisky import quantities as q
@@ -29,21 +30,22 @@ from minisky.command import (
     CommandParseContext,
     FiniteFloat,
     LatLonDeg,
-    NonNegativeFiniteFloat,
     Omitted,
     ParseResult,
     SourceSpan,
     Spanned,
+    SpeedMps,
     command,
     parse_field,
     parse_pressure_altitude_value,
+    parse_speed_value,
 )
 from minisky.core.trafficarrays import TrafficArrays
 from minisky.result import Err, Ok, Result
 from minisky.values import StdPressureAltM
 
 WindDirectionArg = q.WindDirectionDeg[FiniteFloat]
-WindSpeedKtArg = q.WindSpeedKt[NonNegativeFiniteFloat]
+NonNegativeSpeedMps = Annotated[SpeedMps, Ge(0)]
 
 
 class WindFieldKind(Enum):
@@ -464,16 +466,13 @@ def _parse_wind_level(
     if not isfinite(direction):
         return Err(ArgumentIssue.expected("a finite direction", direction, direction_token.span))
 
-    speed_result = parse_field(cursor, float, "a non-negative finite speed")
+    speed_result = parse_field(cursor, parse_speed_value, "a wind speed such as 20KT or 10MPS")
     if isinstance(speed_result, Err):
         return speed_result
     speed_token = speed_result.ok()
     speed = speed_token.value
-    if not isfinite(speed) or speed < 0:
-        return Err(ArgumentIssue.expected("a non-negative finite speed", speed, speed_token.span))
-
     span = SourceSpan(altitude_token.span.start, speed_token.span.end)
-    return Ok(Spanned(WindLevel(altitude, direction % 360.0, q.kt_to_mps(speed)), span))
+    return Ok(Spanned(WindLevel(altitude, direction % 360.0, speed), span))
 
 
 WindLevelArg = Annotated[
@@ -504,11 +503,11 @@ class Wind(TrafficArrays, Windfield):
         self,
         position: LatLonDeg,
         direction: WindDirectionArg,
-        speed: WindSpeedKtArg,
+        speed: NonNegativeSpeedMps,
     ) -> Result[str, str]:
-        """Define altitude-independent wind at a position."""
+        """Define altitude-independent wind; use an explicit speed unit such as `20KT`."""
         # No altitude: use the same wind for all altitudes at this position.
-        self.addpoint(position.lat, position.lon, direction % 360.0, q.kt_to_mps(speed))
+        self.addpoint(position.lat, position.lon, direction % 360.0, speed)
         return Ok("")
 
     @command(name="WIND")
@@ -517,17 +516,17 @@ class Wind(TrafficArrays, Windfield):
         position: LatLonDeg,
         _omitted: Omitted,
         direction: WindDirectionArg,
-        speed: WindSpeedKtArg,
+        speed: NonNegativeSpeedMps,
     ) -> Result[str, str]:
-        """Define constant wind when the altitude field is explicitly omitted."""
-        self.addpoint(position.lat, position.lon, direction % 360.0, q.kt_to_mps(speed))
+        """Define constant wind with an omitted altitude; use an explicit speed unit such as `20KT`."""
+        self.addpoint(position.lat, position.lon, direction % 360.0, speed)
         return Ok("")
 
     @command(name="WIND")
     def set_wind_profile(
         self, position: LatLonDeg, first: WindLevelArg, *additional: WindLevelArg
     ) -> Result[str, str]:
-        """Define several altitude-dependent wind vectors at a position."""
+        """Define altitude-dependent wind vectors; use explicit speed units such as `20KT`."""
         # Several altitude levels are given: build a vertical wind profile.
         levels = (first, *additional)
         if any(

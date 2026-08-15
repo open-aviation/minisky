@@ -9,7 +9,7 @@ from tests._types import RunCommand, StepUntil
 
 class TestPluginWiring:
     def test_membership_from_typecode(self, mcruntime: MiniSky, run_mc: RunCommand) -> None:
-        run_mc("CRE D1,MAVIC,52,4,90,100,20KT[CAS]")
+        run_mc("CRE D1,MAVIC,52,4,90,100FT[STD],20KT[CAS]")
         run_mc("CRE KL001,A320,53,4,90,FL100,250KT[CAS]")
         assert "ON" in run_mc("MCOPT D1")
         assert "OFF" in run_mc("MCOPT KL001")
@@ -20,7 +20,7 @@ class TestPluginWiring:
         assert "not a multicopter" in run_mc("HOVER KL001")
 
     def test_yawrate_set_and_report(self, mcruntime: MiniSky, run_mc: RunCommand) -> None:
-        run_mc("CRE D1,MAVIC,52,4,90,100,20KT[CAS]")
+        run_mc("CRE D1,MAVIC,52,4,90,100FT[STD],20KT[CAS]")
         run_mc("YAWRATE D1 45")
         assert "45" in run_mc("YAWRATE D1")
 
@@ -30,7 +30,7 @@ class TestHoverAndYaw:
         self, mcruntime: MiniSky, run_mc: RunCommand, step_mc: StepUntil
     ) -> None:
         traf = mcruntime.traffic
-        run_mc("CRE D1,MAVIC,52,4,90,100,20KT[CAS]")
+        run_mc("CRE D1,MAVIC,52,4,90,100FT[STD],20KT[CAS]")
         run_mc("SPD D1 0KT[CAS]")
         step_mc(lambda: traf.gs[0] == 0.0, 20)
 
@@ -45,7 +45,7 @@ class TestHoverAndYaw:
         self, mcruntime: MiniSky, run_mc: RunCommand, step_mc: StepUntil
     ) -> None:
         traf = mcruntime.traffic
-        run_mc("CRE D1,MAVIC,52,4,0,100,20KT[CAS]")
+        run_mc("CRE D1,MAVIC,52,4,0,100FT[STD],20KT[CAS]")
         run_mc("SPD D1 0KT[CAS]")
         step_mc(lambda: traf.gs[0] == 0.0, 20)
         run_mc("YAWRATE D1 10")
@@ -65,7 +65,7 @@ class TestHoverAndYaw:
         self, mcruntime: MiniSky, run_mc: RunCommand, step_mc: StepUntil
     ) -> None:
         traf = mcruntime.traffic
-        run_mc("CRE D1,MAVIC,52,4,90,100,20KT[CAS]")
+        run_mc("CRE D1,MAVIC,52,4,90,100FT[STD],20KT[CAS]")
         run_mc("YAWRATE D1 30")
         lon0 = float(traf.lon[0])
 
@@ -82,7 +82,7 @@ class TestRouteFollowing:
         self, mcruntime: MiniSky, run_mc: RunCommand, step_mc: StepUntil
     ) -> None:
         traf = mcruntime.traffic
-        run_mc("CRE D1,MAVIC,52,4,90,100,30KT[CAS]")
+        run_mc("CRE D1,MAVIC,52,4,90,100FT[STD],30KT[CAS]")
         run_mc("ADDWPT D1 52,4.005")
         run_mc("ADDWPT D1 52.005,4.005")
         run_mc("LNAV D1 ON")
@@ -107,7 +107,7 @@ class TestRouteFollowing:
         self, mcruntime: MiniSky, run_mc: RunCommand, step_mc: StepUntil
     ) -> None:
         traf = mcruntime.traffic
-        run_mc("CRE D1,MAVIC,52,4,90,100,30KT[CAS]")
+        run_mc("CRE D1,MAVIC,52,4,90,100FT[STD],30KT[CAS]")
         run_mc("ADDWPT D1 52,4.02")
         run_mc("LNAV D1 ON")
         step_mc(lambda: traf.gs[0] > 5.0, 10)
@@ -133,13 +133,13 @@ class TestRouteFollowing:
         traf = mcruntime.traffic
         ap = traf.ap
         assert isinstance(ap, MulticopterAutopilot)
-        run_mc("CRE D1,MAVIC,52,4,90,400,20KT[CAS]")
+        run_mc("CRE D1,MAVIC,52,4,90,400FT[STD],20KT[CAS]")
         run_mc("ADDWPT D1 52,4.02")
         run_mc("LNAV D1 ON")
         step_mc(lambda: traf.gs[0] > 5.0, 10)
 
         # hold 5 s at 100 ft: brakes to a hover, then moves vertically
-        run_mc("HOVER D1 5 100")
+        run_mc("HOVER D1 5 100FT[STD]")
         step_mc(lambda: traf.gs[0] == 0.0, 20)
         lat0, lon0 = float(traf.lat[0]), float(traf.lon[0])
 
@@ -161,7 +161,7 @@ class TestRouteFollowing:
         """A delivery profile written in scenario commands: hover, ALT down,
         ALT back up, LNAV ON to resume."""
         traf = mcruntime.traffic
-        run_mc("CRE D1,MAVIC,52,4,90,400,20KT[CAS]")
+        run_mc("CRE D1,MAVIC,52,4,90,400FT[STD],20KT[CAS]")
         run_mc("ADDWPT D1 52,4.02")
         run_mc("LNAV D1 ON")
         step_mc(lambda: traf.gs[0] > 5.0, 10)
@@ -170,9 +170,9 @@ class TestRouteFollowing:
         step_mc(lambda: traf.gs[0] == 0.0, 20)
         lat0, lon0 = float(traf.lat[0]), float(traf.lon[0])
 
-        run_mc("ALT D1 100")  # plain ALT works inside a hover
+        run_mc("ALT D1 100FT[STD]")  # plain ALT works inside a hover
         step_mc(lambda: abs(traf.alt[0] - q.ft_to_m(100.0)) < 0.5, 120)
-        run_mc("ALT D1 400")
+        run_mc("ALT D1 400FT[STD]")
         step_mc(lambda: abs(traf.alt[0] - q.ft_to_m(400.0)) < 0.5, 120)
         assert traf.gs[0] == 0.0
         assert float(traf.lat[0]) == lat0
@@ -201,7 +201,7 @@ class TestFixedWingRegression:
             "ALT KL001 FL120",
             "SPD KL001 280KT[CAS]",
         ]
-        mcruntime.commands.stack("CRE D2,MAVIC,52.1,4,90,100,20KT[CAS]")
+        mcruntime.commands.stack("CRE D2,MAVIC,52.1,4,90,100FT[STD],20KT[CAS]")
         mcruntime.commands.stack("SPD D2 0KT[CAS]")
         for cmd in commands:
             mcruntime.commands.stack(cmd)

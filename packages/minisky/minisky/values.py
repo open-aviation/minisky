@@ -8,10 +8,33 @@ must survive at runtime.
 
 from __future__ import annotations
 
+from abc import ABC
 from dataclasses import dataclass
 from enum import IntEnum
 
 from minisky import quantities as q
+
+
+class RuntimeNewType(ABC):
+    """Base class for runtime newtypes.
+
+    Subclassing this will ask the command parser to treat this as a transparent
+    wrapper. It will allow you to stack more constraints (such as
+    `annotated_types.Gt`).
+
+    See: https://doc.rust-lang.org/rust-by-example/generics/new_types.html
+    """
+
+    # when registering newtypes, remember to subclass this so
+    # the command parser knows to unwrap the inner value for annotated_types
+    # checking!
+
+    __slots__ = ()
+    value: float
+
+
+# NOTE(abraham): maybe switch to generics so callers can customise the inner types
+# for example CasMps[Annotated[float, Gt(0), Le(...)]] instead of Annotatd[CasMps, Gt(0), Le(...)].
 
 #
 # airspeed
@@ -38,7 +61,7 @@ class OptionalAirspeedKind(IntEnum):
 
 
 @dataclass(frozen=True, slots=True)
-class CasMps:
+class CasMps(RuntimeNewType):
     """Calibrated airspeed normalized to metres per second.
 
     Note that in minisky, IAS is used interchangeably with CAS, assuming zero
@@ -49,7 +72,7 @@ class CasMps:
 
 
 @dataclass(frozen=True, slots=True)
-class Mach:
+class Mach(RuntimeNewType):
     """Mach number preserved as a dimensionless value."""
 
     value: q.MachNumber[float]
@@ -61,7 +84,7 @@ class Mach:
 
 
 @dataclass(frozen=True, slots=True)
-class StdPressureAltM:
+class StdPressureAltM(RuntimeNewType):
     """Barometric pressure altitude on the standard-pressure reference.
 
     QNE is the standard altimeter setting and flight levels are the operational
@@ -77,7 +100,7 @@ class StdPressureAltM:
 
 
 @dataclass(frozen=True, slots=True)
-class MslAltM:
+class MslAltM(RuntimeNewType):
     """Altitude above mean sea level.
 
     QNH is the altimeter subscale pressure setting chosen so a correctly
@@ -96,14 +119,14 @@ class MslAltM:
 # TODO(abraham): we don't know how to handle local/ground datum (see #22)
 # keeping them internal for now
 @dataclass(frozen=True, slots=True)
-class _QfeHeightM:  # pyright: ignore[reportUnusedClass]
+class _QfeHeightM(RuntimeNewType):  # pyright: ignore[reportUnusedClass]
     """Barometric height above the local QFE reference datum."""
 
     value: q.BarometricHeightM[float]
 
 
 @dataclass(frozen=True, slots=True)
-class _AglHeightM:  # pyright: ignore[reportUnusedClass]
+class _AglHeightM(RuntimeNewType):  # pyright: ignore[reportUnusedClass]
     """Height above the ground surface directly beneath the aircraft."""
 
     value: q.AglHeightM[float]
@@ -115,24 +138,24 @@ class _AglHeightM:  # pyright: ignore[reportUnusedClass]
 
 
 @dataclass(frozen=True, slots=True)
-class TrueHeadingDeg:
+class TrueHeadingDeg(RuntimeNewType):
     """Heading relative to true north in degrees."""
 
-    degrees: q.TrueHeadingDegrees[float]
+    value: q.TrueHeadingDegrees[float]
 
 
 @dataclass(frozen=True, slots=True)
-class MagneticHeadingDeg:
+class MagneticHeadingDeg(RuntimeNewType):
     """Heading relative to magnetic north in degrees."""
 
-    degrees: q.MagneticHeadingDegrees[float]
+    value: q.MagneticHeadingDegrees[float]
 
 
 @dataclass(frozen=True, slots=True)
-class GroundTrackDeg:
+class GroundTrackDeg(RuntimeNewType):
     """Ground-track direction relative to true north in degrees."""
 
-    degrees: q.GroundTrackDeg[float]
+    value: q.GroundTrackDeg[float]
 
 
 @dataclass(frozen=True, slots=True)

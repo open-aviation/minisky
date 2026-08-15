@@ -21,6 +21,7 @@ from enum import Enum, IntEnum, auto
 from typing import TYPE_CHECKING, Annotated, Literal, NamedTuple, TypeAlias
 
 import numpy as np
+from annotated_types import Gt
 
 from minisky import quantities as q
 from minisky.command import (
@@ -30,6 +31,7 @@ from minisky.command import (
     CommandCursor,
     CommandParseContext,
     CoordinateWaypoint,
+    DistanceM,
     Keyword,
     NamedWaypoint,
     Omitted,
@@ -845,15 +847,11 @@ WaypointModeArg = Annotated[
     WaypointMode,
     CmdParser.keywords(_WAYPOINT_MODES, "FLYBY, FLYOVER, or FLYTURN"),
 ]
-
-
 TurnParameterArg = Annotated[
     TurnParameter,
     CmdParser.keywords(_TURN_PARAMETERS, "a supported turn parameter"),
 ]
-
-TurnRadiusNMArg = q.DistanceNM[PositiveFiniteFloat]
-TurnCasKtArg = q.CalibratedAirspeedKt[PositiveFiniteFloat]
+TurnRadiusMArg = Annotated[DistanceM, Gt(0)]
 TurnHeadingRateArg = q.TurnRateDegPerS[PositiveFiniteFloat]
 
 
@@ -892,12 +890,12 @@ def _set_waypoint_mode(traffic: Traffic, acidx: int, mode: WaypointMode) -> Resu
 
 
 def _set_turn_radius(
-    traffic: Traffic, acidx: int, value: TurnRadiusNMArg | None
+    traffic: Traffic, acidx: int, value: TurnRadiusMArg | None
 ) -> Result[str, str]:
     acrte = traffic.ap.route[acidx]
     geometry = acrte.turn.geometry
     if value is not None:
-        geometry = TurnRadius(q.nmi_to_m(value))
+        geometry = TurnRadius(value)
     elif isinstance(geometry, TurnRadius):
         geometry = None
     acrte.turn = acrte.turn._replace(geometry=geometry)
@@ -906,9 +904,9 @@ def _set_turn_radius(
     return Ok("")
 
 
-def _set_turn_cas(traffic: Traffic, acidx: int, value: TurnCasKtArg | None) -> Result[str, str]:
+def _set_turn_cas(traffic: Traffic, acidx: int, value: CasMps | None) -> Result[str, str]:
     acrte = traffic.ap.route[acidx]
-    acrte.turn = acrte.turn._replace(cas=None if value is None else q.kt_to_mps(value))
+    acrte.turn = acrte.turn._replace(cas=None if value is None else value.value)
     acrte.swflyby = False
     acrte.swflyturn = True
     return Ok("")
@@ -1554,9 +1552,9 @@ class RouteCommands:
         self,
         acidx: AcId,
         _parameter: Literal["TURNRAD", "TURNRADIUS"],
-        value: TurnRadiusNMArg,
+        value: TurnRadiusMArg,
     ) -> Result[str, str]:
-        """Set the default fly-turn radius in nautical miles."""
+        """Set the default fly-turn radius using explicit units such as `1NM`."""
         return _set_turn_radius(self.traffic, acidx, value)
 
     @command(name="ADDWPTMODE")
@@ -1564,9 +1562,9 @@ class RouteCommands:
         self,
         acidx: AcId,
         _parameter: Literal["TURNSPD", "TURNSPEED"],
-        value: TurnCasKtArg,
+        value: Annotated[CasMps, Gt(0)],
     ) -> Result[str, str]:
-        """Set the default fly-turn [`CAS`][minisky.values.CasMps] from knots."""
+        """Set the default fly-turn [`CAS`][minisky.values.CasMps] using an explicit quantity such as `250KT[CAS]`."""
         return _set_turn_cas(self.traffic, acidx, value)
 
     @command(name="ADDWPTMODE")
@@ -1603,9 +1601,9 @@ class RouteCommands:
         self,
         acidx: AcId,
         _parameter: Literal["TURNRAD", "TURNRADIUS"],
-        value: TurnRadiusNMArg,
+        value: TurnRadiusMArg,
     ) -> Result[str, str]:
-        """Set a fly-turn radius through ADDWPT, in nautical miles."""
+        """Set a fly-turn radius through ADDWPT."""
         return _set_turn_radius(self.traffic, acidx, value)
 
     @command(name="ADDWPT")
@@ -1613,9 +1611,9 @@ class RouteCommands:
         self,
         acidx: AcId,
         _parameter: Literal["TURNSPD", "TURNSPEED"],
-        value: TurnCasKtArg,
+        value: Annotated[CasMps, Gt(0)],
     ) -> Result[str, str]:
-        """Set a fly-turn calibrated airspeed through ADDWPT, in knots."""
+        """Set fly-turn CAS through ADDWPT using an explicit quantity such as `250KT[CAS]`."""
         return _set_turn_cas(self.traffic, acidx, value)
 
     @command(name="ADDWPT")
@@ -1883,19 +1881,19 @@ class RouteCommands:
 
             Note that we deliberately differ from bluesky in a subtle way.
             BlueSky supports an implicit-ownship shorthand.
-            For example, BlueSky interprets `HX2 AT WPT10 STACK ALT 95`
-            as though the deferred command were `HX2 ALT 95` (the HX2 target
+            For example, BlueSky interprets `HX2 AT WPT10 STACK ALT 95FT[STD]`
+            as though the deferred command were `HX2 ALT 95FT[STD]` (the HX2 target
             here is injected *implicitly* by bluesky)
 
             Minisky intentionally does **not** infer or inject that aircraft
             target. Write the complete deferred command instead:
-            `HX2 AT WPT10 STACK HX2 ALT 95` (or the equivalent command-first
-            form `HX2 AT WPT10 STACK ALT HX2 95`).
+            `HX2 AT WPT10 STACK HX2 ALT 95FT[STD]` (or the equivalent command-first
+            form `HX2 AT WPT10 STACK ALT HX2 95FT[STD]`).
 
             The same rule applies to nested conditional commands. A BlueSky
             scenario line such as
-            `HX2 AT WPT9D STACK ATSPD 200KT[CAS] HX2 ALT 100` should be
-            `HX2 AT WPT9D STACK HX2 ATSPD 200KT[CAS] HX2 ALT 100` in minisky:
+            `HX2 AT WPT9D STACK ATSPD 200KT[CAS] HX2 ALT 100FT[STD]` should be
+            `HX2 AT WPT9D STACK HX2 ATSPD 200KT[CAS] HX2 ALT 100FT[STD]` in minisky:
             the deferred `ATSPD` command must itself be complete.
 
         See also:

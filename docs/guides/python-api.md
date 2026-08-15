@@ -86,7 +86,7 @@ runtime.traffic.cre(
 Or through the runtime-owned command stack:
 
 ```python
-runtime.commands.stack("CRE KL315 B738 52.0 4.0 45 5000 250KT[CAS]")
+runtime.commands.stack("CRE KL315 B738 52.0 4.0 45 5000FT[STD] 250KT[CAS]")
 runtime.commands.stack("KL315 ALT FL200")
 runtime.commands.stack("KL315 ADDWPT HELEN FL100 250KT[CAS]")
 ```

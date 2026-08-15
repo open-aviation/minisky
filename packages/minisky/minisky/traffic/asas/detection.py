@@ -29,7 +29,7 @@ from scipy.spatial import KDTree
 from minisky import quantities as q
 from minisky.command import (
     AcIdSelection,
-    NonNegativeFiniteFloat,
+    DistanceM,
     OnOff,
     TimeS,
     aircraft_indices,
@@ -46,8 +46,8 @@ if TYPE_CHECKING:
 RE: q.LengthM[float] = 6371000.0
 
 NonNegativeTime = Annotated[TimeS, Ge(0)]
-ProtectedRadiusNM = q.DistanceNM[NonNegativeFiniteFloat]
-ProtectedHeightFt = q.VerticalDistanceFt[NonNegativeFiniteFloat]
+ProtectedRadiusM = Annotated[DistanceM, Ge(0)]
+ProtectedHeightM = Annotated[DistanceM, Ge(0)]
 
 
 # TODO(abraham): model callsign pairs as a named ConflictPair record.
@@ -280,59 +280,59 @@ class ConflictDetection(TrafficArrays):
     def protected_zone_radius(self) -> Result[str, str]:
         """Report the default protected-zone radius."""
         return Ok(
-            f"ZONER [radius(nm), acid(s)/ac group]\nCurrent default PZ radius: {q.m_to_nmi(self.rpz_def):.2f} NM"
+            f"ZONER [radius, acid(s)/ac group], e.g. ZONER 5NM\nCurrent default PZ radius: {q.m_to_nmi(self.rpz_def):.2f} NM"
         )
 
     @command(name="ZONER")
-    def set_protected_zone_radius(self, radius: ProtectedRadiusNM) -> Result[str, str]:
-        """Set the default protected-zone radius in nautical miles."""
+    def set_protected_zone_radius(self, radius: ProtectedRadiusM) -> Result[str, str]:
+        """Set the default protected-zone radius."""
         oldradius = self.rpz_def
-        self.rpz_def = q.nmi_to_m(radius)
+        self.rpz_def = radius
         if self.global_rpz:
             self.rpz[:] = self.rpz_def
         # Preserve an absolute resolution zone if it was configured before the detection zone changed.
         if not self.traffic.cr.resorrelative:
-            self.stack_command(f"RSZONER {q.m_to_nmi(self.traffic.cr.resofach * oldradius)}")
-        return Ok(f"Setting default PZ radius to {radius} NM")
+            self.stack_command(f"RSZONER {q.m_to_nmi(self.traffic.cr.resofach * oldradius)}NM")
+        return Ok(f"Setting default PZ radius to {q.m_to_nmi(radius)} NM")
 
     @command(name="ZONER")
     def set_aircraft_protected_zone_radius(
-        self, radius: ProtectedRadiusNM, first: AcIdSelection, *additional: AcIdSelection
+        self, radius: ProtectedRadiusM, first: AcIdSelection, *additional: AcIdSelection
     ) -> Result[str, str]:
         """Set the protected-zone radius for selected aircraft."""
         idx = aircraft_indices((first, *additional))
-        self.rpz[idx] = q.nmi_to_m(radius)
+        self.rpz[idx] = radius
         self.global_rpz = False
-        return Ok(f"Setting PZ radius to {radius} NM for {len(idx)} aircraft")
+        return Ok(f"Setting PZ radius to {q.m_to_nmi(radius)} NM for {len(idx)} aircraft")
 
     @command(name="ZONEDH", aliases=("PZDH", "DHPZ", "PZHEIGHT"))
     def protected_zone_height(self) -> Result[str, str]:
         """Report the default protected-zone half-height."""
         return Ok(
-            f"ZONEDH [height (ft), acid(s)/ac group]\nCurrent default PZ height: {q.m_to_ft(self.hpz_def):.2f} ft"
+            f"ZONEDH [height, acid(s)/ac group]\nCurrent default PZ height: {q.m_to_ft(self.hpz_def):.2f} ft"
         )
 
     @command(name="ZONEDH")
-    def set_protected_zone_height(self, height: ProtectedHeightFt) -> Result[str, str]:
-        """Set the default protected-zone half-height in feet."""
+    def set_protected_zone_height(self, height: ProtectedHeightM) -> Result[str, str]:
+        """Set the default protected-zone half-height."""
         oldhpz = self.hpz_def
-        self.hpz_def = q.ft_to_m(height)
+        self.hpz_def = height
         if self.global_hpz:
             self.hpz[:] = self.hpz_def
         # Adjust factors for reso zone if those were set with an absolute value
         if not self.traffic.cr.resodhrelative:
-            self.stack_command(f"RSZONEDH {q.m_to_ft(self.traffic.cr.resofacv * oldhpz)}")
-        return Ok(f"Setting default PZ height to {height} ft")
+            self.stack_command(f"RSZONEDH {q.m_to_ft(self.traffic.cr.resofacv * oldhpz)}FT")
+        return Ok(f"Setting default PZ height to {q.m_to_ft(height)} ft")
 
     @command(name="ZONEDH")
     def set_aircraft_protected_zone_height(
-        self, height: ProtectedHeightFt, first: AcIdSelection, *additional: AcIdSelection
+        self, height: ProtectedHeightM, first: AcIdSelection, *additional: AcIdSelection
     ) -> Result[str, str]:
         """Set the protected-zone half-height for selected aircraft."""
         idx = aircraft_indices((first, *additional))
-        self.hpz[idx] = q.ft_to_m(height)
+        self.hpz[idx] = height
         self.global_hpz = False
-        return Ok(f"Setting PZ height to {height} ft for {len(idx)} aircraft")
+        return Ok(f"Setting PZ height to {q.m_to_ft(height)} ft for {len(idx)} aircraft")
 
     @command(name="DTLOOK")
     def detection_lookahead(self) -> Result[str, str]:

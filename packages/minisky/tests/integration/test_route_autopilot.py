@@ -229,9 +229,9 @@ class TestRouteEditing:
 
         # we break compatibility with bluesky here, the aircraft target must be
         # explicit.
-        output = run_cmd(f"{aircraft} AT {waypoint} STACK ALT 95")
+        output = run_cmd(f"{aircraft} AT {waypoint} STACK ALT 95FT[STD]")
         assert "Error" not in output
-        assert route.wpstack[0][-1] == "ALT 95"
+        assert route.wpstack[0][-1] == "ALT 95FT[STD]"
 
     def test_direct_via_stack(self, runtime: MiniSky, run_cmd: RunCommand, aircraft: str) -> None:
         # The DIRECT argument spec had a stray space (" wpt"), dropping the
@@ -371,7 +371,7 @@ class TestWaypointSwitching:
         # Waypoint 2 is a fly-turn waypoint with a turn speed; 0, 1 and 3 are fly-by
         run_cmd(f"ADDWPT {aircraft} {self.WPTS[0][0]},{self.WPTS[0][1]}")
         run_cmd(f"ADDWPT {aircraft} {self.WPTS[1][0]},{self.WPTS[1][1]}")
-        run_cmd(f"ADDWPT {aircraft} TURNSPD 250")
+        run_cmd(f"ADDWPT {aircraft} TURNSPD 250KT[CAS]")
         run_cmd(f"ADDWPT {aircraft} {self.WPTS[2][0]},{self.WPTS[2][1]}")
         run_cmd(f"ADDWPT {aircraft} FLYBY")
         run_cmd(f"ADDWPT {aircraft} {self.WPTS[3][0]},{self.WPTS[3][1]}")
@@ -408,7 +408,7 @@ class TestWaypointSwitching:
     ) -> None:
         # BlueSky 55c641e (2023-06-21) treated next-turn presence as turn-speed presence.
         run_cmd(f"ADDWPT {aircraft} {self.WPTS[0][0]},{self.WPTS[0][1]}")
-        run_cmd(f"ADDWPT {aircraft} TURNRAD 1")
+        run_cmd(f"ADDWPT {aircraft} TURNRAD 1NM")
         run_cmd(f"ADDWPT {aircraft} {self.WPTS[1][0]},{self.WPTS[1][1]}")
         run_cmd(f"VNAV {aircraft} ON")
 
@@ -420,7 +420,7 @@ class TestWaypointSwitching:
         self, runtime: MiniSky, run_cmd: RunCommand, aircraft: str
     ) -> None:
         # BlueSky 55c641e (2023-06-21) used nextturnidx > 0; 08194fa (2023-06-22) fixed index 0.
-        run_cmd(f"ADDWPT {aircraft} TURNSPD 200")
+        run_cmd(f"ADDWPT {aircraft} TURNSPD 200KT[CAS]")
         run_cmd(f"ADDWPT {aircraft} {self.WPTS[0][0]},{self.WPTS[0][1]}")
         route = runtime.traffic.ap.route[0]
 

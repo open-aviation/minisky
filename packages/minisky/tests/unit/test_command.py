@@ -191,7 +191,7 @@ def test_altitude_reference_is_preserved(runtime: MiniSky) -> None:
 
     prepared = runtime.commands.prepare_command(record, name="TESTALTREF")
     assert prepared.parse_arguments("FL100") == Ok((StdPressureAltM(q.ft_to_m(10000.0)),))
-    assert prepared.parse_arguments("3048M") == Ok((StdPressureAltM(3048.0),))
+    assert prepared.parse_arguments("3048M[STD]") == Ok((StdPressureAltM(3048.0),))
     assert prepared.parse_arguments("3048M[MSL]") == Ok((MslAltM(3048.0),))
 
 
@@ -375,7 +375,7 @@ def test_cre_omitted_heading_field(run_cmd: RunCommand, runtime: MiniSky) -> Non
 def test_cre_explicit_runway_heading_marker_is_resolved_by_command(
     run_cmd: RunCommand, runtime: MiniSky
 ) -> None:
-    output = run_cmd("CRE RWYREF,A320,EHAM,RWY18L,*,0,250KT[CAS]")
+    output = run_cmd("CRE RWYREF,A320,EHAM,RWY18L,*,0FT[STD],250KT[CAS]")
 
     assert "created" in output.lower()
     index = runtime.traffic.idx("RWYREF")
@@ -396,17 +396,17 @@ def test_heading_wildcard_is_not_global_heading_syntax(
 
 
 def test_cre_runway_heading_marker_requires_runway(runtime: MiniSky) -> None:
-    result = runtime.commands.cmddict["CRE"]("NORWY,A320,52,4,*,0,250KT[CAS]")
+    result = runtime.commands.cmddict["CRE"]("NORWY,A320,52,4,*,0FT[STD],250KT[CAS]")
 
     assert isinstance(result, Err)
     assert result.err() == "CRE: heading * requires a runway position"
 
 
 def test_wind_error_span_points_to_invalid_profile_field(runtime: MiniSky) -> None:
-    result = runtime.commands.cmddict["WIND"].parse_arguments("52 4 100 180 BAD")
+    result = runtime.commands.cmddict["WIND"].parse_arguments("52 4 100FT[STD] 180 BAD")
     assert isinstance(result, Err)
     issue = result.err()
-    text = "WIND 52 4 100 180 BAD"
+    text = "WIND 52 4 100FT[STD] 180 BAD"
     assert issue.span is not None
     assert text[issue.span.start : issue.span.end] == "BAD"
 

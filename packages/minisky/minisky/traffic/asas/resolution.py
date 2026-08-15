@@ -17,14 +17,15 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from enum import Enum
-from typing import TYPE_CHECKING, Literal, NamedTuple
+from typing import TYPE_CHECKING, Annotated, Literal, NamedTuple
 
 import numpy as np
+from annotated_types import Ge
 
 from minisky import quantities as q
 from minisky.command import (
     AcIdSelection,
-    NonNegativeFiniteFloat,
+    DistanceM,
     OnOff,
     PositiveFiniteFloat,
     aircraft_indices,
@@ -50,8 +51,8 @@ class PriorityCode(Enum):
 
 
 PriorityCodeArg = Literal["FF1", "FF2", "FF3", "LAY1", "LAY2"]
-ResolutionRadiusNM = q.DistanceNM[NonNegativeFiniteFloat]
-ResolutionHeightFt = q.VerticalDistanceFt[NonNegativeFiniteFloat]
+ResolutionRadiusM = Annotated[DistanceM, Ge(0)]
+ResolutionHeightM = Annotated[DistanceM, Ge(0)]
 HorizontalResolutionMethod = Literal["BOTH", "SPD", "HDG", "NONE", "ON", "OFF", "OF"]
 VerticalResolutionMethod = Literal["NONE", "ON", "OFF", "OF", "V/S"]
 
@@ -434,7 +435,7 @@ class ConflictResolution(TrafficArrays):
             return Ok(None)
         self.resorrelative = True
         return Err(
-            "RSZONER [radiusnm]\nCan only set resolution factor when simulation contains aircraft with different RPZ,\nUse RFACH instead."
+            "RSZONER [radius], e.g. RSZONER 7.5NM\nCan only set resolution factor when simulation contains aircraft with different RPZ,\nUse RFACH instead."
         )
 
     @command(name="RSZONER", aliases=("RESOZONER",))
@@ -443,19 +444,19 @@ class ConflictResolution(TrafficArrays):
         if isinstance(available := self._horizontal_absolute_zone_available(), Err):
             return available
         return Ok(
-            f"RSZONER [radiusnm]\nCurrent horizontal resolution factor is: {self.resofach}, resulting in radius: {q.m_to_nmi(self.resofach * self.traffic.cd.rpz_def)} nm"
+            f"RSZONER [radius], e.g. RSZONER 7.5NM\nCurrent horizontal resolution factor is: {self.resofach}, resulting in radius: {q.m_to_nmi(self.resofach * self.traffic.cd.rpz_def)} nm"
         )
 
     @command(name="RSZONER")
-    def set_horizontal_resolution_zone(self, zoner: ResolutionRadiusNM) -> Result[str, str]:
+    def set_horizontal_resolution_zone(self, zoner: ResolutionRadiusM) -> Result[str, str]:
         """Set the absolute horizontal resolution-zone radius."""
         if isinstance(available := self._horizontal_absolute_zone_available(), Err):
             return available
-        self.resofach = q.nmi_to_m(zoner) / self.traffic.cd.rpz_def
+        self.resofach = zoner / self.traffic.cd.rpz_def
         # Size of resolution zone r, vertically, no longer relative to CD zone
         self.resorrelative = False
         return Ok(
-            f"Horizontal resolution factor updated to {self.resofach}, resulting in radius: {zoner} nm"
+            f"Horizontal resolution factor updated to {self.resofach}, resulting in radius: {q.m_to_nmi(zoner)} nm"
         )
 
     def _vertical_absolute_zone_available(self) -> Result[None, str]:
@@ -463,7 +464,7 @@ class ConflictResolution(TrafficArrays):
             return Ok(None)
         self.resodhrelative = True
         return Err(
-            "RSZONEH [zonedhft]\nCan only set resolution factor when simulation contains aircraft with different HPZ,\nUse RFACV instead."
+            "RSZONEH [height], e.g. RSZONEH 1500FT\nCan only set resolution factor when simulation contains aircraft with different HPZ,\nUse RFACV instead."
         )
 
     @command(name="RSZONEDH", aliases=("RESOZONEDH",))
@@ -472,19 +473,19 @@ class ConflictResolution(TrafficArrays):
         if isinstance(available := self._vertical_absolute_zone_available(), Err):
             return available
         return Ok(
-            f"RSZONEDH [zonedhft]\nCurrent vertical resolution factor is: {self.resofacv}, resulting in height: {q.m_to_ft(self.resofacv * self.traffic.cd.hpz_def)} ft"
+            f"RSZONEDH [height], e.g. RSZONEDH 1500FT\nCurrent vertical resolution factor is: {self.resofacv}, resulting in height: {q.m_to_ft(self.resofacv * self.traffic.cd.hpz_def)} ft"
         )
 
     @command(name="RSZONEDH")
-    def set_vertical_resolution_zone(self, zonedh: ResolutionHeightFt) -> Result[str, str]:
+    def set_vertical_resolution_zone(self, zonedh: ResolutionHeightM) -> Result[str, str]:
         """Set the absolute vertical resolution-zone height."""
         if isinstance(available := self._vertical_absolute_zone_available(), Err):
             return available
-        self.resofacv = q.ft_to_m(zonedh) / self.traffic.cd.hpz_def
+        self.resofacv = zonedh / self.traffic.cd.hpz_def
         # Size of resolution zone dh, vertically, no longer relative to CD zone
         self.resodhrelative = False
         return Ok(
-            f"Vertical resolution factor updated to {self.resofacv}, resulting in height: {zonedh} ft"
+            f"Vertical resolution factor updated to {self.resofacv}, resulting in height: {q.m_to_ft(zonedh)} ft"
         )
 
     @command(name="RESO")

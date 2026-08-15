@@ -202,7 +202,7 @@ class Multicopter(plugin_api.Entity):
             callsign = self.traffic.callsign[idx]
             return Err(f"YAW: {callsign} is not a multicopter")
 
-        resolved_hdg = hdg.degrees
+        resolved_hdg = hdg.value
         if isinstance(hdg, MagneticHeadingDeg):
             resolved_hdg += geo.magdec(float(self.traffic.lat[idx]), float(self.traffic.lon[idx]))
         resolved_hdg %= 360.0

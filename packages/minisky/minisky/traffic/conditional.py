@@ -4,13 +4,15 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, TypeAlias
+from typing import TYPE_CHECKING, Annotated, TypeAlias
+
+from annotated_types import Ge
 
 from minisky import quantities as q
 from minisky.command import (
     AcId,
+    DistanceM,
     LatLonDeg,
-    NonNegativeFiniteFloat,
     Text,
     command,
 )
@@ -139,11 +141,11 @@ class Condition:
         self,
         acidx: AcId,
         position: LatLonDeg,
-        targdist: q.DistanceNM[NonNegativeFiniteFloat],
+        targdist: Annotated[DistanceM, Ge(0)],
         cmdtxt: Text,
     ) -> bool:
-        """Schedule a command for crossing a distance given in nautical miles."""
-        target: q.DistanceM[float] = q.nmi_to_m(targdist)
+        """Schedule a command for crossing a distance."""
+        target = targdist
         _bearing, actual_distance = qdrdist(
             self.traffic.lat[acidx], self.traffic.lon[acidx], position.lat, position.lon
         )
