@@ -1,15 +1,14 @@
-"""BlueSky traffic implementation.
+"""Core flight state of every aircraft: position and motion.
 
-Defines the [`Traffic`][minisky.traffic.traffic.Traffic] class, the top-level
-traffic database of the simulator. It holds all per-aircraft state (position, attitude, speeds,
-atmosphere, autopilot selections) as numpy arrays, owns the sub-models
-(autopilot, performance, conflict detection/resolution, wind, turbulence,
-trails, groups), and performs the numerical integration of the aircraft
-states each simulation time step.
+Defines the `Traffic`. It holds all per-aircraft state (position, attitude,
+speeds, atmosphere, autopilot selections) as numpy arrays, owns the
+sub-models (autopilot, performance, conflict detection/resolution, wind,
+turbulence, trails, groups), and drives the numerical integration of the
+aircraft states each simulation timestep. Each `MiniSky` runtime owns an
+instance as [`runtime.traffic`][minisky.traffic.traffic.Traffic].
 
-A single instance is created at simulator start-up and made available as
-[`runtime.traffic`][minisky.traffic.traffic.Traffic]. Several methods double as stack-command implementations
-(CRE, MCRE, CRECONFS, MOVE, POS, BANK, THR, NOISE, CRECMD, ...).
+Several methods double as stack-command implementations (`CRE`, `MCRE`,
+`CRECONFS`, `MOVE`, `POS`, `BANK`, `THR`, `NOISE`, `CRECMD`, ...).
 """
 
 from __future__ import annotations
@@ -107,7 +106,7 @@ _DEFAULT_AIRSPEED = CasMps(q.kt_to_mps(300.0))
 
 
 class Traffic(TrafficArrays):
-    """Central traffic database holding the state of all simulated aircraft.
+    """Central traffic module holding the core state of all simulated aircraft.
 
     Traffic is the top-level
     [`TrafficArrays`][minisky.core.trafficarrays.TrafficArrays] object: all per-aircraft
@@ -117,47 +116,95 @@ class Traffic(TrafficArrays):
     available as [`runtime.traffic`][minisky.traffic.traffic.Traffic].
 
     Every simulation step,
-    [`Traffic.update`][minisky.traffic.traffic.Traffic.update] refreshes the atmosphere,
-    runs the
-    autopilot and separation-assurance logic, applies performance limits, and
-    numerically integrates airspeed, heading, vertical speed and position of
-    all aircraft. All internal state is kept in SI units; stack commands use
-    aviation units (ft, kts, FL) and are converted on input/output.
+    [`Traffic.update`][minisky.traffic.traffic.Traffic.update] advances all
+    aircraft in a fixed order:
+
+    1. Atmosphere: pressure, density and temperature at each aircraft's
+       altitude.
+    2. Surveillance and trajectory noise
+       ([`runtime.traffic.noise`][minisky.traffic.uncertainty.SurveillanceUncertainty]).
+    3. Autopilot/FMS guidance
+       ([`runtime.traffic.ap`][minisky.traffic.autopilot.Autopilot]).
+    4. Conflict detection and resolution
+       ([`runtime.traffic.cd`][minisky.traffic.asas.detection.ConflictDetection],
+       [`runtime.traffic.cr`][minisky.traffic.asas.resolution.ConflictResolution]).
+    5. Selection between the autopilot and conflict-resolution commands
+       for track, speed, altitude and vertical speed
+       ([`runtime.traffic.aporasas`][minisky.traffic.aporasas.APorASAS]).
+    6. Performance model update, then limiting of the commanded speed,
+       vertical speed and altitude
+       ([`runtime.traffic.perf`][minisky.traffic.performance.perfoap.OpenAP]).
+    7. Integration of airspeed, heading, vertical speed, ground speed and
+       position
+       ([`runtime.traffic.kinematics`][minisky.traffic.kinematics.Kinematics]).
+    8. Turbulence perturbation of the new positions
+       ([`runtime.traffic.turbulence`][minisky.traffic.turbulence.Turbulence]).
+    9. Conditional commands triggered by the new state
+       ([`runtime.traffic.cond`][minisky.traffic.conditional.Condition]).
+    10. Radar-display trails
+        ([`runtime.traffic.trails`][minisky.traffic.trails.Trails]).
+
+    All internal state is kept in SI units; stack commands parse explicit
+    units and quantity/reference tags at the boundary.
 
     Attributes:
-        ntraf (int): Number of aircraft currently in the simulation.
-        callsign (list): Aircraft identifier (callsign) strings.
-        typecode (list): ICAO aircraft type designators (e.g. "A320").
-        gsnorth (ndarray): North component of ground speed [m/s].
-        gseast (ndarray): East component of ground speed [m/s].
-        windnorth (ndarray): Wind north component at aircraft position [m/s].
-        windeast (ndarray): Wind east component at aircraft position [m/s].
-        selected_airspeed (VariantArray): Selected [`CAS` in m/s][minisky.values.CasMps]
-            or [`Mach`][minisky.values.Mach] value and its
+        ntraf: Number of aircraft currently in the simulation.
+        translvl: Transition level [m].
+        callsign: Aircraft identifier (callsign) strings.
+        typecode: ICAO aircraft type designators (e.g. "A320").
+        lat: Latitude [deg].
+        lon: Longitude [deg].
+        distflown: Distance flown since creation [m].
+        alt: Pressure altitude [m].
+        hdg: True heading [deg].
+        trk: Ground track [deg].
+        tas: True airspeed [m/s].
+        gs: Ground speed [m/s].
+        gsnorth: North component of ground speed [m/s].
+        gseast: East component of ground speed [m/s].
+        cas: Calibrated airspeed [m/s].
+        M: Mach number [-].
+        selected_airspeed: Selected [`CAS` in m/s][minisky.values.CasMps] or
+            [`Mach`][minisky.values.Mach] value and its
             [`AirspeedKind`][minisky.values.AirspeedKind].
-        swlnav (ndarray): Bool switch: LNAV (lateral FMS guidance) on/off.
-        swvnav (ndarray): Bool switch: VNAV (vertical FMS guidance) on/off.
-        swvnavairspeed (ndarray): Bool switch: VNAV airspeed guidance on/off.
-        swats (ndarray): Bool switch: autothrottle on/off.
-        thr (ndarray): Fixed throttle setting [0.0-1.0], used when autothrottle is off.
-        crecmdlist (list): Command lines issued for each new aircraft.
-        cond (Condition): Pending conditional (ATALT/ATSPD/ATDIST) commands.
-        wind (Wind): Wind-field model.
-        turbulence (Turbulence): Turbulence model.
-        ap (Autopilot): Autopilot/FMS guidance.
-        actwp (ActiveWaypoint): Active waypoint data per aircraft.
-        aporasas (APorASAS): Selection between autopilot and ASAS commands.
-        cd (ConflictDetection): Conflict detection.
-        cr (ConflictResolution): Conflict resolution.
-        perf (OpenAP): Aircraft performance model.
-        kinematics (Kinematics): Flight-state integration (airspeed, heading,
-            vertical speed, ground speed and position).
-        trails (Trails): Radar-display trails.
-        groups (TrafficGroups): Aircraft group administration.
-
-    Created by: Jacco M. Hoekstra
+        vs: Vertical speed [m/s].
+        p: Static air pressure at aircraft altitude [Pa].
+        rho: Air density at aircraft altitude [kg/m³].
+        Temp: Static air temperature at aircraft altitude [K].
+        windnorth: Wind north component at aircraft position [m/s].
+        windeast: Wind east component at aircraft position [m/s].
+        aptas: True airspeed commanded at aircraft creation [m/s].
+        selalt: Selected altitude [m].
+        selvs: Selected vertical speed [m/s].
+        swlnav: Bool switch: LNAV (lateral FMS guidance) on/off.
+        swvnav: Bool switch: VNAV (vertical FMS guidance) on/off.
+        swvnavairspeed: Bool switch: VNAV airspeed guidance on/off.
+        swats: Bool switch: autothrottle on/off.
+        thr: Fixed throttle setting [0.0-1.0], used when autothrottle is off.
+        work: Work done by thrust since creation [J].
+        label: Traffic-label display data (text and bitmap) per aircraft.
+        coslat: Cached cosine of latitude, for local cartesian computations.
+        eps: Small nonzero numbers, guarding divisions by near-zero state.
+        crecmdlist: Command lines issued for each new aircraft, managed by
+            the `CRECMD` and `CLRCRECMD` commands.
+        cond: Pending conditional (`ATALT`/`ATSPD`/`ATDIST`) commands.
+        wind: Wind-field model.
+        turbulence: Turbulence model.
+        noise: Surveillance and trajectory noise, toggled with the `NOISE`
+            command.
+        ap: Autopilot/FMS guidance.
+        actwp: Active waypoint data per aircraft.
+        aporasas: Selection between autopilot and ASAS commands.
+        cd: Conflict detection.
+        cr: Conflict resolution.
+        perf: Aircraft performance model.
+        kinematics: Flight-state integration (airspeed, heading, vertical
+            speed, ground speed and position).
+        trails: Radar-display trails.
+        groups: Aircraft group administration.
     """
 
+    ntraf: int
     translvl: q.PressureAltitudeM[float]
     lat: q.LatitudeDeg[np.ndarray]
     lon: q.LongitudeDeg[np.ndarray]
@@ -181,8 +228,29 @@ class Traffic(TrafficArrays):
     aptas: q.TrueAirspeedMps[np.ndarray]
     selalt: q.PressureAltitudeM[np.ndarray]
     selvs: q.VerticalRateMps[np.ndarray]
+    swlnav: np.ndarray
+    swvnav: np.ndarray
     swvnavairspeed: np.ndarray
+    swats: np.ndarray
+    thr: np.ndarray
     work: q.EnergyJ[np.ndarray]
+    label: list[list[str | int]]
+    coslat: np.ndarray
+    eps: np.ndarray
+    crecmdlist: list[str]
+    cond: Condition
+    wind: Wind
+    turbulence: Turbulence
+    noise: SurveillanceUncertainty
+    ap: Autopilot
+    actwp: ActiveWaypoint
+    aporasas: APorASAS
+    cd: ConflictDetection
+    cr: ConflictResolution
+    perf: OpenAP
+    kinematics: Kinematics
+    trails: Trails
+    groups: TrafficGroups
 
     def __init__(
         self,
@@ -372,8 +440,8 @@ class Traffic(TrafficArrays):
     ) -> Result[str, str]:
         """Create a single aircraft and add it to the traffic database.
 
-        Implements the CRE stack command. After creation, any commands stored
-        via CRECMD are stacked for the new aircraft.
+        Implements the `CRE` stack command. After creation, any commands
+        stored via `CRECMD` are stacked for the new aircraft.
 
         Args:
             callsign: Aircraft identifier; converted to upper case, must be
@@ -428,7 +496,7 @@ class Traffic(TrafficArrays):
     ) -> Result[str, str]:
         """Create multiple aircraft at random positions in a lat/lon box.
 
-        Implements the MCRE stack command. Callsigns are generated randomly
+        Implements the `MCRE` stack command. Callsigns are generated randomly
         (two letters plus a sequence number). Heading is drawn uniformly from
         1-360 deg; when not given, altitude is drawn from 2000-39000 ft and
         calibrated airspeed from 250-450 kts. The default area is the North Sea region.
@@ -516,9 +584,9 @@ class Traffic(TrafficArrays):
     ) -> None:
         """Append one or more aircraft to all traffic arrays.
 
-        Common backend for cre() and mcre(): resizes all (child) traffic
+        Common backend for `cre` and `mcre`: resizes all (child) traffic
         arrays, initializes position, heading, speeds, atmosphere and wind
-        for the new aircraft, and stacks any CRECMD default commands.
+        for the new aircraft, and stacks any `CRECMD` default commands.
         All array arguments must have the same length. `selected_airspeed.values` contains
         [`CAS` in m/s][minisky.values.CasMps] or [`Mach`][minisky.values.Mach],
         disambiguated by [`AirspeedKind`][minisky.values.AirspeedKind] in `kind`.
@@ -632,7 +700,7 @@ class Traffic(TrafficArrays):
     ) -> None:
         """Create an aircraft in conflict with a target aircraft.
 
-        Implements the CRECONFS stack command. The intruder position, track
+        Implements the `CRECONFS` stack command. The intruder position, track
         and airspeed are computed such that, relative to the target aircraft,
         separation is lost after the given time with the given distance at
         the closest point of approach. The protected-zone radius and height
@@ -729,7 +797,7 @@ class Traffic(TrafficArrays):
         """Delete one or more aircraft from the traffic database.
 
         Removes the corresponding entries from all (child) traffic arrays
-        and updates the aircraft count. Used by the DEL stack command.
+        and updates the aircraft count. Used by the `DEL` stack command.
 
         Args:
             idx: Aircraft index, or a collection of indices.
@@ -866,7 +934,7 @@ class Traffic(TrafficArrays):
     ) -> None:
         """Instantaneously move an aircraft to a new position/state.
 
-        Implements the MOVE stack command. Optional state values are left
+        Implements the `MOVE` stack command. Optional state values are left
         unchanged when omitted. Setting a vertical speed disengages VNAV.
 
         Args:
@@ -1194,8 +1262,8 @@ class Traffic(TrafficArrays):
     def clrcrecmd(self) -> Result[str, str]:
         """Clear the list of commands issued for newly created aircraft.
 
-        Implements the CLRCRECMD stack command, removing all command lines
-        previously added with CRECMD.
+        Implements the `CLRCRECMD` stack command, removing all command lines
+        previously added with `CRECMD`.
         """
         ncrecmd = len(self.crecmdlist)
         if ncrecmd == 0:
