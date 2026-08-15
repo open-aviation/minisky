@@ -1,8 +1,4 @@
-"""Integration tests for the navigation database (defwpt/delwpt).
-
-These need an initialized runtime: defwpt/delwpt update its console, and
-simulation reset reloads the navigation database.
-"""
+"""Integration tests for the navigation database (defwpt/delwpt)."""
 
 from __future__ import annotations
 

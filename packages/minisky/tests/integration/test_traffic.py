@@ -260,28 +260,3 @@ class TestNoise:
         for _ in range(5):
             runtime.simulation.step()
         assert runtime.traffic.ntraf == 1
-
-
-class TestTrails:
-    def test_fresh_trails_object_has_background_buffers(
-        self, runtime: MiniSky, sim: Simulation
-    ) -> None:
-        from minisky.traffic.trails import Trails
-
-        trails = Trails(runtime.traffic, lambda: runtime.simulation)
-        try:
-            assert trails.bgacid == []  # used to exist only after clearbg()
-            assert not hasattr(trails, "pygame")
-        finally:
-            runtime.traffic._children.remove(trails)
-
-    def test_trail_on_update_and_buffer(self, runtime: MiniSky, run_cmd: RunCommand) -> None:
-        run_cmd("CRE KL001,A320,52,4,90,FL250,300KT[CAS]")
-        run_cmd("TRAIL ON 1")
-        assert runtime.traffic.trails.active
-        for _ in range(5):
-            runtime.simulation.step()
-        assert len(runtime.traffic.trails.newlat0) > 0  # segments were recorded
-        runtime.traffic.trails.buffer()  # must not crash on bgacid
-        assert "KL001" in runtime.traffic.trails.bgacid
-        run_cmd("TRAIL OFF")  # clears all trail data

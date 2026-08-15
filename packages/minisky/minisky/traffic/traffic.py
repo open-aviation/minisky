@@ -3,7 +3,7 @@
 Defines the `Traffic`. It holds all per-aircraft state (position, attitude,
 speeds, atmosphere, autopilot selections) as numpy arrays, owns the
 sub-models (autopilot, performance, conflict detection/resolution, wind,
-turbulence, trails, groups), and drives the numerical integration of the
+turbulence, groups), and drives the numerical integration of the
 aircraft states each simulation timestep. Each `MiniSky` runtime owns an
 instance as [`runtime.traffic`][minisky.traffic.traffic.Traffic].
 
@@ -73,7 +73,6 @@ from .conditional import Condition
 from .kinematics import Kinematics
 from .performance.perfoap import OpenAP
 from .trafficgroups import TrafficGroups
-from .trails import Trails
 from .turbulence import Turbulence
 from .uncertainty import SurveillanceUncertainty
 from .wind import Wind
@@ -141,8 +140,6 @@ class Traffic(TrafficArrays):
        ([`runtime.traffic.turbulence`][minisky.traffic.turbulence.Turbulence]).
     9. Conditional commands triggered by the new state
        ([`runtime.traffic.cond`][minisky.traffic.conditional.Condition]).
-    10. Radar-display trails
-        ([`runtime.traffic.trails`][minisky.traffic.trails.Trails]).
 
     All internal state is kept in SI units; stack commands parse explicit
     units and quantity/reference tags at the boundary.
@@ -182,7 +179,6 @@ class Traffic(TrafficArrays):
         swats: Bool switch: autothrottle on/off.
         thr: Fixed throttle setting [0.0-1.0], used when autothrottle is off.
         work: Work done by thrust since creation [J].
-        label: Traffic-label display data (text and bitmap) per aircraft.
         coslat: Cached cosine of latitude, for local cartesian computations.
         eps: Small nonzero numbers, guarding divisions by near-zero state.
         crecmdlist: Command lines issued for each new aircraft, managed by
@@ -200,7 +196,6 @@ class Traffic(TrafficArrays):
         perf: Aircraft performance model.
         kinematics: Flight-state integration (airspeed, heading, vertical
             speed, ground speed and position).
-        trails: Radar-display trails.
         groups: Aircraft group administration.
     """
 
@@ -234,7 +229,6 @@ class Traffic(TrafficArrays):
     swats: np.ndarray
     thr: np.ndarray
     work: q.EnergyJ[np.ndarray]
-    label: list[list[str | int]]
     coslat: np.ndarray
     eps: np.ndarray
     crecmdlist: list[str]
@@ -249,7 +243,6 @@ class Traffic(TrafficArrays):
     cr: ConflictResolution
     perf: OpenAP
     kinematics: Kinematics
-    trails: Trails
     groups: TrafficGroups
 
     def __init__(
@@ -333,7 +326,6 @@ class Traffic(TrafficArrays):
             self.ap = Autopilot(self, get_simulation)
             self.aporasas = APorASAS(self)
             self.noise = SurveillanceUncertainty(self, get_simulation)
-            self.trails = Trails(self, get_simulation)
             self.actwp = ActiveWaypoint(self)
             self.perf = OpenAP(self)
             self.kinematics = Kinematics(self, get_simulation)
@@ -346,9 +338,6 @@ class Traffic(TrafficArrays):
                 [], dtype=bool
             )  # Switch indicating whether autothrottle system is on/off
             self.thr = np.array([])  # Fixed throttle setting (0.0-1.0) when autothrottle is off
-
-            # Display information on label
-            self.label = []  # Text and bitmap of traffic label
 
             # Miscallaneous
             self.coslat = np.array([])  # Cosine of latitude for computations
@@ -651,9 +640,6 @@ class Traffic(TrafficArrays):
         self.aptas[-n:] = self.tas[-n:]
         self.selalt[-n:] = self.alt[-n:]
 
-        # Display information on label
-        self.label[-n:] = n * [["", "", "", 0]]
-
         # Miscallaneous: Cosine of latitude for flat-earth aproximations
         self.coslat[-n:] = np.cos(np.radians(lat))
         self.eps[-n:] = 0.01
@@ -825,9 +811,8 @@ class Traffic(TrafficArrays):
         assurance (ASAS) guidance, decides per channel between autopilot and
         ASAS commands, updates the performance model and limits the commanded
         speeds accordingly, integrates airspeed/heading/vertical speed,
-        ground speed and position, applies turbulence, triggers conditional
-        commands and updates the display trails. Does nothing when there is
-        no traffic.
+        ground speed and position, applies turbulence, and triggers conditional
+        commands. Does nothing when there is no traffic.
         """
         # Update only if there is traffic ---------------------
         if self.ntraf == 0:
@@ -860,9 +845,6 @@ class Traffic(TrafficArrays):
 
         # Check whether new traffic state triggers conditional commands
         self.cond.update()
-
-        # ---------- Aftermath ---------------------------------
-        self.trails.update()
 
     def update_asas(self) -> None:
         """Run conflict detection and conflict resolution for all aircraft."""
