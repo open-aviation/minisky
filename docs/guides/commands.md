@@ -75,19 +75,22 @@ Minisky follows the practice of [type-driven design](https://lexi-lambda.github.
 !!! tip
     If you want to target an aircraft *or* a traffic group, use [`AcIdSelection`][minisky.command.AcIdSelection], which resolves the input to an array of aircraft indices.
 
-Minisky provides many useful built-in types and we recommend using them instead of manually interpreting strings inside your method. For example, [`AltM`][minisky.command.AltM] accepts user input such as `FL250` and gives the method an altitude in metres:
+Minisky provides many useful built-in types and we recommend using them instead of manually interpreting strings inside your method. For example, [`StdPressureAltM`][minisky.values.StdPressureAltM] accepts user input such as `FL250`, bare feet `25000`, explicit `25000FT` or `7620M`, and internally transforms that into an altitude in meters.
 
 ```python
-from minisky.command import AltM
+from minisky.values import StdPressureAltM
 
 
 @plugin_api.command(name="TARGETALT")
-def set_target_altitude(self, idx: AcId, altitude: AltM) -> Result[str, str]:
-    self.target_altitude[idx] = altitude
+def set_target_altitude(self, idx: AcId, altitude: StdPressureAltM) -> Result[str, str]:
+    self.target_altitude[idx] = altitude.value
     return Ok("")
 ```
 
-Other useful types include: [`SpeedOrMach`][minisky.command.SpeedMpsOrMach], [`Wpt`][minisky.command.Wpt], [`LatLonDeg`][minisky.command.LatLonDeg].
+<!-- TODO(abraham): this file is primarily oriented towards plugin developers, so we should not bury this detail here. move this to a dedicated page for *users* so they can easily understand the variants of quantity types. -->
+Note that the pressure altitude here (QNE) is not to be confused with the altitude above mean sea level (QNH). To accept both forms, you can also use Python Unions (`|`) with [`MslAltM`][minisky.values.MslAltM] (which acccepts `25000FT[MSL]` or `7620M[MSL]`).
+
+Other useful types include: speed ([`CasMps`][minisky.values.CasMps]/[`Mach`][minisky.values.Mach]) and heading ([`TrueHeadingDeg`][minisky.values.TrueHeadingDeg]/[`MagneticHeadingDeg`][minisky.values.MagneticHeadingDeg]/[`GroundTrackDeg`][minisky.values.GroundTrackDeg]).
 
 ### Optional values
 
@@ -103,8 +106,11 @@ def note(self, idx: AcId, text: str | None = None) -> Result[str, str]:
 For an explicitly empty positional field, use `T | None`:
 
 ```python
-def route(self, idx: AcId, altitude: AltM | None, speed: SpeedMpsOrMach) -> None:
-    # `ROUTE KL204,,250` gives altitude=None
+from minisky.values import CasMps, Mach, StdPressureAltM
+
+
+def route(self, idx: AcId, altitude: StdPressureAltM | None, airspeed: CasMps | Mach) -> None:
+    # `ROUTE KL204,,250KT[CAS]` gives altitude=None
 ```
 
 ## Add command overloads

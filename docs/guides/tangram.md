@@ -83,7 +83,7 @@ Startup should print
 redis-cli psubscribe "to:*"
 
 # drive the simulator from outside
-redis-cli publish "from:minisky:command" '{"command": "CRE KL204 B744 52 4 90 FL300 250"}'
+redis-cli publish "from:minisky:command" '{"command": "CRE KL204 B744 52 4 90 FL300 250KT[CAS]"}'
 redis-cli publish "from:minisky:command" '{"command": "HOLD"}'
 redis-cli publish "from:minisky:command" '{"command": "OP"}'
 ```

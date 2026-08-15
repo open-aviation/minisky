@@ -96,7 +96,7 @@ so index `i` refers to the same aircraft everywhere.
 Every text command — whether it comes from a scenario file, the REST `stack/` endpoint,
 or the console — goes through the same interpreter: [`minisky.stack`](api/stack.md).
 
-- Commands are queued with `runtime.commands.stack("CRE KL001 B738 52 4 90 FL100 250")`
+- Commands are queued with `runtime.commands.stack("CRE KL001 B738 52 4 90 FL100 250KT[CAS]")`
   and executed on the next `runtime.simulation.step()`.
 - Each command is compiled from its Python signature, see [commands](./guides/commands.md).
 

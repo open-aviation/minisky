@@ -11,7 +11,7 @@
 
 # Create the drone on the ground at home, stationary. M600 is a multicopter
 # typecode, so MCOPT reports ON without being set.
-00:00:02.00>CRE PH1 M600 52.0 4.0 90 0 0
+00:00:02.00>CRE PH1 M600 52.0 4.0 90 0 0KT[CAS]
 00:00:03.00>MCOPT PH1
 
 # Out and back. Multicopter waypoints are fly-over with a fixed capture
@@ -35,7 +35,7 @@
 00:00:04.00>HOVER PH1 5 100
 
 # Depart eastbound once the takeoff hover has expired.
-00:00:20.00>SPD PH1 20
+00:00:20.00>SPD PH1 20KT[CAS]
 00:00:20.00>LNAV PH1 ON
 
 # Enroute to the drop point.

@@ -3,7 +3,7 @@
 The stack is MiniSky's text-command interpreter. Every instruction to the
 simulator—typed by a user, read from a scenario (`.scn`) file, or issued by
 a plugin—enters as a line of text such as
-`CRE KL204 B744 52.0 4.0 90 FL300 250`. Command lines are queued with
+`CRE KL204 B744 52.0 4.0 90 FL300 250KT[CAS]`. Command lines are queued with
 [`CommandStack.stack`][minisky.stack.CommandStack.stack] and executed once per simulation step by [`CommandStack.process`][minisky.stack.CommandStack.process].
 
 Each available command is represented by a [Command][minisky.stack.Command] object, which

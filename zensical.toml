@@ -26,6 +26,7 @@ nav = [
     { "API" = [
       { "minisky" = "api/minisky.md" },
       { "quantities" = "api/quantities.md" },
+      { "values" = "api/values.md" },
       { "simulation" = "api/simulation.md" },
       { "traffic" = "api/traffic.md" },
       { "stack" = "api/stack.md" },

@@ -83,7 +83,7 @@
         <input
           v-model="command"
           type="text"
-          placeholder="stack command, e.g. CRE KL204 B744 52 4 90 FL300 250"
+          placeholder="stack command, e.g. CRE KL204 B744 52 4 90 FL300 250KT[CAS]"
           spellcheck="false"
           @keydown.up.prevent="historyUp"
           @keydown.down.prevent="historyDown"

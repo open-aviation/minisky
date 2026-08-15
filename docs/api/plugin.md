@@ -33,7 +33,7 @@ lifespan capabilities. See the [plugin guide](../guides/plugins.md).
 
 ::: minisky.command.CommandParseContext
 
-::: minisky.command.Parsed
+::: minisky.command.Spanned
 
 ::: minisky.plugin.plugin_decorators.hook
 

@@ -12,10 +12,8 @@ The aeronautics conversion and atmosphere library of MiniSky. It provides:
 
 Functions prefixed with a "v" are vectorized and accept numpy arrays;
 these use a simplified two-layer ISA (troposphere and lower stratosphere,
-valid up to approximately 22 km). The scalar variants without prefix use
-the full multi-layer ISA table. The casormach* functions interpret a
-single speed input as either CAS or Mach number, using an explicit
-CAS/Mach threshold supplied by the owning runtime.
+valid up to approximately 22 km). The scalar variants without prefix use the
+full multi-layer ISA table.
 """
 
 from typing import NamedTuple
@@ -26,8 +24,6 @@ from minisky import quantities as q
 
 # International standard atmpshere only up to 72000 ft / 22 km
 
-# TODO(abraham): #22 should add geometric/AGL state at ground interfaces;
-# we intentionally exposes pressure altitude here.
 
 #
 # Constants Aeronautics
@@ -44,7 +40,6 @@ gamma2 = 3.5  # gamma/(gamma-1) for air
 beta: q.TemperatureGradientKPerM[float] = -0.0065  # [K/m] ISA temp gradient below tropopause
 Rearth: q.LengthM[float] = 6371000.0  # m  Average earth radius
 a0: q.SpeedOfSoundMps = np.sqrt(gamma * R * T0)  # sea level speed of sound ISA
-DEFAULT_CASMACH_THRESHOLD = 2.0
 
 
 #
@@ -169,8 +164,7 @@ def vcasmach2tas(
     value: np.ndarray, is_mach: np.ndarray, h: q.PressureAltitudeM[np.ndarray]
 ) -> q.TrueAirspeedMps[np.ndarray]:
     """Convert mixed per-lane [`CAS` in m/s][minisky.values.CasMps] /
-    [`Mach`][minisky.values.Mach] values to TAS.
-    """
+    [`Mach`][minisky.values.Mach] values to TAS."""
     tas = np.empty_like(value, dtype=float)
     tas[is_mach] = vmach2tas(value[is_mach], h[is_mach])
     is_cas = ~is_mach
@@ -201,45 +195,6 @@ def vcas2mach(cas: q.CalibratedAirspeedMps, h: q.PressureAltitudeM) -> q.MachNum
     tas = vcas2tas(cas, h)
     M = vtas2mach(tas, h)
     return M
-
-
-class VectorAirspeeds(NamedTuple):
-    true: q.TrueAirspeedMps
-    calibrated: q.CalibratedAirspeedMps
-    mach: q.MachNumber
-
-
-def vcasormach(
-    spd: q.MachNumber | q.CalibratedAirspeedMps,
-    h: q.PressureAltitudeM,
-    threshold: float,
-) -> VectorAirspeeds:
-    """Interpret input speed as either CAS or a Mach number, and return TAS, CAS, and Mach.
-
-    Args:
-        spd: Interpreted as Mach inside the threshold band and as CAS otherwise.
-        threshold: Upper bound below which positive speed values are Mach numbers.
-    """
-    ismach = np.logical_and(spd > 0.1, spd < threshold)
-    tas = np.where(ismach, vmach2tas(spd, h), vcas2tas(spd, h))
-    cas = np.where(ismach, vtas2cas(tas, h), spd)
-    mach = np.where(ismach, spd, vtas2mach(tas, h))
-    return VectorAirspeeds(tas, cas, mach)
-
-
-def vcasormach2tas(
-    spd: q.MachNumber | q.CalibratedAirspeedMps,
-    h: q.PressureAltitudeM,
-    threshold: float,
-) -> q.TrueAirspeedMps:
-    """Interpret input speed as either CAS or a Mach number, and return TAS.
-
-    Args:
-        spd: Interpreted as Mach inside the threshold band and as CAS otherwise.
-        threshold: Upper bound below which positive speed values are Mach numbers.
-    """
-    ismach = np.logical_and(spd > 0.1, spd < threshold)
-    return np.where(ismach, vmach2tas(spd, h), vcas2tas(spd, h))
 
 
 def crossoveralt(
@@ -503,50 +458,3 @@ def cas2mach(
     tas = cas2tas(cas, h)
     M = tas2mach(tas, h)
     return M
-
-
-class ScalarAirspeeds(NamedTuple):
-    true: q.TrueAirspeedMps[float]
-    calibrated: q.CalibratedAirspeedMps[float]
-    mach: q.MachNumber[float]
-
-
-# TODO(abraham): #40 shuold remove threshold-encoded CAS/Mach values.
-def casormach(
-    spd: q.MachNumber[float] | q.CalibratedAirspeedMps[float],
-    h: q.PressureAltitudeM[float],
-    threshold: float,
-) -> ScalarAirspeeds:
-    """Interpret input speed as either CAS or a Mach number (scalar version).
-
-    Args:
-        spd: Interpreted as Mach when 0.1 < spd < threshold, and as CAS otherwise.
-        threshold: Upper bound below which positive speed values are Mach numbers.
-    """
-    if 0.1 < spd < threshold:
-        # Interpret spd as Mach number
-        tas = mach2tas(spd, h)
-        cas = mach2cas(spd, h)
-        m = spd
-    else:
-        # Interpret spd as CAS
-        tas = cas2tas(spd, h)
-        cas = spd
-        m = cas2mach(spd, h)
-    return ScalarAirspeeds(tas, cas, m)
-
-
-def casormach2tas(
-    spd: q.MachNumber[float] | q.CalibratedAirspeedMps[float],
-    h: q.PressureAltitudeM[float],
-    threshold: float,
-) -> q.TrueAirspeedMps[float]:
-    """Interpret input speed as either CAS or Mach, and return TAS (scalar version).
-
-    Args:
-        spd: Interpreted as Mach when 0.1 < spd < threshold, and as CAS otherwise.
-        threshold: Upper bound below which positive speed values are Mach numbers.
-    """
-    # Interpret spd as Mach number inside the threshold band, otherwise as CAS
-    tas = mach2tas(spd, h) if 0.1 < spd < threshold else cas2tas(spd, h)
-    return tas
