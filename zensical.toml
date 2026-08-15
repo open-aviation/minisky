@@ -123,7 +123,10 @@ signature_crossrefs = true
 # ask mkdocstrings to show them regardless of whether it is documented.
 show_if_no_docstring = true
 show_attribute_values = true
-members = true
+# Not `members = true`: that selects every member and ignores the filters
+# below, which would document private state and helpers as bare, prose-less
+# blocks. Leaving members unset selects the same members but honours filters.
+filters = ["!^_[^_]"]
 
 [project.markdown_extensions.zensical.extensions.macros]
 module_name = "docs/macros"
