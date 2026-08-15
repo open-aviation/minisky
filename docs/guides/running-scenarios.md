@@ -23,8 +23,8 @@ A scenario file (`.scn`) is a list of time-stamped [stack commands](../reference
 Each line has the form `HH:MM:SS.ss > COMMAND`:
 
 ```text
-00:00:00.00 > CRE KL204 B738 52.0 4.0 90 FL100 250
-00:00:00.00 > KL204 ADDWPT HELEN FL100 250
+00:00:00.00 > CRE KL204 B738 52.0 4.0 90 FL100 250KT[CAS]
+00:00:00.00 > KL204 ADDWPT HELEN FL100 250KT[CAS]
 00:00:10.00 > KL204 ALT FL200
 00:30:00.00 > QUIT
 ```

@@ -1,16 +1,67 @@
 """Typed stack-command declarations and parsers.
 
-BlueSky scenario file grammar:
+Command grammar. Alphabetic terminals are case-insensitive; semantic names such
+as `aircraft` are resolved against runtime state after syntax parsing.
 
-```
-batch          = command, { optional-space, ";", optional-space, command } ;
-command        = argument, { separator, argument } ;
-separator      = space, { space }
-                | optional-space, ",", optional-space ;
-argument       = bare | single-quoted | double-quoted ;
-bare           = bare-char, { bare-char } ;
-single-quoted  = "'", { any-char-except-single-quote }, "'" ;
-double-quoted  = '"', { any-char-except-double-quote }, '"' ;
+```text
+batch              = [ command ], { optional-space, ";", optional-space, [ command ] } ;
+command            = field, { separator, field } ;
+field              = argument | omitted-field ;
+separator          = spaces | optional-space, ",", optional-space ;
+omitted-field      = /* empty field created by a comma, e.g. A,,B */ ;
+argument           = bare | single-quoted | double-quoted ;
+bare               = bare-char, { bare-char } ;
+single-quoted      = "'", { any-char-except-single-quote }, "'" ;
+double-quoted      = '"', { any-char-except-double-quote }, '"' ;
+bare-char          = any-char-except-space-comma-semicolon ;
+spaces             = space, { space } ;
+optional-space     = { space } ;
+
+digit              = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" ;
+digits             = digit, { digit } ;
+sign               = "+" | "-" ;
+unsigned-number    = digits, [ ".", { digit } ] | ".", digits ;
+number             = [ sign ], unsigned-number ;
+
+boolean            = "TRUE" | "YES" | "Y" | "1" | "ON"
+                   | "FALSE" | "NO" | "N" | "0" | "OFF" ;
+time               = number | [ digits ], ":", number
+                   | [ digits ], ":", [ digits ], ":", number ;
+vertical-speed     = number ;
+
+altitude           = pressure-altitude | msl-altitude ;
+pressure-altitude  = flight-level | altitude-value ;
+msl-altitude       = altitude-value, "[MSL]" ;
+flight-level       = "FL", digits ;                  # hundreds of feet, standard pressure
+altitude-value     = number, [ altitude-unit ] ;     # unqualified reference = standard pressure
+altitude-unit      = "FT" | "M" ;
+vertical-distance  = number, [ altitude-unit ] ;     # unqualified unit = feet
+
+speed              = mach | speed-value ;
+selected-airspeed  = mach | cas ;
+cas                = unsigned-number, speed-unit, "[CAS]" ;
+tas                = unsigned-number, speed-unit, "[TAS]" ;
+gs                 = unsigned-number, speed-unit, "[GS]" ;
+speed-value        = cas | tas | gs ;
+speed-unit         = "KT" | "MPS" ;
+mach               = "M", (digits, ".", digits | ".", digits) ;
+
+heading            = true-heading | magnetic-heading ;
+true-heading       = number, [ "T" ] ;
+magnetic-heading   = number, "M" ;
+ground-track       = number, "TRK" ;
+runway-heading     = "*" ;
+
+coordinate         = latitude, separator, longitude ;
+latitude           = number | [ "N" | "S" ], dms-angle ;
+longitude          = number | [ "E" | "W" ], dms-angle ;
+dms-angle          = unsigned-number, { dms-mark, unsigned-number }, [ dms-mark ] ;
+dms-mark           = "'" | '"' | "°" ;
+waypoint           = coordinate | name | name, separator, runway ;
+runway             = "RW", [ "Y" ], name ;
+aircraft           = name ;                 # must resolve to an aircraft
+aircraft-selection = "*" | "ALL" | name ;   # name may resolve to aircraft/group
+name               = bare ;
 ```
 """
 
@@ -598,6 +649,7 @@ VerticalDistanceM = Annotated[
     ),
 ]
 
+
 def _parse_cas(value: str) -> value_types.CasMps:
     if (match := _CAS.fullmatch(value)) is None:
         raise ValueError
@@ -650,7 +702,11 @@ def _parse_magnetic_heading(value: str) -> value_types.MagneticHeadingDeg:
 
 
 def _parse_heading(value: str) -> value_types.TrueHeadingDeg | value_types.MagneticHeadingDeg:
-    return _parse_magnetic_heading(value) if value.upper().endswith("M") else _parse_true_heading(value)
+    return (
+        _parse_magnetic_heading(value)
+        if value.upper().endswith("M")
+        else _parse_true_heading(value)
+    )
 
 
 HeadingDeg = Annotated[
@@ -668,7 +724,7 @@ def _parse_ground_track(value: str) -> value_types.GroundTrackDeg:
 class RunwayHeadingRequest:
     """Preserve a source-level `*` request until the command can resolve it.
 
-    For example, in `CRE KLM1,A320,EHAM,RWY18L,*,0,250`, `*` means "use the
+    For example, in `CRE KLM1,A320,EHAM,RWY18L,*,0,250KT[CAS]`, `*` means "use the
     heading of the runway parsed in the previous argument". Unlike bluesky
     (which internally stores the RWY18L in its parser), minisky directly returns
     the sentinel to avoid a parser-global cross-argument state.
@@ -844,7 +900,11 @@ def _resolve_named_position(
 
     if name in navigation.aptid:
         index = navigation.aptid.index(name)
-        return Ok(value_types.LatLonDegrees(float(navigation.aptlat[index]), float(navigation.aptlon[index])))
+        return Ok(
+            value_types.LatLonDegrees(
+                float(navigation.aptlat[index]), float(navigation.aptlon[index])
+            )
+        )
 
     occurrences = navigation.wpid.count(name)
     if occurrences > 1:
@@ -853,7 +913,11 @@ def _resolve_named_position(
         )
     if occurrences == 1:
         index = navigation.wpid.index(name)
-        return Ok(value_types.LatLonDegrees(float(navigation.wplat[index]), float(navigation.wplon[index])))
+        return Ok(
+            value_types.LatLonDegrees(
+                float(navigation.wplat[index]), float(navigation.wplon[index])
+            )
+        )
 
     return Err(ArgumentIssue.expected("a waypoint, airport, runway, or aircraft id", name, span))
 
@@ -919,9 +983,7 @@ _VALUE_PARSERS: dict[Any, CmdParser[Any]] = {
     value_types.CasMps: CmdParser.value(
         _parse_cas, "CAS such as 250KT[CAS] or 128MPS[CAS]", field="CAS"
     ),
-    value_types.Mach: CmdParser.value(
-        _parse_mach, "Mach such as M0.78 or M.78", field="Mach"
-    ),
+    value_types.Mach: CmdParser.value(_parse_mach, "Mach such as M0.78 or M.78", field="Mach"),
     value_types.StdPressureAltM: CmdParser.value(
         parse_pressure_altitude_value,
         "pressure altitude such as FL100, 10000, 10000FT, or 3048M",

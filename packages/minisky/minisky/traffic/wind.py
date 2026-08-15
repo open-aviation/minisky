@@ -448,9 +448,13 @@ def _parse_wind_level(
     try:
         altitude = parse_pressure_altitude_value(altitude_token.value).value
     except ValueError:
-        return Err(ArgumentIssue.expected("a finite altitude", altitude_token.value, altitude_token.span))
+        return Err(
+            ArgumentIssue.expected("a finite altitude", altitude_token.value, altitude_token.span)
+        )
     if not isfinite(altitude):
-        return Err(ArgumentIssue.expected("a finite altitude", altitude_token.value, altitude_token.span))
+        return Err(
+            ArgumentIssue.expected("a finite altitude", altitude_token.value, altitude_token.span)
+        )
 
     direction_result = parse_field(cursor, float, "a finite direction")
     if isinstance(direction_result, Err):
@@ -540,9 +544,7 @@ class Wind(TrafficArrays, Windfield):
     @command(name="GETWIND")
     def report(self, position: LatLonDeg, alt: StdPressureAltM | None = None) -> Result[str, str]:
         """Report wind at an aviation position and optional altitude."""
-        north, east = self.getdata(
-            position.lat, position.lon, None if alt is None else alt.value
-        )
+        north, east = self.getdata(position.lat, position.lon, None if alt is None else alt.value)
         direction = (np.degrees(np.arctan2(east, north)) + 180.0) % 360.0
         speed = np.sqrt(north * north + east * east)
         return Ok(

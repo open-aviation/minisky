@@ -265,9 +265,21 @@
             }
 
             let CAS = Math.round(aircraft['CAS (knots)']) || 0;
-            let assignedCAS = Math.round(aircraft["assigned speed (knots)"]) || 0;
-            if (Math.abs(assignedCAS - CAS) > 2) {
-                CAS = `<span style="color:red">${CAS}</span>`;
+            // WARNING(abraham): this ENTIRE FILE is scheduled for removal
+            // since it is unused, untested and superseded by tangram!
+            const selectedAirspeed = aircraft["selected airspeed"];
+            let assignedAirspeed = "";
+            if (selectedAirspeed?.kind === "CAS") {
+                const assignedCAS = selectedAirspeed.mps * 1.9438444924406;
+                assignedAirspeed = Math.round(assignedCAS);
+                if (Math.abs(assignedCAS - CAS) > 2) {
+                    CAS = `<span style="color:red">${CAS}</span>`;
+                }
+            } else if (selectedAirspeed?.kind === "MACH") {
+                assignedAirspeed = `M${selectedAirspeed.mach.toFixed(2)}`;
+                if (Math.abs(selectedAirspeed.mach - aircraft.mach) > 0.01) {
+                    CAS = `<span style="color:red">${CAS}</span>`;
+                }
             }
 
             let track = Math.round(aircraft["track (degrees)"]) || 0;
@@ -289,7 +301,7 @@
                     </div>
                     <div class="label-row">
                         <div class="label-left">SPD:${CAS}</div>
-                        <div class="label-left">ASPD:${assignedCAS}</div>
+                        <div class="label-left">ASPD:${assignedAirspeed}</div>
                         <div class="label-right"></div>
 
                     </div>

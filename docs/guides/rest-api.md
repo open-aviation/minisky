@@ -39,7 +39,7 @@ FastAPI serves interactive OpenAPI docs at `http://localhost:8000/docs`. The ser
 httpx "http://localhost:8000/stack/MCRE 3"
 
 # Create a specific aircraft
-httpx "http://localhost:8000/stack/CRE KL001 B738 52.0 4.0 90 FL100 250"
+httpx "http://localhost:8000/stack/CRE KL001 B738 52.0 4.0 90 FL100 250KT[CAS]"
 
 # Show aircraft near Amsterdam
 httpx "http://localhost:8000/stack/POS EHAM"

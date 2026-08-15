@@ -20,7 +20,7 @@ Two kinds of input, distinguished by the leading `/`:
 ```text
 > POS EHAM                  # stack: show aircraft near EHAM
 > MCRE 3                    # stack: create 3 random aircraft
-> CRE KL001 B738 52 4 90 FL100 250
+> CRE KL001 B738 52 4 90 FL100 250KT[CAS]
 
 > /all                      # API: all aircraft states
 > /conflicts                # API: current conflicts

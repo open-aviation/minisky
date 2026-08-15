@@ -47,7 +47,6 @@ from minisky.core.trafficarrays import TrafficArrays, VariantArray
 from minisky.result import Err, Ok, Result
 from minisky.tools import geo
 from minisky.tools.aero import (
-    DEFAULT_CASMACH_THRESHOLD,
     cas2tas,
     mach2tas,
     tas2cas,
@@ -210,8 +209,6 @@ class Traffic(TrafficArrays):
         self.select_implementation = select_implementation
 
         self.ntraf = 0
-        self.casmach_threshold = DEFAULT_CASMACH_THRESHOLD
-
         self.cond = Condition(self, stack_command)  # Conditional commands list
         self.wind = Wind()
         self.wind.reparent(self)
@@ -290,18 +287,6 @@ class Traffic(TrafficArrays):
             self.coslat = np.array([])  # Cosine of latitude for computations
             self.eps = np.array([])  # Small nonzero numbers
             self.work = np.array([])
-
-    @command(name="CASMACHTHR")
-    def casmachthr(self, threshold: float | None = None) -> Result[str, str]:
-        """Get or set the legacy CAS/Mach interpretation threshold."""
-        if threshold is None:
-            return Ok(
-                "CASMACHTHR: The current CAS/Mach threshold is "
-                f"{self.casmach_threshold} m/s "
-                f"({q.mps_to_kt(self.casmach_threshold)} kts)"
-            )
-        self.casmach_threshold = threshold
-        return Ok(f"CASMACHTHR: Set CAS/Mach threshold to {threshold}")
 
     @property
     def simulation(self) -> Simulation:

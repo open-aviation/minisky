@@ -1,43 +1,16 @@
 """
 Converters and other utility functions
 
-Text-to-value and value-to-text converters, mainly used by the stack
-argument parsers: altitudes, times, headings, speeds, vertical speeds,
-booleans, latitudes/longitudes (including degrees-minutes-seconds
-notation), colours, and angle-domain helpers. Text input is converted to
-the SI units used internally by the simulator (m, m/s, s, deg).
+Text-to-value and value-to-text converters still shared by command parsing
+and simulation code: times, vertical speeds, booleans, latitude/longitude
+(including DMS notation), and angle-domain helpers. Text input is converted
+to the SI units used internally by the simulator (m, m/s, s, deg).
 """
 
 from time import gmtime, strftime
 from typing import NamedTuple
 
-import numpy as np
-
 from minisky import quantities as q
-
-from .aero import cas2tas, mach2tas
-from .geo import magdec
-
-
-def txt2alt(txt: str) -> q.PressureAltitudeM[float]:
-    """Convert text to altitude in meter: also FL300 => 30000. as float
-
-    Accepts a flight level ("FL300" = 30000 ft) or a plain number in feet.
-
-    Args:
-        txt: Altitude text, e.g. "FL300" or "25000".
-
-    Raises:
-        ValueError: When the text cannot be parsed as an altitude.
-    """
-    # First check for FL otherwise feet
-    try:
-        if txt.upper()[:2] == "FL" and len(txt) >= 4:  # Syntax check Flxxx or Flxx
-            return q.ft_to_m(100.0 * int(txt[2:]))
-        return q.ft_to_m(float(txt))
-    except ValueError:
-        pass
-    raise ValueError(f'Could not parse "{txt}" as altitude"')
 
 
 def tim2txt(t: q.DurationS[float]) -> str:
@@ -99,41 +72,6 @@ def i2txt(i: int, n: int) -> str:
     return f"{i:0{n}d}"
 
 
-def txt2hdg(
-    txt: str,
-    lat: q.LatitudeDeg[float] | None = None,
-    lon: q.LongitudeDeg[float] | None = None,
-) -> q.TrueHeadingDegrees[float]:
-    """Convert text to true or magnetic heading.
-    Modified by : Yaofu Zhou
-
-    A trailing "T" marks the value as true heading; a trailing "M" marks
-    it as magnetic heading, which is converted to true heading using the
-    magnetic declination at the given reference position.
-
-    Args:
-        txt: Heading text, e.g. "090", "090T", or "090M".
-        lat: Reference latitude; required for magnetic headings.
-        lon: Reference longitude; required for magnetic headings.
-
-    Raises:
-        ValueError: When a magnetic heading is given without a reference
-            position.
-    """
-    heading = float(txt.upper().replace("T", "").replace("M", ""))
-
-    if "M" in txt.upper():
-        if lat is None or lon is None:
-            raise ValueError(
-                "txt2hdg needs a reference latitude and longitude "
-                "when a magnetic heading is parsed."
-            )
-        magnetic_declination = magdec(lat, lon)
-        heading = (heading + magnetic_declination) % 360.0
-
-    return heading
-
-
 def txt2vs(txt: str) -> q.VerticalRateMps[float]:
     """Convert text to vertical speed.
 
@@ -143,105 +81,9 @@ def txt2vs(txt: str) -> q.VerticalRateMps[float]:
     return q.fpm_to_mps(float(txt))
 
 
-def txt2spd(
-    txt: str,
-) -> q.MachNumber[float] | q.CalibratedAirspeedMps[float]:
-    """Convert text to speed, keep type (EAS/TAS/MACH) unchanged.
-
-    Values written with an "M" prefix (e.g. "M.8", "M0.8") or between 0.1
-    and 1.0 are kept as Mach numbers; all other values are interpreted as
-    knots and converted to m/s.
-
-    Raises:
-        ValueError: When the text cannot be parsed as a speed.
-    """
-    try:
-        txt = txt.upper()
-        spd = float(txt.replace("M0.", ".").replace("M", ".").replace("..", "."))
-
-        if not (0.1 < spd < 1.0 or txt.count("M") > 0):
-            spd = q.kt_to_mps(spd)
-        return spd
-    except ValueError:
-        raise ValueError(f"Could not parse {txt} as speed.") from None
-
-
-def txt2tas(txt: str, h: q.PressureAltitudeM[float]) -> q.TrueAirspeedMps[float] | None:
-    """Convert speed text to true airspeed at a given altitude.
-
-    Mach notation ("M.8", "M95", ".95") is converted with mach2tas; plain
-    numbers are interpreted as CAS in knots and converted with cas2tas.
-
-    Returns:
-        `None` when the text cannot be parsed.
-    """
-    if len(txt) == 0:
-        return None
-    try:
-        if txt[0] == "M":
-            M_ = float(txt[1:])
-            if M_ >= 20:  # Handle M95 notation as .95
-                M_ = M_ * 0.01
-            acspd = mach2tas(M_, h)  # m/s
-
-        elif txt[0] == "." or (len(txt) >= 2 and txt[:2] == "0."):
-            spd_ = float(txt)
-            acspd = mach2tas(spd_, h)  # m/s
-
-        else:
-            spd_ = q.kt_to_mps(float(txt))
-            acspd = cas2tas(spd_, h)  # m/s
-    except ValueError:
-        return None
-
-    return acspd
-
-
-class RGB(NamedTuple):
-    red: int
-    """Red channel [0-255]."""
-    green: int
-    """Green channel [0-255]."""
-    blue: int
-    """Blue channel [0-255]."""
-
-
-def col2rgb(txt: str) -> RGB:
-    """Convert named color to R,G,B values (integer per component, 0-255).
-
-    Unknown names default to white.
-    """
-    cols = {
-        "black": (0, 0, 0),
-        "white": (255, 255, 255),
-        "green": (0, 255, 0),
-        "red": (255, 0, 0),
-        "blue": (0, 0, 255),
-        "magenta": (255, 0, 255),
-        "yellow": (240, 255, 127),
-        "amber": (255, 255, 0),
-        "cyan": (0, 255, 255),
-    }
-    try:
-        rgb = cols[txt.lower().strip()]
-    except KeyError:
-        rgb = cols["white"]  # default
-
-    return RGB(*rgb)
-
-
 def degto180(angle: q.AngleDeg) -> q.AngleDeg:
     """Change an angle to the domain [-180, 180) degrees."""
     return (angle + 180.0) % 360 - 180.0
-
-
-# deg180 is an alias of degto180: both map an angle (difference) to [-180, 180)
-deg180 = degto180
-
-
-def radtopi(angle: q.AngleRad) -> q.AngleRad:
-    """Change an angle to the domain [-pi, pi) radians."""
-    return (angle + np.pi) % (2.0 * np.pi) - np.pi
 
 
 # TODO(abraham): return None if parsing fails

@@ -79,5 +79,5 @@ Debug the transport without any frontend:
 
 ```bash
 redis-cli psubscribe "to:*"
-redis-cli publish "from:minisky:command" '{"command": "CRE KL204 B744 52 4 90 FL300 250"}'
+redis-cli publish "from:minisky:command" '{"command": "CRE KL204 B744 52 4 90 FL300 250KT[CAS]"}'
 ```

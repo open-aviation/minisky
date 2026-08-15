@@ -1,24 +1,7 @@
-"""Unit tests for minisky.tools.convert (text parsers).
-
-Units: txt2alt returns meters, txt2spd returns m/s (or Mach if < 1),
-txt2tim returns seconds.
-"""
+"""Unit tests for minisky.tools.convert (text parsers)."""
 
 import pytest
-from minisky import quantities as q
 from minisky.tools import convert as cv
-
-
-class TestAltitude:
-    def test_flight_level(self) -> None:
-        assert cv.txt2alt("FL300") == pytest.approx(q.ft_to_m(30000.0))
-
-    def test_plain_feet(self) -> None:
-        assert cv.txt2alt("2500") == pytest.approx(q.ft_to_m(2500.0))
-
-    def test_invalid_raises(self) -> None:
-        with pytest.raises(ValueError, match=r'Could not parse "NOTANALT" as altitude'):
-            cv.txt2alt("NOTANALT")
 
 
 class TestTime:
@@ -53,18 +36,6 @@ class TestLatLon:
         assert cv.txt2lat("S52'18'0") == pytest.approx(-52.3, abs=1e-6)
 
 
-class TestSpeed:
-    def test_knots_to_ms(self) -> None:
-        assert cv.txt2spd("250") == pytest.approx(q.kt_to_mps(250.0), rel=1e-3)
-
-    def test_mach_passthrough(self) -> None:
-        assert cv.txt2spd(".8") == pytest.approx(0.8)
-
-    def test_invalid_raises(self) -> None:
-        with pytest.raises(ValueError, match=r"Could not parse FAST as speed\."):
-            cv.txt2spd("FAST")
-
-
 class TestAngles:
     @pytest.mark.parametrize(
         ("angle", "expected"),
@@ -72,11 +43,6 @@ class TestAngles:
     )
     def test_degto180_wraps(self, angle: float, expected: float) -> None:
         assert cv.degto180(angle) == pytest.approx(expected)
-
-    def test_deg180_is_alias_of_degto180(self) -> None:
-        # Regression: deg180 and degto180 were duplicate implementations
-        assert cv.deg180 is cv.degto180
-        assert cv.deg180(190.0) == pytest.approx(-170.0)
 
 
 class TestBool:

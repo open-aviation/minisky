@@ -89,7 +89,7 @@ def test_snapshot_published(
     step_until: StepUntil,
 ) -> None:
     _, pubsub = observer
-    runtime.commands.stack("CRE KL204 B744 52 4 90 FL300 250")
+    runtime.commands.stack("CRE KL204 B744 52 4 90 FL300 250KT[CAS]")
     step_until(lambda: runtime.traffic.ntraf == 1)
     bridge.tick()
 
@@ -108,7 +108,7 @@ def test_command_roundtrip(
     step_until: StepUntil,
 ) -> None:
     client, _ = observer
-    runtime.commands.stack("CRE KL204 B744 52 4 90 FL300 250")
+    runtime.commands.stack("CRE KL204 B744 52 4 90 FL300 250KT[CAS]")
     step_until(lambda: runtime.simulation.state == SimulationState.OP)
 
     client.publish("from:minisky:command", json.dumps({"command": "HOLD"}))
@@ -128,7 +128,7 @@ def test_heartbeat_while_paused(
     step_until: StepUntil,
 ) -> None:
     _, pubsub = observer
-    runtime.commands.stack("CRE KL204 B744 52 4 90 FL300 250")
+    runtime.commands.stack("CRE KL204 B744 52 4 90 FL300 250KT[CAS]")
     step_until(lambda: runtime.traffic.ntraf == 1)
     bridge.tick()
     runtime.commands.stack("HOLD")
