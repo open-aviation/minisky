@@ -27,23 +27,24 @@ boolean            = "TRUE" | "YES" | "Y" | "1" | "ON"
                    | "FALSE" | "NO" | "N" | "0" | "OFF" ;
 time               = number | [ digits ], ":", number
                    | [ digits ], ":", [ digits ], ":", number ;
-vertical-speed     = number ;
-
 altitude           = pressure-altitude | msl-altitude ;
-pressure-altitude  = flight-level | altitude-value ;
+pressure-altitude  = flight-level | standard-altitude ;
+standard-altitude  = altitude-value, "[STD]" ;
 msl-altitude       = altitude-value, "[MSL]" ;
 flight-level       = "FL", digits ;                  # hundreds of feet, standard pressure
-altitude-value     = number, [ altitude-unit ] ;     # unqualified reference = standard pressure
+altitude-value     = number, altitude-unit ;
 altitude-unit      = "FT" | "M" ;
-vertical-distance  = number, [ altitude-unit ] ;     # unqualified unit = feet
+distance           = number, distance-unit ;
+distance-unit      = "M" | "KM" | "NM" | "FT" ;
 
 speed              = mach | speed-value ;
 selected-airspeed  = mach | cas ;
+unit-speed         = number, speed-unit ;
 cas                = unsigned-number, speed-unit, "[CAS]" ;
 tas                = unsigned-number, speed-unit, "[TAS]" ;
 gs                 = unsigned-number, speed-unit, "[GS]" ;
 speed-value        = cas | tas | gs ;
-speed-unit         = "KT" | "MPS" ;
+speed-unit         = "MPS" | "FT/MIN" | "KT" | "KMH" ;
 mach               = "M", (digits, ".", digits | ".", digits) ;
 
 heading            = true-heading | magnetic-heading ;
@@ -109,7 +110,6 @@ from minisky.tools.convert import (
     txt2lat,
     txt2lon,
     txt2tim,
-    txt2vs,
 )
 from minisky.tools.position import islat
 
@@ -605,21 +605,27 @@ OnOff = Annotated[bool, _ON_OFF_PARSER]
 
 _UNSIGNED_NUMBER_RE = r"(?:\d+(?:\.\d*)?|\.\d+)"
 _NUMBER_RE = rf"[+-]?{_UNSIGNED_NUMBER_RE}"
-_ALTITUDE_VALUE = re.compile(rf"(?P<value>{_NUMBER_RE})(?P<unit>FT|M)?", re.IGNORECASE)
-_MSL_ALTITUDE = re.compile(rf"(?P<value>{_NUMBER_RE})(?P<unit>FT|M)?\[MSL\]", re.IGNORECASE)
+_STD_ALTITUDE = re.compile(rf"(?P<value>{_NUMBER_RE})(?P<unit>FT|M)\[STD\]", re.IGNORECASE)
+_MSL_ALTITUDE = re.compile(rf"(?P<value>{_NUMBER_RE})(?P<unit>FT|M)\[MSL\]", re.IGNORECASE)
 _FLIGHT_LEVEL = re.compile(r"FL(?P<level>\d+)", re.IGNORECASE)
-_CAS = re.compile(rf"(?P<value>{_UNSIGNED_NUMBER_RE})(?P<unit>KT|MPS)\[CAS\]", re.IGNORECASE)
+_DISTANCE = re.compile(rf"(?P<value>{_NUMBER_RE})(?P<unit>NM|KM|FT|M)", re.IGNORECASE)
+_SPEED_UNIT_RE = r"(?:MPS|FT/MIN|KT|KMH)"
+_UNIT_SPEED = re.compile(rf"(?P<value>{_NUMBER_RE})(?P<unit>{_SPEED_UNIT_RE})", re.IGNORECASE)
+_CAS = re.compile(
+    rf"(?P<value>{_UNSIGNED_NUMBER_RE})(?P<unit>{_SPEED_UNIT_RE})\[CAS\]",
+    re.IGNORECASE,
+)
 _MACH = re.compile(r"M(?P<value>(?:\d+\.\d+|\.\d+))", re.IGNORECASE)
 
 
-def _vertical_metres(value: str, unit: str | None) -> float:
-    return float(value) if (unit or "FT").upper() == "M" else q.ft_to_m(float(value))
+def _vertical_metres(value: str, unit: str) -> float:
+    return float(value) if unit.upper() == "M" else q.ft_to_m(float(value))
 
 
 def parse_pressure_altitude_value(value: str) -> value_types.StdPressureAltM:
     if match := _FLIGHT_LEVEL.fullmatch(value):
         return value_types.StdPressureAltM(q.ft_to_m(100.0 * int(match.group("level"))))
-    if (match := _ALTITUDE_VALUE.fullmatch(value)) is None:
+    if (match := _STD_ALTITUDE.fullmatch(value)) is None:
         raise ValueError
     return value_types.StdPressureAltM(_vertical_metres(match.group("value"), match.group("unit")))
 
@@ -630,33 +636,81 @@ def _parse_msl_altitude(value: str) -> value_types.MslAltM:
     return value_types.MslAltM(_vertical_metres(match.group("value"), match.group("unit")))
 
 
-# Unqualified altitude syntax intentionally means standard-pressure altitude.
-# AGL stays out until ground elevation exists; relabeling pressure altitude as
-# height would manufacture a datum the simulation does not have.
+# Numeric altitudes require an explicit unit. AGL stays out until ground
+# elevation exists; relabeling pressure altitude as height would manufacture a
+# datum the simulation does not have.
 
 
-def _parse_vertical_distance(value: str) -> q.VerticalDistanceM[float]:
-    if (match := _ALTITUDE_VALUE.fullmatch(value)) is None:
-        raise ValueError
-    return _vertical_metres(match.group("value"), match.group("unit"))
-
-
-VerticalDistanceM = Annotated[
-    q.VerticalDistanceM[float],
-    CmdParser.value(
-        _parse_vertical_distance,
-        "a vertical distance such as 1000, 1000FT, or 304.8M",
-    ),
-]
-
-
-def _parse_cas(value: str) -> value_types.CasMps:
-    if (match := _CAS.fullmatch(value)) is None:
+def parse_distance_value(value: str) -> q.DistanceM[float]:
+    """Parse an explicit length unit and normalize to metres."""
+    if (match := _DISTANCE.fullmatch(value)) is None:
         raise ValueError
     magnitude = float(match.group("value"))
-    if match.group("unit").upper() == "KT":
-        magnitude = q.kt_to_mps(magnitude)
-    return value_types.CasMps(magnitude)
+    match match.group("unit").upper():
+        case "M":
+            return magnitude
+        case "KM":
+            return q.km_to_m(magnitude)
+        case "NM":
+            return q.nmi_to_m(magnitude)
+        case "FT":
+            return q.ft_to_m(magnitude)
+        case _:
+            raise AssertionError("unreachable distance unit")
+
+
+DistanceM = Annotated[
+    q.DistanceM[float],
+    CmdParser.value(
+        parse_distance_value,
+        "a distance with units, such as 5NM, 9.26KM, 9260M, or 3000FT",
+    ),
+]
+"""Quantity-kind-free distance normalized to metres.
+
+An explicit unit is required. Use forms such as `5NM`, `9.26KM`, `9260M`,
+or `3000FT`.
+"""
+
+
+def parse_speed_value(value: str) -> q.SpeedMps[float]:
+    """Parse an explicit speed unit and normalize to metres per second."""
+    if (match := _UNIT_SPEED.fullmatch(value)) is None:
+        raise ValueError
+    magnitude = float(match.group("value"))
+    match match.group("unit").upper():
+        case "MPS":
+            return magnitude
+        case "FT/MIN":
+            return q.fpm_to_mps(magnitude)
+        case "KT":
+            return q.kt_to_mps(magnitude)
+        case "KMH":
+            return q.kmh_to_mps(magnitude)
+        case _:
+            raise AssertionError("unreachable speed unit")
+
+
+SpeedMps = Annotated[
+    q.SpeedMps[float],
+    CmdParser.value(
+        parse_speed_value,
+        "a speed with units, such as 10MPS, 600FT/MIN, 20KT, or 90KMH",
+    ),
+]
+"""Quantity-kind-free speed normalized to metres per second.
+
+An explicit unit is required. Use forms such as `10MPS`, `600FT/MIN`, `20KT`,
+or `90KMH`.
+"""
+
+
+def parse_cas_value(value: str) -> value_types.CasMps:
+    """Parse CAS with an explicit unit and required `[CAS]` quantity tag."""
+    if (match := _CAS.fullmatch(value)) is None:
+        raise ValueError
+    unit_value = f"{match.group('value')}{match.group('unit')}"
+    return value_types.CasMps(parse_speed_value(unit_value))
 
 
 def _parse_mach(value: str) -> value_types.Mach:
@@ -669,10 +723,17 @@ def _parse_mach(value: str) -> value_types.Mach:
 
 
 def parse_selected_airspeed_value(value: str) -> value_types.CasMps | value_types.Mach:
-    return _parse_mach(value) if value.upper().startswith("M") else _parse_cas(value)
+    return _parse_mach(value) if value.upper().startswith("M") else parse_cas_value(value)
 
 
-VspdMps = Annotated[q.VerticalRateMps[float], CmdParser.value(txt2vs, "a vertical speed")]
+VspdMps = Annotated[
+    q.VerticalRateMps[float],
+    CmdParser.value(
+        parse_speed_value,
+        "a vertical speed with units, such as 1500FT/MIN or 7.62MPS",
+        field="vertical speed",
+    ),
+]
 TimeS = Annotated[q.DurationS[float], CmdParser.value(txt2tim, "a time")]
 SimTimeS = Annotated[q.SimulationTimeS[float], CmdParser.value(txt2tim, "a time")]
 
@@ -724,7 +785,7 @@ def _parse_ground_track(value: str) -> value_types.GroundTrackDeg:
 class RunwayHeadingRequest:
     """Preserve a source-level `*` request until the command can resolve it.
 
-    For example, in `CRE KLM1,A320,EHAM,RWY18L,*,0,250KT[CAS]`, `*` means "use the
+    For example, in `CRE KLM1,A320,EHAM,RWY18L,*,0FT[STD],250KT[CAS]`, `*` means "use the
     heading of the runway parsed in the previous argument". Unlike bluesky
     (which internally stores the RWY18L in its parser), minisky directly returns
     the sentinel to avoid a parser-global cross-argument state.
@@ -981,12 +1042,14 @@ _VALUE_PARSERS: dict[Any, CmdParser[Any]] = {
     int: _INT_PARSER,
     float: _FLOAT_PARSER,
     value_types.CasMps: CmdParser.value(
-        _parse_cas, "CAS such as 250KT[CAS] or 128MPS[CAS]", field="CAS"
+        parse_cas_value,
+        "CAS such as 250KT[CAS] or 128MPS[CAS]",
+        field="CAS",
     ),
     value_types.Mach: CmdParser.value(_parse_mach, "Mach such as M0.78 or M.78", field="Mach"),
     value_types.StdPressureAltM: CmdParser.value(
         parse_pressure_altitude_value,
-        "pressure altitude such as FL100, 10000, 10000FT, or 3048M",
+        "pressure altitude such as FL100, 10000FT[STD], or 3048M[STD]",
         field="pressure altitude",
     ),
     value_types.MslAltM: CmdParser.value(
@@ -1253,24 +1316,31 @@ def _constraints(metadata: Iterable[object]) -> Iterator[_Constraint]:
             raise TypeError(f"unsupported annotated-types constraint: {item!r}")
 
 
+def _constraint_operand(value: Any) -> Any:
+    if isinstance(value, value_types.RuntimeNewType):
+        return value.value
+    return value
+
+
 def _validate_constraints(
     value: Any, constraints: Iterable[_Constraint]
 ) -> Result[None, ArgumentIssue]:
+    operand = _constraint_operand(value)
     for constraint in constraints:
         expected: str | None = None
-        if isinstance(constraint, Gt) and not value > constraint.gt:
+        if isinstance(constraint, Gt) and not operand > constraint.gt:
             expected = f"a value greater than {constraint.gt}"
-        elif isinstance(constraint, Ge) and not value >= constraint.ge:
+        elif isinstance(constraint, Ge) and not operand >= constraint.ge:
             expected = f"a value greater than or equal to {constraint.ge}"
-        elif isinstance(constraint, Lt) and not value < constraint.lt:
+        elif isinstance(constraint, Lt) and not operand < constraint.lt:
             expected = f"a value less than {constraint.lt}"
-        elif isinstance(constraint, Le) and not value <= constraint.le:
+        elif isinstance(constraint, Le) and not operand <= constraint.le:
             expected = f"a value less than or equal to {constraint.le}"
         elif isinstance(constraint, MinLen) and len(value) < constraint.min_length:
             expected = f"a value with length at least {constraint.min_length}"
         elif isinstance(constraint, MaxLen) and len(value) > constraint.max_length:
             expected = f"a value with length at most {constraint.max_length}"
-        elif isinstance(constraint, Predicate) and not constraint.func(value):
+        elif isinstance(constraint, Predicate) and not constraint.func(operand):
             name = getattr(constraint.func, "__name__", "predicate")
             expected = f"a value satisfying {name}"
         if expected is not None:

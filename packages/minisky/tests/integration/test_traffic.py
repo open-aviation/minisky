@@ -221,7 +221,7 @@ class TestWind:
     def test_wind_via_stack_two_element_form(self, runtime: MiniSky, run_cmd: RunCommand) -> None:
         # The WIND spec ran the direction through the altitude parser
         # (ft -> m), silently mangling WIND lat,lon,dir,spd
-        out = run_cmd("WIND 52,4,270,20")
+        out = run_cmd("WIND 52,4,270,20KT")
         assert "Error" not in out
         vn, ve = runtime.traffic.wind.getdata(52.0, 4.0, 0.0)
         assert ve == pytest.approx(q.kt_to_mps(20.0), rel=1e-6)
@@ -229,7 +229,7 @@ class TestWind:
 
     def test_wind_del_via_stack(self, runtime: MiniSky, run_cmd: RunCommand) -> None:
         # WIND lat,lon,DEL used to be rejected by the altitude parser
-        run_cmd("WIND 52,4,270,20")
+        run_cmd("WIND 52,4,270,20KT")
         assert runtime.traffic.wind.has_wind
         out = run_cmd("WIND 52,4,DEL")
         assert "Error" not in out

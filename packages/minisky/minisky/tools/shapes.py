@@ -4,23 +4,24 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from types import MappingProxyType
-from typing import NamedTuple, Protocol
+from typing import Annotated, NamedTuple, Protocol
 
 import numpy as np
 import shapely
+from annotated_types import Ge
 
 from minisky import quantities as q
 from minisky.command import (
+    DistanceM,
     Keyword,
     LatLonDeg,
-    NonNegativeFiniteFloat,
     command,
 )
 from minisky.result import Err, Ok, Result
 from minisky.tools.geo import kwikdist
 from minisky.values import LatLonDegrees, StdPressureAltM
 
-CircleRadiusNM = q.DistanceNM[NonNegativeFiniteFloat]
+CircleRadiusM = Annotated[DistanceM, Ge(0)]
 
 
 class Shapes:
@@ -68,16 +69,16 @@ class Shapes:
         self,
         name: Keyword,
         center: LatLonDeg,
-        radius: CircleRadiusNM,
+        radius: CircleRadiusM,
         top: StdPressureAltM | None = None,
         bottom: StdPressureAltM | None = None,
     ) -> Result[str, str]:
-        """Define a circular area from a center and radius in nautical miles."""
+        """Define a circular area."""
         self._store_area(
             name,
             Circle(
                 center,
-                q.nmi_to_m(radius),
+                radius,
                 None if top is None else top.value,
                 None if bottom is None else bottom.value,
             ),

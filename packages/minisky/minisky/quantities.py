@@ -82,6 +82,7 @@ AglHeightM = Annotated[_T, aerospace.HEIGHT_ABOVE_GROUND_LEVEL(isqx.M)]
 # speed/rate
 #
 
+SpeedMps = Annotated[_T, isqx.SPEED(isqx.M_PERS)]
 AirspeedMps = Annotated[_T, aerospace.AIRSPEED(isqx.M_PERS)]
 CalibratedAirspeedMps = Annotated[_T, aerospace.CALIBRATED_AIRSPEED(isqx.M_PERS)]
 CalibratedAirspeedKt = Annotated[_T, aerospace.CALIBRATED_AIRSPEED(isqx.usc.KNOT)]
@@ -148,6 +149,7 @@ m_to_ft = isqx.convert(isqx.M, isqx.usc.FT)
 nmi_to_m = isqx.convert(isqx.usc.NMI, isqx.M)
 m_to_nmi = isqx.convert(isqx.M, isqx.usc.NMI)
 kt_to_mps = isqx.convert(isqx.usc.KNOT, isqx.M_PERS)
+kmh_to_mps = isqx.convert(isqx.KILO * isqx.M / isqx.HOUR, isqx.M_PERS)
 mps_to_kt = isqx.convert(isqx.M_PERS, isqx.usc.KNOT)
 fpm_to_mps = isqx.convert(isqx.usc.FT * isqx.MIN**-1, isqx.M * isqx.S**-1)
 fpm_per_s_to_mps2 = isqx.convert(isqx.usc.FT * isqx.MIN**-1 * isqx.S**-1, isqx.M * isqx.S**-2)

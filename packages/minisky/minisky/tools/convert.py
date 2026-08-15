@@ -72,15 +72,6 @@ def i2txt(i: int, n: int) -> str:
     return f"{i:0{n}d}"
 
 
-def txt2vs(txt: str) -> q.VerticalRateMps[float]:
-    """Convert text to vertical speed.
-
-    Args:
-        txt: Vertical speed in feet per minute.
-    """
-    return q.fpm_to_mps(float(txt))
-
-
 def degto180(angle: q.AngleDeg) -> q.AngleDeg:
     """Change an angle to the domain [-180, 180) degrees."""
     return (angle + 180.0) % 360 - 180.0

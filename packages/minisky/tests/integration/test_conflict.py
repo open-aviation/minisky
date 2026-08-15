@@ -133,7 +133,7 @@ class TestDetectionCommands:
         # The ZONER/ZONEDH specs had an unparseable "callsign..." token,
         # so per-aircraft zone sizes could not be set from the stack
         run_cmd("CRE KL204,B744,52,4,45,FL250,350KT[CAS]")
-        out = run_cmd("ZONER 6.0,KL204")
+        out = run_cmd("ZONER 6NM,KL204")
         assert "Error" not in out
         assert runtime.traffic.cd.rpz[0] == pytest.approx(q.nmi_to_m(6.0))
 
