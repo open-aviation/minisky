@@ -47,39 +47,25 @@ class ConsoleIO:
     to stdout with a prefix, replaces `output_buffer` until
     `read_output_buffer` drains it, and reaches every subscriber registered
     with `subscribe`.
-
-    Attributes:
-        is_operating: Predicate returning whether the simulation is in
-            [`SimulationState.OP`][minisky.simulation.simulation.SimulationState],
-            checked once per `update`.
-        prefix: Prefix for the stdout copy of echoed text, aligned with
-            uvicorn's `INFO:     ` column. Only the terminal print gets it;
-            the output buffer read by remote clients stays unprefixed.
-        siminfo_rate: Update rate of simulation info messages [Hz]. It records
-            the intended rate only — nothing reads it.
-        acupdate_rate: Update rate of aircraft update messages [Hz]. It records
-            the intended rate only — nothing reads it.
-        prevtime: Wall-clock reference of the last rate measurement [s],
-            cleared by `reset`; nothing reads it.
-        samplecount: Number of operating steps counted by `update` since the
-            last `reset`.
-        prevcount: Sample count at the last rate measurement; nothing reads it.
-        output_buffer: Buffer holding the most recently echoed text until
-            `read_output_buffer` drains it.
-        event: Set on every `echo`, so waiters can pick up new output.
     """
 
     prefix: str = "MINISKY:  "
-    siminfo_rate: int = 1
-    acupdate_rate: int = 5
 
     def __init__(self, is_operating: Callable[[], bool]) -> None:
         self.is_operating = is_operating
-        self.prevtime: float = 0.0
-        self.samplecount: int = 0
-        self.prevcount: int = 0
-        self.output_buffer: io.StringIO = io.StringIO()
-        self.event: asyncio.Event = asyncio.Event()
+        """Predicate returning whether the simulation is in
+        [`SimulationState.OP`][minisky.simulation.simulation.SimulationState],
+        checked once per `update`."""
+        self.prevtime = 0.0  # NOTE: unused
+        """Wall-clock reference of the last rate measurement, cleared by `reset`"""
+        self.samplecount = 0  # NOTE: unused
+        """Number of operating steps counted by `update` since the last `reset`."""
+        self.prevcount = 0  # NOTE: unused
+        """Sample count at the last rate measurement"""
+        self.output_buffer = io.StringIO()
+        """Most recent echoed text until `read_output_buffer` drains it."""
+        self.event = asyncio.Event()
+        """Set whenever `echo` publishes new output."""
         self._subscribers: dict[int, ConsoleCallback] = {}
         self._next_subscription = 0
 

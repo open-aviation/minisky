@@ -98,14 +98,7 @@ inventories = [
 
 [project.plugins.mkdocstrings.handlers.python.options]
 # Labels @command-decorated methods; mkdocstrings does not render decorators.
-# Derives the constructor/internal split of every class Attributes table from
-# __init__, types the constructor attributes from the signature, and hides the
-# tabulated members that show_if_no_docstring would otherwise render a second
-# time as bare, prose-less blocks.
-extensions = [
-  "docs/griffe_stack_commands.py:StackCommands",
-  "docs/griffe_attribute_tables.py:AttributeTables",
-]
+extensions = ["docs/griffe_stack_commands.py:StackCommands"]
 docstring_style = "google"
 docstring_section_style = "table"
 show_source = true

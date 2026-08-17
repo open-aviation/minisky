@@ -13,7 +13,7 @@ from __future__ import annotations
 import json
 from enum import IntEnum
 from pathlib import Path
-from typing import Literal, Protocol
+from typing import Literal, NamedTuple, Protocol
 
 import numpy as np
 import pandas as pd
@@ -22,6 +22,7 @@ from minisky import quantities as q
 from minisky.command import Keyword, LatLonDeg, command
 from minisky.result import Err, Ok, Result
 from minisky.tools import geo
+from minisky.values import AirportIdentifier, AirwayIdentifier, RunwayIdentifier
 
 _COLOCATED_DISTANCE: q.DistanceM[float] = q.nmi_to_m(1.0)
 
@@ -30,6 +31,14 @@ class AirportSize(IntEnum):
     LARGE = 1
     MEDIUM = 2
     SMALL = 3
+
+
+class RunwayThreshold(NamedTuple):
+    """Runway threshold position and true runway heading."""
+
+    latitude: q.LatitudeDeg[float]
+    longitude: q.LongitudeDeg[float]
+    heading: q.TrueHeadingDegrees[float]
 
 
 class LatLonReference(Protocol):
@@ -84,57 +93,8 @@ class Navdatabase:
     and on reset(). The database is stored as parallel lists, indexed per
     waypoint, per airway leg, or per airport.
 
-    Attributes:
-        wpid: Waypoint identifiers / short names (strings).
-        wplat: Waypoint latitudes [deg].
-        wplon: Waypoint longitudes [deg].
-        wptype: Waypoint types (strings).
-        wpelev: Waypoint elevations [m].
-        wpvar: Magnetic variation at the waypoints [deg].
-        wpfreq: Navaid frequencies [kHz/MHz].
-        wpdesc: Waypoint descriptions.
-        awid: Airway identifiers, per leg (strings).
-        awfromwpid: Identifiers of the start waypoint of each leg.
-        awfromlat: Start waypoint latitudes [deg].
-        awfromlon: Start waypoint longitudes [deg].
-        awtowpid: Identifiers of the end waypoint of each leg.
-        awtolat: End waypoint latitudes [deg].
-        awtolon: End waypoint longitudes [deg].
-        awndir: Number of directions of each leg (1 or 2).
-        awlowfl: Lower flight level of each leg (int).
-        awupfl: Upper flight level of each leg (int).
-        aptid: Airport 4-character ICAO identifiers (strings).
-        aptname: Airport full names.
-        aptlat: Airport latitudes [deg].
-        aptlon: Airport longitudes [deg].
-        aptmaxrwy: Longest runway length per airport [m].
-        apsize: Airport size.
-        aptco: Two-character country codes (strings).
-        aptelev: Airport elevations [m] above MSL.
-        fir: FIR names.
-        firlat0, firlon0, firlat1, firlon1: Start and end points of FIR
-            border line segments [deg].
-        coname: Country full names.
-        cocode2: 2-character country codes.
-        cocode3: 3-character country codes.
-        conr: Country ICAO numbers.
-        rwythresholds: Runway threshold positions [deg] and headings [deg]
-            per airport and runway.
-
     Created by  : Jacco M. Hoekstra (TU Delft)
     """
-
-    wplat: q.LatitudeDeg[np.ndarray]
-    wplon: q.LongitudeDeg[np.ndarray]
-    awfromlat: q.LatitudeDeg[np.ndarray]
-    awfromlon: q.LongitudeDeg[np.ndarray]
-    awtolat: q.LatitudeDeg[np.ndarray]
-    awtolon: q.LongitudeDeg[np.ndarray]
-    aptlat: q.LatitudeDeg[np.ndarray]
-    aptlon: q.LongitudeDeg[np.ndarray]
-    aptmaxrwy: q.LengthM[np.ndarray]
-    wpelev: list[q.MslAltitudeM[float]]
-    aptelev: list[q.MslAltitudeM[float]]
 
     def __init__(self, data_path: Path) -> None:
         """The navigation database: Contains waypoint, airport, airway, and sector data, but also
@@ -159,54 +119,76 @@ class Navdatabase:
         with (nav_data_path / "runway_thresholds.json").open() as f:
             rwythresholds = json.load(f)
 
-        # Get waypoint data
-        self.wpid = _tolist(wptdata["wpid"])  # identifier (string)
-        self.wplat = np.asarray(wptdata["wplat"], dtype=float)
-        self.wplon = np.asarray(wptdata["wplon"], dtype=float)
+        self.wpid: list[str] = _tolist(wptdata["wpid"])
+        self.wplat: q.LatitudeDeg[np.ndarray] = np.asarray(wptdata["wplat"], dtype=float)  # pyright: ignore[reportGeneralTypeIssues]
+        self.wplon: q.LongitudeDeg[np.ndarray] = np.asarray(wptdata["wplon"], dtype=float)  # pyright: ignore[reportGeneralTypeIssues]
         # TODO(abraham): rename this navigation-database category; Route.wptype is a
         # different WaypointType domain, and the shared name makes the two easy to confuse.
-        self.wptype = _tolist(wptdata["wptype"])  # type (string)
-        self.wpelev = _tolist(wptdata["wpelev"])  # elevation [m]
-        self.wpvar = _tolist(wptdata["wpvar"])  # magn variation [deg]
-        self.wpfreq = _tolist(wptdata["wpfreq"])  # frequency [kHz/MHz]
-        self.wpdesc = _tolist(wptdata["wpdesc"])  # description
+        self.wptype: list[str] = _tolist(wptdata["wptype"])
+        """Navigation-database waypoint category; not to be confused with the route `WaypointType`."""
+        self.wpelev: list[q.MslAltitudeM[float]] = _tolist(wptdata["wpelev"])  # pyright: ignore[reportGeneralTypeIssues]
+        self.wpvar: list[float] = _tolist(wptdata["wpvar"])
+        """Magnetic variation at each waypoint, in degrees."""
+        self.wpfreq: list[float] = _tolist(wptdata["wpfreq"])
+        """Navaid frequencies in the source dataset's kHz/MHz convention."""
+        self.wpdesc: list[str] = _tolist(wptdata["wpdesc"])
 
-        # Get airway legs data
-        self.awfromwpid = _tolist(awydata["awfromwpid"])  # identifier (string)
-        self.awfromlat = np.asarray(awydata["awfromlat"], dtype=float)  # latitude [deg]
-        self.awfromlon = np.asarray(awydata["awfromlon"], dtype=float)  # longitude [deg]
-        self.awtowpid = _tolist(awydata["awtowpid"])  # identifier (string)
-        self.awtolat = np.asarray(awydata["awtolat"], dtype=float)  # latitude [deg]
-        self.awtolon = np.asarray(awydata["awtolon"], dtype=float)  # longitude [deg]
-        self.awid = _tolist(awydata["awid"])  # airway identifier (string)
-        self.awndir = _tolist(awydata["awndir"])  # number of directions (1 or 2)
-        self.awlowfl = _tolist(awydata["awlowfl"])  # lower flight level (int)
-        self.awupfl = _tolist(awydata["awupfl"])  # upper flight level (int)
+        self.awfromwpid: list[str] = _tolist(awydata["awfromwpid"])
+        """Starting waypoint identifier for each airway leg."""
+        self.awfromlat: q.LatitudeDeg[np.ndarray] = np.asarray(awydata["awfromlat"], dtype=float)  # pyright: ignore[reportGeneralTypeIssues]
+        self.awfromlon: q.LongitudeDeg[np.ndarray] = np.asarray(awydata["awfromlon"], dtype=float)  # pyright: ignore[reportGeneralTypeIssues]
+        self.awtowpid: list[str] = _tolist(awydata["awtowpid"])
+        """Ending waypoint identifier for each airway leg."""
+        self.awtolat: q.LatitudeDeg[np.ndarray] = np.asarray(awydata["awtolat"], dtype=float)  # pyright: ignore[reportGeneralTypeIssues]
+        self.awtolon: q.LongitudeDeg[np.ndarray] = np.asarray(awydata["awtolon"], dtype=float)  # pyright: ignore[reportGeneralTypeIssues]
+        self.awid: list[AirwayIdentifier] = _tolist(awydata["awid"])
+        """Airway identifier for each leg, for example `UL620`."""
+        self.awndir: list[int] = _tolist(awydata["awndir"])
+        """Number of permitted traversal directions for each airway leg: one or two."""
+        self.awlowfl: list[int] = _tolist(awydata["awlowfl"])
+        """Lower published flight-level bound for each airway leg."""
+        self.awupfl: list[int] = _tolist(awydata["awupfl"])
+        """Upper published flight-level bound for each airway leg."""
 
-        # Get airpoint data
-        self.aptid = _tolist(aptdata["apid"])  # 4 char identifier (string)
-        self.aptname = _tolist(aptdata["apname"])  # full name
-        self.aptlat = np.asarray(aptdata["aplat"], dtype=float)  # latitude [deg]
-        self.aptlon = np.asarray(aptdata["aplon"], dtype=float)  # longitude [deg]
-        self.aptmaxrwy = np.asarray(aptdata["apmaxrwy"], dtype=float)  # max runway length [m]
-        self.apsize = [AirportSize(int(value)) for value in _tolist(aptdata["aptype"])]
-        self.aptco = _tolist(aptdata["apco"])  # two char country code (string)
-        self.aptelev = _tolist(aptdata["apelev"])  # elevation in meters [m] MSL
+        self.aptid: list[AirportIdentifier] = _tolist(aptdata["apid"])
+        self.aptname: list[str] = _tolist(aptdata["apname"])
+        self.aptlat: q.LatitudeDeg[np.ndarray] = np.asarray(aptdata["aplat"], dtype=float)  # pyright: ignore[reportGeneralTypeIssues]
+        self.aptlon: q.LongitudeDeg[np.ndarray] = np.asarray(aptdata["aplon"], dtype=float)  # pyright: ignore[reportGeneralTypeIssues]
+        self.aptmaxrwy: q.LengthM[np.ndarray] = np.asarray(aptdata["apmaxrwy"], dtype=float)  # pyright: ignore[reportGeneralTypeIssues]
+        self.apsize: list[AirportSize] = [
+            AirportSize(int(value)) for value in _tolist(aptdata["aptype"])
+        ]
+        """Airport size category from the navigation dataset."""
+        self.aptco: list[str] = _tolist(aptdata["apco"])
+        self.aptelev: list[q.MslAltitudeM[float]] = _tolist(aptdata["apelev"])  # pyright: ignore[reportGeneralTypeIssues]
 
-        # Get FIR data
-        self.fir = firdata["fir"]  # fir name
-        self.firlat0 = firdata["firlat0"]  # start lat of a line of border
-        self.firlon0 = firdata["firlon0"]  # start lon of a line of border
-        self.firlat1 = firdata["firlat1"]  # end lat of a line of border
-        self.firlon1 = firdata["firlon1"]  # end lon of a line of border
+        self.fir: list[str] = firdata["fir"]
+        self.firlat0: list[float] = firdata["firlat0"]
+        """Latitude of the start point of each FIR border segment."""
+        self.firlon0: list[float] = firdata["firlon0"]
+        """Longitude of the start point of each FIR border segment."""
+        self.firlat1: list[float] = firdata["firlat1"]
+        """Latitude of the end point of each FIR border segment."""
+        self.firlon1: list[float] = firdata["firlon1"]
+        """Longitude of the end point of each FIR border segment."""
 
-        # Get country code data
-        self.coname = _tolist(codata["coname"])  # full name
-        self.cocode2 = _tolist(codata["cocode2"])  # 2 chars
-        self.cocode3 = _tolist(codata["cocode3"])  # 3 chars
-        self.conr = _tolist(codata["conr"])  # country icao number
+        self.coname: list[str] = _tolist(codata["coname"])
+        """Country full names"""
+        self.cocode2: list[str] = _tolist(codata["cocode2"])
+        """2-character country codes"""
+        self.cocode3: list[str] = _tolist(codata["cocode3"])
+        """3-character country codes"""
+        self.conr: list[int] = _tolist(codata["conr"])
+        """Country ICAO numbers."""
 
-        self.rwythresholds = rwythresholds
+        self.rwythresholds: dict[AirportIdentifier, dict[RunwayIdentifier, RunwayThreshold]] = {
+            airport: {
+                runway: RunwayThreshold(float(values[0]), float(values[1]), float(values[2]))
+                for runway, values in runways.items()
+            }
+            for airport, runways in rwythresholds.items()
+        }
+        """Runway thresholds keyed by airport and runway identifier."""
 
     @command(name="DEFWPT")
     def describe_from_scenario(self, name: Keyword) -> Result[str, str]:
@@ -269,10 +251,10 @@ class Navdatabase:
         self.wplat = np.append(self.wplat, lat)
         self.wplon = np.append(self.wplon, lon)
         self.wptype.append("" if waypoint_type is None else waypoint_type.upper())
-        self.wpelev.append(0.0)  # elevation [m]
-        self.wpvar.append(0.0)  # magn variation [deg]
-        self.wpfreq.append(0.0)  # frequency [kHz/MHz]
-        self.wpdesc.append("Custom waypoint")  # description
+        self.wpelev.append(0.0)
+        self.wpvar.append(0.0)
+        self.wpfreq.append(0.0)
+        self.wpdesc.append("Custom waypoint")
 
         return Ok(f"{normalized} added to navdb.")
 
@@ -280,25 +262,22 @@ class Navdatabase:
         """Delete a waypoint from the database.
 
         The last-added occurrence of the name is removed.
-
-        Args:
-            name: Waypoint name.
         """
         if self.wpid.count(name.upper()) <= 0:
             return Err(f"Waypoint {name.upper()} does not exist.")
 
         idx = len(self.wpid) - self.wpid[::-1].index(name.upper()) - 1  # Search from back of list
 
-        del self.wpid[idx]  # wp name
+        del self.wpid[idx]
 
-        self.wplat = np.delete(self.wplat, idx)  # wp lat
-        self.wplon = np.delete(self.wplon, idx)  # wp lon
+        self.wplat = np.delete(self.wplat, idx)
+        self.wplon = np.delete(self.wplon, idx)
 
-        del self.wptype[idx]  # Waypoint type
-        del self.wpelev[idx]  # elevation [m]
-        del self.wpvar[idx]  # magn variation [deg]
-        del self.wpfreq[idx]  # frequency [kHz/MHz]
-        del self.wpdesc[idx]  # description
+        del self.wptype[idx]
+        del self.wpelev[idx]
+        del self.wpvar[idx]
+        del self.wpfreq[idx]
+        del self.wpdesc[idx]
 
         return Ok(name.upper() + " deleted from navdb.")
 
@@ -408,7 +387,7 @@ class Navdatabase:
 
                 return indices
 
-    def getaptidx(self, txt: str) -> int | None:
+    def getaptidx(self, txt: AirportIdentifier) -> int | None:
         """Get the index of an airport by ICAO identifier.
 
         Args:
@@ -521,7 +500,7 @@ class Navdatabase:
         return self.getinside(self.aptlat, self.aptlon, lat0, lat1, lon0, lon1)
 
     # returns all runways of given airport
-    def listairway(self, airwayid: str) -> list:
+    def listairway(self, airwayid: AirwayIdentifier) -> list:
         """Return the waypoint sequence(s) of an airway.
 
         Collects all legs of the airway and chains them into ordered

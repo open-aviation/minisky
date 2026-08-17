@@ -349,14 +349,6 @@ class TrafficArrays:
     Replaceable implementations are registered explicitly with
     `ReplaceableManager`; selection state belongs to an individual runtime
     rather than to this class.
-
-    Attributes:
-        _parent: Parent node of this object in the tree.
-        _children: Child TrafficArrays objects of this object.
-        _ArrVars: Names of the registered numpy-array parameters.
-        _LstVars: Names of the registered list parameters.
-        _VariantVars: Names of registered VariantArray parameters.
-        _OptionalVars: Names of registered OptionalArray parameters.
     """
 
     @classmethod

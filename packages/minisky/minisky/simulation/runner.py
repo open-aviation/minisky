@@ -19,6 +19,8 @@ if TYPE_CHECKING:
     from minisky.simulation.console import ConsoleIO
     from minisky.simulation.simulation import Simulation
 
+# TODO(abraham): make this configurable.
+
 MIN_UPDATE_INTERVAL: q.DurationS[float] = 0.0001
 
 # A fast-forward jump ends this many timesteps short of the requested time, so
@@ -35,31 +37,18 @@ class Runner:
     every `simdt / speed` wall-clock seconds. During a fast-forward jump
     (see `forward`) the sleep is shortened to the minimum interval so
     the target simulation time is reached as fast as possible.
-
-    Attributes:
-        simulation: Simulation stepped by the run loop.
-        console: Output channel used for lifecycle messages.
-        speed: Simulation speed factor relative to real time; the loop targets
-            a simulation step every `simdt / speed` wall-clock seconds. Also
-            settable at runtime with the `DTMULT` command.
-        running: True while the run loop is active.
-        allow_shutdown: If False, `stop` is ignored and the loop keeps
-            running (used when the simulator should idle without a scenario).
-        jumping: True while a fast-forward jump is active.
-        jump_to: Simulation time at which the active fast-forward jump ends [s].
     """
-
-    jumping: bool
-    jump_to: q.SimulationTimeS[float]
 
     def __init__(self, simulation: Simulation, console: ConsoleIO, speed: float = 1) -> None:
         self.simulation = simulation
         self.console = console
         self.running: bool = False
         self.allow_shutdown: bool = True
+        """Whether `stop` may end the runner loop."""
         self.speed = speed
-        self.jumping = False
-        self.jump_to = 0.0
+        """Simulation speed factor relative to wall-clock time."""
+        self.jumping: bool = False
+        self.jump_to: q.SimulationTimeS[float] = 0.0  # pyright: ignore[reportGeneralTypeIssues]
 
     def forward(self, seconds: q.DurationS[float]) -> None:
         """Fast-forward the simulation by a number of simulation seconds.

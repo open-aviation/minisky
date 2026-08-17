@@ -41,27 +41,22 @@ if TYPE_CHECKING:
 
 @plugin_api.replacement
 class MulticopterAutopilot(Autopilot):
-    """Autopilot with a multicopter hover primitive.
-
-    Attributes:
-        swhover (ndarray): Bool switch: aircraft is in a commanded hover.
-        hovertimer (OptionalArray): Optional remaining hold time of an active hover [s].
-        resume_airspeed (VariantArray): Selected [`CAS` in m/s][minisky.values.CasMps]
-            or [`Mach`][minisky.values.Mach] value and kind to restore.
-        resume_lnav (ndarray): LNAV switch state to restore on resume.
-        resume_vnav (ndarray): VNAV switch state to restore on resume.
-        resume_vnav_airspeed (ndarray): VNAV airspeed-guidance switch state to restore.
-    """
-
-    hovertimer: OptionalArray[q.DurationS[np.ndarray]]
-    resume_airspeed: VariantArray[np.ndarray]
+    """Autopilot with a multicopter hover primitive."""
 
     def __init__(self, traffic: Traffic, get_simulation: Callable[[], Simulation]) -> None:
         super().__init__(traffic, get_simulation)
         with self.settrafarrays():
             self.swhover = np.array([], dtype=bool)
-            self.hovertimer = OptionalArray(np.array([]), np.array([], dtype=bool))
-            self.resume_airspeed = VariantArray(np.array([]), np.array([], dtype=np.uint8))
+            """Whether each aircraft is in a commanded hover."""
+            self.hovertimer: OptionalArray[q.DurationS[np.ndarray]] = OptionalArray(  # pyright: ignore[reportGeneralTypeIssues]
+                np.array([]), np.array([], dtype=bool)
+            )
+            """Remaining hold time of an active hover."""
+            self.resume_airspeed: VariantArray[np.ndarray] = VariantArray(
+                np.array([]), np.array([], dtype=np.uint8)
+            )
+            """[CAS in m/s][minisky.values.CasMps] or [Mach][minisky.values.Mach] selection restored
+            when hover ends."""
             self.resume_lnav = np.array([], dtype=bool)
             self.resume_vnav = np.array([], dtype=bool)
             self.resume_vnav_airspeed = np.array([], dtype=bool)

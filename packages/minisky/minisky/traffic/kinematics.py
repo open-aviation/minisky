@@ -31,32 +31,22 @@ if TYPE_CHECKING:
 class Kinematics(TrafficArrays):
     """Integrate airspeed, heading, vertical speed and position each step.
 
-    Replaceable via ``SELECTIMPL KINEMATICS <IMPL>``; plugins may subclass
+    Replaceable via `SELECTIMPL KINEMATICS <IMPL>`; plugins may subclass
     to change how aircraft fly. Available at runtime as
-    ``runtime.traffic.kinematics``.
-
-    Attributes:
-        ax (ndarray): Current longitudinal acceleration [m/s2].
-        az (ndarray): Current vertical acceleration [m/s2].
-        swhdgsel (ndarray): Bool switch: True while aircraft is turning.
-        swaltsel (ndarray): Bool switch: True while altitude capture is engaged.
+    `runtime.traffic.kinematics`.
     """
-
-    ax: q.AccelerationMps2[np.ndarray]
-    az: q.AccelerationMps2[np.ndarray]
 
     def __init__(self, traffic: Traffic, get_simulation: Callable[[], Simulation]) -> None:
         super().__init__(traffic)
         self.traffic = traffic
         self._get_simulation = get_simulation
         with self.settrafarrays():
-            # Acceleration
-            self.ax = np.array([])
-            self.az = np.array([])
-
-            # Turn/altitude-select switches
-            self.swhdgsel = np.array([], dtype=bool)  # determines whether aircraft is turning
-            self.swaltsel = np.array([], dtype=bool)  # determines whether altitude capture is on
+            self.ax: q.AccelerationMps2[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
+            self.az: q.AccelerationMps2[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
+            self.swhdgsel = np.array([], dtype=bool)
+            """Whether each aircraft is actively turning toward a selected heading."""
+            self.swaltsel = np.array([], dtype=bool)
+            """Whether each aircraft is actively capturing a selected altitude."""
 
     def new_implementation(self, implementation: Callable[..., TrafficArrays]) -> TrafficArrays:
         """Construct a replacement with this runtime's traffic and simulation."""

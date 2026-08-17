@@ -242,14 +242,6 @@ class CommandStack:
     and the commands and timestamps loaded from a scenario file. Each
     `MiniSky` runtime owns an instance, so command and
     scenario state is not shared between runtimes.
-
-    Attributes:
-        cmddict: Mapping of command names and aliases to [Command][minisky.stack.Command] objects.
-        current: Command line currently being processed.
-        cmdstack: Typed queued commands awaiting processing.
-        scenname: Name of the currently loaded scenario.
-        scenario_commands: Scheduled scenario commands, each carrying its timestamp.
-        sender_rte: Network route to the sender of the current command.
     """
 
     def __init__(
@@ -279,6 +271,7 @@ class CommandStack:
         # them with importlib.resources for wheel installs.
         self.scenario_root = scenario_root or Path(__file__).parent.parent.parent
         self.cmddict: dict[str, Command] = {}
+        """Canonical command names and aliases mapped to compiled commands."""
         self._queue_lock = Lock()
         self._pending_command: _PendingCommand | None = None
         self._reset_state()
@@ -432,21 +425,22 @@ class CommandStack:
 
     def _reset_state(self) -> None:
         """Reset the runtime-owned command queue and scenario state."""
-        # Stack data
         self.current = ""
+        """Command line currently being processed."""
         with self._queue_lock:
-            self.cmdstack: list[QueuedCommand] = []
+            self.cmdstack = []
+            """Queued commands awaiting processing."""
         pending, self._pending_command = self._pending_command, None
         if pending is not None and not pending.task.done():
             pending.task.cancel()
             pending.task.add_done_callback(_consume_task_result)
 
-        # Scenario details
         self.scenname = ""
-        self.scenario_commands: list[ScheduledCommand] = []
+        """Name of the currently loaded scenario."""
+        self.scenario_commands = []
 
-        # Current command details
-        self.sender_rte: bytes | None = None
+        self.sender_rte = None
+        """Sender route associated with the command currently being processed."""
 
     def _take_commands(self) -> list[QueuedCommand]:
         """Detach the current queue while preserving each command's sender.

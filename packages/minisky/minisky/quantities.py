@@ -134,6 +134,12 @@ EnergyJ = Annotated[_T, isqx.ENERGY(isqx.J)]
 EnergyWh = Annotated[_T, isqx.ENERGY(isqx.W * isqx.HOUR)]
 MassFlowKgPerS = Annotated[_T, isqx.MASS_FLOW_RATE(isqx.KG * isqx.S**-1)]
 AreaM2 = Annotated[_T, isqx.AREA(isqx.M**2)]
+DragCoefficient = Annotated[_T, isqx.DRAG_COEFFICIENT]
+ZeroLiftDragCoefficient = Annotated[_T, aerospace.ZERO_LIFT_DRAG_COEFFICIENT]
+LiftInducedDragCoefficient = Annotated[_T, aerospace.LIFT_INDUCED_DRAG_COEFFICIENT]
+InducedDragFactor = Annotated[_T, isqx.Dimensionless("induced_drag_factor")]
+OswaldEfficiency = Annotated[_T, aerospace.OSWALD_EFFICIENCY]
+BypassRatio = Annotated[_T, aerospace.BYPASS_RATIO]
 
 #
 # unit conversions

@@ -73,23 +73,7 @@ def get_multicopter(traffic: Traffic) -> Multicopter | None:
 
 
 class Multicopter(plugin_api.Entity):
-    """Per-aircraft multicopter state.
-
-    Attributes:
-        typespecs (dict): Performance spec per member typecode — the loaded
-            performance table; its key set is the membership set.
-        config (MulticopterConfig): Validated plugin settings (capture
-            radius, low-battery envelope knobs).
-        ismulticopter (ndarray): Bool switch: aircraft is flown as a
-            multicopter (yaw-rate-limited heading, track-driven velocity).
-        selhdg (ndarray): Commanded body heading [deg], decoupled from track.
-        swselhdg (ndarray): Bool switch: a body heading was commanded. While
-            False the nose follows the track (nose-along-course default).
-        yawrate (ndarray): Maximum yaw rate [deg/s].
-    """
-
-    selhdg: q.TrueHeadingDegrees[np.ndarray]
-    yawrate: q.YawRateDegPerS[np.ndarray]
+    """Per-aircraft multicopter state."""
 
     def __init__(
         self,
@@ -102,9 +86,11 @@ class Multicopter(plugin_api.Entity):
         self._selected = False
         with self.settrafarrays():
             self.ismulticopter = np.array([], dtype=bool)
-            self.selhdg = np.array([])
+            """Whether each aircraft uses multicopter kinematics."""
+            self.selhdg: q.TrueHeadingDegrees[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
             self.swselhdg = np.array([], dtype=bool)
-            self.yawrate = np.array([])
+            """Whether body heading is explicitly selected rather than following track."""
+            self.yawrate: q.YawRateDegPerS[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
 
     def create(self, n: int = 1) -> None:
         """Seed multicopter state for n newly created aircraft.

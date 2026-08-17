@@ -12,12 +12,13 @@ from annotated_types import Ge, Le, Lt, MinLen
 from minisky import quantities as q
 from minisky.core.config import default_user_config_dir
 from minisky.plugin import PositiveFiniteFloat
+from minisky.values import AircraftTypeCode
 from pydantic import BaseModel, ConfigDict, FiniteFloat, StringConstraints
 
 from minisky_multicopter import quantities as mq
 
 TypeCode: TypeAlias = Annotated[
-    str,
+    AircraftTypeCode,
     StringConstraints(min_length=1, pattern=r"^[A-Z0-9]+$"),
 ]
 

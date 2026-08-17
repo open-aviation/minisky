@@ -31,114 +31,101 @@ class ActiveWaypoint(TrafficArrays):
     route.direct()), so the continuous guidance can be vectorized. Simple optional
     per-aircraft values use `OptionalArray`; optional [`CAS` in m/s][minisky.values.CasMps]
     or [`Mach`][minisky.values.Mach] values use `VariantArray`.
-
-    Attributes:
-        lat (ndarray): Active waypoint latitude [deg].
-        lon (ndarray): Active waypoint longitude [deg].
-        nextturnlat (ndarray): Next turn waypoint latitude [deg].
-        nextturnlon (ndarray): Next turn waypoint longitude [deg].
-        next_turn_cas (ndarray): Next turn waypoint turn [`CAS` in m/s][minisky.values.CasMps].
-        nextturnrad (ndarray): Next turn waypoint turn radius [m].
-        nextturnhdgr (ndarray): Next turn waypoint heading rate [deg/s].
-        nextturnidx (ndarray): Route index of the next turn waypoint.
-        nextaltco (ndarray): Next altitude constraint [m].
-        xtoalt (ndarray): Distance to the next altitude constraint [m].
-        next_airspeed (VariantArray): Optional [`CAS` in m/s][minisky.values.CasMps]
-            or [`Mach`][minisky.values.Mach] value for the next leg.
-        airspeed (VariantArray): Optional active [`CAS` in m/s][minisky.values.CasMps]
-            or [`Mach`][minisky.values.Mach] value.
-        airspeed_constraint (VariantArray): Optional active waypoint [`CAS` in m/s][minisky.values.CasMps]
-            or [`Mach`][minisky.values.Mach] constraint.
-        vs (ndarray): Vertical speed to use in VNAV climb/descent [m/s].
-        turndist (ndarray): Distance before the waypoint at which to start
-            the turn [m].
-        flyby (ndarray): Fly-by switch; when False, fly-over (turndist 0).
-        flyturn (ndarray): Fly-turn switch (use specified turn parameters).
-        turnrad (ndarray): Turn radius at the active waypoint [m].
-        turn_cas (ndarray): [`CAS` in m/s][minisky.values.CasMps] held through the active fly-turn.
-        turnhdgr (ndarray): Turn heading rate at the active waypoint
-            [deg/s].
-        old_turn_cas (ndarray): [`CAS` in m/s][minisky.values.CasMps] held while completing the previous turn.
-        turnfromlastwp (ndarray): In fly-turn mode from the last waypoint
-            (old turn, beginning of leg).
-        turntonextwp (ndarray): In fly-turn mode towards the next waypoint
-            (new turn, end of leg).
-        torta (OptionalArray): Optional next required time of arrival [s].
-        xtorta (ndarray): Distance to the next RTA waypoint [m].
-        next_qdr (ndarray): Track angle of the next leg [deg].
-        swlastwp (ndarray): Bool switch: active waypoint is the last one.
-        curlegdir (ndarray): Direction of the current leg, set when the
-            waypoint was activated [deg].
-        curleglen (ndarray): Length of the current leg, set when the
-            waypoint was activated [m].
     """
-
-    lat: q.LatitudeDeg[np.ndarray]
-    lon: q.LongitudeDeg[np.ndarray]
-    nextturnlat: OptionalArray[q.LatitudeDeg[np.ndarray]]
-    nextturnlon: OptionalArray[q.LongitudeDeg[np.ndarray]]
-    next_airspeed: VariantArray[np.ndarray]
-    airspeed: VariantArray[np.ndarray]
-    airspeed_constraint: VariantArray[np.ndarray]
-    next_turn_cas: OptionalArray[q.CalibratedAirspeedMps[np.ndarray]]
-    nextturnrad: OptionalArray[q.TurnRadiusM[np.ndarray]]
-    nextturnhdgr: OptionalArray[q.TurnRateDegPerS[np.ndarray]]
-    nextturnidx: OptionalArray[np.ndarray]
-    nextaltco: OptionalArray[q.PressureAltitudeM[np.ndarray]]
-    xtoalt: OptionalArray[q.DistanceM[np.ndarray]]
-    vs: OptionalArray[q.VerticalRateMps[np.ndarray]]
-    turndist: q.DistanceM[np.ndarray]
-    turnrad: OptionalArray[q.TurnRadiusM[np.ndarray]]
-    turn_cas: OptionalArray[q.CalibratedAirspeedMps[np.ndarray]]
-    turnhdgr: OptionalArray[q.TurnRateDegPerS[np.ndarray]]
-    old_turn_cas: OptionalArray[q.CalibratedAirspeedMps[np.ndarray]]
-    torta: OptionalArray[q.SimulationTimeS[np.ndarray]]
-    xtorta: OptionalArray[q.DistanceM[np.ndarray]]
-    next_qdr: OptionalArray[q.BearingDeg[np.ndarray]]
-    curlegdir: OptionalArray[q.BearingDeg[np.ndarray]]
-    curleglen: OptionalArray[q.DistanceM[np.ndarray]]
 
     def __init__(self, traffic: Traffic) -> None:
         super().__init__(traffic)
         self.traffic = traffic
         with self.settrafarrays():
-            self.lat = np.array([])  # [deg] Active WP latitude
-            self.lon = np.array([])  # [deg] Active WP longitude
-            self.nextturnlat = OptionalArray(np.array([]), np.array([], dtype=bool))
-            self.nextturnlon = OptionalArray(np.array([]), np.array([], dtype=bool))
-            self.next_turn_cas = OptionalArray(np.array([]), np.array([], dtype=bool))
-            self.nextturnrad = OptionalArray(np.array([]), np.array([], dtype=bool))
-            self.nextturnhdgr = OptionalArray(np.array([]), np.array([], dtype=bool))
-            self.nextturnidx = OptionalArray(np.array([], dtype=int), np.array([], dtype=bool))
-            self.nextaltco = OptionalArray(np.array([]), np.array([], dtype=bool))
-            self.xtoalt = OptionalArray(np.array([]), np.array([], dtype=bool))
-            self.next_airspeed = VariantArray(np.array([]), np.array([], dtype=np.uint8))
-            self.airspeed = VariantArray(np.array([]), np.array([], dtype=np.uint8))
-            self.airspeed_constraint = VariantArray(np.array([]), np.array([], dtype=np.uint8))
-            self.vs = OptionalArray(np.array([]), np.array([], dtype=bool))
-            self.turndist = np.array([])  # [m] Distance when to turn to next waypoint
-            self.flyby = np.array(
-                [], dtype=bool
-            )  # Flyby switch, when False, flyover (turndist=0.0)
-            self.flyturn = np.array(
-                [], dtype=bool
-            )  # Flyturn switch, customised turn parameters; when False, use flyby/flyover
-            self.turnrad = OptionalArray(np.array([]), np.array([], dtype=bool))
-            self.turn_cas = OptionalArray(np.array([]), np.array([], dtype=bool))
-            self.turnhdgr = OptionalArray(np.array([]), np.array([], dtype=bool))
-            self.old_turn_cas = OptionalArray(np.array([]), np.array([], dtype=bool))
-            self.turnfromlastwp = np.array(
-                [], dtype=bool
-            )  # Currently in flyturn-mode from last waypoint (old turn, beginning of leg)
-            self.turntonextwp = np.array(
-                [], dtype=bool
-            )  # Currently in flyturn-mode to next waypoint (new flyturn mode, end of leg)
-            self.torta = OptionalArray(np.array([]), np.array([], dtype=bool))
-            self.xtorta = OptionalArray(np.array([]), np.array([], dtype=bool))
-            self.next_qdr = OptionalArray(np.array([]), np.array([], dtype=bool))
-            self.swlastwp = np.array([], dtype=bool)  # switch indicating this is the last waypoint
-            self.curlegdir = OptionalArray(np.array([]), np.array([], dtype=bool))
-            self.curleglen = OptionalArray(np.array([]), np.array([], dtype=bool))
+            self.lat: q.LatitudeDeg[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
+            self.lon: q.LongitudeDeg[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
+            self.nextturnlat: OptionalArray[q.LatitudeDeg[np.ndarray]] = OptionalArray(  # pyright: ignore[reportGeneralTypeIssues]
+                np.array([]), np.array([], dtype=bool)
+            )
+            self.nextturnlon: OptionalArray[q.LongitudeDeg[np.ndarray]] = OptionalArray(  # pyright: ignore[reportGeneralTypeIssues]
+                np.array([]), np.array([], dtype=bool)
+            )
+            self.next_turn_cas: OptionalArray[q.CalibratedAirspeedMps[np.ndarray]] = OptionalArray(  # pyright: ignore[reportGeneralTypeIssues]
+                np.array([]), np.array([], dtype=bool)
+            )
+            self.nextturnrad: OptionalArray[q.TurnRadiusM[np.ndarray]] = OptionalArray(  # pyright: ignore[reportGeneralTypeIssues]
+                np.array([]), np.array([], dtype=bool)
+            )
+            self.nextturnhdgr: OptionalArray[q.TurnRateDegPerS[np.ndarray]] = OptionalArray(  # pyright: ignore[reportGeneralTypeIssues]
+                np.array([]), np.array([], dtype=bool)
+            )
+            self.nextturnidx: OptionalArray[np.ndarray] = OptionalArray(
+                np.array([], dtype=int), np.array([], dtype=bool)
+            )
+            """Route index of the next turn waypoint."""
+            self.nextaltco: OptionalArray[q.PressureAltitudeM[np.ndarray]] = OptionalArray(  # pyright: ignore[reportGeneralTypeIssues]
+                np.array([]), np.array([], dtype=bool)
+            )
+            """Optional altitude constraint ahead of the active waypoint."""
+            self.xtoalt: OptionalArray[q.DistanceM[np.ndarray]] = OptionalArray(  # pyright: ignore[reportGeneralTypeIssues]
+                np.array([]), np.array([], dtype=bool)
+            )
+            """Route distance from the active waypoint to the next altitude constraint."""
+            self.next_airspeed: VariantArray[np.ndarray] = VariantArray(
+                np.array([]), np.array([], dtype=np.uint8)
+            )
+            """Optional CAS or Mach target for the next leg."""
+            self.airspeed: VariantArray[np.ndarray] = VariantArray(
+                np.array([]), np.array([], dtype=np.uint8)
+            )
+            """Optional CAS or Mach target for the active leg."""
+            self.airspeed_constraint: VariantArray[np.ndarray] = VariantArray(
+                np.array([]), np.array([], dtype=np.uint8)
+            )
+            """Optional explicit CAS or Mach constraint at the active waypoint."""
+            self.vs: OptionalArray[q.VerticalRateMps[np.ndarray]] = OptionalArray(  # pyright: ignore[reportGeneralTypeIssues]
+                np.array([]), np.array([], dtype=bool)
+            )
+            self.turndist: q.DistanceM[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
+            """Distance before the active waypoint at which its turn starts."""
+            self.flyby = np.array([], dtype=bool)
+            """Whether the active waypoint is fly-by rather than fly-over."""
+            self.flyturn = np.array([], dtype=bool)
+            """Whether the active waypoint uses explicit turn parameters."""
+            self.turnrad: OptionalArray[q.TurnRadiusM[np.ndarray]] = OptionalArray(  # pyright: ignore[reportGeneralTypeIssues]
+                np.array([]), np.array([], dtype=bool)
+            )
+            self.turn_cas: OptionalArray[q.CalibratedAirspeedMps[np.ndarray]] = OptionalArray(  # pyright: ignore[reportGeneralTypeIssues]
+                np.array([]), np.array([], dtype=bool)
+            )
+            self.turnhdgr: OptionalArray[q.TurnRateDegPerS[np.ndarray]] = OptionalArray(  # pyright: ignore[reportGeneralTypeIssues]
+                np.array([]), np.array([], dtype=bool)
+            )
+            self.old_turn_cas: OptionalArray[q.CalibratedAirspeedMps[np.ndarray]] = OptionalArray(  # pyright: ignore[reportGeneralTypeIssues]
+                np.array([]), np.array([], dtype=bool)
+            )
+            """CAS held while completing the previous fly-turn."""
+            self.turnfromlastwp = np.array([], dtype=bool)
+            """Whether the aircraft is completing the previous waypoint's fly-turn."""
+            self.turntonextwp = np.array([], dtype=bool)
+            """Whether the aircraft is entering the next waypoint's fly-turn."""
+            self.torta: OptionalArray[q.SimulationTimeS[np.ndarray]] = OptionalArray(  # pyright: ignore[reportGeneralTypeIssues]
+                np.array([]), np.array([], dtype=bool)
+            )
+            """Optional required arrival time ahead of the active waypoint."""
+            self.xtorta: OptionalArray[q.DistanceM[np.ndarray]] = OptionalArray(  # pyright: ignore[reportGeneralTypeIssues]
+                np.array([]), np.array([], dtype=bool)
+            )
+            """Route distance from the active waypoint to the next RTA waypoint."""
+            self.next_qdr: OptionalArray[q.BearingDeg[np.ndarray]] = OptionalArray(  # pyright: ignore[reportGeneralTypeIssues]
+                np.array([]), np.array([], dtype=bool)
+            )
+            """Track angle of the leg after the active waypoint."""
+            self.swlastwp = np.array([], dtype=bool)
+            """Whether the active waypoint is the final route waypoint."""
+            self.curlegdir: OptionalArray[q.BearingDeg[np.ndarray]] = OptionalArray(  # pyright: ignore[reportGeneralTypeIssues]
+                np.array([]), np.array([], dtype=bool)
+            )
+            """Direction of the current leg captured when its waypoint was activated."""
+            self.curleglen: OptionalArray[q.DistanceM[np.ndarray]] = OptionalArray(  # pyright: ignore[reportGeneralTypeIssues]
+                np.array([]), np.array([], dtype=bool)
+            )
+            """Length of the current leg captured when its waypoint was activated."""
 
     def create(self, n: int = 1) -> None:
         """Initialize active-waypoint data for n newly created aircraft.
@@ -150,19 +137,14 @@ class ActiveWaypoint(TrafficArrays):
             n: Number of aircraft that were appended to the traffic arrays.
         """
         super().create(n)
-        # LNAV route navigation
-        self.lat[-n:] = 0.0  # [deg]Active WP latitude
-        self.lon[-n:] = 0.0  # [deg]Active WP longitude
-        self.turndist[-n:] = 1.0  # [m] Distance to active waypoint where to turn
-        self.flyby[-n:] = 1.0  # Flyby/fly-over switch
-        self.flyturn[-n:] = False  # Flyturn switch; False uses flyby/flyover
-        self.turnfromlastwp[-n:] = (
-            False  # Currently in flyturn-mode from last waypoint (old turn, beginning of leg)
-        )
-        self.turntonextwp[-n:] = (
-            False  # Currently in flyturn-mode to next waypoint (new flyturn mode, end of leg)
-        )
-        self.swlastwp[-n:] = False  # Switch indicating active waypoint is last waypoint
+        self.lat[-n:] = 0.0
+        self.lon[-n:] = 0.0
+        self.turndist[-n:] = 1.0
+        self.flyby[-n:] = 1.0
+        self.flyturn[-n:] = False
+        self.turnfromlastwp[-n:] = False
+        self.turntonextwp[-n:] = False
+        self.swlastwp[-n:] = False
 
     def new_implementation(self, implementation: type[TrafficArrays]) -> TrafficArrays:
         """Construct a replacement with this runtime's traffic object."""

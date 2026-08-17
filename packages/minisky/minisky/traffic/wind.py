@@ -56,54 +56,18 @@ class WindFieldKind(Enum):
 
 
 class Windfield:
-    """Windfield class:
-    Methods:
-        clear()    = clear windfield, no wind vectors defined
-
-        addpoint(lat,lon,winddir,winddspd,windalt=None)
-                   = add a wind vector to a position,
-                     windvector can be arrays for altitudes (optional)
-                     returns index of vector (0,1,2,3,..)
-                     all units are SI units, angles in degrees
-
-        get(lat,lon,alt=0)
-                   = get wind vector for given position and optional
-                     altitude, all can be arrays,
-                     vnorth and veast will be returned in same dimension
-
-        remove(idx) = remove a defined profile using the index
-
-    Members:
-        lat(nvec)          = latitudes of wind definitions
-        lon(nvec)          = longitudes of wind definitions
-        altaxis(nalt)      = altitude axis (fixed, 250 m resolution)
-
-        vnorth(nalt,nvec)  = wind north component [m/s]
-        veast(nalt,nvec)   = wind east component [m/s]
-
-        kind = Wind field kind, derived from the defined points and profiles.
-
-    """
-
-    altmax: q.PressureAltitudeM[float]
-    altstep: q.VerticalDistanceM[float]
-    altaxis: q.PressureAltitudeM[np.ndarray]
-    lat: q.LatitudeDeg[np.ndarray]
-    lon: q.LongitudeDeg[np.ndarray]
-    vnorth: q.WindSpeedMps[np.ndarray]
-    veast: q.WindSpeedMps[np.ndarray]
+    """Windfield class."""
 
     def __init__(self) -> None:
         # For altitude use fixed axis to allow vectorisation later
-        self.altmax = q.ft_to_m(45000.0)
-        self.altstep = q.ft_to_m(100.0)
-
-        # Axis
-        self.altaxis = np.arange(0.0, self.altmax + self.altstep, self.altstep)
+        self.altmax: q.PressureAltitudeM[float] = q.ft_to_m(45000.0)  # pyright: ignore[reportGeneralTypeIssues]
+        self.altstep: q.VerticalDistanceM[float] = q.ft_to_m(100.0)  # pyright: ignore[reportGeneralTypeIssues]
+        self.altaxis: q.PressureAltitudeM[np.ndarray] = np.arange(  # pyright: ignore[reportGeneralTypeIssues]
+            0.0, self.altmax + self.altstep, self.altstep
+        )
         self.idxalt = np.arange(0, len(self.altaxis), 1.0)
         self.nalt = len(self.altaxis)
 
-        # Clear actual field
         self.clear()
 
     @property
@@ -125,15 +89,16 @@ class Windfield:
     def nvec(self) -> int:
         return len(self.lat)
 
-    def clear(self) -> None:  # Clear actual field
+    def clear(self) -> None:
         """Remove all wind vectors."""
-        self.lat = np.array([])
-        self.lon = np.array([])
-        self.profiled = np.array([], dtype=bool)
-        self.vnorth = np.array([[]])
-        self.veast = np.array([[]])
-        self.fe = None
-        self.fn = None
+        self.lat: q.LatitudeDeg[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
+        self.lon: q.LongitudeDeg[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
+        self.profiled: np.ndarray = np.array([], dtype=bool)
+        """Whether each wind definition includes an altitude profile."""
+        self.vnorth: q.WindSpeedMps[np.ndarray] = np.array([[]])  # pyright: ignore[reportGeneralTypeIssues]
+        self.veast: q.WindSpeedMps[np.ndarray] = np.array([[]])  # pyright: ignore[reportGeneralTypeIssues]
+        self.fe: LinearNDInterpolator | None = None
+        self.fn: LinearNDInterpolator | None = None
 
     def addpointvne(
         self,

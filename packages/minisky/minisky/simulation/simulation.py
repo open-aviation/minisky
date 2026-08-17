@@ -92,38 +92,7 @@ class Simulation:
     `update` hooks. State transitions are driven by the `OP`/`HOLD`/`RESET`
     and `QUIT` stack commands, which map onto `op`, `hold`, `reset` and
     `stop`.
-
-    Attributes:
-        traffic: Traffic object updated once per operating step.
-        navigation: Navigation database, reset along with the simulation.
-        python_random: Shared `random.Random`, reseeded by the `SEED` command.
-        numpy_random: Shared NumPy generator, reseeded by the `SEED` command.
-        console: Output channel used for lifecycle messages.
-        commands: Command stack processed at the start of every step.
-        shapes: Area and line geometry store, reset along with the simulation.
-        plugins: Plugin manager driving the `preupdate`, `update`, `hold` and
-            `reset` hooks.
-        replaceables: Manager for replaceable entities (autopilot,
-            performance models), reset along with the simulation.
-        stop_runner: Callback asking the runner to leave its loop.
-        publish_tick: Callback publishing the stream snapshot, called once
-            per step.
-        state: Current [`SimulationState`][minisky.simulation.simulation.SimulationState] value.
-        prevstate: Previous simulation state (unused placeholder).
-        simt: Elapsed simulation time [s].
-        simdt: Simulation timestep [s], added to `simt` per operating step.
-        syst: Wall-clock reference re-anchored by `op` and `hold` and cleared
-            by `reset`; nothing reads it (the runner paces itself).
-        utc: Simulated UTC clock time as a `datetime`, advanced by `simdt`
-            each operating step; settable with the `TIME` and `DATE`
-            commands.
-        rtmode: Realtime flag set and reported by the `REALTIME` command. It
-            records the request only — no code varies the timestep on it.
     """
-
-    simt: q.SimulationTimeS[float]
-    simdt: q.DurationS[float]
-    syst: q.WallClockTimeS[float]
 
     def __init__(
         self,
@@ -150,25 +119,20 @@ class Simulation:
         self.replaceables = replaceables
         self.stop_runner = stop_runner
         self.publish_tick = publish_tick
-        self.state: SimulationState = SimulationState.INIT
+        self.state = SimulationState.INIT
         self.prevstate: SimulationState | None = None
+        """Previous simulation state; currently unused."""
 
-        # Simulation time [seconds]
-        self.simt = 0.0
+        self.simt: q.SimulationTimeS[float] = 0.0  # pyright: ignore[reportGeneralTypeIssues]
+        self.simdt: q.DurationS[float] = 1.0  # pyright: ignore[reportGeneralTypeIssues]
+        self.syst: q.WallClockTimeS[float] = 0.0  # pyright: ignore[reportGeneralTypeIssues]
+        """Wall-clock pacing reference; currently unused by the runner."""
 
-        # Simulation timestep [seconds]
-        self.simdt = 1.0
+        self.utc = datetime.datetime.now(datetime.UTC)
+        """Simulated UTC clock, advanced by `simdt` and settable with `TIME` and `DATE`."""
 
-        # System time [seconds]
-        self.syst = 0.0
-
-        # Simulated UTC clock time (timezone-aware), set by TIME/DATE commands
-        self.utc: datetime.datetime = datetime.datetime.now(datetime.UTC)
-
-        # Flag indicating running at fixed rate or fast time
-
-        # Flag indicating whether timestep can be varied to ensure realtime op
         self.rtmode: bool = False
+        """Realtime request flag; currently does not alter the timestep."""
 
     def step(self) -> bool:
         """Perform one simulation timestep.
