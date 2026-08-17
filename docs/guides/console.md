@@ -1,7 +1,7 @@
 # Control console
 
-`minisky console` is an interactive command-line client for a running
-[REST API server](rest-api.md). It gives you a prompt with history and path completion,
+`minisky console` is an interactive command-line that talks to the REST API.
+It gives you a prompt with history and path completion,
 and forwards what you type to the server.
 
 ```bash

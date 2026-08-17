@@ -60,7 +60,7 @@ uv run minisky console
 > /all
 ```
 
-See the [command-line interface](guides/cli.md), [REST API](guides/rest-api.md), and
+See the [command-line interface](guides/cli.md), and
 [console](guides/console.md) guides for the full set of commands and endpoints.
 
 ## From Python
@@ -86,9 +86,6 @@ with MiniSky() as runtime:
             f"lat={runtime.traffic.lat}  lon={runtime.traffic.lon}"
         )
 ```
-
-See the [Python library guide](guides/python-api.md) for details on runtime
-ownership and stepping the simulation yourself.
 
 ## Running the tests
 

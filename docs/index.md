@@ -24,8 +24,6 @@ reach a bare-minimum simulator that is easy to read, embed, and extend.
     httpx "http://localhost:8000/stack/MCRE 3"
     ```
 
-    → [REST API server](guides/rest-api.md)
-
 3. Import `minisky` and step the simulation from your own code.
 
     ```python
@@ -39,23 +37,3 @@ reach a bare-minimum simulator that is easy to read, embed, and extend.
         )
         runtime.simulation.step()
     ```
-
-    → [Python library](guides/python-api.md)
-
-## What's inside
-
-| Component | Module | What it does |
-| --- | --- | --- |
-| Simulation loop | [`minisky.simulation`](api/simulation.md) | Time keeping, [`SimulationState`][minisky.simulation.simulation.SimulationState], async runner |
-| Traffic | [`minisky.traffic`](api/traffic.md) | Per-aircraft state arrays, autopilot, routes, conflict detection & resolution, OpenAP performance |
-| Command stack | [`minisky.stack`](api/stack.md) | Text-command interpreter shared by scenario files, the console, and the REST API |
-| Plugins | [`minisky.plugin`](api/plugin.md) | Discover and load user plugins with per-aircraft data and stack commands |
-| Tools | [`minisky.tools`](api/tools.md) | Aeronautics conversions (ISA atmosphere, CAS/TAS/Mach) and geodesy |
-| Core | [`minisky.core`](api/core.md) | Configuration and per-aircraft array bookkeeping (`TrafficArrays`) |
-
-## Where to start
-
-1. [Getting started](getting-started.md) — install and run your first simulation.
-2. [Configuration](guides/configuration.md) — override defaults or enable plugins when needed.
-3. [Architecture](architecture.md) — how the pieces fit together.
-4. [Stack commands](reference/commands.md) — every command the simulator understands.
