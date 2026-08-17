@@ -75,31 +75,22 @@ class MulticopterPerf(OpenAP):
         # TODO replace it with our own performance backend and dont impersonate openap
         for actype, spec in self._typespecs().items():
             airframe = spec.airframe
-            envelope: coeff.RotorEnvelope = {
-                "v_min": airframe.v_min,
-                "v_max": airframe.v_max,
-                "vs_min": airframe.vs_min,
-                "vs_max": airframe.vs_max,
-                "h_max": airframe.h_max,
-            }
-            aircraft: coeff.RotorAircraft = {
-                "name": actype,
-                "n_engines": airframe.n_engines,
-                "mtow": airframe.mtow,
-                "oew": airframe.oew,
-                "engines": [coeff.RotorEngine(f"{actype}-motor", airframe.engine_power)],
-                "envelop": envelope,
-            }
-            limits: coeff.RotorLimits = {
-                "vmin": airframe.v_min,
-                "vmax": airframe.v_max,
-                "vsmin": airframe.vs_min,
-                "vsmax": airframe.vs_max,
-                "hmax": airframe.h_max,
-            }
+            envelope = coeff.RotorEnvelope(
+                v_min=airframe.v_min,
+                v_max=airframe.v_max,
+                vs_min=airframe.vs_min,
+                vs_max=airframe.vs_max,
+                h_max=airframe.h_max,
+            )
+            aircraft = coeff.RotorAircraft(
+                name=actype,
+                n_engines=airframe.n_engines,
+                mtow=airframe.mtow,
+                oew=airframe.oew,
+                engines=(coeff.RotorEngine(f"{actype}-motor", airframe.engine_power),),
+                envelope=envelope,
+            )
             self.coeff.acs_rotor[actype] = aircraft
-            self.coeff.limits_rotor[actype] = limits
-        self.coeff.actypes_rotor = list(self.coeff.acs_rotor.keys())
 
     def create(self, n: int = 1) -> None:
         """Seed the electric state of n newly created aircraft.
