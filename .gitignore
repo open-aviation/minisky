@@ -16,3 +16,7 @@ __pycache__/
 # misc
 .vscode/
 .DS_Store
+
+# llm: read AI_POLICY.md and docs/.agents/README.md
+AGENTS.md
+CLAUDE.md
