@@ -11,8 +11,9 @@ values are stored in SI units. The [`Coefficient`][] container is instantiated o
 import json
 import warnings
 from collections.abc import Mapping
+from dataclasses import dataclass
 from enum import IntEnum
-from typing import Literal, NamedTuple, TypedDict, cast
+from typing import Literal, TypeAlias, cast
 
 import numpy as np
 from openap import WRAP, drag, prop
@@ -20,6 +21,9 @@ from openap import WRAP, drag, prop
 from minisky import quantities as q
 from minisky.core.config import data
 from minisky.values import AircraftTypeCode, IcaoAircraftTypeCode
+
+EngineModelIdentifier: TypeAlias = str
+"""Engine model identifier used by OpenAP, for example `CFM56-5B4`."""
 
 
 class LiftType(IntEnum):
@@ -32,12 +36,14 @@ class LiftType(IntEnum):
 # TODO move away from core
 
 
-class RotorEngine(NamedTuple):
+@dataclass(frozen=True, slots=True)
+class RotorEngine:
     name: str
     power: q.PowerW[float]
 
 
-class RotorEnvelope(TypedDict):
+@dataclass(frozen=True, slots=True)
+class RotorEnvelope:
     v_min: q.VelocityMps[float]
     v_max: q.TrueAirspeedMps[float]
     vs_min: q.VerticalRateMps[float]
@@ -45,24 +51,18 @@ class RotorEnvelope(TypedDict):
     h_max: q.PressureAltitudeM[float]
 
 
-class RotorAircraft(TypedDict):
+@dataclass(frozen=True, slots=True)
+class RotorAircraft:
     name: str
     n_engines: int
     mtow: q.MtowKg[float]
     oew: q.OewKg[float]
-    engines: list[RotorEngine]
-    envelop: RotorEnvelope
+    engines: tuple[RotorEngine, ...]
+    envelope: RotorEnvelope
 
 
-class RotorLimits(TypedDict):
-    vmin: q.VelocityMps[float]
-    vmax: q.TrueAirspeedMps[float]
-    vsmin: q.VerticalRateMps[float]
-    vsmax: q.VerticalRateMps[float]
-    hmax: q.PressureAltitudeM[float]
-
-
-class FixedWingEngine(TypedDict):
+@dataclass(frozen=True, slots=True)
+class FixedWingEngine:
     max_thrust: q.ForceN[float]
     bpr: q.BypassRatio[float]
     ff_idl: q.MassFlowKgPerS[float]
@@ -71,25 +71,21 @@ class FixedWingEngine(TypedDict):
     ff_to: q.MassFlowKgPerS[float]
 
 
-class FixedWingWing(TypedDict):
-    area: q.AreaM2[float]
-    span: q.LengthM[float]
-
-
-class FixedWingEngineInstallation(TypedDict):
-    number: int
-    mount: Literal["rear", "wing"]
-
-
-class FixedWingAircraft(TypedDict):
+@dataclass(frozen=True, slots=True)
+class FixedWingAircraft:
     oew: q.OewKg[float]
     mtow: q.MtowKg[float]
-    wing: FixedWingWing
-    engine: FixedWingEngineInstallation
-    engines: dict[str, FixedWingEngine]
+    wing_area: q.AreaM2[float]
+    wing_span: q.LengthM[float]
+    engine_count: int
+    engine_mount: Literal["rear", "wing"]
+    default_engine: EngineModelIdentifier
+    engines: dict[EngineModelIdentifier, FixedWingEngine]
+    variant_engines: dict[IcaoAircraftTypeCode, EngineModelIdentifier]
 
 
-class FixedWingLimits(TypedDict):
+@dataclass(frozen=True, slots=True)
+class FixedWingLimits:
     vminto: q.CalibratedAirspeedMps[float]
     vmaxto: q.CalibratedAirspeedMps[float]
     vminic: q.CalibratedAirspeedMps[float]
@@ -110,7 +106,8 @@ class FixedWingLimits(TypedDict):
     vsmin: q.VerticalRateMps[float]
 
 
-class FixedWingDragPolar(TypedDict):
+@dataclass(frozen=True, slots=True)
+class FixedWingDragPolar:
     cd0_clean: q.ZeroLiftDragCoefficient[float]
     k_clean: q.InducedDragFactor[float]
     e_clean: q.OswaldEfficiency[float]
@@ -135,7 +132,7 @@ WrapStatistic = Literal["default", "minimum", "maximum"]
 
 def _wrap_scalar(values: Mapping[str, object], statistic: WrapStatistic) -> float:
     """Read one scalar statistic from OpenAP's wider WRAP result mapping."""
-    return values[statistic]  # type: ignore
+    return cast(float, values[statistic])
 
 
 class Coefficient:
@@ -147,49 +144,73 @@ class Coefficient:
 
     def __init__(self) -> None:
         with warnings.catch_warnings(action="ignore"):
-            self.actypes_fixwing: list[str] = prop.available_aircraft(use_synonym=True)
-            """Fixed wing type codes from OpenAP"""
-            self.acs_fixwing: dict[str, FixedWingAircraft] = self._load_all_fixwing_flavor()
-            """OpenAP fixed-wing aircraft and engine records keyed by ICAO type."""
-            self.limits_fixwing: dict[str, FixedWingLimits] = self._load_all_fixwing_envelop()
-            """OpenAP fixed-wing operating envelopes keyed by ICAO type."""
+            self.actypes_fixwing: list[IcaoAircraftTypeCode] = [
+                model.upper() for model in prop.available_aircraft(use_synonym=True)
+            ]
+            """Uppercase ICAO aircraft type codes available through OpenAP."""
+            self.acs_fixwing: dict[IcaoAircraftTypeCode, FixedWingAircraft] = (
+                self._load_all_fixwing_flavor()
+            )
+            """Normalized fixed-wing aircraft records keyed by ICAO aircraft type code."""
+            self.limits_fixwing: dict[IcaoAircraftTypeCode, FixedWingLimits] = (
+                self._load_all_fixwing_envelop()
+            )
+            """Fixed-wing operating envelopes keyed by ICAO aircraft type code."""
 
-            self.acs_rotor: dict[str, RotorAircraft] = self._load_all_rotor_flavor()
-            self.limits_rotor: dict[str, RotorLimits] = self._load_all_rotor_envelop()
-            self.actypes_rotor: list[str] = list(self.acs_rotor.keys())
+            self.acs_rotor: dict[AircraftTypeCode, RotorAircraft] = self._load_all_rotor_flavor()
 
-            self.dragpolar_fixwing: dict[str, FixedWingDragPolar] = self._load_fixedwing_dragpolar()
-            """Fixed-wing drag-polar records keyed by ICAO type."""
+            self.dragpolar_fixwing: dict[IcaoAircraftTypeCode, FixedWingDragPolar] = (
+                self._load_fixedwing_dragpolar()
+            )
+            """Fixed-wing drag polars keyed by ICAO aircraft type code."""
 
     def _load_all_fixwing_flavor(self) -> dict[IcaoAircraftTypeCode, FixedWingAircraft]:
-        """Normalize the OpenAP aircraft and default-engine fields MiniSky consumes."""
+        """Normalize the OpenAP aircraft and engine fields MiniSky consumes."""
         aircraft: dict[IcaoAircraftTypeCode, FixedWingAircraft] = {}
         for model in self.actypes_fixwing:
             source = prop.aircraft(model, use_synonym=True)
-            engine_source = prop.engine(source["engine"]["default"])
-            engine_name = str(engine_source["name"])
-            aircraft[model.upper()] = {
-                "oew": float(source["oew"]),
-                "mtow": float(source["mtow"]),
-                "wing": {
-                    "area": float(source["wing"]["area"]),
-                    "span": float(source["wing"]["span"]),
-                },
-                "engine": {
-                    "number": int(source["engine"]["number"]),
-                    "mount": cast(Literal["rear", "wing"], source["engine"]["mount"]),
-                },
-                "engines": {
-                    engine_name: {
-                        "max_thrust": float(engine_source["max_thrust"]),
-                        "bpr": float(engine_source["bpr"]),
-                        "ff_idl": float(engine_source["ff_idl"]),
-                        "ff_app": float(engine_source["ff_app"]),
-                        "ff_co": float(engine_source["ff_co"]),
-                        "ff_to": float(engine_source["ff_to"]),
-                    }
-                },
-            }
+            engine_source = source["engine"]
+            default_engine: EngineModelIdentifier = str(engine_source["default"])
+            options = engine_source["options"]
+            if isinstance(options, dict):
+                variant_engines: dict[IcaoAircraftTypeCode, EngineModelIdentifier] = {
+                    str(variant).upper(): str(engine) for variant, engine in options.items()
+                }
+                option_engines = variant_engines.values()
+            else:
+                variant_engines = {}
+                option_engines = (str(engine) for engine in options)
+
+            engine_models = dict.fromkeys((default_engine, *option_engines))
+            engines: dict[EngineModelIdentifier, FixedWingEngine] = {}
+            for engine_model in engine_models:
+                try:
+                    engine = prop.engine(engine_model)
+                except ValueError:
+                    # NOTE(abraham): oap can advertise optional engines without
+                    # coefficient data, for example, three A21N LEAP engines.
+                    # we keep their identifiers.
+                    continue
+                engines[engine_model] = FixedWingEngine(
+                    max_thrust=float(engine["max_thrust"]),
+                    bpr=float(engine["bpr"]),
+                    ff_idl=float(engine["ff_idl"]),
+                    ff_app=float(engine["ff_app"]),
+                    ff_co=float(engine["ff_co"]),
+                    ff_to=float(engine["ff_to"]),
+                )
+
+            aircraft[model] = FixedWingAircraft(
+                oew=float(source["oew"]),
+                mtow=float(source["mtow"]),
+                wing_area=float(source["wing"]["area"]),
+                wing_span=float(source["wing"]["span"]),
+                engine_count=int(engine_source["number"]),
+                engine_mount=cast(Literal["rear", "wing"], engine_source["mount"]),
+                default_engine=default_engine,
+                engines=engines,
+                variant_engines=variant_engines,
+            )
         return aircraft
 
     def _load_all_rotor_flavor(self) -> dict[AircraftTypeCode, RotorAircraft]:
@@ -203,25 +224,25 @@ class Coefficient:
         aircraft: dict[AircraftTypeCode, RotorAircraft] = {}
         for model, source in raw.items():
             envelope_source = source["envelop"]
-            envelope: RotorEnvelope = {
-                "v_min": float(envelope_source["v_min"]),
-                "v_max": float(envelope_source["v_max"]),
-                "vs_min": float(envelope_source["vs_min"]),
-                "vs_max": float(envelope_source["vs_max"]),
-                "h_max": float(envelope_source["h_max"]),
-            }
-            engines = [
+            envelope = RotorEnvelope(
+                v_min=float(envelope_source["v_min"]),
+                v_max=float(envelope_source["v_max"]),
+                vs_min=float(envelope_source["vs_min"]),
+                vs_max=float(envelope_source["vs_max"]),
+                h_max=float(envelope_source["h_max"]),
+            )
+            engines = tuple(
                 RotorEngine(str(engine[0]), q.kw_to_w(float(engine[1])))
                 for engine in source["engines"]
-            ]
-            aircraft[model.upper()] = {
-                "name": str(source["name"]),
-                "n_engines": int(source["n_engines"]),
-                "mtow": float(source["mtow"]),
-                "oew": float(source["oew"]),
-                "engines": engines,
-                "envelop": envelope,
-            }
+            )
+            aircraft[model.upper()] = RotorAircraft(
+                name=str(source["name"]),
+                n_engines=int(source["n_engines"]),
+                mtow=float(source["mtow"]),
+                oew=float(source["oew"]),
+                engines=engines,
+                envelope=envelope,
+            )
         return aircraft
 
     def _load_all_fixwing_envelop(self) -> dict[IcaoAircraftTypeCode, FixedWingLimits]:
@@ -232,7 +253,7 @@ class Coefficient:
         limits: dict[IcaoAircraftTypeCode, FixedWingLimits] = {}
         for model in self.actypes_fixwing:
             wrap = WRAP(ac=model)
-            key = model.upper()
+            key = model
             vminer = min(
                 _wrap_scalar(wrap.initclimb_vcas(), minimum),
                 _wrap_scalar(wrap.climb_const_vcas(), minimum),
@@ -247,24 +268,24 @@ class Coefficient:
                 _wrap_scalar(wrap.descent_const_vcas(), maximum),
                 _wrap_scalar(wrap.finalapp_vcas(), maximum),
             )
-            limits[key] = {
-                "vminto": _wrap_scalar(wrap.takeoff_speed(), minimum),
-                "vmaxto": _wrap_scalar(wrap.takeoff_speed(), maximum),
-                "vminic": _wrap_scalar(wrap.initclimb_vcas(), minimum),
-                "vmaxic": _wrap_scalar(wrap.initclimb_vcas(), maximum),
-                "vminer": float(vminer),
-                "vmaxer": float(vmaxer),
-                "vminap": _wrap_scalar(wrap.finalapp_vcas(), minimum),
-                "vmaxap": _wrap_scalar(wrap.finalapp_vcas(), maximum),
-                "vminld": _wrap_scalar(wrap.landing_speed(), minimum),
-                "vmaxld": _wrap_scalar(wrap.landing_speed(), maximum),
-                "vmo": float(vmaxer),
-                "mmo": _wrap_scalar(wrap.cruise_max_mach(), default),
-                "hmax": q.km_to_m(_wrap_scalar(wrap.cruise_max_alt(), default)),
-                "crosscl": q.km_to_m(_wrap_scalar(wrap.climb_cross_alt_conmach(), default)),
-                "crossde": q.km_to_m(_wrap_scalar(wrap.descent_cross_alt_concas(), default)),
-                "axmax": _wrap_scalar(wrap.takeoff_acceleration(), maximum),
-                "vsmax": float(
+            limits[key] = FixedWingLimits(
+                vminto=_wrap_scalar(wrap.takeoff_speed(), minimum),
+                vmaxto=_wrap_scalar(wrap.takeoff_speed(), maximum),
+                vminic=_wrap_scalar(wrap.initclimb_vcas(), minimum),
+                vmaxic=_wrap_scalar(wrap.initclimb_vcas(), maximum),
+                vminer=float(vminer),
+                vmaxer=float(vmaxer),
+                vminap=_wrap_scalar(wrap.finalapp_vcas(), minimum),
+                vmaxap=_wrap_scalar(wrap.finalapp_vcas(), maximum),
+                vminld=_wrap_scalar(wrap.landing_speed(), minimum),
+                vmaxld=_wrap_scalar(wrap.landing_speed(), maximum),
+                vmo=float(vmaxer),
+                mmo=_wrap_scalar(wrap.cruise_max_mach(), default),
+                hmax=q.km_to_m(_wrap_scalar(wrap.cruise_max_alt(), default)),
+                crosscl=q.km_to_m(_wrap_scalar(wrap.climb_cross_alt_conmach(), default)),
+                crossde=q.km_to_m(_wrap_scalar(wrap.descent_cross_alt_concas(), default)),
+                axmax=_wrap_scalar(wrap.takeoff_acceleration(), maximum),
+                vsmax=float(
                     max(
                         _wrap_scalar(wrap.initclimb_vs(), maximum),
                         _wrap_scalar(wrap.climb_vs_pre_concas(), maximum),
@@ -272,7 +293,7 @@ class Coefficient:
                         _wrap_scalar(wrap.climb_vs_conmach(), maximum),
                     )
                 ),
-                "vsmin": float(
+                vsmin=float(
                     min(
                         _wrap_scalar(wrap.initclimb_vs(), minimum),
                         _wrap_scalar(wrap.descent_vs_post_concas(), minimum),
@@ -280,25 +301,10 @@ class Coefficient:
                         _wrap_scalar(wrap.descent_vs_conmach(), minimum),
                     )
                 ),
-            }
+            )
         return limits
 
-    def _load_all_rotor_envelop(self) -> dict[str, RotorLimits]:
-        # NOTE(abraham): the same envelope is stored twice (`acs_rotor.envelop`
-        # and `limits_rotor`) because the inherited OpenAP code expects both
-        # shapes
-        return {
-            model: {
-                "vmin": aircraft["envelop"]["v_min"],
-                "vmax": aircraft["envelop"]["v_max"],
-                "vsmin": aircraft["envelop"]["vs_min"],
-                "vsmax": aircraft["envelop"]["vs_max"],
-                "hmax": aircraft["envelop"]["h_max"],
-            }
-            for model, aircraft in self.acs_rotor.items()
-        }
-
-    def _load_fixedwing_dragpolar(self) -> dict[str, FixedWingDragPolar]:
+    def _load_fixedwing_dragpolar(self) -> dict[IcaoAircraftTypeCode, FixedWingDragPolar]:
         """Derive clean, takeoff, and landing drag polars from OpenAP.
 
         OpenAP computes non-clean drag from flap deflection; since MiniSky
@@ -312,7 +318,7 @@ class Coefficient:
         flap_ld = 40  # degs
 
         for model in self.actypes_fixwing:
-            key = model.upper()
+            key = model
             source = drag.Drag(key, use_synonym=True).polar
             lambda_f = source["flaps"]["lambda_f"]
             cfc = source["flaps"]["cf/c"]
@@ -320,24 +326,24 @@ class Coefficient:
             delta_cd_flap_to = lambda_f * cfc**1.38 * sfs * np.sin(np.deg2rad(flap_to)) ** 2
             delta_cd_flap_ld = lambda_f * cfc**1.38 * sfs * np.sin(np.deg2rad(flap_ld)) ** 2
 
-            if self.acs_fixwing[key]["engine"]["mount"] == "rear":
+            if self.acs_fixwing[key].engine_mount == "rear":
                 delta_e_flap_to = 0.0046 * flap_to
                 delta_e_flap_ld = 0.0046 * flap_ld
             else:
                 delta_e_flap_to = 0.0026 * flap_to
                 delta_e_flap_ld = 0.0026 * flap_ld
 
-            wing = self.acs_fixwing[key]["wing"]
-            aspect_ratio = wing["span"] ** 2 / wing["area"]
+            aircraft = self.acs_fixwing[key]
+            aspect_ratio = aircraft.wing_span**2 / aircraft.wing_area
             clean_k = float(source["clean"]["k"])
-            polars[key] = {
-                "cd0_clean": float(source["clean"]["cd0"]),
-                "k_clean": clean_k,
-                "e_clean": float(source["clean"]["e"]),
-                "cd0_to": round(float(source["clean"]["cd0"] + delta_cd_flap_to), 3),
-                "k_to": round(1 / (1 / clean_k + np.pi * aspect_ratio * delta_e_flap_to), 3),
-                "cd0_ld": round(float(source["clean"]["cd0"] + delta_cd_flap_ld), 3),
-                "k_ld": round(1 / (1 / clean_k + np.pi * aspect_ratio * delta_e_flap_ld), 3),
-                "delta_cd_gear": float(source["gears"]),
-            }
+            polars[key] = FixedWingDragPolar(
+                cd0_clean=float(source["clean"]["cd0"]),
+                k_clean=clean_k,
+                e_clean=float(source["clean"]["e"]),
+                cd0_to=round(float(source["clean"]["cd0"] + delta_cd_flap_to), 3),
+                k_to=round(1 / (1 / clean_k + np.pi * aspect_ratio * delta_e_flap_to), 3),
+                cd0_ld=round(float(source["clean"]["cd0"] + delta_cd_flap_ld), 3),
+                k_ld=round(1 / (1 / clean_k + np.pi * aspect_ratio * delta_e_flap_ld), 3),
+                delta_cd_gear=float(source["gears"]),
+            )
         return polars

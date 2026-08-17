@@ -134,55 +134,53 @@ class OpenAP(TrafficArrays):
 
         # initialize aircraft / engine performance parameters
         # check fixwing or rotor, default to fixwing
-        if actype in self.coeff.actypes_rotor:
+        if actype in self.coeff.acs_rotor:
             # NOTE(abraham): OpenAP in core currently knows about the legacy
             # rotor coefficient schema even though multicopter performance is
             # plugin-specific
             self.lifttype[-n:] = coeff.LiftType.ROTORCRAFT
-            self.mass[-n:] = 0.5 * (
-                self.coeff.acs_rotor[actype]["oew"] + self.coeff.acs_rotor[actype]["mtow"]
-            )
-            self.engnum[-n:] = int(self.coeff.acs_rotor[actype]["n_engines"])
-            self.engpower[-n:] = self.coeff.acs_rotor[actype]["engines"][0].power
+            aircraft = self.coeff.acs_rotor[actype]
+            self.mass[-n:] = 0.5 * (aircraft.oew + aircraft.mtow)
+            self.engnum[-n:] = aircraft.n_engines
+            self.engpower[-n:] = aircraft.engines[0].power
 
         else:
             # convert to known aircraft type
-            if actype.lower() not in self.coeff.actypes_fixwing:
+            if actype not in self.coeff.acs_fixwing:
                 actype = "B744"
 
-            # populate fuel flow model
-            es = self.coeff.acs_fixwing[actype]["engines"]
-            e = es[next(iter(es.keys()))]
+            aircraft = self.coeff.acs_fixwing[actype]
+            # TODO(abraham): parse variant-qualified aircraft type codes (for
+            # example A320-232) and select `variant_engines[variant]`; also
+            # expose selection among alternative engines that are not tied to a
+            # variant.
+            engine = aircraft.engines[aircraft.default_engine]
             coeff_a, coeff_b, coeff_c = thrust.compute_eng_ff_coeff(
-                e["ff_idl"], e["ff_app"], e["ff_co"], e["ff_to"]
+                engine.ff_idl, engine.ff_app, engine.ff_co, engine.ff_to
             )
 
             self.lifttype[-n:] = coeff.LiftType.FIXED_WING
 
-            self.Sref[-n:] = self.coeff.acs_fixwing[actype]["wing"]["area"]
-            self.mass[-n:] = 0.5 * (
-                self.coeff.acs_fixwing[actype]["oew"] + self.coeff.acs_fixwing[actype]["mtow"]
-            )
+            self.Sref[-n:] = aircraft.wing_area
+            self.mass[-n:] = 0.5 * (aircraft.oew + aircraft.mtow)
 
-            self.engnum[-n:] = int(self.coeff.acs_fixwing[actype]["engine"]["number"])
+            self.engnum[-n:] = aircraft.engine_count
 
             self.ff_coeff_a[-n:] = coeff_a
             self.ff_coeff_b[-n:] = coeff_b
             self.ff_coeff_c[-n:] = coeff_c
 
-            all_ac_engs = list(self.coeff.acs_fixwing[actype]["engines"].keys())
-            self.engthrmax[-n:] = self.coeff.acs_fixwing[actype]["engines"][all_ac_engs[0]][
-                "max_thrust"
-            ]
-            self.engbpr[-n:] = self.coeff.acs_fixwing[actype]["engines"][all_ac_engs[0]]["bpr"]
+            self.engthrmax[-n:] = engine.max_thrust
+            self.engbpr[-n:] = engine.bpr
 
         # init type specific coefficients for flight envelops
-        if actype in self.coeff.limits_rotor:  # rotorcraft
-            self.vmin[-n:] = self.coeff.limits_rotor[actype]["vmin"]
-            self.vmax[-n:] = self.coeff.limits_rotor[actype]["vmax"]
-            self.vsmin[-n:] = self.coeff.limits_rotor[actype]["vsmin"]
-            self.vsmax[-n:] = self.coeff.limits_rotor[actype]["vsmax"]
-            self.hmax[-n:] = self.coeff.limits_rotor[actype]["hmax"]
+        if actype in self.coeff.acs_rotor:  # rotorcraft
+            envelope = self.coeff.acs_rotor[actype].envelope
+            self.vmin[-n:] = envelope.v_min
+            self.vmax[-n:] = envelope.v_max
+            self.vsmin[-n:] = envelope.vs_min
+            self.vsmax[-n:] = envelope.vs_max
+            self.hmax[-n:] = envelope.h_max
 
             self.cd0_clean[-n:] = np.nan
             self.k_clean[-n:] = np.nan
@@ -193,31 +191,30 @@ class OpenAP(TrafficArrays):
             self.delta_cd_gear[-n:] = np.nan
 
         else:
-            if actype not in self.coeff.limits_fixwing:
-                actype = "B744"
+            limits = self.coeff.limits_fixwing[actype]
+            self.vminic[-n:] = limits.vminic
+            self.vminer[-n:] = limits.vminer
+            self.vminap[-n:] = limits.vminap
+            self.vmaxic[-n:] = limits.vmaxic
+            self.vmaxer[-n:] = limits.vmaxer
+            self.vmaxap[-n:] = limits.vmaxap
 
-            self.vminic[-n:] = self.coeff.limits_fixwing[actype]["vminic"]
-            self.vminer[-n:] = self.coeff.limits_fixwing[actype]["vminer"]
-            self.vminap[-n:] = self.coeff.limits_fixwing[actype]["vminap"]
-            self.vmaxic[-n:] = self.coeff.limits_fixwing[actype]["vmaxic"]
-            self.vmaxer[-n:] = self.coeff.limits_fixwing[actype]["vmaxer"]
-            self.vmaxap[-n:] = self.coeff.limits_fixwing[actype]["vmaxap"]
+            self.vsmin[-n:] = limits.vsmin
+            self.vsmax[-n:] = limits.vsmax
+            self.hmax[-n:] = limits.hmax
+            self.axmax[-n:] = limits.axmax
+            self.vminto[-n:] = limits.vminto
+            self.hcross[-n:] = limits.crosscl
+            self.mmo[-n:] = limits.mmo
 
-            self.vsmin[-n:] = self.coeff.limits_fixwing[actype]["vsmin"]
-            self.vsmax[-n:] = self.coeff.limits_fixwing[actype]["vsmax"]
-            self.hmax[-n:] = self.coeff.limits_fixwing[actype]["hmax"]
-            self.axmax[-n:] = self.coeff.limits_fixwing[actype]["axmax"]
-            self.vminto[-n:] = self.coeff.limits_fixwing[actype]["vminto"]
-            self.hcross[-n:] = self.coeff.limits_fixwing[actype]["crosscl"]
-            self.mmo[-n:] = self.coeff.limits_fixwing[actype]["mmo"]
-
-            self.cd0_clean[-n:] = self.coeff.dragpolar_fixwing[actype]["cd0_clean"]
-            self.k_clean[-n:] = self.coeff.dragpolar_fixwing[actype]["k_clean"]
-            self.cd0_to[-n:] = self.coeff.dragpolar_fixwing[actype]["cd0_to"]
-            self.k_to[-n:] = self.coeff.dragpolar_fixwing[actype]["k_to"]
-            self.cd0_ld[-n:] = self.coeff.dragpolar_fixwing[actype]["cd0_ld"]
-            self.k_ld[-n:] = self.coeff.dragpolar_fixwing[actype]["k_ld"]
-            self.delta_cd_gear[-n:] = self.coeff.dragpolar_fixwing[actype]["delta_cd_gear"]
+            polar = self.coeff.dragpolar_fixwing[actype]
+            self.cd0_clean[-n:] = polar.cd0_clean
+            self.k_clean[-n:] = polar.k_clean
+            self.cd0_to[-n:] = polar.cd0_to
+            self.k_to[-n:] = polar.k_to
+            self.cd0_ld[-n:] = polar.cd0_ld
+            self.k_ld[-n:] = polar.k_ld
+            self.delta_cd_gear[-n:] = polar.delta_cd_gear
 
         # append update actypes, after removing unknown types
         self.actype[-n:] = [actype] * n
