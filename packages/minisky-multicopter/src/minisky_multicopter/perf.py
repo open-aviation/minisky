@@ -28,6 +28,7 @@ from minisky.result import Ok, Result
 from minisky.tools import aero
 from minisky.traffic.performance import coeff
 from minisky.traffic.performance.perfoap import OpenAP
+from minisky.values import AircraftTypeCode
 
 from minisky_multicopter import quantities as mq
 from minisky_multicopter.config import MulticopterTypeSpec, RotorAirframeSpec
@@ -39,20 +40,7 @@ if TYPE_CHECKING:
 
 @plugin_api.replacement
 class MulticopterPerf(OpenAP):
-    """OpenAP performance with an electric model for multicopter rows.
-
-    Attributes:
-        soc (ndarray): Battery state of charge [0-1].
-        capacity (ndarray): Usable pack energy [J]; 0 = no battery model.
-        power (ndarray): Current electrical power draw [W] — the electric
-            analogue of `fuelflow`.
-        twr (ndarray): Thrust-to-weight ratio at maximum thrust [-].
-        cds (ndarray): Flat-plate parasite drag area [m2].
-    """
-
-    capacity: q.EnergyJ[np.ndarray]
-    power: q.PowerW[np.ndarray]
-    cds: mq.FlatPlateDragAreaM2[np.ndarray]
+    """OpenAP performance with an electric model for multicopter rows."""
 
     def __init__(self, traffic: Traffic) -> None:
         # NOTE(abraham): miniSky currently has one globally selected performance impl,
@@ -62,12 +50,15 @@ class MulticopterPerf(OpenAP):
         self._install_types()
         with self.settrafarrays():
             self.soc = np.array([])
-            self.capacity = np.array([])
-            self.power = np.array([])
-            self.twr = np.array([])
-            self.cds = np.array([])
+            """Battery state of charge as a fraction of usable capacity."""
+            self.capacity: q.EnergyJ[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
+            """Usable pack energy; zero disables the battery model."""
+            self.power: q.PowerW[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
+            self.twr: mq.ThrustToWeightRatio[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
+            """Maximum-thrust-to-weight ratio."""
+            self.cds: mq.FlatPlateDragAreaM2[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
 
-    def _typespecs(self) -> dict[str, MulticopterTypeSpec]:
+    def _typespecs(self) -> dict[AircraftTypeCode, MulticopterTypeSpec]:
         """Return the performance table of the mounted Multicopter entity.
 
         Empty when the implementation was selected without the plugin

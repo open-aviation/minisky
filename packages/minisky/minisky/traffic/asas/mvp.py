@@ -54,12 +54,6 @@ class MVP(ConflictResolution):
     Selected via the stack command `RESO MVP`. Resolution manoeuvres can be
     restricted with RMETHH (horizontal: heading and/or speed) and RMETHV
     (vertical speed only).
-
-    Attributes:
-        swresohoriz (bool): Limit resolutions to the horizontal plane.
-        swresospd (bool): Use speed-only resolutions (with swresohoriz).
-        swresohdg (bool): Use heading-only resolutions (with swresohoriz).
-        swresovert (bool): Limit resolutions to the vertical direction.
     """
 
     def __init__(
@@ -69,14 +63,14 @@ class MVP(ConflictResolution):
         select_implementation: Callable[[str, str], Result[str, str]],
     ) -> None:
         super().__init__(config, traffic, select_implementation)
-        # [-] switch to limit resolution to the horizontal direction
         self.swresohoriz = True
-        # [-] switch to use only speed resolutions (works with swresohoriz = True)
+        """Whether resolution is restricted to the horizontal plane."""
         self.swresospd = False
-        # [-] switch to use only heading resolutions (works with swresohoriz = True)
+        """Whether horizontal resolution uses speed only."""
         self.swresohdg = False
-        # [-] switch to limit resolution to the vertical direction
+        """Whether horizontal resolution uses heading only."""
         self.swresovert = False
+        """Whether resolution is restricted to the vertical direction."""
 
     def priority_status(self) -> Result[str, str]:
         """Show MVP priority-rule options and state."""
@@ -267,11 +261,11 @@ class MVP(ConflictResolution):
         has_resolution_time = np.zeros(ownship.ntraf, dtype=bool)
 
         # Call MVP function to resolve conflicts-----------------------------------
-        for (ac1, ac2), qdr, dist, tcpa, tLOS in zip(
+        for conflict, qdr, dist, tcpa, tLOS in zip(
             conf.confpairs, conf.qdr, conf.dist, conf.tcpa, conf.tLOS, strict=False
         ):
-            idx1 = ownship.callsign.index(ac1)
-            idx2 = intruder.callsign.index(ac2)
+            idx1 = ownship.callsign.index(conflict.ownship)
+            idx2 = intruder.callsign.index(conflict.intruder)
 
             # Because ADSB is ON, this is done for each aircraft separately.
             pair_resolution = self.MVP(ownship, intruder, conf, qdr, dist, tcpa, tLOS, idx1, idx2)

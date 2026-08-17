@@ -142,25 +142,22 @@ class VariableExplorer:
 
 
 class Variable:
-    """Wrapper class for variable explorer.
-    Keeps reference to parent object, parent name, and variable name.
-
-    Attributes:
-        parent: Object that holds the variable.
-        parentname: Registered name of the parent object.
-        varname: Attribute name of the variable on the parent object.
-        index: List of integer indices selected from the variable
-            (empty when the whole variable is referenced).
-    """
+    """Wrapper class for variable explorer."""
 
     def __init__(self, parent: Any, parentname: str, varname: str, index: Any) -> None:
         self.parent = parent
+        """Object holding the variable"""
         self.parentname = parentname
+        """Registered name of the parent object"""
         self.varname = varname
+        """Attribute name of the variable on the parent object"""
         try:
-            self.index = [int(i) for i in index]
+            indexes = [int(i) for i in index]
         except ValueError:
-            self.index = []
+            indexes = []
+        self.index = indexes
+        """List of integer indices seleted from the variable, empty when the
+        whole variable is referenced."""
 
     def is_num(self):
         """py3 replacement of operator.isNumberType."""

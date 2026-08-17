@@ -35,6 +35,7 @@ from minisky.core.config import MiniSkyConfig
 from minisky.core.trafficarrays import TrafficArrays
 from minisky.result import Err, Ok, Result
 from minisky.traffic import route
+from minisky.traffic.asas.detection import ConflictPair
 
 if TYPE_CHECKING:
     from minisky.traffic import Traffic
@@ -70,32 +71,7 @@ class ConflictResolution(TrafficArrays):
 
     The base class itself performs no avoidance: its [`ConflictResolution.resolve`][minisky.traffic.asas.resolution.ConflictResolution.resolve] simply
     returns the autopilot values. Subclasses implement an actual algorithm.
-
-    Attributes:
-        activate (bool): Whether conflict resolution is switched on.
-        priority_code: Selected priority rule set, or None when priority is off.
-        resopairs (set): Conflict pairs that are being resolved and have not
-            yet passed their CPA.
-        resofach (float): Horizontal resolution zone factor relative to the
-            detection zone radius [-].
-        resofacv (float): Vertical resolution zone factor relative to the
-            detection zone height [-].
-        resooffac (ndarray): Per-aircraft flag, True for aircraft that do not
-            perform resolutions themselves [-].
-        noresoac (ndarray): Per-aircraft flag, True for aircraft that others
-            do not avoid [-].
-        active (ndarray): Per-aircraft flag, True while the autopilot follows
-            the resolution advisory instead of the flight plan [-].
-        trk (ndarray): Resolution heading advisory [deg].
-        gs (ndarray): Resolution ground-speed advisory [m/s].
-        alt (ndarray): Resolution altitude advisory [m].
-        vs (ndarray): Resolution vertical speed advisory [m/s].
     """
-
-    trk: q.GroundTrackDeg[np.ndarray]
-    gs: q.GroundSpeedMps[np.ndarray]
-    alt: q.PressureAltitudeM[np.ndarray]
-    vs: q.VerticalRateMps[np.ndarray]
 
     def __init__(
         self,
@@ -107,32 +83,36 @@ class ConflictResolution(TrafficArrays):
         self.config = config
         self.traffic = traffic
         self.select_implementation = select_implementation
-        self.activate = False
+        self.activate: bool | None = False
 
         self.priority_code: PriorityCode | None = None
-        self.resopairs = set()  # Resolved conflicts that are still before CPA
+        self.resopairs: set[ConflictPair] = set()
+        """Directed conflict pairs still being actively resolved."""
 
         # Resolution factors:
         # set < 1 to maneuver only a fraction of the resolution
         # set > 1 to add a margin to separation values
-        self.resofach = self.config.asas_marh
-        self.resofacv = self.config.asas_marv
+        self.resofach: float = self.config.asas_marh
+        """Horizontal resolution-zone factor relative to conflict detection."""
+        self.resofacv: float = self.config.asas_marv
+        """Vertical resolution-zone factor relative to conflict detection."""
 
-        # Switches to guarantee last reso zone commands keep valid if cd zone changes
-        self.resodhrelative = (
-            True  # Size of resolution zone dh, vertically, set relative to CD zone
-        )
-        self.resorrelative = True  # Size of resolution zone r, vertically, set relative to CD zone
+        self.resodhrelative = True
+        """Keep the vertical resolution zone relative to conflict detection."""
+        self.resorrelative = True
+        """Keep the horizontal resolution zone relative to conflict detection."""
 
         with self.settrafarrays():
             self.resooffac = np.array([], dtype=bool)
+            """Aircraft that do not perform their own resolution manoeuvre."""
             self.noresoac = np.array([], dtype=bool)
-            # whether the autopilot follows ASAS or not
+            """Aircraft that other aircraft should not avoid."""
             self.active = np.array([], dtype=bool)
-            self.trk = np.array([])
-            self.gs = np.array([])
-            self.alt = np.array([])
-            self.vs = np.array([])
+            """Aircraft currently following a resolution advisory."""
+            self.trk: q.GroundTrackDeg[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
+            self.gs: q.GroundSpeedMps[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
+            self.alt: q.PressureAltitudeM[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
+            self.vs: q.VerticalRateMps[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
 
     def new_implementation(self, implementation: Callable[..., TrafficArrays]) -> TrafficArrays:
         """Construct a replacement with this runtime's traffic and selector."""
@@ -263,7 +243,7 @@ class ConflictResolution(TrafficArrays):
         self.resopairs.update(conf.confpairs)
 
         # Conflict pairs to be deleted
-        delpairs = set()
+        delpairs: set[ConflictPair] = set()
         changeactive = {}
 
         # smallest relative angle between vectors of heading a and b
@@ -414,7 +394,8 @@ class ConflictResolution(TrafficArrays):
     def set_horizontal_resolution_factor(self, factor: PositiveFiniteFloat) -> Result[str, str]:
         """Set the horizontal resolution factor."""
         self.resofach = factor
-        self.resorrelative = True  # Size of resolution zone r, vertically, set relative to CD zone
+        self.resorrelative = True
+        """Keep the horizontal resolution zone relative to conflict detection."""
         return Ok(f"Horizontal resolution factor set to {self.resofach}")
 
     @command(name="RFACV", aliases=("RESOFACV",))

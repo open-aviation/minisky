@@ -40,127 +40,75 @@ class OpenAP(TrafficArrays):
     drag polar), maximum and net thrust, fuel flow (quadratic ICAO model),
     and phase-dependent speed limits are recomputed. Both fixed-wing aircraft
     and simple rotorcraft (envelope-only) are supported.
-
-    Methods:
-        create(): initialize new aircraft with performance parameters
-        update(): update performance parameters
-
-    Attributes:
-        actype (ndarray): ICAO aircraft type code per aircraft.
-        lifttype (ndarray): `LiftType` values [-].
-        Sref (ndarray): Wing reference surface area [m^2].
-        mass (ndarray): Effective mass, mean of OEW and MTOW [kg].
-        phase (ndarray): Current flight phase identifier (see `phase`) [-].
-        cd0 (ndarray): Zero-lift drag coefficient for current phase [-].
-        k (ndarray): Induced drag factor for current phase [-].
-        bank (ndarray): Maximum bank angle for current phase [deg].
-        thrust (ndarray): Net thrust (drag + mass * acceleration) [N].
-        drag (ndarray): Total aerodynamic drag [N].
-        fuelflow (ndarray): Fuel flow of all engines [kg/s].
-        max_thrust (ndarray): Maximum available thrust at current state [N].
-        hmax (ndarray): Flight ceiling [m].
-        vmin (ndarray): Minimum operating calibrated airspeed [m/s].
-        vmax (ndarray): Maximum operating calibrated airspeed [m/s].
-        vsmin (ndarray): Maximum descent rate (negative) [m/s].
-        vsmax (ndarray): Maximum climb rate [m/s].
-        axmax (ndarray): Maximum longitudinal acceleration [m/s^2].
-        mmo (ndarray): Maximum operating Mach number [-].
-        engnum (ndarray): Number of engines [-].
-        engthrmax (ndarray): Maximum static thrust per engine [N].
-        engbpr (ndarray): Engine bypass ratio [-].
-        ff_coeff_a/b/c (ndarray): Quadratic ICAO fuel-flow fit coefficients.
     """
-
-    Sref: q.AreaM2[np.ndarray]
-    mass: q.MassKg[np.ndarray]
-    bank: q.BankAngleDeg[np.ndarray]
-    thrust: q.ForceN[np.ndarray]
-    drag: q.ForceN[np.ndarray]
-    fuelflow: q.MassFlowKgPerS[np.ndarray]
-    hmax: q.PressureAltitudeM[np.ndarray]
-    vmin: q.AirspeedMps[np.ndarray]
-    vmax: q.AirspeedMps[np.ndarray]
-    vsmin: q.VerticalRateMps[np.ndarray]
-    vsmax: q.VerticalRateMps[np.ndarray]
-    axmax: q.AccelerationMps2[np.ndarray]
-    engthrmax: q.ForceN[np.ndarray]
-    max_thrust: q.ForceN[np.ndarray]
-    ff_coeff_a: q.MassFlowKgPerS[np.ndarray]
-    ff_coeff_b: q.MassFlowKgPerS[np.ndarray]
-    ff_coeff_c: q.MassFlowKgPerS[np.ndarray]
-    engpower: q.PowerW[np.ndarray]
-    vminic: q.CalibratedAirspeedMps[np.ndarray]
-    vminer: q.CalibratedAirspeedMps[np.ndarray]
-    vminap: q.CalibratedAirspeedMps[np.ndarray]
-    vmaxic: q.CalibratedAirspeedMps[np.ndarray]
-    vmaxer: q.CalibratedAirspeedMps[np.ndarray]
-    vmaxap: q.CalibratedAirspeedMps[np.ndarray]
-    vminto: q.CalibratedAirspeedMps[np.ndarray]
-    hcross: q.PressureAltitudeM[np.ndarray]
-    mmo: q.MachNumber[np.ndarray]
 
     def __init__(self, traffic: Traffic) -> None:
         super().__init__()
         self.traffic = traffic
 
-        self.ac_warning = False  # aircraft mdl to default warning
-        self.eng_warning = False  # aircraft engine to default warning
+        self.ac_warning = False
+        self.eng_warning = False
 
         self.coeff = coeff.Coefficient()
 
         with self.settrafarrays():
-            # --- fixed parameters ---
-            self.actype = np.array([], dtype=str)  # aircraft type
-            self.Sref = np.array([])  # wing reference surface area [m^2]
-            self.engtype = np.array([])  # integer, aircraft.ENG_TF...
+            self.actype = np.array([], dtype=str)
+            self.Sref: q.AreaM2[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
+            self.engtype = np.array([])
 
-            # --- dynamic parameters ---
-            self.mass = np.array([])  # effective mass [kg]
+            self.mass: q.MassKg[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
             self.phase = np.array([], dtype=int)
-            self.cd0 = np.array([])
-            self.k = np.array([])
-            self.bank = np.array([])
-            self.thrust = np.array([])  # thrust
-            self.drag = np.array([])  # drag
-            self.fuelflow = np.array([])  # fuel flow
+            """Current OpenAP flight-phase identifiers."""
+            self.cd0: q.ZeroLiftDragCoefficient[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
+            """Zero-lift drag coefficient selected for the current flight phase."""
+            self.k: q.InducedDragFactor[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
+            """Induced-drag factor selected for the current flight phase."""
+            self.bank: q.BankAngleDeg[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
+            self.thrust: q.ForceN[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
+            self.drag: q.ForceN[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
+            self.fuelflow: q.MassFlowKgPerS[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
 
-            # Envelope limits per aircraft
-            self.hmax = np.array([])  # Flight ceiling [m]
+            self.hmax: q.PressureAltitudeM[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
             # TODO(abraham): fixed-wing rows store CAS while rotor rows store TAS; a
             # per-lift-type envelope record would make the speed kind unambiguous.
-            self.vmin = np.array([])  # Minimum operating speed [m/s]
-            self.vmax = np.array([])  # Maximum operating speed [m/s]
-            self.vsmin = np.array([])  # Maximum descent speed [m/s]
-            self.vsmax = np.array([])  # Maximum climb speed [m/s]
-            self.axmax = np.array([])  # Max/min acceleration [m/s2]
+            self.vmin: q.AirspeedMps[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
+            """Minimum operating speed; fixed-wing rows store CAS and rotorcraft rows store TAS."""
+            self.vmax: q.AirspeedMps[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
+            """Maximum operating speed; fixed-wing rows store CAS and rotorcraft rows store TAS."""
+            self.vsmin: q.VerticalRateMps[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
+            self.vsmax: q.VerticalRateMps[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
+            self.axmax: q.AccelerationMps2[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
 
             self.lifttype = np.array([], dtype=int)
-            self.engnum = np.array([], dtype=int)  # number of engines
-            self.engthrmax = np.array([])  # static engine thrust
-            self.engbpr = np.array([])  # engine bypass ratio
-            self.max_thrust = np.array([])  # thrust ratio at current alt spd
-            self.ff_coeff_a = np.array([])  # icao fuel flows coefficient a
-            self.ff_coeff_b = np.array([])  # icao fuel flows coefficient b
-            self.ff_coeff_c = np.array([])  # icao fuel flows coefficient c
-            self.engpower = np.array([])  # engine power, rotor ac
-            self.cd0_clean = np.array([])  # Cd0, clean configuration
-            self.k_clean = np.array([])  # k, clean configuration
-            self.cd0_to = np.array([])  # Cd0, takeoff configuration
-            self.k_to = np.array([])  # k, takeoff configuration
-            self.cd0_ld = np.array([])  # Cd0, landing configuration
-            self.k_ld = np.array([])  # k, landing configuration
-            self.delta_cd_gear = np.array([])  # landing gear
+            """Per-aircraft `LiftType` values."""
+            self.engnum = np.array([], dtype=int)
+            self.engthrmax: q.ForceN[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
+            self.engbpr: q.BypassRatio[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
+            """Engine bypass ratio."""
+            self.max_thrust: q.ForceN[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
+            self.ff_coeff_a: q.MassFlowKgPerS[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
+            self.ff_coeff_b: q.MassFlowKgPerS[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
+            self.ff_coeff_c: q.MassFlowKgPerS[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
+            self.engpower: q.PowerW[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
+            self.cd0_clean: q.ZeroLiftDragCoefficient[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
+            self.k_clean: q.InducedDragFactor[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
+            self.cd0_to: q.ZeroLiftDragCoefficient[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
+            self.k_to: q.InducedDragFactor[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
+            self.cd0_ld: q.ZeroLiftDragCoefficient[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
+            self.k_ld: q.InducedDragFactor[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
+            self.delta_cd_gear: q.DragCoefficient[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
+            """Landing-gear increment applied to the drag coefficient."""
 
-            self.vminic = np.array([])
-            self.vminer = np.array([])
-            self.vminap = np.array([])
-            self.vmaxic = np.array([])
-            self.vmaxer = np.array([])
-            self.vmaxap = np.array([])
+            self.vminic: q.CalibratedAirspeedMps[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
+            self.vminer: q.CalibratedAirspeedMps[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
+            self.vminap: q.CalibratedAirspeedMps[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
+            self.vmaxic: q.CalibratedAirspeedMps[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
+            self.vmaxer: q.CalibratedAirspeedMps[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
+            self.vmaxap: q.CalibratedAirspeedMps[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
 
-            self.vminto = np.array([])
-            self.hcross = np.array([])
-            self.mmo = np.array([])
+            self.vminto: q.CalibratedAirspeedMps[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
+            self.hcross: q.PressureAltitudeM[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
+            self.mmo: q.MachNumber[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
 
     def new_implementation(self, implementation: type[TrafficArrays]) -> TrafficArrays:
         """Construct a replacement with this runtime's traffic object."""

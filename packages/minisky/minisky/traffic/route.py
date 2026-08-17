@@ -60,7 +60,9 @@ from minisky.values import (
     LatLonDegrees,
     Mach,
     OptionalAirspeedKind,
+    RunwayIdentifier,
     StdPressureAltM,
+    WaypointReference,
 )
 
 if TYPE_CHECKING:
@@ -84,12 +86,10 @@ class WaypointType(IntEnum):
 
 class TurnRadius(NamedTuple):
     radius: q.TurnRadiusM[float]
-    """Turn radius [m]."""
 
 
 class TurnHeadingRate(NamedTuple):
     heading_rate: q.TurnRateDegPerS[float]
-    """Turn heading rate [deg/s]."""
 
 
 TurnGeometry: TypeAlias = TurnRadius | TurnHeadingRate
@@ -109,16 +109,15 @@ class NextTurn(NamedTuple):
 
 class AltitudeTarget(NamedTuple):
     altitude: q.PressureAltitudeM[float]
-    """Target altitude [m]."""
     distance: q.DistanceM[float]
-    """Distance from the active waypoint to the constraint [m]."""
+    """Distance from the active waypoint to the constraint."""
 
 
 class RtaTarget(NamedTuple):
     time: q.SimulationTimeS[float]
-    """Required arrival time in simulation time [s]."""
+    """Required arrival time in simulation time."""
     distance: q.DistanceM[float]
-    """Distance from the active waypoint to the RTA waypoint [m]."""
+    """Distance from the active waypoint to the RTA waypoint."""
 
 
 class RouteProfile(NamedTuple):
@@ -139,78 +138,58 @@ class Route:
     closest to the given lat/lon. For plain lat/lon waypoints the aircraft
     callsign is used as waypoint name, with a number appended.
 
-    Attributes:
-        acid (str): Callsign of the aircraft this route belongs to.
-        wpname (list): Waypoint names.
-        wptype (list): Waypoint types.
-        wpairspeed (list): Optional explicit [`CAS` in m/s][minisky.values.CasMps]
-            or [`Mach`][minisky.values.Mach] constraints.
-        wpflyby (list): Fly-by (True) / fly-over (False) switch.
-        wpturn (list): Optional fly-turn parameters per waypoint.
-        wpstack (list): Stack command lines executed when passing each
-            waypoint (AT ... DO).
-        iactwp (int | None): Index of the currently active waypoint, or None.
-        swflyby (bool): Default fly-by mode for newly added waypoints.
-        swflyturn (bool): Default fly-turn mode for newly added waypoints.
-        flag_landed_runway (bool): True after touchdown on a runway; the
-            aircraft then keeps the runway heading.
-        wpprofile (list): Optional altitude and RTA guidance targets from each waypoint.
-
     Created by: Jacco M. Hoekstra
     """
 
     # # Aircraft route objects
     # _routes: WeakValueDictionary[str, "Route"] = WeakValueDictionary()
 
-    bank: q.BankAngleDeg[float]
-    wplat: list[q.LatitudeDeg[float]]
-    wplon: list[q.LongitudeDeg[float]]
-    wpalt: list[q.PressureAltitudeM[float] | None]
-    wpairspeed: list[CasMps | Mach | None]
-    wprta: list[q.SimulationTimeS[float] | None]
-    wpdirfrom: list[q.BearingDeg[float]]
-    wpdirto: list[q.BearingDeg[float]]
-    wpdistto: list[q.DistanceM[float]]
-
     def __init__(self, traffic: Traffic, acid: str) -> None:
         self.traffic = traffic
         self.navigation = traffic.navigation
         self.acid = acid
 
-        # Waypoint data
-        self.wpname = []  # List of waypoint names for this flight plan
+        self.wpname: list[WaypointReference] = []
         self.wptype: list[WaypointType] = []
-        self.wplat = []
-        self.wplon = []
-        self.wpalt = []
-        self.wpairspeed = []
-        self.wprta = []
-        self.wpflyby = []  # Flyby (True)/flyover(False) switch
-        self.wpstack = []  # Stack with command execured when passing this waypoint
+        self.wplat: list[q.LatitudeDeg[float]] = []  # pyright: ignore[reportGeneralTypeIssues]
+        self.wplon: list[q.LongitudeDeg[float]] = []  # pyright: ignore[reportGeneralTypeIssues]
+        self.wpalt: list[q.PressureAltitudeM[float] | None] = []  # pyright: ignore[reportGeneralTypeIssues]
+        self.wpairspeed: list[CasMps | Mach | None] = []
+        self.wprta: list[q.SimulationTimeS[float] | None] = []  # pyright: ignore[reportGeneralTypeIssues]
+        """Optional required time of arrival at each waypoint, in simulation time."""
+        self.wpflyby: list[bool] = []
+        """Whether each waypoint is fly-by rather than fly-over."""
+        self.wpstack: list[list[str]] = []
+        """Stack commands executed when each waypoint is passed."""
 
-        # Made for drones: fly turn mode, means use specified turn radius and optionally turn CAS
         self.wpturn: list[TurnParameters | None] = []
+        """Optional explicit fly-turn parameters for each waypoint."""
 
-        # Current actual waypoint
         self.iactwp: int | None = None
+        """Index of the active waypoint, or `None` when no waypoint is active."""
 
         # TODO(abraham): replace swflyby/swflyturn plus per-waypoint flags with one
         # tagged transition mode; the booleans permit contradictory combinations.
-        self.swflyby = True  # Default waypoints are flyby waypoint
-        self.swflyturn = False  # Default waypoints are waypoints w/o specified turn
+        self.swflyby = True
+        """Default fly-by mode for newly added waypoints."""
+        self.swflyturn = False
+        """Default explicit fly-turn mode for newly added waypoints."""
 
-        self.bank = 25.0
+        self.bank: q.BankAngleDeg[float] = 25.0  # pyright: ignore[reportGeneralTypeIssues]
         self.turn = TurnParameters()
+        """Fly-turn parameters applied to newly added waypoints while fly-turn mode is active."""
 
-        # if the aircraft lands on a runway, the aircraft should keep the
-        # runway heading
-        # default: False
         self.flag_landed_runway = False
+        """Whether the aircraft has touched down and should keep runway heading."""
 
-        self.wpdirfrom = []
-        self.wpdirto = []
-        self.wpdistto = []
+        self.wpdirfrom: list[q.BearingDeg[float]] = []  # pyright: ignore[reportGeneralTypeIssues]
+        """Outbound bearing from each waypoint."""
+        self.wpdirto: list[q.BearingDeg[float]] = []  # pyright: ignore[reportGeneralTypeIssues]
+        """Inbound bearing to each waypoint."""
+        self.wpdistto: list[q.DistanceM[float]] = []  # pyright: ignore[reportGeneralTypeIssues]
+        """Distance of the route leg ending at each waypoint."""
         self.wpprofile: list[RouteProfile] = []
+        """Precomputed altitude and RTA guidance targets for each waypoint."""
 
     def insert_wpt_data(
         self,
@@ -468,6 +447,7 @@ class Route:
             name = self.wpname[active_idx]
 
             # Change RW06,RWY18C,RWY24001 to resp. 06,18C,24
+            rwykey: RunwayIdentifier
             if "RWY" in name:
                 rwykey = name[8:10]
                 if len(name) > 10 and not name[10].isdigit():
@@ -587,13 +567,10 @@ class Route:
         n_wpt = len(self.wpname)
 
         # Create cleared flight plan calculation table
-        # [deg] Direction of leg laving this waypoint
         self.wpdirfrom = n_wpt * [0.0]
 
-        # [deg] Direction of leg ot this waypoint (if it exists)
         self.wpdirto = n_wpt * [0.0]
 
-        # [m] Distance of leg to this waypoint
         self.wpdistto = n_wpt * [0.0]
 
         self.wpprofile = [RouteProfile() for _ in range(n_wpt)]
@@ -609,8 +586,8 @@ class Route:
             qdr, dist = geo.qdrdist(
                 self.wplat[i], self.wplon[i], self.wplat[i + 1], self.wplon[i + 1]
             )
-            self.wpdirfrom[i] = float(qdr)  # [deg]
-            self.wpdistto[i + 1] = float(dist)  # [m]
+            self.wpdirfrom[i] = float(qdr)
+            self.wpdistto[i + 1] = float(dist)
 
         # Also add "from direction" as to directions so no need to shift for actwpdata
         # direction to will be overwritten in actwpdata in case of a direct to
@@ -619,7 +596,7 @@ class Route:
         qdr, _dist = geo.qdrdist(
             self.traffic.lat[iac], self.traffic.lon[iac], self.wplat[0], self.wplon[0]
         )
-        self.wpdirto = [qdr, *self.wpdirfrom[0:-1]]  # [deg] Direction to waypoints
+        self.wpdirto = [qdr, *self.wpdirfrom[0:-1]]
 
         # Continue flying in the saem direction
         if n_wpt > 1:
@@ -952,10 +929,10 @@ def _add_takeoff_waypoint(
         rwylat = acrte.wplat[rwyrteidx]
         rwylon = acrte.wplon[rwyrteidx]
         aptidx = traffic.navigation.getapinear(rwylat, rwylon)
-        aptname = traffic.navigation.aptname[aptidx]
+        aptid = traffic.navigation.aptid[aptidx]
         rwyname = acrte.wpname[rwyrteidx].split("/")[1]
         rwyid = rwyname.replace("RWY", "").replace("RW", "")
-        rwyhdg = traffic.navigation.rwythresholds[aptname][rwyid][2]
+        rwyhdg = traffic.navigation.rwythresholds[aptid][rwyid][2]
     else:
         rwylat = traffic.lat[acidx]
         rwylon = traffic.lon[acidx]

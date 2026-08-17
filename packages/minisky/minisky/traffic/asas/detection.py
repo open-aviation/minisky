@@ -38,40 +38,47 @@ from minisky.command import (
 from minisky.core.config import MiniSkyConfig
 from minisky.core.trafficarrays import TrafficArrays
 from minisky.result import Ok, Result
+from minisky.tools.geo import _MEAN_EARTH_RADIUS
 
 if TYPE_CHECKING:
     from minisky.traffic import Traffic
-
-# Mean earth radius [m], same value as the geo module's flat-earth helpers
-RE: q.LengthM[float] = 6371000.0
 
 NonNegativeTime = Annotated[TimeS, Ge(0)]
 ProtectedRadiusM = Annotated[DistanceM, Ge(0)]
 ProtectedHeightM = Annotated[DistanceM, Ge(0)]
 
 
-# TODO(abraham): model callsign pairs as a named ConflictPair record.
+class ConflictPair(NamedTuple):
+    """Directed ownship/intruder callsign pair."""
+
+    ownship: str
+    intruder: str
+
+
+UndirectedConflictPair = frozenset[str]
+
+
 class ConflictDetectionResult(NamedTuple):
-    confpairs: list[tuple[str, str]]
+    confpairs: list[ConflictPair]
     """Conflicting callsign pairs, in both directions."""
-    lospairs: list[tuple[str, str]]
+    lospairs: list[ConflictPair]
     """Callsign pairs in loss of separation."""
     inconf: np.ndarray
-    """Per-aircraft in-conflict flags [-]."""
+    """Per-aircraft in-conflict flags."""
     tcpamax: q.DurationS[np.ndarray]
-    """Per-aircraft maximum time to closest point of approach [s]."""
+    """Per-aircraft maximum time to closest point of approach."""
     qdr: q.BearingDeg[np.ndarray]
-    """Bearing from ownship to intruder per conflict [deg]."""
+    """Bearing from ownship to intruder per conflict."""
     dist: q.DistanceM[np.ndarray]
-    """Current horizontal distance per conflict [m]."""
+    """Current horizontal distance per conflict."""
     dcpa: q.DistanceM[np.ndarray]
-    """Horizontal distance at closest point of approach per conflict [m]."""
+    """Horizontal distance at closest point of approach per conflict."""
     tcpa: q.DurationS[np.ndarray]
-    """Time to closest point of approach per conflict [s]."""
+    """Time to closest point of approach per conflict."""
     tLOS: q.DurationS[np.ndarray]
-    """Time until loss of separation per conflict [s]."""
+    """Time until loss of separation per conflict."""
     dalt: q.VerticalDistanceM[np.ndarray]
-    """Current altitude difference per conflict [m]."""
+    """Current altitude difference per conflict."""
 
 
 def _noconflicts(ntraf: int) -> ConflictDetectionResult:
@@ -105,49 +112,7 @@ class ConflictDetection(TrafficArrays):
     `lospairs` and the per-conflict geometry arrays) and as per-aircraft
     arrays (`inconf`, `tcpamax`). Separation minima and lookahead time can
     be set globally or per aircraft.
-
-    Attributes:
-        rpz_def (float): Default horizontal separation minimum (PZ radius) [m].
-        hpz_def (float): Default vertical separation minimum (half PZ height) [m].
-        dtlookahead_def (float): Default conflict detection lookahead time [s].
-        dtnolook_def (float): Default detection hold-off interval [s].
-        activate (bool): Whether conflict detection is switched on.
-        confpairs (list): Callsign pairs in conflict this timestep; contains
-            both (a, b) and (b, a).
-        lospairs (list): Callsign pairs in loss of separation this timestep.
-        confpairs_unique (set): Unique (frozenset) conflict pairs this timestep.
-        lospairs_unique (set): Unique (frozenset) LoS pairs this timestep.
-        confpairs_all (list): All unique conflict pairs since simulation start.
-        lospairs_all (list): All unique LoS pairs since simulation start.
-        qdr (ndarray): Bearing from ownship to intruder per conflict [deg].
-        dist (ndarray): Current horizontal distance per conflict [m].
-        dcpa (ndarray): Predicted horizontal distance at CPA per conflict [m].
-        tcpa (ndarray): Time to closest point of approach per conflict [s].
-        tLOS (ndarray): Time until loss of separation starts per conflict [s].
-        dalt (ndarray): Current altitude difference per conflict [m].
-        inconf (ndarray): Per-aircraft flag, True when in at least one conflict [-].
-        tcpamax (ndarray): Per-aircraft maximum time to CPA over its conflicts [s].
-        rpz (ndarray): Per-aircraft horizontal separation minimum [m].
-        hpz (ndarray): Per-aircraft vertical separation minimum [m].
-        dtlookahead (ndarray): Per-aircraft lookahead time [s].
-        dtnolook (ndarray): Per-aircraft detection hold-off interval [s].
     """
-
-    rpz_def: q.DistanceM[float]
-    hpz_def: q.VerticalDistanceM[float]
-    dtlookahead_def: q.DurationS[float]
-    dtnolook_def: q.DurationS[float]
-    qdr: q.BearingDeg[np.ndarray]
-    dist: q.DistanceM[np.ndarray]
-    dcpa: q.DistanceM[np.ndarray]
-    tcpa: q.DurationS[np.ndarray]
-    tLOS: q.DurationS[np.ndarray]
-    dalt: q.VerticalDistanceM[np.ndarray]
-    tcpamax: q.DurationS[np.ndarray]
-    rpz: q.DistanceM[np.ndarray]
-    hpz: q.VerticalDistanceM[np.ndarray]
-    dtlookahead: q.DurationS[np.ndarray]
-    dtnolook: q.DurationS[np.ndarray]
 
     def __init__(
         self, config: MiniSkyConfig, traffic: Traffic, stack_command: Callable[..., None]
@@ -156,48 +121,57 @@ class ConflictDetection(TrafficArrays):
         self.config = config
         self.traffic = traffic
         self.stack_command = stack_command
-        ## Default values
-        # [m] Horizontal separation minimum for detection
-        self.rpz_def = q.nmi_to_m(self.config.asas_pzr)
+        self.rpz_def: q.DistanceM[float] = q.nmi_to_m(self.config.asas_pzr)  # pyright: ignore[reportGeneralTypeIssues]
+        """Horizonal separation minimum for detection."""
         self.global_rpz = True
-        # [m] Vertical separation minimum for detection
-        self.hpz_def = q.ft_to_m(self.config.asas_pzh)
+        """Whether every aircraft uses the default horizontal separation minimum."""
+        self.hpz_def: q.VerticalDistanceM[float] = q.ft_to_m(self.config.asas_pzh)  # pyright: ignore[reportGeneralTypeIssues]
+        """Vertical separation minimum for detection."""
         self.global_hpz = True
-        # [s] lookahead time
-        self.dtlookahead_def = self.config.asas_dtlookahead
+        """Whether every aircraft uses the default vertical separation minimum."""
+        self.dtlookahead_def: q.DurationS[float] = self.config.asas_dtlookahead  # pyright: ignore[reportGeneralTypeIssues]
         self.global_dtlook = True
-        self.dtnolook_def = 0.0
+        """Whether every aircraft uses the default conflict lookahead time."""
+        self.dtnolook_def: q.DurationS[float] = 0.0  # pyright: ignore[reportGeneralTypeIssues]
+        """Default interval during which conflict detection is suppressed after resolution."""
         self.global_dtnolook = True
+        """Whether every aircraft uses the default no-look interval."""
         self.activate = True
+        """Whether conflict detection runs during traffic updates."""
 
-        # Conflicts and LoS detected in the current timestep (used for resolving)
-        self.confpairs = []
-        self.lospairs = []
-        self.qdr = np.array([])
-        self.dist = np.array([])
-        self.dcpa = np.array([])
-        self.tcpa = np.array([])
-        self.tLOS = np.array([])
-        self.dalt = np.array([])
-        # Unique conflicts and LoS in the current timestep (a, b) = (b, a)
-        self.confpairs_unique = set()
-        self.lospairs_unique = set()
+        self.confpairs: list[ConflictPair] = []
+        """Directed conflict pairs detected in the current timestep."""
+        self.lospairs: list[ConflictPair] = []
+        """Directed loss-of-separation pairs in the current timestep."""
+        self.qdr: q.BearingDeg[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
+        """Directed bearing from ownship to intruder for each entry in `confpairs`."""
+        self.dist: q.DistanceM[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
+        self.dcpa: q.DistanceM[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
+        """Predicted horizontal separation at closest point of approach for each conflict pair."""
+        self.tcpa: q.DurationS[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
+        """Signed time from the current state to horizontal closest point of approach."""
+        self.tLOS: q.DurationS[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
+        """Signed time until the conflict pair enters loss of separation; negative when already inside."""
+        self.dalt: q.VerticalDistanceM[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
+        self.confpairs_unique: set[UndirectedConflictPair] = set()
+        """Undirected conflict pairs in the current timestep."""
+        self.lospairs_unique: set[UndirectedConflictPair] = set()
+        """Undirected loss-of-separation pairs in the current timestep."""
 
-        # All conflicts and LoS since simt=0
-        self.confpairs_all = []
-        self.lospairs_all = []
+        self.confpairs_all: list[UndirectedConflictPair] = []
+        """Unique conflict pairs observed since the last full reset."""
+        self.lospairs_all: list[UndirectedConflictPair] = []
+        """Unique loss-of-separation pairs observed since the last full reset."""
 
-        # Per-aircraft conflict data
         with self.settrafarrays():
-            self.inconf = np.array([], dtype=bool)  # In-conflict flag
-            self.tcpamax = np.array([])  # Maximum time to CPA for aircraft in conflict
-            # [m] Horizontal separation minimum for detection
-            self.rpz = np.array([])
-            # [m] Vertical separation minimum for detection
-            self.hpz = np.array([])
-            # [s] lookahead time
-            self.dtlookahead = np.array([])
-            self.dtnolook = np.array([])
+            self.inconf = np.array([], dtype=bool)
+            self.tcpamax: q.DurationS[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
+            self.rpz: q.DistanceM[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
+            """Horizontal separation minimum for detection"""
+            self.hpz: q.VerticalDistanceM[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
+            """Vertical separation minimum for detection"""
+            self.dtlookahead: q.DurationS[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
+            self.dtnolook: q.DurationS[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
 
     def new_implementation(self, implementation: Callable[..., TrafficArrays]) -> TrafficArrays:
         """Construct a replacement with this runtime's traffic and command stack."""
@@ -234,7 +208,6 @@ class ConflictDetection(TrafficArrays):
             n: Number of newly created aircraft.
         """
         super().create(n)
-        # Initialise values of own states
         self.rpz[-n:] = self.rpz_def
         self.hpz[-n:] = self.hpz_def
         self.dtlookahead[-n:] = self.dtlookahead_def
@@ -472,8 +445,8 @@ class ConflictDetection(TrafficArrays):
         lat = ownship.lat
         lon = ownship.lon
         coslat = np.cos(np.radians(lat))
-        x = RE * np.radians(lon) * np.mean(coslat)
-        y = RE * np.radians(lat)
+        x = _MEAN_EARTH_RADIUS * np.radians(lon) * np.mean(coslat)
+        y = _MEAN_EARTH_RADIUS * np.radians(lat)
 
         # Farthest horizontal distance at which a conflict (or LoS) within
         # the lookahead is geometrically possible
@@ -507,8 +480,8 @@ class ConflictDetection(TrafficArrays):
         dlatrad = np.radians(intruder.lat[jj] - ownship.lat[ii])
         dlonrad = np.radians(((intruder.lon[jj] - ownship.lon[ii]) + 180.0) % 360.0 - 180.0)
         cavelat = np.cos(np.radians(intruder.lat[jj] + ownship.lat[ii]) * 0.5)
-        dx = RE * dlonrad * cavelat
-        dy = RE * dlatrad
+        dx = _MEAN_EARTH_RADIUS * dlonrad * cavelat
+        dy = _MEAN_EARTH_RADIUS * dlatrad
         dist = np.sqrt(dx * dx + dy * dy)
 
         # Ground velocity components; du/dv is the velocity of j relative to i
@@ -602,7 +575,8 @@ class ConflictDetection(TrafficArrays):
 
         # Select conflicting pairs: each a/c gets their own record
         confpairs = [
-            (ownship.callsign[i], ownship.callsign[j]) for i, j in zip(iown, jint, strict=False)
+            ConflictPair(ownship.callsign[i], ownship.callsign[j])
+            for i, j in zip(iown, jint, strict=False)
         ]
 
         # Ownship conflict flag and max tCPA
@@ -616,7 +590,7 @@ class ConflictDetection(TrafficArrays):
         jlos = np.concatenate((jj[swlos], ii[swlos]))
         losorder = np.lexsort((jlos, ilos))
         lospairs = [
-            (ownship.callsign[i], ownship.callsign[j])
+            ConflictPair(ownship.callsign[i], ownship.callsign[j])
             for i, j in zip(ilos[losorder], jlos[losorder], strict=False)
         ]
 

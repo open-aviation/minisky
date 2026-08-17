@@ -30,6 +30,7 @@ from typing import TYPE_CHECKING, TypedDict
 import numpy as np
 
 from minisky import quantities as q
+from minisky.values import AircraftTypeCode
 
 if TYPE_CHECKING:
     from minisky.simulation import Runner, Simulation
@@ -66,7 +67,7 @@ class AcData(TypedDict):
     tas: list[q.TrueAirspeedMps[float]]
     cas: list[q.CalibratedAirspeedMps[float]]
     gs: list[q.GroundSpeedMps[float]]
-    typecode: list[str]
+    typecode: list[AircraftTypeCode]
     inconf: list[bool]
     tcpamax: list[q.DurationS[float]]
     nconf_cur: int
@@ -145,15 +146,7 @@ class StreamHub:
     Snapshot construction is skipped entirely when there are no subscribers,
     and gated to at most `max_hz` publications per wall-clock second so that a
     fast-forwarding simulation does not flood consumers.
-
-    Attributes:
-        latest: The most recently published snapshot (`None` until the first
-            publish), used to seed newly connected consumers.
-        generation: Monotonically increasing counter incremented on each
-            publish; consumers may use it to detect missed ticks.
     """
-
-    _min_interval: q.DurationS[float]
 
     def __init__(
         self,
@@ -163,10 +156,11 @@ class StreamHub:
         self._build_snapshot = build_snapshot
         self._subscribers = 0
         self._event = asyncio.Event()
-        self._min_interval = 1.0 / max_hz if max_hz > 0 else 0.0
+        self._min_interval: q.DurationS[float] = 1.0 / max_hz if max_hz > 0 else 0.0  # pyright: ignore[reportGeneralTypeIssues]
         self._last_publish = 0.0
         self.latest: Snapshot | None = None
         self.generation = 0
+        """Monotonically increases whenever a snapshot is published."""
         self._closed = False
 
     @property

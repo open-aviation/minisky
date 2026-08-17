@@ -28,31 +28,18 @@ class APorASAS(TrafficArrays):
     is active, otherwise the autopilot command is used. The desired heading
     is derived from the desired track with a wind-drift correction.
     Available as [`runtime.traffic.aporasas`][minisky.traffic.aporasas.APorASAS].
-
-    Attributes:
-        alt (ndarray): Desired altitude [m].
-        hdg (ndarray): Desired heading [deg].
-        trk (ndarray): Desired track angle [deg].
-        vs (ndarray): Desired vertical speed (magnitude) [m/s].
-        tas (ndarray): Desired true airspeed [m/s].
     """
-
-    alt: q.PressureAltitudeM[np.ndarray]
-    hdg: q.TrueHeadingDegrees[np.ndarray]
-    trk: q.GroundTrackDeg[np.ndarray]
-    vs: q.VerticalRateMps[np.ndarray]
-    tas: q.TrueAirspeedMps[np.ndarray]
 
     def __init__(self, traffic: Traffic) -> None:
         super().__init__(traffic)
         self.traffic = traffic
         with self.settrafarrays():
-            # Desired aircraft states
-            self.alt = np.array([])  # desired altitude [m]
-            self.hdg = np.array([])  # desired heading [deg]
-            self.trk = np.array([])  # desired track angle [deg]
-            self.vs = np.array([])  # desired vertical speed [m/s]
-            self.tas = np.array([])  # desired speed [m/s]
+            # TODO(abraham): rename to desired_XXX.
+            self.alt: q.PressureAltitudeM[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
+            self.hdg: q.TrueHeadingDegrees[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
+            self.trk: q.GroundTrackDeg[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
+            self.vs: q.VerticalRateMps[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
+            self.tas: q.TrueAirspeedMps[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
 
     def new_implementation(self, implementation: type[TrafficArrays]) -> TrafficArrays:
         """Construct a replacement with this runtime's traffic object."""
@@ -125,7 +112,6 @@ class APorASAS(TrafficArrays):
                     np.maximum(-1.0, Vw * np.sin(drift) / np.maximum(0.001, self.traffic.tas)),
                 )
             )
-            # desired heading
             self.hdg = (self.trk + np.degrees(steer)) % 360.0
         else:
             self.hdg = self.trk % 360.0

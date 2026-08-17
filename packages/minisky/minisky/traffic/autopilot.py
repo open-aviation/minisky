@@ -49,6 +49,7 @@ from minisky.values import (
     MagneticHeadingDeg,
     OptionalAirspeedKind,
     StdPressureAltM,
+    WaypointReference,
 )
 
 from .route import Route, RouteProfile, RtaTarget, TurnHeadingRate, TurnRadius, WaypointType, direct
@@ -105,40 +106,7 @@ class Autopilot(TrafficArrays):
     objects. Waypoint switching is event driven (see wppassingcheck()),
     while the continuous guidance in update() is fully vectorized over all
     aircraft. Accessible as [`runtime.traffic.ap`][minisky.traffic.autopilot.Autopilot].
-
-    Attributes:
-        trk (ndarray): Commanded track angle [deg].
-        tas (ndarray): Commanded true airspeed [m/s].
-        alt (ndarray): Commanded altitude [m].
-        vs (ndarray): Commanded vertical speed [m/s].
-        swtoc (ndarray): Switch: Top-of-Climb logic (climb early) enabled.
-        swtod (ndarray): Switch: Top-of-Descent logic (descend late) enabled.
-        dist2vs (OptionalArray): Optional distance to the active waypoint at
-            which a delayed VNAV descent should start [m].
-        swvnavvs (ndarray): Switch: use the VNAV-computed vertical speed.
-        inturn (ndarray): Switch: aircraft is currently in a turn.
-        orig (list): Origin airport identifier per aircraft.
-        dest (list): Destination airport identifier per aircraft.
-        route (list): Per-aircraft [`Route`][minisky.traffic.route.Route] (flight plan) objects.
-        steepness (float): Default climb/descent gradient [-]
-            (3000 ft per 10 nm).
-        idxreached (list): Indices of aircraft that reached their active
-            waypoint during the last update.
     """
-
-    trk: q.GroundTrackDeg[np.ndarray]
-    tas: q.TrueAirspeedMps[np.ndarray]
-    alt: q.PressureAltitudeM[np.ndarray]
-    vs: q.VerticalRateMps[np.ndarray]
-    dist2vs: OptionalArray[q.DistanceM[np.ndarray]]
-    vnavvs: q.VerticalRateMps[np.ndarray]
-    qdr2wp: OptionalArray[q.BearingDeg[np.ndarray]]
-    dist2wp: OptionalArray[q.DistanceM[np.ndarray]]
-    qdrturn: OptionalArray[q.BearingDeg[np.ndarray]]
-    dist2turn: OptionalArray[q.DistanceM[np.ndarray]]
-    bankdef: q.BankAngleRad[np.ndarray]
-    vsdef: q.VerticalRateMps[np.ndarray]
-    turnphi: q.BankAngleRad[np.ndarray]
 
     def __init__(self, traffic: Traffic, get_simulation: Callable[[], Simulation]) -> None:
         super().__init__()
@@ -146,66 +114,66 @@ class Autopilot(TrafficArrays):
         self.navigation = traffic.navigation
         self._get_simulation = get_simulation
 
-        # Standard descent steepness
-        self.steepness = q.ft_to_m(3000.0) / q.nmi_to_m(10.0)
+        self.steepness: float = q.ft_to_m(3000.0) / q.nmi_to_m(10.0)
+        """Default climb/descent gradient used for VNAV planning."""
 
-        # Define object arrays
         with self.settrafarrays():
-            # FMS directions
-            self.trk = np.array([])
-            self.tas = np.array([])
-            self.alt = np.array([])
-            self.vs = np.array([])
-
-            # -- VNAV variables --
-            # Switch to enable Top of Climb logic (default True)
+            self.trk: q.GroundTrackDeg[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
+            self.tas: q.TrueAirspeedMps[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
+            self.alt: q.PressureAltitudeM[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
+            self.vs: q.VerticalRateMps[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
             self.swtoc = np.array([], dtype=bool)
+            """Per-aircraft top-of-climb logic flags."""
 
-            # Switch to enable Top of Descent logic (default True)
             self.swtod = np.array([], dtype=bool)
+            """Per-aircraft top-of-descent logic flags."""
 
-            # Distance from current waypoint to Top of Descent
-            self.dist2vs = OptionalArray(np.array([]), np.array([], dtype=bool))
+            self.dist2vs: OptionalArray[q.DistanceM[np.ndarray]] = OptionalArray(  # pyright: ignore[reportGeneralTypeIssues]
+                np.array([]), np.array([], dtype=bool)
+            )
+            """Distance to the active waypoint at which delayed VNAV climb or descent starts."""
 
-            # Switch to use provided vertical speed
             self.swvnavvs = np.array([], dtype=bool)
+            """Whether VNAV uses its computed vertical-speed target."""
 
-            # Vertical speed in VNAV mode
-            self.vnavvs = np.array([])
+            self.vnavvs: q.VerticalRateMps[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
 
-            # -- LNAV variables --
+            self.qdr2wp: OptionalArray[q.BearingDeg[np.ndarray]] = OptionalArray(  # pyright: ignore[reportGeneralTypeIssues]
+                np.array([]), np.array([], dtype=bool)
+            )
+            """Bearing cached between waypoint checks to avoid late 180-degree turn reversals."""
 
-            # Bearing to waypoint from last check point
-            # used to prevent 180-degree turns when bearing updates shortly before passing waypoint
-            self.qdr2wp = OptionalArray(np.array([]), np.array([], dtype=bool))
+            self.dist2wp: OptionalArray[q.DistanceM[np.ndarray]] = OptionalArray(  # pyright: ignore[reportGeneralTypeIssues]
+                np.array([]), np.array([], dtype=bool)
+            )
 
-            # Distance to active waypoint [m]
-            self.dist2wp = OptionalArray(np.array([]), np.array([], dtype=bool))
+            self.qdrturn: OptionalArray[q.BearingDeg[np.ndarray]] = OptionalArray(  # pyright: ignore[reportGeneralTypeIssues]
+                np.array([]), np.array([], dtype=bool)
+            )
+            """Bearing from each aircraft to its next fly-turn waypoint, when one exists."""
 
-            # Bearing to next turn
-            self.qdrturn = OptionalArray(np.array([]), np.array([], dtype=bool))
+            self.dist2turn: OptionalArray[q.DistanceM[np.ndarray]] = OptionalArray(  # pyright: ignore[reportGeneralTypeIssues]
+                np.array([]), np.array([], dtype=bool)
+            )
 
-            # Distance to next turn [m]
-            self.dist2turn = OptionalArray(np.array([]), np.array([], dtype=bool))
-
-            # Aircraft turning status
             self.inturn = np.array([], dtype=bool)
+            """Whether each aircraft is currently executing a turn."""
 
-            # Traffic navigation information
-            self.orig = []  # Origin airport code (4 letters)
-            self.dest = []  # Destination airport code (4 letters)
+            self.orig: list[WaypointReference] = []
+            """Stored `ORIG` waypoint source; may be an airport, navaid, runway, or coordinate reference."""
+            self.dest: list[WaypointReference] = []
+            """Stored `DEST` waypoint source; may be an airport, navaid, runway, or coordinate reference."""
 
-            # Default values
-            self.bankdef = np.array([])
-            self.vsdef = np.array([])
+            self.bankdef: q.BankAngleRad[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
+            """Default autopilot bank-angle limit per aircraft."""
+            self.vsdef: q.VerticalRateMps[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
+            """Default autopilot vertical speed per aircraft."""
+            self.turnphi: q.BankAngleRad[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
+            """Bank angle currently commanded for the active turn."""
+            self.route: list[Route] = []
 
-            # Currently used bank angle [rad]
-            self.turnphi = np.array([])
-
-            # Route objects
-            self.route = []
-
-        self.idxreached = []  # Indices of aircraft that have reached their active waypoint
+        self.idxreached = np.array([], dtype=int)
+        """Aircraft indices that reached their active waypoint in the latest update."""
 
     @property
     def simulation(self) -> Simulation:
@@ -229,17 +197,14 @@ class Autopilot(TrafficArrays):
         """
         super().create(n)
 
-        # FMS directions
         self.trk[-n:] = self.traffic.trk[-n:]
         self.tas[-n:] = self.traffic.tas[-n:]
         self.alt[-n:] = self.traffic.alt[-n:]
         self.vs[-n:] = self.traffic.vs[-n:]
 
-        # Default ToC/ToD logic on
         self.swtoc[-n:] = True
         self.swtod[-n:] = True
 
-        # VNAV Variables
         # dist2vs starts absent until a delayed Top-of-Descent threshold is armed.
 
         # LNAV variables
@@ -250,7 +215,6 @@ class Autopilot(TrafficArrays):
 
         # Traffic performance data (temporarily default values)
 
-        # default vertical speed of autopilot
         self.vsdef[-n:] = q.fpm_to_mps(1500.0)
 
         self.bankdef[-n:] = np.radians(25.0)

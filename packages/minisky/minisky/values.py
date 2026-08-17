@@ -11,8 +11,27 @@ from __future__ import annotations
 from abc import ABC
 from dataclasses import dataclass
 from enum import IntEnum
+from typing import TypeAlias
 
 from minisky import quantities as q
+
+AircraftTypeCode: TypeAlias = str
+"""Aircraft model/type designator used by MiniSky and plugins."""
+
+IcaoAircraftTypeCode: TypeAlias = AircraftTypeCode
+"""Uppercase ICAO aircraft type designator used by OpenAP, for example `A320`."""
+
+WaypointReference: TypeAlias = str
+"""Stored waypoint source, e.g. `EHAM`, `EHAM/RW18L`, or `52.0,4.0`."""
+
+AirportIdentifier: TypeAlias = str
+"""Navigation-database airport identifier, commonly a four-letter ICAO code such as `EHAM`."""
+
+RunwayIdentifier: TypeAlias = str
+"""Runway designator without an `RW` prefix, for example `09` or `25L`."""
+
+AirwayIdentifier: TypeAlias = str
+"""Published airway identifier, for example `UL620`."""
 
 
 class RuntimeNewType(ABC):

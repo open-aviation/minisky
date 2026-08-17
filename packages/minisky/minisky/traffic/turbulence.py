@@ -28,15 +28,7 @@ class Turbulence(TrafficArrays):
     When active, random displacements are drawn per aircraft in the
     body-related axes (along track, across track, vertical) and applied
     directly to the aircraft positions and altitudes.
-
-    Attributes:
-        active (bool): Whether turbulence is applied.
-        sd (ndarray): Position-diffusion amplitudes [m/sqrt(s)] in
-            (horizontal flight direction, horizontal wing direction, vertical);
-            clipped to a small positive minimum.
     """
-
-    sd: q.PositionDiffusionMPerSqrtS[np.ndarray]
 
     def __init__(self, traffic: Traffic, get_simulation: Callable[[], Simulation]) -> None:
         super().__init__(traffic)
@@ -64,7 +56,8 @@ class Turbulence(TrafficArrays):
         Values are ordered horizontal-flight, horizontal-wing, vertical and
         clipped to a small positive minimum.
         """
-        self.sd = np.asarray(s, dtype=float)
+        self.sd: q.PositionDiffusionMPerSqrtS[np.ndarray] = np.asarray(s, dtype=float)  # pyright: ignore[reportGeneralTypeIssues]
+        """Diffusion amplitudes along-track, cross-track, and vertical."""
         self.sd = np.where(self.sd > 1e-6, self.sd, 1e-6)
 
     def update(self) -> None:

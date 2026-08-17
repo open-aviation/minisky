@@ -867,7 +867,7 @@ def aircraft_indices(
 class NamedWaypoint:
     """A waypoint expression that should be resolved by name."""
 
-    name: str
+    name: value_types.WaypointReference
 
 
 @dataclass(frozen=True, slots=True)
@@ -875,7 +875,7 @@ class CoordinateWaypoint:
     """A waypoint expressed directly as latitude and longitude."""
 
     coordinates: value_types.LatLonDegrees
-    source: str
+    source: value_types.WaypointReference
 
 
 WaypointSpec: TypeAlias = NamedWaypoint | CoordinateWaypoint

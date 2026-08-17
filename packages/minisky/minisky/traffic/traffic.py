@@ -59,7 +59,9 @@ from minisky.tools.convert import latlon2txt
 from minisky.tools.shapes import Shapes
 from minisky.traffic.asas import ConflictDetection, ConflictResolution
 from minisky.values import (
+    AircraftTypeCode,
     AirspeedKind,
+    AirwayIdentifier,
     CasMps,
     Mach,
     MagneticHeadingDeg,
@@ -143,107 +145,7 @@ class Traffic(TrafficArrays):
 
     All internal state is kept in SI units; stack commands parse explicit
     units and quantity/reference tags at the boundary.
-
-    Attributes:
-        ntraf: Number of aircraft currently in the simulation.
-        translvl: Transition level [m].
-        callsign: Aircraft identifier (callsign) strings.
-        typecode: ICAO aircraft type designators (e.g. "A320").
-        lat: Latitude [deg].
-        lon: Longitude [deg].
-        distflown: Distance flown since creation [m].
-        alt: Pressure altitude [m].
-        hdg: True heading [deg].
-        trk: Ground track [deg].
-        tas: True airspeed [m/s].
-        gs: Ground speed [m/s].
-        gsnorth: North component of ground speed [m/s].
-        gseast: East component of ground speed [m/s].
-        cas: Calibrated airspeed [m/s].
-        M: Mach number [-].
-        selected_airspeed: Selected [`CAS` in m/s][minisky.values.CasMps] or
-            [`Mach`][minisky.values.Mach] value and its
-            [`AirspeedKind`][minisky.values.AirspeedKind].
-        vs: Vertical speed [m/s].
-        p: Static air pressure at aircraft altitude [Pa].
-        rho: Air density at aircraft altitude [kg/m³].
-        Temp: Static air temperature at aircraft altitude [K].
-        windnorth: Wind north component at aircraft position [m/s].
-        windeast: Wind east component at aircraft position [m/s].
-        aptas: True airspeed commanded at aircraft creation [m/s].
-        selalt: Selected altitude [m].
-        selvs: Selected vertical speed [m/s].
-        swlnav: Bool switch: LNAV (lateral FMS guidance) on/off.
-        swvnav: Bool switch: VNAV (vertical FMS guidance) on/off.
-        swvnavairspeed: Bool switch: VNAV airspeed guidance on/off.
-        swats: Bool switch: autothrottle on/off.
-        thr: Fixed throttle setting [0.0-1.0], used when autothrottle is off.
-        work: Work done by thrust since creation [J].
-        coslat: Cached cosine of latitude, for local cartesian computations.
-        eps: Small nonzero numbers, guarding divisions by near-zero state.
-        crecmdlist: Command lines issued for each new aircraft, managed by
-            the `CRECMD` and `CLRCRECMD` commands.
-        cond: Pending conditional (`ATALT`/`ATSPD`/`ATDIST`) commands.
-        wind: Wind-field model.
-        turbulence: Turbulence model.
-        noise: Surveillance and trajectory noise, toggled with the `NOISE`
-            command.
-        ap: Autopilot/FMS guidance.
-        actwp: Active waypoint data per aircraft.
-        aporasas: Selection between autopilot and ASAS commands.
-        cd: Conflict detection.
-        cr: Conflict resolution.
-        perf: Aircraft performance model.
-        kinematics: Flight-state integration (airspeed, heading, vertical
-            speed, ground speed and position).
-        groups: Aircraft group administration.
     """
-
-    ntraf: int
-    translvl: q.PressureAltitudeM[float]
-    lat: q.LatitudeDeg[np.ndarray]
-    lon: q.LongitudeDeg[np.ndarray]
-    distflown: q.DistanceM[np.ndarray]
-    alt: q.PressureAltitudeM[np.ndarray]
-    hdg: q.TrueHeadingDegrees[np.ndarray]
-    trk: q.GroundTrackDeg[np.ndarray]
-    tas: q.TrueAirspeedMps[np.ndarray]
-    gs: q.GroundSpeedMps[np.ndarray]
-    gsnorth: q.GroundSpeedMps[np.ndarray]
-    gseast: q.GroundSpeedMps[np.ndarray]
-    cas: q.CalibratedAirspeedMps[np.ndarray]
-    M: q.MachNumber[np.ndarray]
-    selected_airspeed: VariantArray[np.ndarray]
-    vs: q.VerticalRateMps[np.ndarray]
-    p: q.StaticPressurePa[np.ndarray]
-    rho: q.DensityKgPerM3[np.ndarray]
-    Temp: q.StaticTemperatureK[np.ndarray]
-    windnorth: q.WindSpeedMps[np.ndarray]
-    windeast: q.WindSpeedMps[np.ndarray]
-    aptas: q.TrueAirspeedMps[np.ndarray]
-    selalt: q.PressureAltitudeM[np.ndarray]
-    selvs: q.VerticalRateMps[np.ndarray]
-    swlnav: np.ndarray
-    swvnav: np.ndarray
-    swvnavairspeed: np.ndarray
-    swats: np.ndarray
-    thr: np.ndarray
-    work: q.EnergyJ[np.ndarray]
-    coslat: np.ndarray
-    eps: np.ndarray
-    crecmdlist: list[str]
-    cond: Condition
-    wind: Wind
-    turbulence: Turbulence
-    noise: SurveillanceUncertainty
-    ap: Autopilot
-    actwp: ActiveWaypoint
-    aporasas: APorASAS
-    cd: ConflictDetection
-    cr: ConflictResolution
-    perf: OpenAP
-    kinematics: Kinematics
-    groups: TrafficGroups
 
     def __init__(
         self,
@@ -269,58 +171,53 @@ class Traffic(TrafficArrays):
         self.select_implementation = select_implementation
 
         self.ntraf = 0
-        self.cond = Condition(self, stack_command)  # Conditional commands list
+        self.cond = Condition(self, stack_command)
         self.wind = Wind()
         self.wind.reparent(self)
         self.turbulence = Turbulence(self, get_simulation)
-        self.translvl = q.ft_to_m(5000.0)
-
-        # Default commands issued for an aircraft after creation
-        self.crecmdlist = []
+        self.translvl: q.PressureAltitudeM[float] = q.ft_to_m(5000.0)  # pyright: ignore[reportGeneralTypeIssues]
+        """Transition level used when interpreting and reporting aircraft altitude."""
+        self.crecmdlist: list[str] = []
+        """Commands issued for every newly created aircraft."""
 
         with self.settrafarrays():
-            # Aircraft Info
-            self.callsign: list[str] = []  # identifier (string)
-            self.typecode: list[str] = []  # aircaft type (string)
+            self.callsign: list[str] = []
+            self.typecode: list[AircraftTypeCode] = []
 
-            # Positions
-            self.lat = np.array([])
-            self.lon = np.array([])
-            self.distflown = np.array([])
-            self.alt = np.array([])
-            self.hdg = np.array([])
-            self.trk = np.array([])
+            self.lat: q.LatitudeDeg[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
+            self.lon: q.LongitudeDeg[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
+            self.distflown: q.DistanceM[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
+            self.alt: q.PressureAltitudeM[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
+            self.hdg: q.TrueHeadingDegrees[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
+            self.trk: q.GroundTrackDeg[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
+            self.tas: q.TrueAirspeedMps[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
+            self.gs: q.GroundSpeedMps[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
+            self.gsnorth: q.GroundSpeedMps[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
+            self.gseast: q.GroundSpeedMps[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
+            self.cas: q.CalibratedAirspeedMps[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
+            self.M: q.MachNumber[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
+            self.vs: q.VerticalRateMps[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
+            self.p: q.StaticPressurePa[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
+            self.rho: q.DensityKgPerM3[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
+            self.Temp: q.StaticTemperatureK[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
+            self.windnorth: q.WindSpeedMps[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
+            self.windeast: q.WindSpeedMps[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
 
-            # Velocities
-            self.tas = np.array([])
-            self.gs = np.array([])
-            self.gsnorth = np.array([])  # ground speed [m/s]
-            self.gseast = np.array([])  # ground speed [m/s]
-            self.cas = np.array([])
-            self.M = np.array([])
-            self.vs = np.array([])
-
-            # Atmosphere
-            self.p = np.array([])
-            self.rho = np.array([])
-            self.Temp = np.array([])
-
-            # Wind speeds
-            self.windnorth = np.array([])  # wind speed north component a/c pos [m/s]
-            self.windeast = np.array([])  # wind speed east component a/c pos [m/s]
-
-            # Traffic autopilot settings
-            self.selected_airspeed = VariantArray(np.array([]), np.array([], dtype=np.uint8))
-            self.aptas = np.array([])  # just for initializing
-            self.selalt = np.array([])
-            self.selvs = np.array([])
-
-            # Whether to perform LNAV and VNAV
+            self.selected_airspeed: VariantArray[np.ndarray] = VariantArray(
+                np.array([]), np.array([], dtype=np.uint8)
+            )
+            """Selected CAS or Mach command for each aircraft."""
+            self.aptas: q.TrueAirspeedMps[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
+            """True airspeed used to initialize the autopilot state."""
+            self.selalt: q.PressureAltitudeM[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
+            self.selvs: q.VerticalRateMps[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
             self.swlnav = np.array([], dtype=bool)
+            """Per-aircraft LNAV enable flags."""
             self.swvnav = np.array([], dtype=bool)
+            """Per-aircraft VNAV enable flags."""
             self.swvnavairspeed = np.array([], dtype=bool)
+            """Per-aircraft VNAV airspeed-guidance flags."""
 
-            # Flight Models
             self.cd = ConflictDetection(config, self, stack_command)
             self.cr = ConflictResolution(config, self, select_implementation)
             self.ap = Autopilot(self, get_simulation)
@@ -330,19 +227,21 @@ class Traffic(TrafficArrays):
             self.perf = OpenAP(self)
             self.kinematics = Kinematics(self, get_simulation)
 
-            # Group Logic
             self.groups = TrafficGroups(self, shapes)
 
-            # Traffic autothrottle settings
             self.swats = np.array(
                 [], dtype=bool
             )  # Switch indicating whether autothrottle system is on/off
-            self.thr = np.array([])  # Fixed throttle setting (0.0-1.0) when autothrottle is off
+            """Per-aircraft autothrottle enable flags."""
+            self.thr = np.array([])
+            """Fixed throttle fractions used while autothrottle is disabled."""
 
-            # Miscallaneous
-            self.coslat = np.array([])  # Cosine of latitude for computations
-            self.eps = np.array([])  # Small nonzero numbers
-            self.work = np.array([])
+            self.coslat = np.array([])
+            """Cached cosine of latitude used by position integration and turbulence."""
+            self.eps = np.array([])
+            """Small nonzero values used to guard near-zero divisions."""
+            self.work: q.EnergyJ[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
+            """Work done by thrust since aircraft creation."""
 
     @property
     def simulation(self) -> Simulation:
@@ -591,11 +490,9 @@ class Traffic(TrafficArrays):
         lon[lon > 180.0] -= 360.0
         lon[lon < -180.0] += 360.0
 
-        # Aircraft Info
         self.callsign[-n:] = acid
         self.typecode[-n:] = actype
 
-        # Positions
         self.lat[-n:] = lat
         self.lon[-n:] = lon
         self.alt[-n:] = alt
@@ -614,7 +511,6 @@ class Traffic(TrafficArrays):
         self.gsnorth[-n:] = self.tas[-n:] * np.cos(hdgrad)
         self.gseast[-n:] = self.tas[-n:] * np.sin(hdgrad)
 
-        # Atmosphere
         self.p[-n:], self.rho[-n:], self.Temp[-n:] = vatmos(alt)
 
         # Wind
@@ -634,13 +530,11 @@ class Traffic(TrafficArrays):
             self.windnorth[-n:] = 0.0
             self.windeast[-n:] = 0.0
 
-        # Traffic autopilot settings
         self.selected_airspeed.values[-n:] = selected_airspeed.values
         self.selected_airspeed.kind[-n:] = selected_airspeed.kind
         self.aptas[-n:] = self.tas[-n:]
         self.selalt[-n:] = self.alt[-n:]
 
-        # Miscallaneous: Cosine of latitude for flat-earth aproximations
         self.coslat[-n:] = np.cos(np.radians(lat))
         self.eps[-n:] = 0.01
 
@@ -1144,7 +1038,7 @@ class Traffic(TrafficArrays):
 
             # Try airway id
             else:  # airway
-                awid = name
+                awid: AirwayIdentifier = name
                 airway = self.navigation.listairway(awid)
                 if len(airway) > 0:
                     lines = ""

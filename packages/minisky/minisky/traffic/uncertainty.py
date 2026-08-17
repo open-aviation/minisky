@@ -28,52 +28,21 @@ class SurveillanceUncertainty(TrafficArrays):
     Keeps a noisy, periodically refreshed copy of the true aircraft state,
     representing what surveillance-based systems would observe. Available
     as [`runtime.traffic.noise`][minisky.traffic.uncertainty.SurveillanceUncertainty].
-
-    Attributes:
-        lastupdate (ndarray): Simulation time of the last broadcast per
-            aircraft [s].
-        lat (ndarray): Last broadcast latitude [deg].
-        lon (ndarray): Last broadcast longitude [deg].
-        alt (ndarray): Last broadcast altitude [m].
-        trk (ndarray): Last broadcast track angle [deg].
-        tas (ndarray): Last broadcast true airspeed [m/s].
-        gs (ndarray): Last broadcast ground speed [m/s].
-        vs (ndarray): Last broadcast vertical speed [m/s].
-        transnoise (bool): Whether transmission noise is added.
-        truncated (bool): Whether updates are truncated to the update
-            interval.
-        position_noise_std (float): Latitude/longitude noise standard deviation [deg].
-        altitude_noise_std (float): Altitude noise standard deviation [m].
-        trunctime (float): Minimum time between broadcast updates [s].
     """
-
-    position_noise_std: q.AngleDeg[float]
-    altitude_noise_std: q.VerticalDistanceM[float]
-    trunctime: q.DurationS[float]
-    lastupdate: q.SimulationTimeS[np.ndarray]
-    lat: q.LatitudeDeg[np.ndarray]
-    lon: q.LongitudeDeg[np.ndarray]
-    alt: q.PressureAltitudeM[np.ndarray]
-    trk: q.GroundTrackDeg[np.ndarray]
-    tas: q.TrueAirspeedMps[np.ndarray]
-    gs: q.GroundSpeedMps[np.ndarray]
-    vs: q.VerticalRateMps[np.ndarray]
 
     def __init__(self, traffic: Traffic, get_simulation: Callable[[], Simulation]) -> None:
         super().__init__(traffic)
         self.traffic = traffic
         self._get_simulation = get_simulation
-        # From here, define object arrays
         with self.settrafarrays():
-            # Most recent broadcast data
-            self.lastupdate = np.array([])
-            self.lat = np.array([])
-            self.lon = np.array([])
-            self.alt = np.array([])
-            self.trk = np.array([])
-            self.tas = np.array([])
-            self.gs = np.array([])
-            self.vs = np.array([])
+            self.lastupdate: q.SimulationTimeS[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
+            self.lat: q.LatitudeDeg[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
+            self.lon: q.LongitudeDeg[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
+            self.alt: q.PressureAltitudeM[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
+            self.trk: q.GroundTrackDeg[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
+            self.tas: q.TrueAirspeedMps[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
+            self.gs: q.GroundSpeedMps[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
+            self.vs: q.VerticalRateMps[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
 
         self.setnoise(False)
 
@@ -83,11 +52,13 @@ class SurveillanceUncertainty(TrafficArrays):
 
     def setnoise(self, n: bool) -> None:
         """Switch surveillance noise on or off (part of the NOISE command)."""
-        self.transnoise = n
-        self.truncated = n
-        self.position_noise_std = 1e-4
-        self.altitude_noise_std = q.ft_to_m(100.0)
-        self.trunctime = 0.0
+        self.transnoise: bool = n
+        """Whether transmission noise is added to surveillance updates."""
+        self.truncated: bool = n
+        """Whether surveillance refreshes are limited by `trunctime`."""
+        self.position_noise_std: q.AngleDeg[float] = 1e-4  # pyright: ignore[reportGeneralTypeIssues]
+        self.altitude_noise_std: q.VerticalDistanceM[float] = q.ft_to_m(100.0)  # pyright: ignore[reportGeneralTypeIssues]
+        self.trunctime: q.DurationS[float] = 0.0  # pyright: ignore[reportGeneralTypeIssues]
 
     def create(self, n: int = 1) -> None:
         """Initialize broadcast data for n newly created aircraft.

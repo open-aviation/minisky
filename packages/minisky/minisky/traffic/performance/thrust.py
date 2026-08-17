@@ -19,7 +19,7 @@ from minisky.traffic.performance.phase import FlightPhase
 
 def compute_max_thr_ratio(
     phase: np.ndarray,
-    bpr: np.ndarray,
+    bpr: q.BypassRatio[np.ndarray],
     v: q.TrueAirspeedMps[np.ndarray],
     h: q.PressureAltitudeM[np.ndarray],
     vs: q.VerticalRateMps[np.ndarray],
@@ -35,7 +35,6 @@ def compute_max_thr_ratio(
 
     Args:
         phase: Flight phase, using `FlightPhase` values.
-        bpr: Engine bypass ratio.
         thr0: Total maximum static thrust of all engines.
 
     Returns:
@@ -59,7 +58,7 @@ def compute_max_thr_ratio(
 
 
 def tr_takeoff(
-    bpr: np.ndarray,
+    bpr: q.BypassRatio[np.ndarray],
     v: q.TrueAirspeedMps[np.ndarray],
     h: q.PressureAltitudeM[np.ndarray],
 ) -> np.ndarray:
@@ -68,9 +67,6 @@ def tr_takeoff(
     Empirical polynomial model of the thrust lapse of a turbofan during the
     takeoff regime, as a function of Mach number and ambient pressure ratio,
     parameterised by the engine bypass ratio.
-
-    Args:
-        bpr: Engine bypass ratio.
 
     Returns:
         Available takeoff thrust as a fraction of static thrust.
