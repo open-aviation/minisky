@@ -20,7 +20,7 @@ from openap import WRAP, drag, prop
 
 from minisky import quantities as q
 from minisky.core.config import data
-from minisky.values import AircraftTypeCode, IcaoAircraftTypeCode
+from minisky.types import AircraftTypeCode, IcaoAircraftTypeCode
 
 EngineModelIdentifier: TypeAlias = str
 """Engine model identifier used by OpenAP, for example `CFM56-5B4`."""

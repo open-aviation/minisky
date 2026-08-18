@@ -18,7 +18,7 @@ from minisky import quantities as q
 from minisky.simulation import Simulation
 from minisky.traffic import Traffic
 from minisky.traffic.autopilot import Autopilot
-from minisky.values import CasMps, StdPressureAltM
+from minisky.types import CasMps, StdPressureAltM
 from pydantic import BaseModel
 
 

@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 from minisky.tools.shapes import Box, Circle, HasArea, Poly, Shapes
-from minisky.values import LatLonDegrees
+from minisky.types import LatLonDegrees
 
 
 def contains(shape: HasArea, lat: float, lon: float, alt: float = 0.0) -> bool:

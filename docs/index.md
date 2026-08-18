@@ -29,7 +29,7 @@ reach a bare-minimum simulator that is easy to read, embed, and extend.
     ```python
     from minisky import MiniSky
     from minisky import quantities as q
-    from minisky.values import CasMps, StdPressureAltM
+    from minisky.types import CasMps, StdPressureAltM
 
     with MiniSky() as runtime:
         runtime.traffic.cre(

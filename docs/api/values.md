@@ -1,3 +1,0 @@
-# `minisky.values`
-
-::: minisky.values

@@ -64,9 +64,9 @@ class AirspeedKind(IntEnum):
     """Discriminant for required selected airspeed state."""
 
     CAS = 0
-    """[Calibrated airspeed in m/s][minisky.values.CasMps]."""
+    """[Calibrated airspeed in m/s][minisky.types.CasMps]."""
     MACH = 1
-    """[Mach][minisky.values.Mach]."""
+    """[Mach][minisky.types.Mach]."""
 
 
 class OptionalAirspeedKind(IntEnum):
@@ -74,9 +74,9 @@ class OptionalAirspeedKind(IntEnum):
 
     NONE = 0
     CAS = 1
-    """[Calibrated airspeed in m/s][minisky.values.CasMps]."""
+    """[Calibrated airspeed in m/s][minisky.types.CasMps]."""
     MACH = 2
-    """[Mach][minisky.values.Mach]."""
+    """[Mach][minisky.types.Mach]."""
 
 
 @dataclass(frozen=True, slots=True)

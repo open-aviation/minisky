@@ -10,7 +10,7 @@ from __future__ import annotations
 from minisky import MiniSky
 from minisky.simulation import Simulation
 from minisky.traffic.kinematics import Kinematics
-from minisky.values import CasMps, StdPressureAltM
+from minisky.types import CasMps, StdPressureAltM
 
 
 class TaggedKinematics(Kinematics):

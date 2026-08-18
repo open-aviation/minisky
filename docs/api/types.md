@@ -1,0 +1,3 @@
+# `minisky.types`
+
+::: minisky.types

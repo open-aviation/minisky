@@ -58,7 +58,7 @@ from minisky.tools.aero import (
 from minisky.tools.convert import latlon2txt
 from minisky.tools.shapes import Shapes
 from minisky.traffic.asas import ConflictDetection, ConflictResolution
-from minisky.values import (
+from minisky.types import (
     AircraftTypeCode,
     AirspeedKind,
     AirwayIdentifier,
@@ -340,8 +340,8 @@ class Traffic(TrafficArrays):
             hdg: Initial heading [deg].
             alt: Initial altitude [m] (stack input is given in ft/FL);
                 defaults to 25000 ft.
-            airspeed: Initial [`CAS` in m/s][minisky.values.CasMps] or
-                [`Mach`][minisky.values.Mach] command; defaults to 300 kt CAS.
+            airspeed: Initial [`CAS` in m/s][minisky.types.CasMps] or
+                [`Mach`][minisky.types.Mach] command; defaults to 300 kt CAS.
         """
 
         name_error = self._aircraft_name_collision(callsign)
@@ -397,8 +397,8 @@ class Traffic(TrafficArrays):
             lon_max: Eastern boundary of the creation area [deg].
             actype: ICAO aircraft type designator for all aircraft.
             acalt: Optional fixed altitude [m]; random when None.
-            airspeed: Optional fixed [`CAS` in m/s][minisky.values.CasMps] or
-                [`Mach`][minisky.values.Mach] command; random CAS when None.
+            airspeed: Optional fixed [`CAS` in m/s][minisky.types.CasMps] or
+                [`Mach`][minisky.types.Mach] command; random CAS when None.
         """
 
         # Generate random callsigns
@@ -476,8 +476,8 @@ class Traffic(TrafficArrays):
         arrays, initializes position, heading, speeds, atmosphere and wind
         for the new aircraft, and stacks any `CRECMD` default commands.
         All array arguments must have the same length. `selected_airspeed.values` contains
-        [`CAS` in m/s][minisky.values.CasMps] or [`Mach`][minisky.values.Mach],
-        disambiguated by [`AirspeedKind`][minisky.values.AirspeedKind] in `kind`.
+        [`CAS` in m/s][minisky.types.CasMps] or [`Mach`][minisky.types.Mach],
+        disambiguated by [`AirspeedKind`][minisky.types.AirspeedKind] in `kind`.
         """
 
         n = len(acid)
@@ -598,8 +598,8 @@ class Traffic(TrafficArrays):
                 an explicit unit such as `3000FT`; level conflict when None.
             tlosv: Optional vertical time to loss of separation [s];
                 defaults to tlosh.
-            airspeed: Optional [`CAS` in m/s][minisky.values.CasMps] or
-                [`Mach`][minisky.values.Mach] command; ownship ground speed when omitted.
+            airspeed: Optional [`CAS` in m/s][minisky.types.CasMps] or
+                [`Mach`][minisky.types.Mach] command; ownship ground speed when omitted.
         """
         latref = self.lat[targetidx]  # deg
         lonref = self.lon[targetidx]  # deg
@@ -818,8 +818,8 @@ class Traffic(TrafficArrays):
             position: New latitude and longitude [deg].
             alt: Optional new altitude [m]; also sets the selected altitude.
             hdg: Optional new heading [deg]; also sets the autopilot track.
-            airspeed: Optional [`CAS` in m/s][minisky.values.CasMps] or
-                [`Mach`][minisky.values.Mach] command.
+            airspeed: Optional [`CAS` in m/s][minisky.types.CasMps] or
+                [`Mach`][minisky.types.Mach] command.
             vspd: Optional new vertical speed [m/s].
         """
         self.lat[idx] = position.lat

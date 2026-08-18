@@ -17,7 +17,7 @@ from minisky.command import (
     command,
 )
 from minisky.tools.geo import qdrdist
-from minisky.values import CasMps, LatLonDegrees, Mach, StdPressureAltM
+from minisky.types import CasMps, LatLonDegrees, Mach, StdPressureAltM
 
 if TYPE_CHECKING:
     from minisky.traffic import Traffic
@@ -35,7 +35,7 @@ class AltitudeCondition:
 
 @dataclass(slots=True)
 class AirspeedCondition:
-    """Pending crossing of an explicit [`CAS` in m/s][minisky.values.CasMps] or [`Mach`][minisky.values.Mach] target."""
+    """Pending crossing of an explicit [`CAS` in m/s][minisky.types.CasMps] or [`Mach`][minisky.types.Mach] target."""
 
     callsign: str
     target: CasMps | Mach
@@ -126,7 +126,7 @@ class Condition:
 
     @command(name="ATSPD")
     def atspdcmd(self, acidx: AcId, target: CasMps | Mach, cmdtxt: Text) -> bool:
-        """Schedule a command for crossing an explicit [`CAS` in m/s][minisky.values.CasMps] or [`Mach`][minisky.values.Mach] target."""
+        """Schedule a command for crossing an explicit [`CAS` in m/s][minisky.types.CasMps] or [`Mach`][minisky.types.Mach] target."""
         callsign = self.traffic.callsign[acidx]
         actual = (
             float(self.traffic.cas[acidx])

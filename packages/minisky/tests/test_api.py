@@ -14,7 +14,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from minisky import MiniSky, MiniSkyConfig
-from minisky.values import CasMps, StdPressureAltM
+from minisky.types import CasMps, StdPressureAltM
 
 pytestmark = pytest.mark.api
 

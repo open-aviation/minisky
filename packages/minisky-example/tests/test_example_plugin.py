@@ -4,7 +4,7 @@ from typing import cast
 
 import pytest
 from minisky import Err, MiniSky, MiniSkyConfig
-from minisky.values import CasMps, StdPressureAltM
+from minisky.types import CasMps, StdPressureAltM
 from minisky_example import Example
 
 
