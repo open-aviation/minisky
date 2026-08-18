@@ -11,9 +11,10 @@ argument that references a navaid, airport, or runway.
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from enum import IntEnum
 from pathlib import Path
-from typing import Literal, NamedTuple, Protocol
+from typing import Literal, NamedTuple, Protocol, TypeAlias, TypeVar
 
 import numpy as np
 import pandas as pd
@@ -26,11 +27,21 @@ from minisky.types import AirportIdentifier, AirwayIdentifier, RunwayIdentifier
 
 _COLOCATED_DISTANCE: q.DistanceM[float] = q.nmi_to_m(1.0)
 
+WaypointIndex: TypeAlias = int
+AirportIndex: TypeAlias = int
+NavigationIndex: TypeAlias = int
+_T = TypeVar("_T")
+
 
 class AirportSize(IntEnum):
     LARGE = 1
     MEDIUM = 2
     SMALL = 3
+
+
+class AirwayConnection(NamedTuple):
+    airway: AirwayIdentifier
+    waypoint: str
 
 
 class RunwayThreshold(NamedTuple):
@@ -61,7 +72,7 @@ def _tolist(column) -> list:
     return column.to_list()
 
 
-def findall(lst, x) -> list:
+def findall(lst: Sequence[_T], x: _T) -> list[NavigationIndex]:
     """Find indices of multiple occurences of x in lst.
 
     Args:
@@ -104,8 +115,6 @@ class Navdatabase:
 
     def reset(self) -> None:
         """(Re)load all navigation data from the package data directory."""
-        # print("Loading global navigation database...")
-        # wptdata, aptdata, awydata, firdata, codata, rwythresholds = load_navdata()
 
         nav_data_path = self.data_path
 
@@ -246,7 +255,6 @@ class Navdatabase:
         if normalized.isdigit():
             return Err("Waypoint name must start with an alphabetical character")
 
-        # Still here? So there is data, then we add this waypoint
         self.wpid.append(normalized)
         self.wplat = np.append(self.wplat, lat)
         self.wplon = np.append(self.wplon, lon)
@@ -281,7 +289,7 @@ class Navdatabase:
 
         return Ok(name.upper() + " deleted from navdb.")
 
-    def getwpidx(self, txt: str, reference: LatLonReference | None = None) -> int | None:
+    def getwpidx(self, txt: str, reference: LatLonReference | None = None) -> WaypointIndex | None:
         """Get waypoint index to access data.
 
         Args:
@@ -298,11 +306,9 @@ class Navdatabase:
         except ValueError:
             return None
 
-        # if no pos is specified, get first occurence
         if reference is None:
             return i
 
-        # If pos is specified check for more and return closest
         else:
             idx = []
             idx.append(i)
@@ -332,7 +338,7 @@ class Navdatabase:
         txt: str,
         reference: LatLonReference | None = None,
         crit: q.DistanceM[float] = _COLOCATED_DISTANCE,
-    ) -> list[int]:
+    ) -> list[WaypointIndex]:
         """Get indices of a waypoint and its co-located duplicates.
 
         Finds the occurrence of the identifier closest to the reference
@@ -352,13 +358,11 @@ class Navdatabase:
         except ValueError:
             return []
 
-        # if no pos is specified, get first occurence
         if reference is None:
             return [i]
 
-        # If pos is specified check for more and return closest
         else:
-            idx = findall(self.wpid, name)  # find indices of al occurences
+            idx = findall(self.wpid, name)
 
             if len(idx) == 1:
                 return [idx[0]]
@@ -372,7 +376,6 @@ class Navdatabase:
                     if d < dmin:
                         imin = i
                         dmin = d
-                # Find co-located
                 indices = [imin]
                 for i in idx:
                     if i != imin:
@@ -387,7 +390,7 @@ class Navdatabase:
 
                 return indices
 
-    def getaptidx(self, txt: AirportIdentifier) -> int | None:
+    def getaptidx(self, txt: AirportIdentifier) -> AirportIndex | None:
         """Get the index of an airport by ICAO identifier.
 
         Args:
@@ -407,7 +410,7 @@ class Navdatabase:
         wlon: q.LongitudeDeg,
         lat: q.LatitudeDeg[float],
         lon: q.LongitudeDeg[float],
-    ) -> int:  # lat,lon in degrees
+    ) -> NavigationIndex:
         """Get the index of the entry nearest to a given position.
 
         Uses a fast flat-earth squared-distance comparison.
@@ -421,7 +424,6 @@ class Navdatabase:
         Returns:
             int: Index of the nearest entry.
         """
-        # t0 = time.clock()
         wlat = np.asarray(wlat)
         wlon = np.asarray(wlon)
         f = np.cos(np.radians(lat))
@@ -429,19 +431,13 @@ class Navdatabase:
         dlon = f * ((wlon - lon + 180.0) % 360.0 - 180.0)
         d2 = dlat * dlat + dlon * dlon
         idx = np.argmin(d2)
-        # dt = time.clock()-t0
-        # print dt
         return int(idx)
 
-    def getwpinear(
-        self, lat: q.LatitudeDeg[float], lon: q.LongitudeDeg[float]
-    ) -> int:  # lat,lon in degrees
+    def getwpinear(self, lat: q.LatitudeDeg[float], lon: q.LongitudeDeg[float]) -> WaypointIndex:
         """Get the index of the waypoint closest to position (lat, lon) [deg]."""
         return self.getinear(self.wplat, self.wplon, lat, lon)
 
-    def getapinear(
-        self, lat: q.LatitudeDeg[float], lon: q.LongitudeDeg[float]
-    ) -> int:  # lat,lon in degrees
+    def getapinear(self, lat: q.LatitudeDeg[float], lon: q.LongitudeDeg[float]) -> AirportIndex:
         """Get the index of the airport closest to position (lat, lon) [deg]."""
         return self.getinear(self.aptlat, self.aptlon, lat, lon)
 
@@ -453,7 +449,7 @@ class Navdatabase:
         lat1: q.LatitudeDeg[float],
         lon0: q.LongitudeDeg[float],
         lon1: q.LongitudeDeg[float],
-    ) -> list:
+    ) -> list[NavigationIndex]:
         """Get indices of positions inside the given lat/lon box.
 
         Args:
@@ -467,7 +463,6 @@ class Navdatabase:
         Returns:
             list: Indices of the positions inside the box.
         """
-        # t0 = time.clock()
         wlat = np.asarray(wlat)
         wlon = np.asarray(wlon)
         if lat0 < lat1:
@@ -475,9 +470,7 @@ class Navdatabase:
         else:
             arr = np.where((wlat > lat1) + (wlat < lat0) * (wlon > lon0) * (wlon < lon1))
 
-        # dt = time.clock()-t0
-        # print dt
-        return list(arr[0])  # Get indices
+        return [int(i) for i in arr[0]]
 
     def getwpinside(
         self,
@@ -485,7 +478,7 @@ class Navdatabase:
         lat1: q.LatitudeDeg[float],
         lon0: q.LongitudeDeg[float],
         lon1: q.LongitudeDeg[float],
-    ) -> list:
+    ) -> list[WaypointIndex]:
         """Get waypoint indices inside the given lat/lon box [deg]."""
         return self.getinside(self.wplat, self.wplon, lat0, lat1, lon0, lon1)
 
@@ -495,12 +488,11 @@ class Navdatabase:
         lat1: q.LatitudeDeg[float],
         lon0: q.LongitudeDeg[float],
         lon1: q.LongitudeDeg[float],
-    ) -> list:
+    ) -> list[AirportIndex]:
         """Get airport indices inside the given lat/lon box [deg]."""
         return self.getinside(self.aptlat, self.aptlon, lat0, lat1, lon0, lon1)
 
-    # returns all runways of given airport
-    def listairway(self, airwayid: AirwayIdentifier) -> list:
+    def listairway(self, airwayid: AirwayIdentifier) -> list[list[str]]:
         """Return the waypoint sequence(s) of an airway.
 
         Collects all legs of the airway and chains them into ordered
@@ -518,12 +510,10 @@ class Navdatabase:
 
         airway = []  # identifier of waypoint   0 .. N-1
 
-        # Does this airway exist?
         if self.awid.count(awkey) > 0:
-            # Collect leg indices
             i = 0
             found = True
-            legs = []  # Alle leg incl. duplicate legs
+            legs: list[str] = []  # Alle leg incl. duplicate legs
             left = []  # wps in left column in file
             right = []  # wps in right coumn in file
 
@@ -535,11 +525,9 @@ class Navdatabase:
                     left.append(self.awfromwpid[i])
                     right.append(self.awtowpid[i])
 
-            # Not found: return
             if len(legs) == 0:
                 return []
 
-            # Count wps to see when we have all segments
             unused = len(left) + len(right)
 
             while unused > 0 and left != len(left) * [""]:
@@ -556,7 +544,6 @@ class Navdatabase:
                 if j > 1 or iwps > len(wps):
                     break
 
-                # Sort
                 wps = [left, right]
                 segment = []
                 nextwp = ""
@@ -572,7 +559,6 @@ class Navdatabase:
                     wps[j][i] = ""
                     wps[1 - j][i] = ""
 
-                    # Add first wp to segment
                     segment.append(curwp)
 
                     # Find next lef with nextwp
@@ -588,7 +574,6 @@ class Navdatabase:
                     else:
                         found = False
 
-                    # This segemnt done?
                     segready = (not found) or curwp == "" or nextwp == ""
 
                 # Also add final nextwp of this segment
@@ -597,15 +582,14 @@ class Navdatabase:
                 # Airway cab have multiple separate segments
                 airway.append(segment)
 
-                # Ready for next segment
                 left = wps[0]
                 right = wps[1]
 
-        return airway  # ,connect
+        return airway
 
     def listconnections(
         self, wpid: str, wplat: q.LatitudeDeg[float], wplon: q.LongitudeDeg[float]
-    ) -> list:
+    ) -> list[AirwayConnection]:
         """Return the airway legs connecting to a given waypoint.
 
         Only legs whose stored endpoint lies within 10 nm of the given
@@ -619,27 +603,24 @@ class Navdatabase:
         Returns:
             list: List of [airway id, connected waypoint id] pairs.
         """
-        # Return list of connecting airway legs
-        connect = []
+        connect: list[AirwayConnection] = []
 
-        # Check from-list first
         if wpid in self.awfromwpid:
             idx = findall(self.awfromwpid, wpid)
             for i in idx:
-                newitem = [self.awid[i], self.awtowpid[i]]
+                newitem = AirwayConnection(self.awid[i], self.awtowpid[i])
                 if (newitem not in connect) and geo.kwikdist(
                     self.awfromlat[i], self.awfromlon[i], wplat, wplon
                 ) < q.nmi_to_m(10.0):
                     connect.append(newitem)
 
-        # Check to-list nextt
         if wpid in self.awtowpid:
             idx = findall(self.awtowpid, wpid)
             for i in idx:
-                newitem = [self.awid[i], self.awfromwpid[i]]
+                newitem = AirwayConnection(self.awid[i], self.awfromwpid[i])
                 if (newitem not in connect) and geo.kwikdist(
                     self.awtolat[i], self.awtolon[i], wplat, wplon
                 ) < q.nmi_to_m(10.0):
                     connect.append(newitem)
 
-        return connect  # return list of [awid,wpid]
+        return connect

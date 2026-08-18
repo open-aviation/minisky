@@ -242,7 +242,6 @@ class ConflictResolution(TrafficArrays):
         # Add new conflicts to resopairs and confpairs_all and new losses to lospairs_all
         self.resopairs.update(conf.confpairs)
 
-        # Conflict pairs to be deleted
         delpairs: set[ConflictPair] = set()
         changeactive = {}
 
@@ -286,7 +285,6 @@ class ConflictResolution(TrafficArrays):
                     ]
                 )
 
-                # Check if conflict is past CPA
                 past_cpa = np.dot(dist, vrel) > 0.0
 
                 rpz = np.max(conf.rpz[[idx1, idx2]])
@@ -309,7 +307,6 @@ class ConflictResolution(TrafficArrays):
             # Start recovery for ownship if intruder is deleted, or if past CPA
             # and not in horizontal LOS or a bouncing conflict
             if idx2 is not None and (not past_cpa or hor_los or is_bouncing):
-                # Enable ASAS for this aircraft
                 changeactive[idx1] = True
             else:
                 # Switch ASAS off for ownship if there are no other conflicts

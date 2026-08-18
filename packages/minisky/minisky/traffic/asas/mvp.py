@@ -176,29 +176,24 @@ class MVP(ConflictResolution):
 
         # Secondary Free Flight (Cruising aircraft has priority, combined resolutions)
         if self.priority_code is PriorityCode.FF2:
-            # since cooperative, the vertical resolution component can be halved, and then dv_mvp can be added
             dv_mvp[2] = dv_mvp[2] / 2.0
-            # If aircraft 1 is cruising, and aircraft 2 is climbing/descending -> aircraft 2 solves conflict
             if abs(vs1) < _CRUISE_VERTICAL_RATE and abs(vs2) > _CRUISE_VERTICAL_RATE:
                 dv2 = dv2 + dv_mvp
-            # If aircraft 2 is cruising, and aircraft 1 is climbing -> aircraft 1 solves conflict
             elif abs(vs2) < _CRUISE_VERTICAL_RATE and abs(vs1) > _CRUISE_VERTICAL_RATE:
                 dv1 = dv1 - dv_mvp
-            else:  # both are climbing/descending/cruising -> both aircraft solves the conflict
+            else:
                 dv1 = dv1 - dv_mvp
                 dv2 = dv2 + dv_mvp
 
         # Tertiary Free Flight (Climbing/descending aircraft have priority and crusing solves with horizontal resolutions)
         elif self.priority_code is PriorityCode.FF3:
-            # If aircraft 1 is cruising, and aircraft 2 is climbing/descending -> aircraft 1 solves conflict horizontally
             if abs(vs1) < _CRUISE_VERTICAL_RATE and abs(vs2) > _CRUISE_VERTICAL_RATE:
                 dv_mvp[2] = 0.0
                 dv1 = dv1 - dv_mvp
-            # If aircraft 2 is cruising, and aircraft 1 is climbing -> aircraft 2 solves conflict horizontally
             elif abs(vs2) < _CRUISE_VERTICAL_RATE and abs(vs1) > _CRUISE_VERTICAL_RATE:
                 dv_mvp[2] = 0.0
                 dv2 = dv2 + dv_mvp
-            else:  # both are climbing/descending/cruising -> both aircraft solves the conflict, combined
+            else:
                 dv_mvp[2] = dv_mvp[2] / 2.0
                 dv1 = dv1 - dv_mvp
                 dv2 = dv2 + dv_mvp
@@ -206,26 +201,22 @@ class MVP(ConflictResolution):
         # Primary Layers (Cruising aircraft has priority and clmibing/descending solves. All conflicts solved horizontally)
         elif self.priority_code is PriorityCode.LAY1:
             dv_mvp[2] = 0.0
-            # If aircraft 1 is cruising, and aircraft 2 is climbing/descending -> aircraft 2 solves conflict horizontally
             if abs(vs1) < _CRUISE_VERTICAL_RATE and abs(vs2) > _CRUISE_VERTICAL_RATE:
                 dv2 = dv2 + dv_mvp
-            # If aircraft 2 is cruising, and aircraft 1 is climbing -> aircraft 1 solves conflict horizontally
             elif abs(vs2) < _CRUISE_VERTICAL_RATE and abs(vs1) > _CRUISE_VERTICAL_RATE:
                 dv1 = dv1 - dv_mvp
-            else:  # both are climbing/descending/cruising -> both aircraft solves the conflict horizontally
+            else:
                 dv1 = dv1 - dv_mvp
                 dv2 = dv2 + dv_mvp
 
         # Secondary Layers (Climbing/descending aircraft has priority and cruising solves. All conflicts solved horizontally)
         elif self.priority_code is PriorityCode.LAY2:
             dv_mvp[2] = 0.0
-            # If aircraft 1 is cruising, and aircraft 2 is climbing/descending -> aircraft 1 solves conflict horizontally
             if abs(vs1) < _CRUISE_VERTICAL_RATE and abs(vs2) > _CRUISE_VERTICAL_RATE:
                 dv1 = dv1 - dv_mvp
-            # If aircraft 2 is cruising, and aircraft 1 is climbing -> aircraft 2 solves conflict horizontally
             elif abs(vs2) < _CRUISE_VERTICAL_RATE and abs(vs1) > _CRUISE_VERTICAL_RATE:
                 dv2 = dv2 + dv_mvp
-            else:  # both are climbing/descending/cruising -> both aircraft solves the conflic horizontally
+            else:
                 dv1 = dv1 - dv_mvp
                 dv2 = dv2 + dv_mvp
 
@@ -252,7 +243,6 @@ class MVP(ConflictResolution):
             intruder: Traffic object with intruder states.
 
         """
-        # Initialize an array to store the resolution velocity vector for all A/C
         dv = np.zeros((ownship.ntraf, 3))
 
         # Time needed to resolve vertically exists only for aircraft that have
@@ -260,7 +250,6 @@ class MVP(ConflictResolution):
         timesolveV = np.zeros(ownship.ntraf)
         has_resolution_time = np.zeros(ownship.ntraf, dtype=bool)
 
-        # Call MVP function to resolve conflicts-----------------------------------
         for conflict, qdr, dist, tcpa, tLOS in zip(
             conf.confpairs, conf.qdr, conf.dist, conf.tcpa, conf.tLOS, strict=False
         ):
@@ -276,14 +265,12 @@ class MVP(ConflictResolution):
                 timesolveV[idx1] = pair_resolution.vertical_time
                 has_resolution_time[idx1] = True
 
-            # Use priority rules if activated
             if self.priority_code is not None:
                 priority = self.applyprio(
                     dv_mvp, dv[idx1], dv[idx2], ownship.vs[idx1], intruder.vs[idx2]
                 )
                 dv[idx1] = priority.ownship
             else:
-                # since cooperative, the vertical resolution component can be halved, and then dv_mvp can be added
                 dv_mvp[2] = 0.5 * dv_mvp[2]
                 dv[idx1] = dv[idx1] - dv_mvp
 
@@ -292,24 +279,15 @@ class MVP(ConflictResolution):
             if self.noresoac[idx2]:
                 dv[idx1] = dv[idx1] + dv_mvp
 
-            # Check the resooff aircraft. These aircraft will not do resolutions.
             if self.resooffac[idx1]:
                 dv[idx1] = 0.0
 
-        # Determine new speed and limit resolution direction for all aicraft-------
-
-        # Resolution vector for all aircraft, cartesian coordinates
         dv = np.transpose(dv)
 
-        # The old speed vector, cartesian coordinates
         v = np.array([ownship.gseast, ownship.gsnorth, ownship.vs])
 
-        # The new speed vector, cartesian coordinates
         newv = v + dv
 
-        # Limit resolution direction if required-----------------------------------
-
-        # Compute new speed vector in polar coordinates based on desired resolution
         if self.swresohoriz:  # horizontal resolutions
             if self.swresospd and not self.swresohdg:  # SPD only
                 newtrack = ownship.trk
@@ -332,12 +310,8 @@ class MVP(ConflictResolution):
             newgs = np.sqrt(newv[0, :] ** 2 + newv[1, :] ** 2)
             newvs = newv[2, :]
 
-        # Determine ASAS module commands for all aircraft--------------------------
-
-        # Cap the velocity
         newgscapped = np.maximum(ownship.perf.vmin, np.minimum(ownship.perf.vmax, newgs))
 
-        # Cap the vertical speed
         vscapped = np.maximum(ownship.perf.vsmin, np.minimum(ownship.perf.vsmax, newvs))
 
         # Calculate if Autopilot selected altitude should be followed. This avoids ASAS from
@@ -416,15 +390,11 @@ class MVP(ConflictResolution):
             idx1 (int): Index of the ownship aircraft.
             idx2 (int): Index of the intruder aircraft.
         """
-        # Preliminary calculations-------------------------------------------------
-        # Determine largest RPZ and HPZ of the conflict pair, use lookahead of ownship
         rpz_m = np.max(conf.rpz[[idx1, idx2]] * self.resofach)
         hpz_m = np.max(conf.hpz[[idx1, idx2]] * self.resofacv)
         dtlook = conf.dtlookahead[idx1]
-        # Convert qdr from degrees to radians
         qdr = np.radians(qdr)
 
-        # Relative position vector between id1 and id2
         drel = np.array(
             [
                 np.sin(qdr) * dist,
@@ -433,18 +403,13 @@ class MVP(ConflictResolution):
             ]
         )
 
-        # Write velocities as vectors and find relative velocity vector
         v1 = np.array([ownship.gseast[idx1], ownship.gsnorth[idx1], ownship.vs[idx1]])
         v2 = np.array([intruder.gseast[idx2], intruder.gsnorth[idx2], intruder.vs[idx2]])
         vrel = v2 - v1
 
-        # Horizontal resolution----------------------------------------------------
-
-        # Find horizontal distance at the tcpa (min horizontal distance)
         dcpa = drel + vrel * tcpa
         dabsH = np.sqrt(dcpa[0] * dcpa[0] + dcpa[1] * dcpa[1])
 
-        # Compute horizontal intrusion
         iH = rpz_m - dabsH
 
         # Exception handlers for head-on conflicts
@@ -457,7 +422,6 @@ class MVP(ConflictResolution):
         # If intruder is outside the ownship PZ, then apply extra factor
         # to make sure that resolution does not graze IPZ
         if rpz_m < dist and dabsH < dist:
-            # Compute the resolution velocity vector in horizontal direction.
             # abs(tcpa) because it bcomes negative during intrusion.
             erratum = np.cos(np.arcsin(rpz_m / dist) - np.arcsin(dabsH / dist))
             dv1 = ((rpz_m / erratum - dabsH) * dcpa[0]) / (abs(tcpa) * dabsH)
@@ -466,13 +430,9 @@ class MVP(ConflictResolution):
             dv1 = (iH * dcpa[0]) / (abs(tcpa) * dabsH)
             dv2 = (iH * dcpa[1]) / (abs(tcpa) * dabsH)
 
-        # Vertical resolution------------------------------------------------------
-
-        # Compute the  vertical intrusion
         # Amount of vertical intrusion dependent on vertical relative velocity
         iV = hpz_m if abs(vrel[2]) > 0.0 else hpz_m - abs(drel[2])
 
-        # Get the time to solve the conflict vertically - tsolveV
         tsolV = abs(drel[2] / vrel[2]) if abs(vrel[2]) > 0.0 else tLOS
 
         # If the time to solve the conflict vertically is longer than the look-ahead time,
@@ -482,7 +442,6 @@ class MVP(ConflictResolution):
             tsolV = tLOS
             iV = hpz_m
 
-        # Compute the resolution velocity vector in the vertical direction
         # The direction of the vertical resolution is such that the aircraft with
         # higher climb/decent rate reduces their climb/decent rate
         dv3 = np.where(abs(vrel[2]) > 0.0, (iV / tsolV) * (-vrel[2] / abs(vrel[2])), (iV / tsolV))
@@ -491,11 +450,7 @@ class MVP(ConflictResolution):
         # is solved in 1 timestep, leading to a vertical separation that is too
         # high (high vs assumed in traf). If vertical dynamics are included to
         # aircraft  model in traffic.py, the below three lines should be deleted.
-        #    dv3 = np.maximum(mindv3,np.minimum(maxdv3,dv3))
 
-        # Combine resolutions------------------------------------------------------
-
-        # combine the dv components
         dv = np.array([dv1, dv2, dv3])
 
         return self.MvpResolution(dv, tsolV)

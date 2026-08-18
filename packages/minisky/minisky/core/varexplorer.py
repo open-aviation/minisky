@@ -15,7 +15,7 @@ import re
 from collections import OrderedDict
 from collections.abc import Collection
 from numbers import Number
-from typing import Any
+from typing import Any, NamedTuple
 
 import numpy as np
 
@@ -24,23 +24,31 @@ from minisky.core import TrafficArrays
 from minisky.result import Err, Ok, Result
 
 
+class VariableSource(NamedTuple):
+    value: Any
+    attributes: list[str] | None
+
+
+class VariablePathPart(NamedTuple):
+    name: str
+    subscript: str
+
+
 class VariableExplorer:
     """Searchable simulation data sources owned by a MiniSky runtime."""
 
     def __init__(self) -> None:
-        # The variable lists and their corresponding sources
-        self.varlist: OrderedDict[str, tuple[Any, list[str] | None]] = OrderedDict()
+        self.varlist: OrderedDict[str, VariableSource] = OrderedDict()
 
     def init(self, simulation: Any, traffic: Any) -> None:
         """Variable explorer initialization function.
 
         Registers the default simulation and traffic data sources.
         """
-        # Add the default sources to the variable explorer
         self.varlist.update(
             [
-                ("sim", (simulation, getvarsfromobj(simulation))),
-                ("traf", (traffic, getvarsfromobj(traffic))),
+                ("sim", VariableSource(simulation, getvarsfromobj(simulation))),
+                ("traf", VariableSource(traffic, getvarsfromobj(traffic))),
             ]
         )
 
@@ -56,12 +64,12 @@ class VariableExplorer:
             obj: The object whose attributes should become inspectable.
             name: Top-level name under which the object is registered.
         """
-        self.varlist[name] = (obj, getvarsfromobj(obj))
+        self.varlist[name] = VariableSource(obj, getvarsfromobj(obj))
 
     def unregister_data_parent(self, name: str, *, expected: object | None = None) -> None:
         """Remove a parent only while it still refers to the expected object."""
         current = self.varlist.get(name)
-        if current is not None and (expected is None or current[0] is expected):
+        if current is not None and (expected is None or current.value is expected):
             del self.varlist[name]
 
     @command(name="LSVAR")
@@ -74,10 +82,9 @@ class VariableExplorer:
         """Show information about a simulation variable."""
         v = self.findvar(varname)
         if v:
-            thevar = v.get()  # reference to the actual variable
-            # When the variable is an object, get child attributes
+            thevar = v.get()
             attrs = getvarsfromobj(thevar)
-            vartype = v.get_type()  # Type of the variable
+            vartype = v.get_type()
             if isinstance(v.parent, TrafficArrays) and v.parent.istrafarray(v.varname):
                 vartype += " (TrafficArray)"
             txt = f"Variable:   {v.varname}\n" + f"Type:       {vartype}\n"
@@ -106,7 +113,10 @@ class VariableExplorer:
         """
         try:
             # Find a string matching 'a.b.c[d]', where everything except a is optional
-            varset = re.findall(r"(\w+)(?<=.)*(?:\[(\w+)\])?", varname)
+            varset = [
+                VariablePathPart(*part)
+                for part in re.findall(r"(\w+)(?<=.)*(?:\[(\w+)\])?", varname)
+            ]
             # The actual variable is always the last
             name, index = varset[-1]
             # is a parent object passed? (e.g., traf.lat instead of just lat)
@@ -114,28 +124,28 @@ class VariableExplorer:
                 obj = None
                 # The first object should be in the varlist of Plot
                 # As either a top-level object:
-                if varset[0][0] in self.varlist:
-                    result = self.varlist.get(varset[0][0])
-                    obj = result[0] if result is not None else None
+                if varset[0].name in self.varlist:
+                    source = self.varlist.get(varset[0].name)
+                    obj = source.value if source is not None else None
                 else:
                     for objset in self.varlist.values():
-                        if objset[1] is not None and varset[0][0] in objset[1]:
-                            obj = getattr(objset[0], varset[0][0])
+                        if objset.attributes is not None and varset[0].name in objset.attributes:
+                            obj = getattr(objset.value, varset[0].name)
 
                 # Iterate over objectname,index pairs in varset
                 for pair in varset[1:-1]:
                     if obj is None:
                         break
-                    obj = getattr(obj, pair[0], None)
+                    obj = getattr(obj, pair.name, None)
 
                 if obj and hasattr(obj, name):
-                    return Variable(obj, varset[-2][0], name, index)
+                    return Variable(obj, varset[-2].name, name, index)
             else:
                 # A parent object is not passed, we only have a variable name
                 # this name should exist in Plot.vlist
                 for objname, objset in self.varlist.items():
-                    if objset[1] is not None and name in objset[1]:
-                        return Variable(objset[0], objname, name, index)
+                    if objset.attributes is not None and name in objset.attributes:
+                        return Variable(objset.value, objname, name, index)
         except (AttributeError, IndexError, KeyError, TypeError, ValueError):
             return None
         return None
@@ -144,7 +154,7 @@ class VariableExplorer:
 class Variable:
     """Wrapper class for variable explorer."""
 
-    def __init__(self, parent: Any, parentname: str, varname: str, index: Any) -> None:
+    def __init__(self, parent: Any, parentname: str, varname: str, index: str) -> None:
         self.parent = parent
         """Object holding the variable"""
         self.parentname = parentname
@@ -185,9 +195,9 @@ class Variable:
 
 
 def getvarsfromobj(obj: Any) -> list[str] | None:
-    """Return a list with the names of the variables of the passed object."""
+    """Return a list with the names of the variables of the passed object,
+    excluding private attributes."""
     try:
-        # Return attribute names, but exclude private attributes
         return [name for name in vars(obj) if name[0] != "_"]
     except TypeError:
         return None

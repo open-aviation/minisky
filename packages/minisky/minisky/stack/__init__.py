@@ -540,10 +540,8 @@ class CommandStack:
         if not self._finish_pending_command():
             return False
 
-        # First check for commands in scenario file
         self.checkscen()
 
-        # Process stack of commands
         pending = self._take_commands()
         for index, queued in enumerate(pending):
             cmdline = queued.text
@@ -695,7 +693,6 @@ class CommandStack:
             TypeError: When scn is neither a path nor a StringIO object.
         """
         if isinstance(scn, (str, Path)):
-            # ensure .scn suffix if necessary
             scn_path = Path(scn).with_suffix(".scn")
 
             with scn_path.open() as fscen:
@@ -772,7 +769,6 @@ class CommandStack:
             scn_name: The name of the scenario (optional).
         """
 
-        # reset sim always
         self.simulation.reset()
 
         lines = self.readscn(scn)

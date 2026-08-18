@@ -99,7 +99,6 @@ class APorASAS(TrafficArrays):
 
         # Compute the desired heading needed to compensate for the wind
         if self.traffic.wind.has_wind:
-            # Calculate wind correction
             vwn, vwe = self.traffic.wind.getdata(
                 self.traffic.lat, self.traffic.lon, self.traffic.alt
             )

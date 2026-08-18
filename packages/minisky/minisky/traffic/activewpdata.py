@@ -216,16 +216,7 @@ class ActiveWaypoint(TrafficArrays):
         curlegdir = np.where(~self.curlegdir.present, qdr, self.curlegdir.values)
         awayorpassed = np.logical_or(tooclose2turn, np.abs(degto180(qdr - curlegdir)) > 90.0)
 
-        # Should no longer be needed with leg direction
-        # Ratio between distance close enough to switch to next wp when flying away
-        # When within pro1 nm and flying away: switch also
-        # proxfact = 1.02 # Turnradius scales this contant , factor => [turnrad]
-        # incircle = dist<turnrad*proxfact
-        # circling = away*incircle # [True/False] passed wp,used for flyover as well
-
         # Check whether shift based dist is required, set closer than WP turn distance
-        # Detect indices
-        # swreached = np.where(self.traffic.swlnav * np.logical_or(awayorpassed,np.logical_or(dist < self.turndist,circling)))[0]
         swreached = np.where(
             self.traffic.swlnav * np.logical_or(awayorpassed, dist < self.turndist)
         )[0]
@@ -239,7 +230,6 @@ class ActiveWaypoint(TrafficArrays):
         radius: q.TurnRadiusM
         """Turn radius [m]."""
 
-    # Calculate turn distance for array or scalar
     def calcturn(
         self,
         tas: q.TrueAirspeedMps,

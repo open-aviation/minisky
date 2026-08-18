@@ -68,7 +68,6 @@ class TrafficGroups(TrafficArrays):
         self.allmasks = 0
 
     def _allocate_mask(self, groupname: str) -> Result[int, str]:
-        # Get first unused group mask
         if groupname in self._ALL_NAMES:
             return Err(f"{groupname} is a reserved all-aircraft selection")
         if len(self.groups) >= 64:
@@ -156,14 +155,12 @@ class TrafficGroups(TrafficArrays):
                 case Err(error):
                     return Err(error)
 
-        # Add aircraft to group
         self.ingroup[indices] |= np.uint64(mask)
         callsigns = np.asarray(self.traffic.callsign)[indices]
         return Ok(f"Aircraft added to group {groupname}:\n{', '.join(callsigns)}")
 
     def delete_group(self, groupname: str) -> Result[None, str]:
         """Delete all members and release a stored group name."""
-        # Delete all aircraft in the respective group
         if groupname in self._ALL_NAMES:
             return Err("The all-aircraft selection is not a stored group")
         mask = self.groups.get(groupname)

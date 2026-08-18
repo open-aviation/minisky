@@ -116,12 +116,12 @@ def build_snapshot(
         "callsign": [str(c) for c in traf.callsign],
         "lat": _tolist(traf.lat),
         "lon": _tolist(traf.lon),
-        "alt": _tolist(traf.alt),  # metres
+        "alt": _tolist(traf.alt),
         "trk": _tolist(traf.trk),
-        "vs": _tolist(traf.vs),  # m/s
-        "tas": _tolist(traf.tas),  # m/s
-        "cas": _tolist(traf.cas),  # m/s
-        "gs": _tolist(traf.gs),  # m/s
+        "vs": _tolist(traf.vs),
+        "tas": _tolist(traf.tas),
+        "cas": _tolist(traf.cas),
+        "gs": _tolist(traf.gs),
         "typecode": [str(t) for t in traf.typecode],
         # Conflict data (traf.cd). The per-pair counters are derived from the
         # detection object's current/cumulative unique-pair collections.

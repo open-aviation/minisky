@@ -106,11 +106,9 @@ class Runner:
         self.running = True
         try:
             while self.running:
-                # Check if jump is active
                 if self.jumping:
                     update_interval = MIN_UPDATE_INTERVAL
 
-                    # Check if jump is completed
                     if self.jump_to <= self.simulation.simt:
                         self.jumping = False
                         self.jump_to = 0

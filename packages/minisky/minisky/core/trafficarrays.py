@@ -452,12 +452,13 @@ class TrafficArrays:
             n: Number of aircraft to add (default 1).
         """
 
-        for v in self._LstVars:  # Lists (mostly used for strings)
-            lst = self.__dict__[v]  # Not .get() — if v in _LstVars it must exist
+        for v in self._LstVars:
+            # Deliberately fail if registration is inconsistent: every _LstVars entry must exist.
+            lst = self.__dict__[v]
             vartype = type(lst[0]).__name__ if lst else "str"
             lst.extend([defaults.get(vartype)] * n)
 
-        for v in self._ArrVars:  # Numpy array
+        for v in self._ArrVars:
             array = self.__dict__[v]
             # Preserve the declared dtype. Building defaults as a Python list
             # made NumPy promote uncommon dtypes (notably uint64 group masks)
@@ -514,7 +515,6 @@ class TrafficArrays:
         Args:
             idx: Index or collection of indices of the aircraft to remove.
         """
-        # Remove element (aircraft) idx from all lists and arrays
         for child in self._children:
             child.delete(idx)
 
