@@ -22,7 +22,7 @@ from minisky.command import (
     command,
 )
 from minisky.result import Err, Ok
-from minisky.values import (
+from minisky.types import (
     GroundTrackDeg,
     LatLonDegrees,
     MagneticHeadingDeg,

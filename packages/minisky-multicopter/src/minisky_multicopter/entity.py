@@ -30,7 +30,7 @@ from minisky.plugin import (
 )
 from minisky.result import Err, Ok, Result
 from minisky.tools import geo
-from minisky.values import MagneticHeadingDeg, StdPressureAltM
+from minisky.types import MagneticHeadingDeg, StdPressureAltM
 
 from minisky_multicopter.config import (
     MulticopterConfig,

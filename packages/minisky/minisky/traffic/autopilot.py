@@ -41,7 +41,7 @@ from minisky.tools import geo
 from minisky.tools.aero import g0, tas2cas, vcas2tas, vcasmach2tas
 from minisky.tools.convert import degto180
 from minisky.tools.position import txt2pos
-from minisky.values import (
+from minisky.types import (
     AirspeedKind,
     CasMps,
     LatLonDegrees,
@@ -615,8 +615,8 @@ class Autopilot(TrafficArrays):
         - LNAV track guidance: command the bearing to the active waypoint.
         - FMS airspeed guidance: anticipate deceleration for upcoming turn
           waypoints and acceleration/deceleration for airspeed constraints on
-          the next leg, and select the appropriate [`CAS` in m/s][minisky.values.CasMps]
-          or [`Mach`][minisky.values.Mach] command.
+          the next leg, and select the appropriate [`CAS` in m/s][minisky.types.CasMps]
+          or [`Mach`][minisky.types.Mach] command.
 
         The results are stored in the commanded-state arrays (trk, alt, vs,
         tas) and in the traffic selected-state arrays where applicable.
@@ -1080,7 +1080,7 @@ class Autopilot(TrafficArrays):
     def set_airspeed_for_rta(
         self, idx: int, target: RtaTarget | None, distance_to_waypoint: q.DistanceM[float]
     ) -> q.CalibratedAirspeedMps[float] | None:
-        """Compute and set the [`CAS` in m/s][minisky.values.CasMps] required to meet an RTA constraint.
+        """Compute and set the [`CAS` in m/s][minisky.types.CasMps] required to meet an RTA constraint.
 
         Calculates the ground speed needed to cover the remaining distance
         to the RTA waypoint exactly at the required time (see calcvrta()),
@@ -1094,7 +1094,7 @@ class Autopilot(TrafficArrays):
             distance_to_waypoint: Distance to the active waypoint [m].
 
         Returns:
-            Required [`CAS` in m/s][minisky.values.CasMps], or None when there is no feasible RTA.
+            Required [`CAS` in m/s][minisky.types.CasMps], or None when there is no feasible RTA.
         """
         if target is None:
             return None
@@ -1226,7 +1226,7 @@ class Autopilot(TrafficArrays):
 
     @command(name="SPD", aliases=("SPEED",))
     def select_airspeed(self, idx: AcIdSelection, airspeed: CasMps | Mach) -> Result[str, str]:
-        """Select [`CAS` in m/s][minisky.values.CasMps] or [`Mach`][minisky.values.Mach] explicitly."""
+        """Select [`CAS` in m/s][minisky.types.CasMps] or [`Mach`][minisky.types.Mach] explicitly."""
         self.traffic.selected_airspeed.values[idx] = airspeed.value
         if isinstance(airspeed, CasMps):
             self.traffic.selected_airspeed.kind[idx] = AirspeedKind.CAS
@@ -1246,7 +1246,7 @@ class Autopilot(TrafficArrays):
     def set_destination(
         self, acidx: AcId, waypoint: Wpt, airspeed: CasMps | Mach | None = None
     ) -> Result[str, str]:
-        """Set the destination with an optional [`CAS` in m/s][minisky.values.CasMps] or [`Mach`][minisky.values.Mach] constraint."""
+        """Set the destination with an optional [`CAS` in m/s][minisky.types.CasMps] or [`Mach`][minisky.types.Mach] constraint."""
         route = self.route[acidx]
         wpname = _waypoint_name(waypoint)
         if isinstance(position := _resolve_waypoint(self.traffic, acidx, route, waypoint), Err):

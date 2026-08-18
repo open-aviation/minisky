@@ -12,6 +12,7 @@ nav = [
     { "Command-line interface" = "guides/cli.md" },
     { "Running scenarios" = "guides/running-scenarios.md" },
     { "Control console" = "guides/console.md" },
+    { "Types, Quantities and Units" = "guides/types.md" },
     { "Writing plugins" = "guides/plugins.md" },
     { "Adding Commands" = "guides/commands.md" },
     { "Flying multicopters" = "guides/multicopters.md" },
@@ -21,7 +22,7 @@ nav = [
     { "API" = [
       { "minisky" = "api/minisky.md" },
       { "quantities" = "api/quantities.md" },
-      { "values" = "api/values.md" },
+      { "types" = "api/types.md" },
       { "simulation" = "api/simulation.md" },
       { "traffic" = "api/traffic.md" },
       { "stack" = "api/stack.md" },
@@ -125,6 +126,7 @@ on_undefined = "strict"
 [project.markdown_extensions]
 admonition = {}
 attr_list = {}
+footnotes = {}
 "pymdownx.arithmatex" = { generic = true }
 "pymdownx.details" = {}
 "pymdownx.superfences" = {}

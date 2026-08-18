@@ -8,7 +8,7 @@ step its simulation, and read aircraft state directly from NumPy arrays.
 ```python
 from minisky import MiniSky
 from minisky import quantities as q
-from minisky.values import CasMps, StdPressureAltM
+from minisky.types import CasMps, StdPressureAltM
 
 with MiniSky() as runtime:
     runtime.simulation.reset()

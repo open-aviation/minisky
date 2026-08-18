@@ -102,7 +102,7 @@ from annotated_types import (
 )
 
 from minisky import quantities as q
-from minisky import values as value_types
+from minisky import types as value_types
 from minisky.identifiers import normalize_command_name
 from minisky.result import Err, Ok, Result
 from minisky.tools.convert import (
@@ -1011,7 +1011,7 @@ ResolvedPositionArg = Annotated[ResolvedPosition, _RESOLVED_POSITION_PARSER]
 """A position expression resolved against navigation data and traffic.
 
 Runways retain their heading in [`RunwayPosition`][minisky.command.RunwayPosition];
-other positions become [`LatLonDegrees`][minisky.values.LatLonDegrees]. Ambiguous
+other positions become [`LatLonDegrees`][minisky.types.LatLonDegrees]. Ambiguous
 waypoint identifiers are rejected because this grammar has no geographic reference.
 """
 

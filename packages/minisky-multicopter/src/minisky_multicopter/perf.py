@@ -28,7 +28,7 @@ from minisky.result import Ok, Result
 from minisky.tools import aero
 from minisky.traffic.performance import coeff
 from minisky.traffic.performance.perfoap import OpenAP
-from minisky.values import AircraftTypeCode
+from minisky.types import AircraftTypeCode
 
 from minisky_multicopter import quantities as mq
 from minisky_multicopter.config import MulticopterTypeSpec, RotorAirframeSpec

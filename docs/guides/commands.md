@@ -75,10 +75,10 @@ Minisky follows the practice of [type-driven design](https://lexi-lambda.github.
 !!! tip
     If you want to target an aircraft *or* a traffic group, use [`AcIdSelection`][minisky.command.AcIdSelection], which resolves the input to an array of aircraft indices.
 
-Minisky provides many useful built-in types and we recommend using them instead of manually interpreting strings inside your method. For example, [`StdPressureAltM`][minisky.values.StdPressureAltM] accepts user input such as `FL250`, `25000FT[STD]` or `7620M[STD]`, and internally transforms that into an altitude in meters.
+Minisky provides many useful built-in types and we recommend using them instead of manually interpreting strings inside your method. For example, [`StdPressureAltM`][minisky.types.StdPressureAltM] accepts user input such as `FL250`, `25000FT[STD]` or `7620M[STD]`, and internally transforms that into an altitude in meters.
 
 ```python
-from minisky.values import StdPressureAltM
+from minisky.types import StdPressureAltM
 
 
 @plugin_api.command(name="TARGETALT")
@@ -87,10 +87,7 @@ def set_target_altitude(self, idx: AcId, altitude: StdPressureAltM) -> Result[st
     return Ok("")
 ```
 
-<!-- TODO(abraham): this file is primarily oriented towards plugin developers, so we should not bury this detail here. move this to a dedicated page for *users* so they can easily understand the variants of quantity types. -->
-Note that the pressure altitude here (QNE) is not to be confused with the altitude above mean sea level (QNH). To accept both forms, you can also use Python Unions (`|`) with [`MslAltM`][minisky.values.MslAltM] (which accepts `25000FT[MSL]` or `7620M[MSL]`).
-
-Other useful types include: speed ([`CasMps`][minisky.values.CasMps]/[`Mach`][minisky.values.Mach]) and heading ([`TrueHeadingDeg`][minisky.values.TrueHeadingDeg]/[`MagneticHeadingDeg`][minisky.values.MagneticHeadingDeg]/[`GroundTrackDeg`][minisky.values.GroundTrackDeg]).
+See the [types guide](types.md) for the built-in altitude, airspeed and heading types, and for the distinction between runtime values in `minisky.types` and physical quantity annotations in `minisky.quantities`.
 
 ### Optional values
 
@@ -106,7 +103,7 @@ def note(self, idx: AcId, text: str | None = None) -> Result[str, str]:
 For an explicitly empty positional field, use `T | None`:
 
 ```python
-from minisky.values import CasMps, Mach, StdPressureAltM
+from minisky.types import CasMps, Mach, StdPressureAltM
 
 
 def route(self, idx: AcId, altitude: StdPressureAltM | None, airspeed: CasMps | Mach) -> None:

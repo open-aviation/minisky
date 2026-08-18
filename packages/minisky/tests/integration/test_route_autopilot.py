@@ -11,7 +11,7 @@ from minisky import quantities as q
 from minisky.tools import geo
 from minisky.traffic import route as route_commands
 from minisky.traffic.route import Route, TurnHeadingRate
-from minisky.values import CasMps
+from minisky.types import CasMps
 from tests._types import RunCommand, StepUntil
 
 

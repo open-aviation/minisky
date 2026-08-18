@@ -19,7 +19,7 @@ from minisky.command import (
 )
 from minisky.result import Err, Ok, Result
 from minisky.tools.geo import kwikdist
-from minisky.values import LatLonDegrees, StdPressureAltM
+from minisky.types import LatLonDegrees, StdPressureAltM
 
 CircleRadiusM = Annotated[DistanceM, Ge(0)]
 

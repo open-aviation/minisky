@@ -45,7 +45,7 @@ from minisky import MiniSky
 from minisky import quantities as q
 from minisky.command import format_command_form
 from minisky.result import Err, Ok, Result
-from minisky.values import AircraftTypeCode, AirspeedKind
+from minisky.types import AircraftTypeCode, AirspeedKind
 
 
 def _get_runtime(request: Request) -> MiniSky:

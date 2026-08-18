@@ -9,7 +9,7 @@ from minisky import quantities as q
 from minisky.simulation import Simulation
 from minisky.traffic.conditional import AirspeedCondition, AltitudeCondition
 from minisky.traffic.wind import WindFieldKind
-from minisky.values import CasMps, Mach, StdPressureAltM
+from minisky.types import CasMps, Mach, StdPressureAltM
 from tests._types import RunCommand
 
 

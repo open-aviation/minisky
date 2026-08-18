@@ -28,7 +28,7 @@ from minisky.core.trafficarrays import OptionalArray, VariantArray
 from minisky.plugin import AcIdSelection, HeadingDeg
 from minisky.result import Err, Ok, Result
 from minisky.traffic.autopilot import Autopilot
-from minisky.values import AirspeedKind, StdPressureAltM
+from minisky.types import AirspeedKind, StdPressureAltM
 
 from minisky_multicopter.entity import get_multicopter
 
@@ -55,7 +55,7 @@ class MulticopterAutopilot(Autopilot):
             self.resume_airspeed: VariantArray[np.ndarray] = VariantArray(
                 np.array([]), np.array([], dtype=np.uint8)
             )
-            """[CAS in m/s][minisky.values.CasMps] or [Mach][minisky.values.Mach] selection restored
+            """[CAS in m/s][minisky.types.CasMps] or [Mach][minisky.types.Mach] selection restored
             when hover ends."""
             self.resume_lnav = np.array([], dtype=bool)
             self.resume_vnav = np.array([], dtype=bool)

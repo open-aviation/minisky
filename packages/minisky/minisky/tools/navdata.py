@@ -22,7 +22,7 @@ from minisky import quantities as q
 from minisky.command import Keyword, LatLonDeg, command
 from minisky.result import Err, Ok, Result
 from minisky.tools import geo
-from minisky.values import AirportIdentifier, AirwayIdentifier, RunwayIdentifier
+from minisky.types import AirportIdentifier, AirwayIdentifier, RunwayIdentifier
 
 _COLOCATED_DISTANCE: q.DistanceM[float] = q.nmi_to_m(1.0)
 

@@ -29,8 +29,8 @@ class ActiveWaypoint(TrafficArrays):
     The autopilot copies waypoint data from the route into these arrays
     upon waypoint switching (see Autopilot.wppassingcheck() and
     route.direct()), so the continuous guidance can be vectorized. Simple optional
-    per-aircraft values use `OptionalArray`; optional [`CAS` in m/s][minisky.values.CasMps]
-    or [`Mach`][minisky.values.Mach] values use `VariantArray`.
+    per-aircraft values use `OptionalArray`; optional [`CAS` in m/s][minisky.types.CasMps]
+    or [`Mach`][minisky.types.Mach] values use `VariantArray`.
     """
 
     def __init__(self, traffic: Traffic) -> None:

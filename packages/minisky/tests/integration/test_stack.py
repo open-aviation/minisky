@@ -14,7 +14,7 @@ from minisky import quantities as q
 from minisky.command import ArgumentIssue, command
 from minisky.simulation import Simulation
 from minisky.stack import ScheduledCommand
-from minisky.values import AirspeedKind
+from minisky.types import AirspeedKind
 from tests._types import RunCommand
 
 

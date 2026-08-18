@@ -163,8 +163,8 @@ def vcas2tas(cas: q.CalibratedAirspeedMps, h: q.PressureAltitudeM) -> q.TrueAirs
 def vcasmach2tas(
     value: np.ndarray, is_mach: np.ndarray, h: q.PressureAltitudeM[np.ndarray]
 ) -> q.TrueAirspeedMps[np.ndarray]:
-    """Convert mixed per-lane [`CAS` in m/s][minisky.values.CasMps] /
-    [`Mach`][minisky.values.Mach] values to TAS."""
+    """Convert mixed per-lane [`CAS` in m/s][minisky.types.CasMps] /
+    [`Mach`][minisky.types.Mach] values to TAS."""
     tas = np.empty_like(value, dtype=float)
     tas[is_mach] = vmach2tas(value[is_mach], h[is_mach])
     is_cas = ~is_mach

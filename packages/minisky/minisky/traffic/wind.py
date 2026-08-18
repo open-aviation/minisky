@@ -42,7 +42,7 @@ from minisky.command import (
 )
 from minisky.core.trafficarrays import TrafficArrays
 from minisky.result import Err, Ok, Result
-from minisky.values import StdPressureAltM
+from minisky.types import StdPressureAltM
 
 WindDirectionArg = q.WindDirectionDeg[FiniteFloat]
 NonNegativeSpeedMps = Annotated[SpeedMps, Ge(0)]

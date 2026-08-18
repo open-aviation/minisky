@@ -55,7 +55,7 @@ from minisky.tools import geo
 from minisky.tools.aero import cas2tas, g0, mach2tas, vcas2tas
 from minisky.tools.convert import degto180
 from minisky.tools.position import AirportPosition, NavaidPosition, ResolvedRunwayPosition, txt2pos
-from minisky.values import (
+from minisky.types import (
     CasMps,
     LatLonDegrees,
     Mach,
@@ -130,7 +130,7 @@ class Route:
 
     A Route is an ordered list of waypoints, each with an optional altitude
     constraint, airspeed constraint, required time of arrival (RTA), turn
-    specification (fly-by/fly-over/fly-turn with radius, [`CAS` in m/s][minisky.values.CasMps]
+    specification (fly-by/fly-over/fly-turn with radius, [`CAS` in m/s][minisky.types.CasMps]
     or heading rate) and stack commands to execute when the waypoint is passed. One
     Route object is kept per aircraft in [`runtime.traffic.ap.route`][minisky.traffic.route.Route].
 
@@ -212,8 +212,8 @@ class Route:
             wpname: Waypoint name.
             wptype: Waypoint type.
             wpalt: Optional altitude constraint.
-            wpairspeed: Optional explicit [`CAS` in m/s][minisky.values.CasMps]
-                or [`Mach`][minisky.values.Mach] constraint.
+            wpairspeed: Optional explicit [`CAS` in m/s][minisky.types.CasMps]
+                or [`Mach`][minisky.types.Mach] constraint.
         """
 
         self.wpname.insert(wpidx, wpname)
@@ -255,8 +255,8 @@ class Route:
             name: Waypoint name, or callsign for a lat/lon waypoint.
             wptype: Waypoint type.
             alt: Optional altitude constraint.
-            airspeed: Optional explicit [`CAS` in m/s][minisky.values.CasMps]
-                or [`Mach`][minisky.values.Mach] constraint.
+            airspeed: Optional explicit [`CAS` in m/s][minisky.types.CasMps]
+                or [`Mach`][minisky.types.Mach] constraint.
             afterwp: Optional waypoint after which to insert.
             beforewp: Optional waypoint before which to insert.
 
@@ -411,7 +411,7 @@ class Route:
         position: LatLonDegrees
         """Active waypoint position [deg]."""
         airspeed: CasMps | Mach | None
-        """Optional [`CAS` in m/s][minisky.values.CasMps] or [`Mach`][minisky.values.Mach] constraint."""
+        """Optional [`CAS` in m/s][minisky.types.CasMps] or [`Mach`][minisky.types.Mach] constraint."""
         profile: RouteProfile
         """Altitude and RTA guidance targets ahead of the active waypoint."""
         lnav_enabled: bool
@@ -1363,7 +1363,7 @@ def listrte(traffic: Traffic, acidx: int, ipagetxt: str = "0") -> Result[None, s
     Implements the LISTRTE stack command: `LISTRTE acid, [pagenr]`.
     Each line shows the waypoint name (active waypoint marked with `*`),
     its altitude constraint (ft or FL), airspeed constraint
-    ([`CAS` in m/s][minisky.values.CasMps] or [`Mach`][minisky.values.Mach]) and
+    ([`CAS` in m/s][minisky.types.CasMps] or [`Mach`][minisky.types.Mach]) and
     type ([orig], [dest], [C] fly-by, [|] fly-over, [U] fly-turn). Seven
     waypoints are shown per page.
 
@@ -1541,7 +1541,7 @@ class RouteCommands:
         _parameter: Literal["TURNSPD", "TURNSPEED"],
         value: Annotated[CasMps, Gt(0)],
     ) -> Result[str, str]:
-        """Set the default fly-turn [`CAS`][minisky.values.CasMps] using an explicit quantity such as `250KT[CAS]`."""
+        """Set the default fly-turn [`CAS`][minisky.types.CasMps] using an explicit quantity such as `250KT[CAS]`."""
         return _set_turn_cas(self.traffic, acidx, value)
 
     @command(name="ADDWPTMODE")
@@ -1558,7 +1558,7 @@ class RouteCommands:
     def clear_turn_parameter(
         self, acidx: AcId, parameter: TurnParameterArg, _off: Literal["OFF"]
     ) -> Result[str, str]:
-        """Clear a route turn radius, [`CAS`][minisky.values.CasMps], or heading-rate default."""
+        """Clear a route turn radius, [`CAS`][minisky.types.CasMps], or heading-rate default."""
         return _clear_turn_parameter(self.traffic, acidx, parameter)
 
     @command(name="ADDWPT")

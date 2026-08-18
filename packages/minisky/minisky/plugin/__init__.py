@@ -49,7 +49,7 @@ from minisky.plugin.plugin import (
     PluginStatus,
 )
 from minisky.plugin.plugin_decorators import HookName, hook, replacement
-from minisky.values import (
+from minisky.types import (
     AirspeedKind,
     CasMps,
     GroundTrackDeg,

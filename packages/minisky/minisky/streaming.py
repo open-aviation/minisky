@@ -30,7 +30,7 @@ from typing import TYPE_CHECKING, TypedDict
 import numpy as np
 
 from minisky import quantities as q
-from minisky.values import AircraftTypeCode
+from minisky.types import AircraftTypeCode
 
 if TYPE_CHECKING:
     from minisky.simulation import Runner, Simulation
