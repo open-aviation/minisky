@@ -122,7 +122,6 @@ class Windfield:
         """
         has_profile = windalt is not None and len(windalt) > 1
         if has_profile:
-            # Set altitude interpolation functions
             fnorth = interp1d(
                 windalt,
                 vnorth.T,
@@ -141,16 +140,13 @@ class Windfield:
             # Assume regular grid and set RGI for interpolation
             if len(lat) > 3:
                 try:
-                    # Interpolate along windalt axis
                     altaxis = np.concatenate((np.array([0.0]), windalt))
                     vnaxis = fnorth(altaxis).T
                     veaxis = feast(altaxis).T
 
-                    # Get unique latitudes and longitudes for RGI
                     lats = np.unique(lat)
                     lons = np.unique(lon)
 
-                    # Set RGI interpolation functions
                     vevalues = veaxis.reshape((len(altaxis), len(lats), len(lons)))
                     vnvalues = vnaxis.reshape((len(altaxis), len(lats), len(lons)))
                     self.fe = LinearNDInterpolator(
@@ -170,7 +166,6 @@ class Windfield:
                     vnaxis = fnorth(self.altaxis).T
                     veaxis = feast(self.altaxis).T
             else:
-                # Create vn, ve if less than 4 coords are present
                 vnaxis = fnorth(self.altaxis).T
                 veaxis = feast(self.altaxis).T
 
@@ -233,7 +228,6 @@ class Windfield:
             vnaxis = np.interp(self.altaxis, alttab, altvn)
             veaxis = np.interp(self.altaxis, alttab, altve)
 
-        #        print array([vnaxis]).transpose()
         self.lat = np.append(self.lat, lat)
         self.lon = np.append(self.lon, lon)
         self.profiled = np.append(self.profiled, prof3D)
@@ -248,8 +242,9 @@ class Windfield:
             self.vnorth = np.append(self.vnorth, np.array([vnaxis]).transpose(), axis=1)
             self.veast = np.append(self.veast, np.array([veaxis]).transpose(), axis=1)
 
-        return idx  # return index of added point
+        return idx
 
+    # TODO: break this down and cleanup so its easier to follow
     def getdata(
         self,
         userlat: q.LatitudeDeg,
@@ -278,11 +273,9 @@ class Windfield:
 
         swvector = isinstance(userlat, (list, np.ndarray))
         npos = len(userlat) if swvector else 1
-        # Convert user input to right shape: columns for positions
         lat = np.array(userlat).reshape((1, npos))
         lon = np.array(userlon).reshape((1, npos))
 
-        # Make altitude into an array, with zero or float value broadcast over npos
         if isinstance(useralt, np.ndarray):
             alt = useralt
         elif isinstance(useralt, list):
@@ -295,7 +288,6 @@ class Windfield:
         vnorth = np.zeros(npos)
         veast = np.zeros(npos)
 
-        # Check if RGI functions are present, if so use them for interpolation
         if self.fe is not None and self.fn is not None:
             vnorth = self.fn(np.concatenate((alt.reshape(1, -1), lat, lon), axis=0).T)
             veast = self.fe(np.concatenate((alt.reshape(1, -1), lat, lon), axis=0).T)
@@ -309,48 +301,35 @@ class Windfield:
                 veast = np.ones(npos) * self.veast[0, 0]
 
             else:
-                # ---- Get horizontal weight factors
-
                 # Average cosine for flat-eartyh approximation
                 cavelat = np.cos(np.radians(0.5 * (lat + np.array([self.lat]).transpose())))
 
-                # Lat and lon distance in 60 nm units (1 lat degree)
                 dy = lat - np.array([self.lat]).transpose()  # (nvec,npos)
                 dx = cavelat * (lon - np.array([self.lon]).transpose())
 
-                # Calulate invesre distance squared
                 invd2 = 1.0 / (eps + dx * dx + dy * dy)  # inverse of distance squared
 
-                # Normalize weights
                 sumsid2 = np.ones((1, self.nvec)).dot(invd2)  # totals to normalize weights
                 totals = np.repeat(sumsid2, self.nvec, axis=0)  # scale up dims to (nvec,npos)
 
                 horfact = invd2 / totals  # rows x col = nvec x npos, weight factors
 
-                # ---- Altitude interpolation
-
-                # No altitude profiles used: do 2D planar interpolation only
                 if self.kind is WindFieldKind.HORIZONTAL or (
                     not isinstance(useralt, (list, np.ndarray)) and useralt == 0.0
                 ):  # horizontal field or sea-level query
                     vnorth = self.vnorth[0, :].dot(horfact)
                     veast = self.veast[0, :].dot(horfact)
 
-                # 3D interpolation as one or more points contain altitude profile
                 else:
-                    # Get altitude index as float for alt interpolation
                     idxalt = np.maximum(
                         0.0, np.minimum(self.altaxis[-1] - eps, alt) / self.altstep
                     )  # find right index
 
-                    # Convert to index and factor
                     ialt = np.floor(idxalt).astype(int)  # index array for lower altitude
                     falt = idxalt - ialt  # factor for upper value
 
-                    # Altitude interpolation combined with horizontal
                     nvec = len(self.lon)  # Get number of definition points
 
-                    # North wind (y-direction ot lat direction)
                     vn0 = (self.vnorth[ialt, :] * horfact.T).dot(
                         np.ones((nvec, 1))
                     )  # hor interpolate lower alt (npos x)
@@ -361,14 +340,12 @@ class Windfield:
                         vn1.reshape(npos)
                     )  # As 1D array
 
-                    # East wind (x-direction or lon direction)
                     ve0 = (self.veast[ialt, :] * horfact.T).dot(np.ones((nvec, 1)))
                     ve1 = (self.veast[ialt + 1, :] * horfact.T).dot(np.ones((nvec, 1)))
                     veast = (1.0 - falt) * (ve0.reshape(npos)) + falt * (
                         ve1.reshape(npos)
                     )  # As 1D array
 
-        # Return same type as positons were given
         if isinstance(userlat, np.ndarray):
             return vnorth, veast
 
@@ -459,7 +436,6 @@ class Wind(TrafficArrays, Windfield):
         self, position: LatLonDeg, _action: Literal["DEL", "DELETE"]
     ) -> Result[str, str]:
         """Clear wind defined at a position."""
-        # Delete the wind field: WIND lat,lon,DEL(ETE)
         self.clear()
         return Ok("")
 

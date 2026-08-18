@@ -43,10 +43,8 @@ def compute_max_thr_ratio(
 
     n = len(phase)
 
-    # ---- thrust ratio at takeoff ----
     ratio_takeoff = tr_takeoff(bpr, v, h)
 
-    # ---- thrust ratio in flight ----
     ratio_inflight = inflight(v, h, vs, thr0)
 
     # thrust ratio array
@@ -163,7 +161,6 @@ def inflight(
         np.where(h > alt10, ratio_seg2, ratio_seg1),
     )
 
-    # convert to maximum static thrust ratio
     ratio_F0 = ratio * F35 / thr0
 
     return ratio_F0

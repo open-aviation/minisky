@@ -389,7 +389,6 @@ class ConflictDetection(TrafficArrays):
         self.confpairs_all.extend(confpairs_unique - self.confpairs_unique)
         self.lospairs_all.extend(lospairs_unique - self.lospairs_unique)
 
-        # Update confpairs_unique and lospairs_unique
         self.confpairs_unique = confpairs_unique
         self.lospairs_unique = lospairs_unique
 
@@ -534,7 +533,6 @@ class ConflictDetection(TrafficArrays):
         tinver_ij, toutver_ij = vertical_interval(dalt, dvs)
         tinver_ji, toutver_ji = vertical_interval(-dalt, -dvs)
 
-        # Combine vertical and horizontal conflict----------------------------------
         tinconf_ij = np.maximum(tinver_ij, tinhor)
         toutconf_ij = np.minimum(toutver_ij, touthor)
         tinconf_ji = np.maximum(tinver_ji, tinhor)
@@ -554,9 +552,7 @@ class ConflictDetection(TrafficArrays):
             & (tinconf_ji < dtlookahead[jj])
         )
 
-        # --------------------------------------------------------------------------
         # Update conflict lists
-        # --------------------------------------------------------------------------
         # Assemble both directions of each conflict and sort them into
         # row-major (ownship, intruder) index order
         iown = np.concatenate((ii[sw_ij], jj[sw_ji]))
@@ -573,7 +569,6 @@ class ConflictDetection(TrafficArrays):
         order = np.lexsort((jint, iown))
         iown, jint = iown[order], jint[order]
 
-        # Select conflicting pairs: each a/c gets their own record
         confpairs = [
             ConflictPair(ownship.callsign[i], ownship.callsign[j])
             for i, j in zip(iown, jint, strict=False)

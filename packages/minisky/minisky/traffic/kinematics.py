@@ -75,8 +75,8 @@ class Kinematics(TrafficArrays):
 
         Runs the three integration stages in order. Subclasses that only
         change how the aircraft accelerates or steers should override
-        :meth:`update_airspeed` / :meth:`update_groundspeed` and let a single
-        :meth:`update_pos` pass integrate the resulting velocity.
+        `update_airspeed` / `update_groundspeed` and let a single
+        `update_pos` pass integrate the resulting velocity.
         """
         self.update_airspeed()
         self.update_groundspeed()
@@ -94,11 +94,9 @@ class Kinematics(TrafficArrays):
         """
         traf = self.traffic
         simdt = self._get_simulation().simdt
-        # Compute horizontal acceleration
         delta_spd = traf.aporasas.tas - traf.tas
         need_ax = np.abs(delta_spd) > np.abs(simdt * traf.perf.axmax)
         self.ax = need_ax * np.sign(delta_spd) * traf.perf.axmax
-        # Update velocities
         traf.tas = np.where(need_ax, traf.tas + self.ax * simdt, traf.aporasas.tas)
         traf.cas = vtas2cas(traf.tas, traf.alt)
         traf.M = vtas2mach(traf.tas, traf.alt)
@@ -120,7 +118,6 @@ class Kinematics(TrafficArrays):
         delhdg = (traf.aporasas.hdg - traf.hdg + 180) % 360 - 180  # [deg]
         self.swhdgsel = np.abs(delhdg) > np.abs(simdt * turnrate)
 
-        # Update heading
         traf.hdg = (
             np.where(
                 self.swhdgsel,
@@ -130,7 +127,6 @@ class Kinematics(TrafficArrays):
             % 360.0
         )
 
-        # Update vertical speed (alt select, capture and hold autopilot mode)
         delta_alt = traf.aporasas.alt - traf.alt
         # Old dead band version:
         #        self.swaltsel = np.abs(delta_alt) > np.maximum(
@@ -197,7 +193,6 @@ class Kinematics(TrafficArrays):
         """
         traf = self.traffic
         simdt = self._get_simulation().simdt
-        # Update position
         traf.alt = np.where(
             self.swaltsel,
             np.round(traf.alt + traf.vs * simdt, 6),

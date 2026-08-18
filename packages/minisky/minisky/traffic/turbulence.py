@@ -89,11 +89,9 @@ class Turbulence(TrafficArrays):
         )  # [m]
 
         trkrad = np.radians(self.traffic.trk)
-        # Lateral, longitudinal direction
         turblat = np.cos(trkrad) * turbhf - np.sin(trkrad) * turbhw  # [m]
         turblon = np.sin(trkrad) * turbhf + np.cos(trkrad) * turbhw  # [m]
 
-        # Update the aircraft locations
         self.traffic.alt = self.traffic.alt + turbalt
         self.traffic.lat = self.traffic.lat + np.degrees(turblat / Rearth)
         self.traffic.lon = self.traffic.lon + np.degrees(turblon / Rearth / self.traffic.coslat)

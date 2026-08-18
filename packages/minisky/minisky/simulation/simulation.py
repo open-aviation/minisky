@@ -42,19 +42,16 @@ class SimulationState(IntEnum):
 
     INIT = 0
     """Freshly created or reset, waiting for the first traffic or scenario command."""
-
     HOLD = 1
     """Paused: commands still run, but simulated time is frozen."""
-
     OP = 2
     """Running: simulated time advances and traffic is updated each step."""
-
     END = 3
     """Stopped for good: the run is over and time never advances again."""
 
 
-# Minimum sleep interval
 MINSLEEP: q.DurationS[float] = 1e-3
+"""Minimum sleep interval"""
 
 
 Day = Annotated[int, Ge(1), Le(31)]
@@ -156,13 +153,11 @@ class Simulation:
             bool: False if an awaitable stack command still owns the step
                 boundary, meaning time did not advance; True otherwise.
         """
-        # Simulation starts as soon as there is traffic, or pending commands
         if self.state == SimulationState.INIT and (
             self.traffic.ntraf > 0 or self.commands.get_scendata().commands
         ):
             self.op()
 
-        # An awaitable stack command owns this boundary until it completes.
         if not self.commands.process():
             self.publish_tick()
             return False
@@ -170,15 +165,14 @@ class Simulation:
         if self.state == SimulationState.OP:
             self.simt += self.simdt
 
-            # Update UTC time
             self.utc += datetime.timedelta(seconds=self.simdt)
 
-            # Plugin pre-update (timers + preupdate hooks)
+            # timers + preupdate hooks
             self.plugins.preupdate()
 
             self.traffic.update()
 
-            # Plugin post-update hooks
+            # post-update hooks
             self.plugins.update()
 
         # Publish after command and state processing in every simulation state.
@@ -245,9 +239,7 @@ class Simulation:
         self.commands.reset()
         self.shapes.reset()
         self.console.reset()
-        # Reset replaceables (Autopilot, PerfBase, etc.) to defaults
         self.replaceables.reset()
-        # Reset plugins (timers + reset hooks)
         self.plugins.reset()
         self.console.echo("Simulation reset")
 
@@ -286,18 +278,15 @@ class Simulation:
         Returns:
             bool: True if the event was recognized and processed.
         """
-        # Keep track of event processing
         event_processed = False
 
         if eventname == b"STACK":
-            # We received a single stack command. Add it to the existing stack
             if not isinstance(eventdata, str):
                 raise TypeError("STACK event data must be command text")
             self.commands.stack(eventdata, sender_id=sender_rte)
             event_processed = True
 
         elif eventname == b"BATCH":
-            # We are in a batch simulation, and received an entire scenario. Assign it to the stack.
             if not isinstance(eventdata, ScenarioData):
                 raise TypeError("BATCH event data must be ScenarioData")
             self.reset()

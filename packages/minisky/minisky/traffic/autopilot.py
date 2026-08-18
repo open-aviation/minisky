@@ -117,6 +117,9 @@ class Autopilot(TrafficArrays):
         self.steepness: float = q.ft_to_m(3000.0) / q.nmi_to_m(10.0)
         """Default climb/descent gradient used for VNAV planning."""
 
+        # NOTE(abraham): consider replacing this boolean/presence-array soup with typed guidance modes.
+        # LNAV/VNAV/turn/RTA states currently permit combinations that the rest of this class
+        # has to remember are invalid
         with self.settrafarrays():
             self.trk: q.GroundTrackDeg[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
             self.tas: q.TrueAirspeedMps[np.ndarray] = np.array([])  # pyright: ignore[reportGeneralTypeIssues]
@@ -207,19 +210,20 @@ class Autopilot(TrafficArrays):
 
         # dist2vs starts absent until a delayed Top-of-Descent threshold is armed.
 
-        # LNAV variables
-
         # Direction to waypoint from the last time passing was checked
         # Distance to go to next waypoint [m]
         # Both start absent until route guidance computes an active leg.
 
         # Traffic performance data (temporarily default values)
 
+        # TODO(abraham): in the trajectory reconstruction,
+        # we want users to be able to customise the initial vertical speed
+        # these defaults are bluesky-era and should be removed.
+
         self.vsdef[-n:] = q.fpm_to_mps(1500.0)
 
         self.bankdef[-n:] = np.radians(25.0)
 
-        # Route objects
         for ridx, acid in enumerate(self.traffic.callsign[-n:]):
             self.route[ridx - n] = Route(self.traffic, acid)
 
@@ -243,6 +247,10 @@ class Autopilot(TrafficArrays):
 
         `qdr` is updated in place for aircraft that switch waypoint.
         """
+        # NOTE(abraham): it is difficult very difficult to understand this state transition:
+        # detect passage -> mutate Route (?) -> execute deferred commands -> rebuild turn state
+        # copy constraints -> prepare VNAV
+        # maybe we want to split it up.
 
         # Get list of indices of aircraft which have reached their active waypoint
         # This vectorized function checks the passing of the waypoint using the current turn radius
@@ -461,7 +469,6 @@ class Autopilot(TrafficArrays):
             # Check LNAV switch returned by getnextwp
             # Switch off LNAV if it failed to get next waypoint data
             lnavoff = ~lnavon & self.traffic.swlnav[nxt]
-            # Last waypoint: copy last waypoint altitude and airspeed into the autopilot
             has_next_airspeed = next_airspeed.kind != OptionalAirspeedKind.NONE
             use_last_airspeed = lnavoff & self.traffic.swvnavairspeed[nxt] & has_next_airspeed
             self.traffic.selected_airspeed.values[nxt] = np.where(
@@ -484,8 +491,8 @@ class Autopilot(TrafficArrays):
             # In case of no LNAV, do not allow VNAV mode to be active
             self.traffic.swvnav[nxt] = self.traffic.swvnav[nxt] & self.traffic.swlnav[nxt]
 
-            actwp.lat[nxt] = lat  # [deg]
-            actwp.lon[nxt] = lon  # [deg]
+            actwp.lat[nxt] = lat
+            actwp.lon[nxt] = lon
             # 1.0 in case of fly by, else fly over
             actwp.flyby[nxt] = flyby
 
@@ -622,7 +629,6 @@ class Autopilot(TrafficArrays):
         tas) and in the traffic selected-state arrays where applicable.
         """
         # FMS LNAV mode:
-        # qdr [deg], distance [m]
         qdr_result, distance = geo.qdrdist(
             self.traffic.lat,
             self.traffic.lon,
@@ -639,6 +645,7 @@ class Autopilot(TrafficArrays):
         # Update qdr2wp and dist2wp with the current leg after checking waypoint passing.
         # Keep the geometry only while lateral or vertical route guidance owns it;
         # otherwise there is no meaningful active-guidance distance.
+        # TODO(abraham): check if invalid states are possible.
         has_route_guidance = self.traffic.swlnav | self.traffic.swvnav
         self.qdr2wp.values[:] = qdr % 360.0
         self.qdr2wp.present[:] = has_route_guidance
@@ -646,9 +653,6 @@ class Autopilot(TrafficArrays):
         self.dist2wp.present[:] = self.qdr2wp.present
 
         # ================= Continuous FMS guidance ========================
-
-        # Note that the code below is vectorized, with traffic arrays, so for all aircraft
-        # ComputeVNAV and inside waypoint loop of wppassingcheck, it was scalar (per aircraft with index i)
 
         # VNAV altitude guidance logic (using the variables prepared by ComputeVNAV when activating waypoint)
 
@@ -677,8 +681,6 @@ class Autopilot(TrafficArrays):
             self.traffic.alt < nextalt,
         )
 
-        # print("self.dist2vs =",self.dist2vs)
-
         # If not LNAV: Climb/descend if doing so before LNAV/VNAV was switched off
         #    (because there are no more waypoints). This is needed
         #    to continue descending when you get into a conflict
@@ -705,6 +707,8 @@ class Autopilot(TrafficArrays):
 
         # self.vs = np.where(self.swvnavvs, self.vnavvs, self.vsdef * self.traffic.limvs_flag)
         # for VNAV use fixed V/S and change start of descent
+        # TODO(abraham): 0.1 m/s is a sentinel for "no selected vertical speed"
+        # might be an issue with multicopters. we should use OptionalArray.
         selvs = np.where(abs(self.traffic.selvs) > 0.1, self.traffic.selvs, self.vsdef)  # m/s
         self.vs = np.where(self.swvnavvs, self.vnavvs, selvs)
         self.alt = np.where(self.swvnavvs, nextalt, self.traffic.selalt)
@@ -722,6 +726,7 @@ class Autopilot(TrafficArrays):
         # Normally next-leg airspeed (actwp.airspeed) but in case we fly turns with a specified turn CAS
         # use the turn CAS
 
+        # TODO(abraham): this is hardcoded for fixed wing aircraft, move it behind vehicle guidance?
         # Is turn CAS specified and are we not already slow enough? We only decelerate for turns, not accel.
         has_next_turn = self.traffic.actwp.nextturnidx.present
         next_turn_cas = self.traffic.actwp.next_turn_cas
@@ -808,6 +813,8 @@ class Autopilot(TrafficArrays):
             self.traffic.actwp.turntonextwp, useturn_cas
         )
 
+        # TODO(abraham): remove this 2-degree threshold sentinel
+        # Do not infer state from geometry tolerance; represent the active turn/leg explicitly.
         # Which CAS/Mach do we have to keep? VNAV, last turn or next turn?
         oncurrentleg = abs(degto180(self.traffic.trk - qdr)) < 2.0  # [deg]
         old_turn_cas = self.traffic.actwp.old_turn_cas
@@ -915,6 +922,8 @@ class Autopilot(TrafficArrays):
             profile: Optional altitude and RTA targets ahead of the active waypoint.
             distance_to_waypoint: Current distance to the active waypoint [m].
         """
+        # TODO(abraham): untangle this, it is very difficult to understand.
+        # it should be pure and not reach into autopilot etc.
 
         # Check whether active waypoint airspeed needs to be adjusted for RTA.
         # set_airspeed_for_rta sets self.traffic.actwp.airspeed if necessary.
@@ -972,6 +981,9 @@ class Autopilot(TrafficArrays):
         #   and climb as fast as possible, so arriving at alt earlier is ok
         # - Descend at the latest when necessary for next altitude constraint
         #   which can be many waypoints beyond current actual waypoint
+        # NOTE(abraham): lots of magic numbers in VNAV thresholds.
+        # (2 ft vs 9.9 ft deadzones, 0.0001 m/s, 1.02 turn margin, 0.01 divisors,
+        # 0.2 * TAS). reconsider.
         epsalt = q.ft_to_m(2.0)  # deadzone
         if self.traffic.alt[idx] > toalt + epsalt:
             # Stop potential current climb (e.g. due to not making it to previous altco)
@@ -1104,13 +1116,13 @@ class Autopilot(TrafficArrays):
         if deltime > 0:  # Still possible?
             gsrta = calcvrta(self.traffic.gs[idx], distance, deltime, self.traffic.perf.axmax[idx])
 
-            # Subtract tail wind speed vector
+            # TODO(abraham): RTA guidance assumes meaningful forward ground speed and a CAS
+            # command
             tailwind = (
                 self.traffic.windnorth[idx] * self.traffic.gsnorth[idx]
                 + self.traffic.windeast[idx] * self.traffic.gseast[idx]
             ) / self.traffic.gs[idx]
 
-            # Convert to CAS
             rtacas = tas2cas(gsrta - tailwind, self.traffic.alt[idx])
 
             # Performance airspeed limits will be applied in traf.update
@@ -1149,7 +1161,6 @@ class Autopilot(TrafficArrays):
         self.traffic.selalt[idx] = alt.value
         self.traffic.swvnav[idx] = False
 
-        # Check for optional VS argument
         if vspd:
             self.traffic.selvs[idx] = vspd
         else:
@@ -1267,7 +1278,6 @@ class Autopilot(TrafficArrays):
         ) is None:
             return Err("DEST position" + self.dest[acidx] + " not found.")
 
-        # If only waypoint: activate
         if (iwp == 0) or (self.orig[acidx] != "" and len(route.wpname) == 2):
             self.traffic.swlnav[acidx] = True
             self.traffic.swvnav[acidx] = True
@@ -1458,7 +1468,6 @@ def calcvrta(
     #   deltime = time left till RTA[s]
     #   trafax  = horizontal acceleration [m/s2]
 
-    # Set up variables
     dt = deltime
 
     # Do we need decelerate or accelerate
@@ -1487,7 +1496,6 @@ def calcvrta(
         x1 = (-b - sqrt(D)) / (2.0 * a)
         x2 = (-b + sqrt(D)) / (2.0 * a)
 
-        # Check solutions for v1
         for v1 in (x1, x2):
             dtacc = (v1 - v0) / ax
             dtconst = dt - dtacc

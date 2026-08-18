@@ -22,7 +22,6 @@ import pandas as pd
 from minisky import quantities as q
 from minisky.core.config import data
 
-# Constants
 _WGS84_SEMI_MAJOR_AXIS: q.LengthM[float] = 6378137.0
 _WGS84_SEMI_MINOR_AXIS: q.LengthM[float] = 6356752.314245
 _MEAN_EARTH_RADIUS: q.LengthM[float] = 6371000.0
@@ -42,13 +41,9 @@ def rwgs84(latd: q.LatitudeDeg) -> q.LengthM:
     ad = a * coslat
     bd = b * sinlat
 
-    # Calculate radius in meters
     r = np.sqrt((an * an + bn * bn) / (ad * ad + bd * bd))
 
     return r
-
-
-# ------------------------------------------------------------
 
 
 def rwgs84_matrix(latd: q.LatitudeDeg) -> q.LengthM[np.ndarray]:
@@ -68,7 +63,6 @@ def rwgs84_matrix(latd: q.LatitudeDeg) -> q.LengthM[np.ndarray]:
     bnbn = np.multiply(bn, bn)
     adad = np.multiply(ad, ad)
     bdbd = np.multiply(bd, bd)
-    # Calculate radius in meters
     r = np.sqrt(np.divide(anan + bnbn, adad + bdbd))
 
     return r
@@ -89,15 +83,11 @@ def qdrdist(
 
     """
 
-    # Haversine with average radius for direction
-
     # Check for hemisphere crossing,
     # when simple average would not work
 
-    # res1 for same hemisphere
-    res1 = rwgs84(0.5 * (latd1 + latd2))
+    res1 = rwgs84(0.5 * (latd1 + latd2))  # same hemisphere
 
-    # res2 :different hemisphere
     a = _WGS84_SEMI_MAJOR_AXIS
     r1 = rwgs84(latd1)
     r2 = rwgs84(latd2)
@@ -105,33 +95,21 @@ def qdrdist(
         0.5
         * (abs(latd1) * (r1 + a) + abs(latd2) * (r2 + a))
         / (np.maximum(0.000001, abs(latd1) + abs(latd2)))
-    )
+    )  # different hemisphere
 
-    # Condition
     sw = latd1 * latd2 >= 0.0
 
     r = sw * res1 + (1 - sw) * res2
 
-    # Convert to radians
     lat1 = np.radians(latd1)
     lon1 = np.radians(lond1)
     lat2 = np.radians(latd2)
     lon2 = np.radians(lond2)
 
-    # root = sin1 * sin1 + coslat1 * coslat2 * sin2 * sin2
-    # d    =  2.0 * r * np.arctan2(np.sqrt(root) , np.sqrt(1.0 - root))
-    # d =2.*r*np.arcsin(np.sqrt(sin1*sin1 + coslat1*coslat2*sin2*sin2))
-
     # Corrected to avoid "nan" at westward direction
     d = r * np.arccos(
         np.cos(lat1) * np.cos(lat2) * np.cos(lon2 - lon1) + np.sin(lat1) * np.sin(lat2)
     )
-
-    # Bearing from Ref. http://www.movable-type.co.uk/scripts/latlong.html
-
-    # sin1 = np.sin(0.5 * (lat2 - lat1))
-    # sin2 = np.sin(0.5 * (lon2 - lon1))
-
     coslat1 = np.cos(lat1)
     coslat2 = np.cos(lat2)
 
@@ -219,7 +197,6 @@ def qdrdist_matrix(
     sqrt = sin1sin1 + np.multiply((coslat1.T * coslat2), sin2sin2)
     dist_c = np.multiply(2.0, np.arctan2(np.sqrt(sqrt), np.sqrt(1 - sqrt)))
     dist = np.multiply(r, dist_c)
-    #    dist = np.multiply(2.*r, np.arcsin(sqrt))
 
     return qdr, dist
 
@@ -232,29 +209,21 @@ def latlondist(
 ) -> q.DistanceM:
     """Calculates only distance using haversine notation of the same formulae
     and average r from wgs'84.
-
     """
-
-    # Haversine with average radius
-
-    # Check for hemisphere crossing,
-    # when simple average would not work
-
-    # res1 for same hemisphere
-    res1 = rwgs84(0.5 * (latd1 + latd2))
+    res1 = rwgs84(0.5 * (latd1 + latd2))  # same hemisphere
 
     # res2 :different hemisphere
     a = _WGS84_SEMI_MAJOR_AXIS
     r1 = rwgs84(latd1)
     r2 = rwgs84(latd2)
-    res2 = 0.5 * (abs(latd1) * (r1 + a) + abs(latd2) * (r2 + a)) / (abs(latd1) + abs(latd2))
+    res2 = (
+        0.5 * (abs(latd1) * (r1 + a) + abs(latd2) * (r2 + a)) / (abs(latd1) + abs(latd2))
+    )  # different hemisphere
 
-    # Condition
     sw = latd1 * latd2 >= 0.0
 
     r = sw * res1 + (1 - sw) * res2
 
-    # Convert to radians
     lat1 = np.radians(latd1)
     lon1 = np.radians(lond1)
     lat2 = np.radians(latd2)
@@ -269,7 +238,6 @@ def latlondist(
     root = sin1 * sin1 + coslat1 * coslat2 * sin2 * sin2
     d = 2.0 * r * np.arctan2(np.sqrt(root), np.sqrt(1.0 - root))
 
-    #    d =2*r*np.arcsin(np.sqrt(sin1*sin1 + coslat1*coslat2*sin2*sin2))
     return d
 
 
@@ -326,7 +294,6 @@ def latlondist_matrix(
     sin2sin2 = np.multiply(sin20, sin20)
     root = sin1sin1 + np.multiply((coslat1.T * coslat2), sin2sin2)
 
-    #    dist = np.multiply(2.*r, np.arcsin(sqrt))
     dist_c = np.multiply(2, np.arctan2(np.sqrt(root), np.sqrt(1.0 - root)))
     dist = np.multiply(r, dist_c)
 
@@ -360,12 +327,10 @@ def qdrpos(
 
     """
 
-    # Unit conversion
     R = rwgs84(latd1)
     lat1 = np.radians(latd1)
     lon1 = np.radians(lond1)
 
-    # Calculate new position
     lat2 = np.arcsin(
         np.sin(lat1) * np.cos(dist / R) + np.cos(lat1) * np.sin(dist / R) * np.cos(np.radians(qdr))
     )
@@ -616,13 +581,11 @@ def load_magnetic_declination() -> q.AngleDeg[np.ndarray]:
     file_path = data("navigation") / "geo_declination_data.csv"
     df = pd.read_csv(file_path, comment="#", header=None)
 
-    # Extract the declination column (index 4) as a NumPy array
     decl = np.asarray(df[4], dtype=float)
 
-    # Reshape the declination data into a 180x360 grid
     decl_lat_lon = decl.reshape((180, 360))
 
-    # Add a row for latitude = 90 degrees (same as latitude = 89 degrees)
+    # Source data stops at +89°; extend the grid to +90° by reusing that row.
     decl_lat_lon = np.vstack((decl_lat_lon[0:1, :], decl_lat_lon))
 
     # Add a column for longitude = 180 degrees (same as longitude = -180 degrees)

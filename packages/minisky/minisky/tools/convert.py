@@ -110,7 +110,6 @@ def txt2lat(lattxt: str) -> q.LatitudeDeg[float]:
     else:
         lat = float(txt)
     return lat
-    # Return float
 
 
 # TODO(abraham): return None if parsing fails

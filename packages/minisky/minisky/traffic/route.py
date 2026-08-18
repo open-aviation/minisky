@@ -49,8 +49,6 @@ from minisky.command import (
 )
 from minisky.core.trafficarrays import OptionalArray
 from minisky.result import Err, Ok, Result
-
-# from minisky.core import Replaceable
 from minisky.tools import geo
 from minisky.tools.aero import cas2tas, g0, mach2tas, vcas2tas
 from minisky.tools.convert import degto180
@@ -69,6 +67,8 @@ if TYPE_CHECKING:
     from minisky.traffic import Traffic
 
 
+# TODO(abraham): bluesky-era WaypointType mixes source (LATLON/NAV), route role (ORIGIN/DESTINATION),
+# generated status (CALCULATED), and physical semantics (RUNWAY). split it
 class WaypointType(IntEnum):
     LATLON = 0
     """Latitude/Longitude Waypoint"""
@@ -141,14 +141,13 @@ class Route:
     Created by: Jacco M. Hoekstra
     """
 
-    # # Aircraft route objects
-    # _routes: WeakValueDictionary[str, "Route"] = WeakValueDictionary()
-
     def __init__(self, traffic: Traffic, acid: str) -> None:
+        # NOTE(abraham): does Route really need the entire Traffic object?
         self.traffic = traffic
         self.navigation = traffic.navigation
         self.acid = acid
 
+        # TODO(abraham): instead of forcefully adopting SoA maybe we should just use Waypoint record
         self.wpname: list[WaypointReference] = []
         self.wptype: list[WaypointType] = []
         self.wplat: list[q.LatitudeDeg[float]] = []  # pyright: ignore[reportGeneralTypeIssues]
@@ -264,7 +263,6 @@ class Route:
             Index of the added waypoint, or `None` on failure.
         """
 
-        # For safety
         n_wpt = len(self.wplat)
 
         name = name.upper().strip()
@@ -275,8 +273,6 @@ class Route:
 
         # Check if name already exists, if so add integer 01, 02, 03 etc.
         wprtename = get_available_name(self.wpname, name, self.traffic.callsign)
-        # Select on wptype
-        # ORIGIN: Wptype is origin/destination?
         if wptype in {WaypointType.ORIGIN, WaypointType.DESTINATION}:
             orig = wptype == WaypointType.ORIGIN
             existing_idx = 0 if orig else n_wpt - 1
@@ -303,7 +299,6 @@ class Route:
                 self.wpalt[wpidx] = alt
                 self.wpairspeed[wpidx] = airspeed
                 self.wptype[wpidx] = wptype
-                # also apply other current settings
                 self.wpflyby[wpidx] = self.swflyby
                 self.wpturn[wpidx] = self.turn if self.swflyturn else None
                 self.wprta[wpidx] = None
@@ -323,13 +318,10 @@ class Route:
 
             idx = 0 if orig else n_wpt - 1
 
-        # NORMAL: Wptype is normal waypoint? (lat/lon or nav)
         else:
-            # Lat/lon: wpname is then call sign of aircraft: add number
             if wptype == WaypointType.LATLON:
                 newname = get_available_name(self.wpname, name, self.traffic.callsign, 3)
 
-            # Else make data complete with nav database and closest to given lat,lon
             else:  # so wptypewpnav
                 newname = wprtename
 
@@ -343,8 +335,7 @@ class Route:
                     else:
                         wpok = False
 
-            # Check if afterwp or beforewp is specified and found:
-            aftwp = afterwp.upper().strip()  # Remove space, upper case
+            aftwp = afterwp.upper().strip()
             bfwp = beforewp.upper().strip()
 
             if wpok:
@@ -372,7 +363,6 @@ class Route:
                 if len(self.wplat) == 1:
                     self.iactwp = 0
 
-        # update qdr and "last waypoint switch" in traffic
         if idx is not None:
             next_qdr = self.getnextqdr()
             if next_qdr is None:
@@ -381,11 +371,9 @@ class Route:
                 self.traffic.actwp.next_qdr.set(iac, next_qdr)
             self.traffic.actwp.swlastwp[iac] = self.iactwp == n_wpt - 1
 
-        # Update waypoints
         if wptype != WaypointType.CALCULATED:
             self.calcfp()
 
-        # Update autopilot settings
         if wpok and (active_idx := self.iactwp) is not None and active_idx < n_wpt:
             direct(self.traffic, iac, self.wpname[active_idx])
 
@@ -439,6 +427,9 @@ class Route:
         active_idx = self.iactwp
         assert active_idx is not None
 
+        # TODO(abraham): Route really should not know how to perform a fixed-wing landing
+        # don't synthesise user command strings. return a typed landing / route-complete transition?
+        # let vehicle policy + schedule handle it?
         if self.flag_landed_runway:
             # when landing, LNAV is switched off
             lnavon = False
@@ -452,24 +443,19 @@ class Route:
                 rwykey = name[8:10]
                 if len(name) > 10 and not name[10].isdigit():
                     rwykey = name[8:11]
-            # also if it is only RW
             else:
                 rwykey = name[7:9]
                 if len(name) > 9 and not name[9].isdigit():
                     rwykey = name[7:10]
 
-            # Use this code to look up runway heading
             wphdg = self.navigation.rwythresholds[name[:4]][rwykey][2]
 
-            # keep constant runway heading
             self.traffic.stack_command("HDG " + str(self.acid) + " " + str(wphdg))
 
-            # start decelerating
             self.traffic.stack_command(
                 "DELAY " + "10 " + "SPD " + str(self.acid) + " " + "10KT[CAS]"
             )
 
-            # delete aircraft
             self.traffic.stack_command("DELAY " + "42 " + "DEL " + str(self.acid))
 
             return self.WaypointTransition(
@@ -486,7 +472,6 @@ class Route:
         # Switch LNAV off when last waypoint has been passed
         lnavon = active_idx < n_wpt - 1
 
-        # if LNAV on: increase counter
         if lnavon:
             active_idx += 1
             self.iactwp = active_idx
@@ -534,8 +519,6 @@ class Route:
         assert active_idx is not None
         for cmdline in self.wpstack[active_idx]:
             self.traffic.stack_command(cmdline)
-            # debug
-            # stack.stack("ECHO "+self.acid+" AT "+self.wpname[self.iactwp]+" command issued:"+cmdline)
 
     def insertcalcwp(self, i: int, name: str) -> None:
         """Insert an empty calculated waypoint (T/C, T/D) at location i."""
@@ -575,11 +558,9 @@ class Route:
 
         self.wpprofile = [RouteProfile() for _ in range(n_wpt)]
 
-        # No waypoints: make empty variables to be safe and return: nothing to do
         if n_wpt == 0:
             return
 
-        # Calculate lateral leg data
         # LNAV: Calculate leg distances and directions
 
         for i in range(n_wpt - 1):
@@ -598,11 +579,10 @@ class Route:
         )
         self.wpdirto = [qdr, *self.wpdirfrom[0:-1]]
 
-        # Continue flying in the saem direction
         if n_wpt > 1:
+            # Keep the final outbound bearing aligned with the previous leg so guidance continues straight.
             self.wpdirfrom[-1] = self.wpdirfrom[-2]
 
-        # Calculate longitudinal leg data
         # VNAV: calc next altitude constraint and distance to it
         altitude_target: AltitudeTarget | None = None
         for i in range(n_wpt - 1, -1, -1):
@@ -679,14 +659,12 @@ class Route:
 
         n_wpt = len(self.wpname)
 
-        # Check for easy answers first
         if n_wpt <= 0:
             return None
 
         elif n_wpt == 1:
             return 0
 
-        # Find closest
         wplat = np.array(self.wplat)
         wplon = np.array(self.wplon)
         dy = wplat - self.traffic.lat[i]
@@ -697,7 +675,6 @@ class Route:
 
         iwpnear = max(0 if self.iactwp is None else self.iactwp, np.argmin(dist2))
 
-        # Unless behind us, next waypoint?
         if iwpnear + 1 < n_wpt:
             qdr = math.degrees(math.atan2(dx[iwpnear], dy[iwpnear]))
             delhdg = abs(degto180(self.traffic.trk[i] - qdr))
@@ -726,7 +703,6 @@ class Route:
 
     def getnextqdr(self) -> q.BearingDeg[float] | None:
         """Return the bearing of the leg after the active waypoint [deg]."""
-        # get qdr for next leg
         if (active_idx := self.iactwp) is None:
             return None
         if (next_leg := self.getnextleg()) is None:
@@ -738,9 +714,6 @@ class Route:
             next_leg.lon,
         )
         return float(nextqdr)
-
-
-# ---- following are functions managing the routes ----
 
 
 def get_available_name(data: list, name_: str, callsigns: list[str], len_: int = 2) -> str:
@@ -938,6 +911,8 @@ def _add_takeoff_waypoint(
         rwylon = traffic.lon[acidx]
         rwyhdg = traffic.trk[acidx]
 
+    # TODO(abraham): a TAKEOFF waypoint exactly 2 NM down the runway is fixed-wing policy
+    # problematic for VTOL.
     lat, lon = geo.qdrpos(rwylat, rwylon, rwyhdg, q.nmi_to_m(2.0))
     afterwp = ""
     if rwyrteidx is not None and rwyrteidx > 0:
@@ -1032,14 +1007,11 @@ def _add_route_waypoint(
         case None:
             pass
 
-    # Add waypoint
     if acrte.add_waypoint(acidx, name, wptype, lat, lon, alt, airspeed, afterwp, beforewp) is None:
         return Err(f"Waypoint {name} not added.")
 
-    # Recalculate flight plan
     acrte.calcfp()
 
-    # check for presence of orig/dest
     norig = int(traffic.ap.orig[acidx] != "")  # 1 if orig is present in route
     ndest = int(traffic.ap.dest[acidx] != "")  # 1 if dest is present in route
 
@@ -1047,7 +1019,6 @@ def _add_route_waypoint(
     # And if so, make active
     if len(acrte.wpname) - norig - ndest == 1:  # first waypoint: make active
         direct(traffic, acidx, acrte.wpname[norig])  # 0 if no orig
-        # print("direct ",self.wpname[norig])
         traffic.swlnav[acidx] = True
 
     if afterwp and acrte.wpname.count(afterwp) == 0:
@@ -1197,6 +1168,8 @@ def direct(traffic: Traffic, acidx: int, wpname: str) -> bool:
     Returns:
         bool: True on success.
     """
+    # TODO(abraham): this is a giant cross-object transaction, mutating Route,
+    # ActiveWaypoint, Autopilot and Traffic. make things pure.
     traffic.callsign[acidx]
     acrte = traffic.ap.route[acidx]
     wpidx = acrte.wpname.index(wpname)
@@ -1249,9 +1222,6 @@ def direct(traffic: Traffic, acidx: int, wpname: str) -> bool:
             traffic.actwp.nextturnhdgr.clear(acidx)
         traffic.actwp.nextturnidx.set(acidx, next_turn.waypoint_index)
 
-    # Determine next turn waypoint data
-
-    # Do calculation for VNAV
     acrte.calcfp()
 
     profile = acrte.wpprofile[wpidx]
@@ -1286,7 +1256,6 @@ def direct(traffic: Traffic, acidx: int, wpname: str) -> bool:
     qdr_ = float(np.asarray(qdr_result).item())
     leg_distance = float(np.asarray(dist_result).item())
 
-    # Save leg length & direction in actwp data
     traffic.actwp.curlegdir.set(acidx, qdr_)
     traffic.actwp.curleglen.set(acidx, leg_distance)
     traffic.ap.qdr2wp.set(acidx, qdr_ % 360.0)
@@ -1374,7 +1343,6 @@ def listrte(traffic: Traffic, acidx: int, ipagetxt: str = "0") -> Result[None, s
     Returns:
         Result: `Ok(None)` after listing the route, or `Err` when no route exists.
     """
-    # First get the appropriate ac route
     ipage = int(ipagetxt)
     acrte = traffic.ap.route[acidx]
 
@@ -1385,13 +1353,11 @@ def listrte(traffic: Traffic, acidx: int, ipagetxt: str = "0") -> Result[None, s
 
     for i in range(ipage * 7, ipage * 7 + 7):
         if 0 <= i < n_wpt:
-            # Name
             if i == acrte.iactwp:
                 txt = "*" + acrte.wpname[i] + " : "
             else:
                 txt = " " + acrte.wpname[i] + " : "
 
-            # Altitude
             altitude = acrte.wpalt[i]
             if altitude is None:
                 txt += "-----/"
@@ -1401,7 +1367,6 @@ def listrte(traffic: Traffic, acidx: int, ipagetxt: str = "0") -> Result[None, s
             else:
                 txt += str(round(q.m_to_ft(altitude))) + "/"
 
-            # Airspeed
             airspeed = acrte.wpairspeed[i]
             if airspeed is None:
                 txt += "---"
@@ -1422,7 +1387,6 @@ def listrte(traffic: Traffic, acidx: int, ipagetxt: str = "0") -> Result[None, s
             else:  # FLYOVER
                 txt += "[|]"
 
-            # Display message
             traffic.console.echo(txt)
 
     return Ok(None)
@@ -1439,12 +1403,10 @@ def delrte(traffic: Traffic, acidx: int) -> Result[str, str]:
     Args:
         acidx: Aircraft index; may be None when a single aircraft exists.
     """
-    # Simple re-initialize this route as empty
     acid = traffic.callsign[acidx]
     acrte = traffic.ap.route[acidx]
     acrte.__init__(traffic, acid)
 
-    # Also disable LNAV,VNAV if route is deleted
     traffic.swlnav[acidx] = False
     traffic.swvnav[acidx] = False
     traffic.swvnavairspeed[acidx] = False
@@ -1467,7 +1429,6 @@ def delwpt(traffic: Traffic, acidx: int, wpname: str) -> Result[str, str]:
         wpname: Name of the waypoint to delete.
     """
 
-    # Look up waypoint
     acrte = traffic.ap.route[acidx]
     n_wpt = len(acrte.wpname)
 
