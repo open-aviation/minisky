@@ -27,7 +27,6 @@ class APorASAS(TrafficArrays):
     ASAS command is used when the corresponding conflict-resolution channel
     is active, otherwise the autopilot command is used. The desired heading
     is derived from the desired track with a wind-drift correction.
-    Available as [`runtime.traffic.aporasas`][minisky.traffic.aporasas.APorASAS].
     """
 
     def __init__(self, traffic: Traffic) -> None:
@@ -50,9 +49,6 @@ class APorASAS(TrafficArrays):
 
         The desired altitude, speed, heading and track are copied from the
         current traffic state so new aircraft start in steady flight.
-
-        Args:
-            n: Number of aircraft that were appended to the traffic arrays.
         """
         super().create(n)
         self.alt[-n:] = self.traffic.alt[-n:]

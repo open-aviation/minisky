@@ -4,20 +4,19 @@ Classes that derive from TrafficArrays get automated create, delete, and reset
 functionality for all registered child arrays. Replaceable implementations are
 registered explicitly in a runtime before `SELECTIMPL` can use them.
 
-MiniSky stores aircraft state as parallel numpy arrays and lists, where
-index i in every array belongs to the same aircraft. Per-aircraft
-parameters are registered by assigning them inside a
-`with self.settrafarrays():` block (implemented by
-RegisterElementParameters): every list or numpy array created inside the
-block is recorded in _LstVars or _ArrVars, and every nested TrafficArrays
-instance is re-parented to form a tree rooted at the traffic object.
+MiniSky stores aircraft state as parallel NumPy arrays and lists, where
+index i in every array belongs to the same aircraft. Per-aircraft parameters
+are registered inside [`TrafficArrays.settrafarrays`][.TrafficArrays.settrafarrays],
+implemented by [`RegisterElementParameters`][.RegisterElementParameters]. Every
+list or NumPy array created in that context is recorded, and nested
+`TrafficArrays` instances are re-parented into a tree rooted at traffic.
 
-When aircraft are created, `create(n)` appends n default-valued elements
-to every registered list and array; when aircraft are deleted,
-`delete(idx)` removes the corresponding elements from all of them, and
-`reset()` empties everything back to zero aircraft. Each of these
-operations recurses through the tree of children, so all per-aircraft data
-in the simulation grows and shrinks in lockstep.
+When aircraft are created, [`TrafficArrays.create`][.TrafficArrays.create]
+appends default-valued elements to every registered list and array;
+[`TrafficArrays.delete`][.TrafficArrays.delete] removes corresponding rows, and
+[`TrafficArrays.reset`][.TrafficArrays.reset] empties everything back to zero
+aircraft. Each operation recurses through the child tree, so per-aircraft data
+grows and shrinks in lockstep.
 """
 
 from __future__ import annotations
@@ -447,9 +446,6 @@ class TrafficArrays:
         New elements get a default value based on their element type:
         0 for numeric arrays, False for boolean arrays, and an empty
         string for string lists.
-
-        Args:
-            n: Number of aircraft to add (default 1).
         """
 
         for v in self._LstVars:
@@ -496,11 +492,7 @@ class TrafficArrays:
         )
 
     def create_children(self, n: int = 1) -> None:
-        """Call create (aircraft create) recursively on all children.
-
-        Args:
-            n: Number of aircraft to add (default 1).
-        """
+        """Call create (aircraft create) recursively on all children."""
         for child in self._children:
             child.create(n)
             child.create_children(n)
@@ -511,9 +503,6 @@ class TrafficArrays:
         Removes element(s) idx from all registered lists and arrays of
         this object, recursing through its children first, so that all
         per-aircraft data shrinks consistently.
-
-        Args:
-            idx: Index or collection of indices of the aircraft to remove.
         """
         for child in self._children:
             child.delete(idx)

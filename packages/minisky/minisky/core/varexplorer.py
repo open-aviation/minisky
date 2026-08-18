@@ -1,6 +1,6 @@
-"""BlueSky variable explorer
+"""Variable explorer for MiniSky.
 
-Provide flexible access to simulation data in BlueSky.
+Provide flexible access to runtime simulation data.
 
 Data sources (by default the simulation and traffic objects) are
 registered in a runtime-owned variable list, after which any of their
@@ -109,7 +109,7 @@ class VariableExplorer:
             varname: Variable name or dotted object path, with optional index.
 
         Returns:
-            Variable: A Variable wrapper object, or None when not found.
+            None when not found.
         """
         try:
             # Find a string matching 'a.b.c[d]', where everything except a is optional

@@ -30,6 +30,7 @@ from minisky.traffic.asas.resolution import (
     PriorityCode,
     VerticalResolutionMethod,
 )
+from minisky.types import AircraftIndex
 
 _CRUISE_VERTICAL_RATE: q.VerticalRateMps[float] = 0.1
 _HEAD_ON_CPA_FLOOR: q.DistanceM[float] = 10.0
@@ -43,10 +44,10 @@ if TYPE_CHECKING:
 class MVP(ConflictResolution):
     """Conflict resolution using the Modified Voltage Potential Method.
 
-    For each detected conflict pair, [`MVP.MVP`][minisky.traffic.asas.mvp.MVP.MVP] computes a repulsive
+    For each detected conflict pair, [`MVP`][.MVP] computes a repulsive
     velocity-change vector that pushes the closest point of approach out of
     the resolution zone (the protected zone scaled by `resofach` and
-    `resofacv`). [`MVP.resolve`][minisky.traffic.asas.mvp.MVP.resolve] accumulates these vectors for all
+    `resofacv`). [`resolve`][.resolve] accumulates these vectors for all
     conflicts of each aircraft, adds them to the current velocity, and
     converts the result into track, ground speed, vertical speed, and
     altitude advisories, capped to the aircraft performance envelope.
@@ -140,9 +141,7 @@ class MVP(ConflictResolution):
 
     class PriorityResolution(NamedTuple):
         ownship: q.VelocityMps[np.ndarray]
-        """Updated ownship resolution vector [m/s]."""
         intruder: q.VelocityMps[np.ndarray]
-        """Updated intruder resolution vector [m/s]."""
 
     def applyprio(
         self,
@@ -154,17 +153,19 @@ class MVP(ConflictResolution):
     ) -> PriorityResolution:
         """Apply the desired priority setting to the resolution.
 
-        Distributes the pairwise MVP resolution vector over the two aircraft
-        of a conflict according to the selected priority code. Cruising
+        Distributes the pairwise MVP resolution vector (east, north, up) over
+        the two aircraft of a conflict according to the selected priority code.
+        The input vector may be modified in place. Cruising
         aircraft (|vs| < 0.1 m/s) or climbing/descending aircraft get right
         of way depending on the code; the "LAY" codes additionally force
         horizontal-only resolutions by zeroing the vertical component.
 
         Args:
-            dv_mvp (ndarray): Pairwise MVP resolution velocity vector
-                (east, north, up) [m/s]; may be modified in place.
-            dv1 (ndarray): Accumulated resolution vector of aircraft 1 [m/s].
-            dv2 (ndarray): Accumulated resolution vector of aircraft 2 [m/s].
+            dv_mvp: Pairwise resolution velocity ordered east/north/up; may be modified in place.
+            dv1: Accumulated resolution vector for aircraft 1.
+            dv2: Accumulated resolution vector for aircraft 2.
+            vs1: Vertical rate of aircraft 1, used to classify cruise versus climb/descent.
+            vs2: Vertical rate of aircraft 2, used to classify cruise versus climb/descent.
         """
 
         # Primary Free Flight prio rules (no priority)
@@ -228,7 +229,7 @@ class MVP(ConflictResolution):
         """Resolve all current conflicts.
 
         Loops over all detected conflict pairs, computes the MVP resolution
-        vector for each with [`MVP.MVP`][minisky.traffic.asas.mvp.MVP.MVP], and accumulates the vectors per
+        vector for each with [`MVP`][..MVP], and accumulates the vectors per
         aircraft (applying priority rules and the NORESO/RESOOFF opt-outs).
         The summed velocity change is added to the current velocity vector
         and converted back to advisories, honouring the horizontal/vertical
@@ -236,12 +237,6 @@ class MVP(ConflictResolution):
         altitude advisory is chosen such that the aircraft does not climb or
         descend longer than needed if the autopilot level-off altitude also
         resolves the conflict.
-
-        Args:
-            conf: The ConflictDetection instance with the current conflicts.
-            ownship: Traffic object with ownship states.
-            intruder: Traffic object with intruder states.
-
         """
         dv = np.zeros((ownship.ntraf, 3))
 
@@ -348,9 +343,9 @@ class MVP(ConflictResolution):
 
     class MvpResolution(NamedTuple):
         velocity_delta: q.VelocityMps[np.ndarray]
-        """Resolution velocity change, east/north/up [m/s]."""
+        """Resolution velocity change ordered east/north/up."""
         vertical_time: q.DurationS[float]
-        """Time needed to resolve the conflict vertically [s]."""
+        """Time needed to resolve the conflict vertically."""
 
     def MVP(
         self,
@@ -361,8 +356,8 @@ class MVP(ConflictResolution):
         dist: q.DistanceM[float],
         tcpa: q.DurationS[float],
         tLOS: q.DurationS[float],
-        idx1: int,
-        idx2: int,
+        idx1: AircraftIndex,
+        idx2: AircraftIndex,
     ) -> MvpResolution:
         """Modified Voltage Potential (MVP) resolution method.
 
@@ -380,15 +375,15 @@ class MVP(ConflictResolution):
         division by zero.
 
         Args:
-            ownship: Traffic object with ownship states.
-            intruder: Traffic object with intruder states.
-            conf: The ConflictDetection instance (for rpz, hpz, dtlookahead).
-            qdr (float): Bearing from ownship to intruder [deg].
-            dist (float): Current horizontal distance between the pair [m].
-            tcpa (float): Time to closest point of approach [s].
-            tLOS (float): Time until loss of separation starts [s].
-            idx1 (int): Index of the ownship aircraft.
-            idx2 (int): Index of the intruder aircraft.
+            ownship: Traffic view containing the ownship state.
+            intruder: Traffic view containing the intruder state.
+            conf: Detection state providing protected-zone sizes and lookahead.
+            qdr: Bearing from ownship to intruder.
+            dist: Current horizontal separation of the pair.
+            tcpa: Signed time to horizontal closest point of approach.
+            tLOS: Signed time until the combined loss-of-separation interval begins.
+            idx1: Ownship aircraft index.
+            idx2: Intruder aircraft index.
         """
         rpz_m = np.max(conf.rpz[[idx1, idx2]] * self.resofach)
         hpz_m = np.max(conf.hpz[[idx1, idx2]] * self.resofacv)

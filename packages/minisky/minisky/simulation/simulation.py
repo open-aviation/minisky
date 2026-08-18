@@ -150,8 +150,8 @@ class Simulation:
            and rate-capped), on this and on the early-return path.
 
         Returns:
-            bool: False if an awaitable stack command still owns the step
-                boundary, meaning time did not advance; True otherwise.
+            `False` while an awaitable stack command still owns the step boundary,
+            meaning simulation time did not advance; otherwise `True`.
         """
         if self.state == SimulationState.INIT and (
             self.traffic.ntraf > 0 or self.commands.get_scendata().commands
@@ -198,7 +198,7 @@ class Simulation:
 
         Resumes (or starts) advancing simulation time. Also re-anchors the
         system time reference `syst` to the current wall-clock time plus one
-        timestep [s].
+        simulation step.
         """
         self.syst = time.time() + self.simdt
         self.state = SimulationState.OP
@@ -265,18 +265,14 @@ class Simulation:
         Supports two event types: `b"STACK"`, which appends a single stack
         command line to the command stack, and `b"BATCH"`, which resets the
         simulation, installs a full scenario (times + commands) on the stack,
-        and immediately starts operating.
 
         Args:
-            eventname: Event type identifier as bytes (`b"STACK"` or
-                `b"BATCH"`).
-            eventdata: Command text for `STACK`, or typed scenario data for
-                `BATCH`.
-            sender_rte: Route/identifier of the sending client, passed on as
-                the stack command's sender id.
+            eventname: Event tag: `b"STACK"` or `b"BATCH"`.
+            eventdata: Command text for `STACK`, or scenario data for `BATCH`.
+            sender_rte: Sending client route, forwarded as the stack command sender id.
 
         Returns:
-            bool: True if the event was recognized and processed.
+            Whether the event tag was recognized and processed.
         """
         event_processed = False
 
@@ -358,9 +354,6 @@ class Simulation:
 
         Seeds this runtime's Python and NumPy generators so stochastic
         scenario elements are reproducible without affecting other runtimes.
-
-        Args:
-            value: Integer seed value.
         """
         self.python_random.seed(value)
         self.numpy_random.seed(value)

@@ -18,11 +18,23 @@ from minisky import quantities as q
 AircraftTypeCode: TypeAlias = str
 """Aircraft model/type designator used by MiniSky and plugins."""
 
+AircraftCallsign: TypeAlias = str
+"""Aircraft identifier used as a callsign within a simulation runtime."""
+
+AircraftIndex: TypeAlias = int
+"""Index into the traffic arrays for an aircraft."""
+
+RouteWaypointIndex: TypeAlias = int
+"""Index of a waypoint within an aircraft route."""
+
 IcaoAircraftTypeCode: TypeAlias = AircraftTypeCode
 """Uppercase ICAO aircraft type designator used by OpenAP, for example `A320`."""
 
 WaypointReference: TypeAlias = str
 """Stored waypoint source, e.g. `EHAM`, `EHAM/RW18L`, or `52.0,4.0`."""
+
+WaypointIdentifier: TypeAlias = str
+"""Navigation-dataset waypoint identifier, for example `SUGOL`."""
 
 AirportIdentifier: TypeAlias = str
 """Navigation-database airport identifier, commonly a four-letter ICAO code such as `EHAM`."""

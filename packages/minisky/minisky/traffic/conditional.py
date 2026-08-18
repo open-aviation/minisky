@@ -17,7 +17,14 @@ from minisky.command import (
     command,
 )
 from minisky.tools.geo import qdrdist
-from minisky.types import CasMps, LatLonDegrees, Mach, StdPressureAltM
+from minisky.types import (
+    AircraftCallsign,
+    AircraftIndex,
+    CasMps,
+    LatLonDegrees,
+    Mach,
+    StdPressureAltM,
+)
 
 if TYPE_CHECKING:
     from minisky.traffic import Traffic
@@ -27,7 +34,7 @@ if TYPE_CHECKING:
 class AltitudeCondition:
     """Pending crossing of an altitude target."""
 
-    callsign: str
+    callsign: AircraftCallsign
     target: q.PressureAltitudeM[float]
     last_difference: q.VerticalDistanceM[float]
     command: str
@@ -37,7 +44,7 @@ class AltitudeCondition:
 class AirspeedCondition:
     """Pending crossing of an explicit [`CAS` in m/s][minisky.types.CasMps] or [`Mach`][minisky.types.Mach] target."""
 
-    callsign: str
+    callsign: AircraftCallsign
     target: CasMps | Mach
     last_difference: float
     command: str
@@ -47,7 +54,7 @@ class AirspeedCondition:
 class DistanceCondition:
     """Pending crossing of a distance from a geographic reference point."""
 
-    callsign: str
+    callsign: AircraftCallsign
     target: q.DistanceM[float]
     last_difference: q.DistanceM[float]
     command: str
@@ -78,7 +85,7 @@ class Condition:
         """Clear all pending conditional commands."""
         self.conditions.clear()
 
-    def _actual(self, condition: PendingCondition, acidx: int) -> float:
+    def _actual(self, condition: PendingCondition, acidx: AircraftIndex) -> float:
         if isinstance(condition, AltitudeCondition):
             return float(self.traffic.alt[acidx])
         if isinstance(condition, AirspeedCondition):

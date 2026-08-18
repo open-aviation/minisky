@@ -26,8 +26,7 @@ class SurveillanceUncertainty(TrafficArrays):
     """ADS-B model. Implements real-life limitations of ADS-B communication.
 
     Keeps a noisy, periodically refreshed copy of the true aircraft state,
-    representing what surveillance-based systems would observe. Available
-    as [`runtime.traffic.noise`][minisky.traffic.uncertainty.SurveillanceUncertainty].
+    representing what surveillance-based systems would observe.
     """
 
     def __init__(self, traffic: Traffic, get_simulation: Callable[[], Simulation]) -> None:
@@ -66,9 +65,6 @@ class SurveillanceUncertainty(TrafficArrays):
         Copies the true state as the first broadcast and randomizes the
         initial update times so aircraft do not all broadcast in the same
         simulation step.
-
-        Args:
-            n: Number of aircraft appended to the traffic arrays.
         """
         super().create(n)
 

@@ -151,8 +151,7 @@ class HasArea(Protocol):
         lon: q.LongitudeDeg[np.ndarray],
         alt: q.PressureAltitudeM[np.ndarray],
     ) -> np.ndarray:
-        """Return whether points (lat [deg], lon [deg], alt [m]) lie inside
-        this shape's geometry and altitude bounds."""
+        """Return whether points lie inside this shape and its altitude bounds."""
         ...
 
 
@@ -167,9 +166,9 @@ class Line:
 
 class AltitudeBounds(NamedTuple):
     bottom: q.PressureAltitudeM[float] | None
-    """Lower altitude bound [m], or None when unbounded below."""
+    """Lower altitude bound, or `None` when unbounded below."""
     top: q.PressureAltitudeM[float] | None
-    """Upper altitude bound [m], or None when unbounded above."""
+    """Upper altitude bound, or `None` when unbounded above."""
 
 
 def _altitude_bounds(
@@ -194,10 +193,7 @@ def _inside_altitude_bounds(
 
 
 class Box(HasArea):
-    """A lat/lon-aligned box shape.
-
-    Defined by two opposite corner points [deg] and optional altitude bounds [m].
-    """
+    """A lat/lon-aligned box defined by opposite corners and altitude bounds."""
 
     def __init__(
         self,
@@ -218,7 +214,7 @@ class Box(HasArea):
         lon: q.LongitudeDeg[np.ndarray],
         alt: q.PressureAltitudeM[np.ndarray],
     ) -> np.ndarray:
-        """Return whether points (lat [deg], lon [deg], alt [m]) lie inside this box."""
+        """Return whether points lie inside this box and its altitude bounds."""
         return (
             ((self.lat0 <= lat) & (lat <= self.lat1))
             & ((self.lon0 <= lon) & (lon <= self.lon1))
@@ -227,11 +223,7 @@ class Box(HasArea):
 
 
 class Circle(HasArea):
-    """A circle shape.
-
-    Defined by a center position [deg], a radius [m], and optional
-    altitude bounds [m].
-    """
+    """A circle defined by a center, radius, and optional altitude bounds."""
 
     def __init__(
         self,
@@ -250,18 +242,16 @@ class Circle(HasArea):
         lon: q.LongitudeDeg[np.ndarray],
         alt: q.PressureAltitudeM[np.ndarray],
     ) -> np.ndarray:
-        """Return whether points (lat [deg], lon [deg], alt [m]) lie within
-        the circle radius [m] and altitude bounds."""
+        """Return whether points lie within the circle and altitude bounds."""
         distance = kwikdist(self.center.lat, self.center.lon, lat, lon)  # [m]
         return (distance <= self.radius) & _inside_altitude_bounds(alt, self.altitude_bounds)
 
 
 class Poly(HasArea):
-    """A polygon shape.
+    """A polygon with optional altitude bounds.
 
-    Defined by a sequence of lat/lon vertices [deg] and optional altitude
-    bounds [m]. Longitudes are unwrapped before planar Shapely containment;
-    polygons that touch or enclose a pole are rejected.
+    Longitudes are unwrapped before planar Shapely containment; polygons that
+    touch or enclose a pole are rejected.
     """
 
     def __init__(
@@ -293,8 +283,7 @@ class Poly(HasArea):
         lon: q.LongitudeDeg[np.ndarray],
         alt: q.PressureAltitudeM[np.ndarray],
     ) -> np.ndarray:
-        """Return whether points (lat [deg], lon [deg], alt [m]) lie inside
-        the polygon border and altitude bounds."""
+        """Return whether points lie inside the polygon and altitude bounds."""
         unwrapped_lon = lon + 360.0 * np.floor((self._reference_lon - lon + 180.0) / 360.0)
         return shapely.contains_xy(self._geom, lat, unwrapped_lon) & _inside_altitude_bounds(
             alt, self.altitude_bounds

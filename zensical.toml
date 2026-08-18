@@ -107,6 +107,7 @@ merge_init_into_class = true
 separate_signature = true
 show_signature_annotations = true
 signature_crossrefs = true
+relative_crossrefs = true
 # NOTE(abraham): minisky embeds invariants into types (via minisky.quantities, isqx,
 # annotated-types) and so not all mod/class attributes necessarily have docstrings.
 # ask mkdocstrings to show them regardless of whether it is documented.

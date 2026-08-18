@@ -1,17 +1,17 @@
 """Per-tick streaming of simulation state.
 
 Provides a small, transport-agnostic mechanism to push a full snapshot of a
-simulation runtime once per timestep. [`build_snapshot`][] receives the runtime
+simulation runtime once per timestep. [`build_snapshot`][.build_snapshot] receives the runtime
 explicitly and returns a plain, JSON-serialisable dict in **SI units**;
-[`StreamHub`][] fans that snapshot out to any number of awaiting consumers
+[`StreamHub`][.StreamHub] fans that snapshot out to any number of awaiting consumers
 (e.g. WebSocket connections in `minisky.server`).
 
 This is a generic streaming API: it emits raw SI state and takes no position on
 any particular client or wire contract. Unit conversion and field mapping to a
 specific consumer's format happen downstream, in that consumer, not here.
 
-The snapshot shape is defined by the [`Snapshot`][], [`SimInfo`][], and
-[`AcData`][] TypedDicts below.
+The snapshot shape is defined by the [`Snapshot`][.Snapshot], [`SimInfo`][.SimInfo], and
+[`AcData`][.AcData] TypedDicts below.
 
 Units on the wire here are SI: positions in decimal degrees, `alt` in metres,
 speeds (`tas`/`cas`/`gs`) in m/s, `vs` in m/s, `trk` in degrees,
@@ -30,7 +30,7 @@ from typing import TYPE_CHECKING, TypedDict
 import numpy as np
 
 from minisky import quantities as q
-from minisky.types import AircraftTypeCode
+from minisky.types import AircraftCallsign, AircraftTypeCode
 
 if TYPE_CHECKING:
     from minisky.simulation import Runner, Simulation
@@ -58,7 +58,7 @@ class SimInfo(TypedDict):
 class AcData(TypedDict):
     """Per-aircraft snapshot columns (one element per aircraft, SI units)."""
 
-    callsign: list[str]
+    callsign: list[AircraftCallsign]
     lat: list[q.LatitudeDeg[float]]
     lon: list[q.LongitudeDeg[float]]
     alt: list[q.PressureAltitudeM[float]]
@@ -139,8 +139,8 @@ def build_snapshot(
 class StreamHub:
     """Fan-out hub distributing per-tick snapshots to awaiting consumers.
 
-    Each runtime owns a hub. Its simulation calls [`StreamHub.publish_tick`][]
-    once per step; each connected consumer awaits [`StreamHub.wait`][] and then
+    Each runtime owns a hub. Its simulation calls [`publish_tick`][.publish_tick]
+    once per step; each connected consumer awaits [`wait`][.wait] and then
     reads `latest`.
 
     Snapshot construction is skipped entirely when there are no subscribers,
@@ -188,7 +188,7 @@ class StreamHub:
         """Build and publish a snapshot if warranted (called each sim step).
 
         No-op when there are no subscribers or when the rate cap has not yet
-        elapsed, so the cost of [`build_snapshot`][] is only paid when a
+        elapsed, so the cost of [`build_snapshot`][...build_snapshot] is only paid when a
         consumer will actually receive it.
         """
         if self._closed or not self.active or not self._ready():

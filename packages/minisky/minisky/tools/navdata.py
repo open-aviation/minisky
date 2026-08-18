@@ -3,7 +3,7 @@
 Loads waypoint, airport, airway, FIR, and country data from the package
 data directory and provides lookup functions to find navaids and airports
 by identifier or position. Each `MiniSky` runtime owns a Navdatabase at
-[`runtime.navigation`][minisky.tools.navdata.Navdatabase].
+[`runtime.navigation`][.Navdatabase].
 The database backs the DEFWPT stack command and every position
 argument that references a navaid, airport, or runway.
 """
@@ -23,7 +23,7 @@ from minisky import quantities as q
 from minisky.command import Keyword, LatLonDeg, command
 from minisky.result import Err, Ok, Result
 from minisky.tools import geo
-from minisky.types import AirportIdentifier, AirwayIdentifier, RunwayIdentifier
+from minisky.types import AirportIdentifier, AirwayIdentifier, RunwayIdentifier, WaypointIdentifier
 
 _COLOCATED_DISTANCE: q.DistanceM[float] = q.nmi_to_m(1.0)
 
@@ -41,7 +41,7 @@ class AirportSize(IntEnum):
 
 class AirwayConnection(NamedTuple):
     airway: AirwayIdentifier
-    waypoint: str
+    waypoint: WaypointIdentifier
 
 
 class RunwayThreshold(NamedTuple):
@@ -73,15 +73,7 @@ def _tolist(column) -> list:
 
 
 def findall(lst: Sequence[_T], x: _T) -> list[NavigationIndex]:
-    """Find indices of multiple occurences of x in lst.
-
-    Args:
-        lst: List to search.
-        x: Element to find.
-
-    Returns:
-        list: Indices of all occurrences of x in lst.
-    """
+    """Find every occurrence of `x` in `lst`."""
     idx = []
     i = 0
     found = True
@@ -101,7 +93,7 @@ class Navdatabase:
     Navigation database: waypoint, airway, airport, FIR, and country data.
 
     All data are loaded from the package data directory on construction
-    and on reset(). The database is stored as parallel lists, indexed per
+    and on [`reset`][.reset]. The database is stored as parallel lists, indexed per
     waypoint, per airway leg, or per airport.
 
     Created by  : Jacco M. Hoekstra (TU Delft)
@@ -128,7 +120,7 @@ class Navdatabase:
         with (nav_data_path / "runway_thresholds.json").open() as f:
             rwythresholds = json.load(f)
 
-        self.wpid: list[str] = _tolist(wptdata["wpid"])
+        self.wpid: list[WaypointIdentifier] = _tolist(wptdata["wpid"])
         self.wplat: q.LatitudeDeg[np.ndarray] = np.asarray(wptdata["wplat"], dtype=float)  # pyright: ignore[reportGeneralTypeIssues]
         self.wplon: q.LongitudeDeg[np.ndarray] = np.asarray(wptdata["wplon"], dtype=float)  # pyright: ignore[reportGeneralTypeIssues]
         # TODO(abraham): rename this navigation-database category; Route.wptype is a
@@ -142,11 +134,11 @@ class Navdatabase:
         """Navaid frequencies in the source dataset's kHz/MHz convention."""
         self.wpdesc: list[str] = _tolist(wptdata["wpdesc"])
 
-        self.awfromwpid: list[str] = _tolist(awydata["awfromwpid"])
+        self.awfromwpid: list[WaypointIdentifier] = _tolist(awydata["awfromwpid"])
         """Starting waypoint identifier for each airway leg."""
         self.awfromlat: q.LatitudeDeg[np.ndarray] = np.asarray(awydata["awfromlat"], dtype=float)  # pyright: ignore[reportGeneralTypeIssues]
         self.awfromlon: q.LongitudeDeg[np.ndarray] = np.asarray(awydata["awfromlon"], dtype=float)  # pyright: ignore[reportGeneralTypeIssues]
-        self.awtowpid: list[str] = _tolist(awydata["awtowpid"])
+        self.awtowpid: list[WaypointIdentifier] = _tolist(awydata["awtowpid"])
         """Ending waypoint identifier for each airway leg."""
         self.awtolat: q.LatitudeDeg[np.ndarray] = np.asarray(awydata["awtolat"], dtype=float)  # pyright: ignore[reportGeneralTypeIssues]
         self.awtolon: q.LongitudeDeg[np.ndarray] = np.asarray(awydata["awtolon"], dtype=float)  # pyright: ignore[reportGeneralTypeIssues]
@@ -230,7 +222,7 @@ class Navdatabase:
         """Define a scenario-specific waypoint with an explicit waypoint type."""
         return self.defwpt(name, position.lat, position.lon, waypoint_type)
 
-    def describe_waypoint(self, name: str) -> Result[str, str]:
+    def describe_waypoint(self, name: WaypointIdentifier) -> Result[str, str]:
         """Describe a waypoint or report that its name is available."""
         normalized = name.upper()
         if normalized not in self.wpid:
@@ -243,7 +235,7 @@ class Navdatabase:
 
     def defwpt(
         self,
-        name: str,
+        name: WaypointIdentifier,
         lat: q.LatitudeDeg[float],
         lon: q.LongitudeDeg[float],
         waypoint_type: str | None = None,
@@ -266,7 +258,7 @@ class Navdatabase:
 
         return Ok(f"{normalized} added to navdb.")
 
-    def delwpt(self, name: str) -> Result[str, str]:
+    def delwpt(self, name: WaypointIdentifier) -> Result[str, str]:
         """Delete a waypoint from the database.
 
         The last-added occurrence of the name is removed.
@@ -289,16 +281,21 @@ class Navdatabase:
 
         return Ok(name.upper() + " deleted from navdb.")
 
-    def getwpidx(self, txt: str, reference: LatLonReference | None = None) -> WaypointIndex | None:
-        """Get waypoint index to access data.
+    def getwpidx(
+        self, txt: WaypointIdentifier, reference: LatLonReference | None = None
+    ) -> WaypointIndex | None:
+        """Get a waypoint index by identifier.
+
+        When duplicate identifiers exist, `reference` selects the geographically
+        closest occurrence; without a reference, the first occurrence wins.
 
         Args:
-            txt: Waypoint identifier.
-            reference: Optional reference position [deg]; when given, the
-                occurrence closest to it is returned.
+            txt: Navigation-dataset waypoint identifier.
+            reference: When supplied and the identifier occurs more than once,
+                choose the occurrence nearest this position.
 
         Returns:
-            Waypoint index, or None when not found.
+            The selected waypoint index, or `None` when the identifier is absent.
         """
         name = txt.upper()
         try:
@@ -335,7 +332,7 @@ class Navdatabase:
 
     def getwpindices(
         self,
-        txt: str,
+        txt: WaypointIdentifier,
         reference: LatLonReference | None = None,
         crit: q.DistanceM[float] = _COLOCATED_DISTANCE,
     ) -> list[WaypointIndex]:
@@ -343,14 +340,14 @@ class Navdatabase:
 
         Finds the occurrence of the identifier closest to the reference
         position, plus all other occurrences within a distance criterion.
-
         Args:
-            txt: Waypoint identifier.
-            reference: Optional reference position [deg].
-            crit: Co-location distance criterion [m] (default 1 NM).
+            txt: Navigation-dataset waypoint identifier.
+            reference: Reference used to select the primary occurrence when duplicates exist.
+            crit: Maximum distance from that occurrence for additional co-located matches; defaults to 1 NM.
 
         Returns:
-            Waypoint indices, empty when not found.
+            The primary occurrence followed by co-located duplicates,
+            or an empty list when the identifier is absent.
         """
         name = txt.upper()
         try:
@@ -391,14 +388,7 @@ class Navdatabase:
                 return indices
 
     def getaptidx(self, txt: AirportIdentifier) -> AirportIndex | None:
-        """Get the index of an airport by ICAO identifier.
-
-        Args:
-            txt: Airport identifier (e.g. "EHAM").
-
-        Returns:
-            Airport index, or None when not found.
-        """
+        """Get the index of an airport by its navigation-dataset identifier."""
         try:
             return self.aptid.index(txt.upper())
         except ValueError:
@@ -414,15 +404,6 @@ class Navdatabase:
         """Get the index of the entry nearest to a given position.
 
         Uses a fast flat-earth squared-distance comparison.
-
-        Args:
-            wlat: Array of latitudes to search [deg].
-            wlon: Array of longitudes to search [deg].
-            lat: Reference latitude [deg].
-            lon: Reference longitude [deg].
-
-        Returns:
-            int: Index of the nearest entry.
         """
         wlat = np.asarray(wlat)
         wlon = np.asarray(wlon)
@@ -434,11 +415,11 @@ class Navdatabase:
         return int(idx)
 
     def getwpinear(self, lat: q.LatitudeDeg[float], lon: q.LongitudeDeg[float]) -> WaypointIndex:
-        """Get the index of the waypoint closest to position (lat, lon) [deg]."""
+        """Get the waypoint index nearest to the given position."""
         return self.getinear(self.wplat, self.wplon, lat, lon)
 
     def getapinear(self, lat: q.LatitudeDeg[float], lon: q.LongitudeDeg[float]) -> AirportIndex:
-        """Get the index of the airport closest to position (lat, lon) [deg]."""
+        """Get the airport index nearest to the given position."""
         return self.getinear(self.aptlat, self.aptlon, lat, lon)
 
     def getinside(
@@ -450,19 +431,7 @@ class Navdatabase:
         lon0: q.LongitudeDeg[float],
         lon1: q.LongitudeDeg[float],
     ) -> list[NavigationIndex]:
-        """Get indices of positions inside the given lat/lon box.
-
-        Args:
-            wlat: Array of latitudes to filter [deg].
-            wlon: Array of longitudes to filter [deg].
-            lat0: First latitude bound [deg].
-            lat1: Second latitude bound [deg].
-            lon0: First longitude bound [deg].
-            lon1: Second longitude bound [deg].
-
-        Returns:
-            list: Indices of the positions inside the box.
-        """
+        """Get indices of positions inside the given lat/lon box."""
         wlat = np.asarray(wlat)
         wlon = np.asarray(wlon)
         if lat0 < lat1:
@@ -479,7 +448,7 @@ class Navdatabase:
         lon0: q.LongitudeDeg[float],
         lon1: q.LongitudeDeg[float],
     ) -> list[WaypointIndex]:
-        """Get waypoint indices inside the given lat/lon box [deg]."""
+        """Get waypoint indices inside the given lat/lon box."""
         return self.getinside(self.wplat, self.wplon, lat0, lat1, lon0, lon1)
 
     def getapinside(
@@ -489,22 +458,15 @@ class Navdatabase:
         lon0: q.LongitudeDeg[float],
         lon1: q.LongitudeDeg[float],
     ) -> list[AirportIndex]:
-        """Get airport indices inside the given lat/lon box [deg]."""
+        """Get airport indices inside the given lat/lon box."""
         return self.getinside(self.aptlat, self.aptlon, lat0, lat1, lon0, lon1)
 
-    def listairway(self, airwayid: AirwayIdentifier) -> list[list[str]]:
+    def listairway(self, airwayid: AirwayIdentifier) -> list[list[WaypointIdentifier]]:
         """Return the waypoint sequence(s) of an airway.
 
         Collects all legs of the airway and chains them into ordered
         segments of waypoint identifiers; an airway may consist of
-        multiple separate segments.
-
-        Args:
-            airwayid: Airway identifier (e.g. "UL620").
-
-        Returns:
-            list: List of segments, each a list of waypoint identifiers
-            (empty when the airway is not found).
+        multiple separate segments. Missing airways return an empty list.
         """
         awkey = airwayid.upper()
 
@@ -588,20 +550,12 @@ class Navdatabase:
         return airway
 
     def listconnections(
-        self, wpid: str, wplat: q.LatitudeDeg[float], wplon: q.LongitudeDeg[float]
+        self, wpid: WaypointIdentifier, wplat: q.LatitudeDeg[float], wplon: q.LongitudeDeg[float]
     ) -> list[AirwayConnection]:
         """Return the airway legs connecting to a given waypoint.
 
         Only legs whose stored endpoint lies within 10 nm of the given
         position are returned.
-
-        Args:
-            wpid: Waypoint identifier.
-            wplat: Waypoint latitude [deg].
-            wplon: Waypoint longitude [deg].
-
-        Returns:
-            list: List of [airway id, connected waypoint id] pairs.
         """
         connect: list[AirwayConnection] = []
 

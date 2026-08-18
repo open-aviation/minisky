@@ -203,9 +203,6 @@ class ConflictDetection(TrafficArrays):
         Called by the traffic object when aircraft are created. Extends all
         per-aircraft arrays and fills the last `n` elements with the current
         default separation minima and lookahead times.
-
-        Args:
-            n: Number of newly created aircraft.
         """
         super().create(n)
         self.rpz[-n:] = self.rpz_def
@@ -356,14 +353,14 @@ class ConflictDetection(TrafficArrays):
     def update(self, ownship: Traffic, intruder: Traffic) -> None:
         """Perform an update step of the Conflict Detection implementation.
 
-        Runs [`ConflictDetection.detect`][minisky.traffic.asas.detection.ConflictDetection.detect] on the current traffic states and stores its
+        Runs [`detect`][..detect] on the current traffic states and stores its
         results. Also maintains the sets of unique conflict/LoS pairs (where
         (a, b) and (b, a) count as one pair) and appends newly appearing
         pairs to the cumulative `confpairs_all`/`lospairs_all` lists.
 
         Args:
-            ownship: Traffic state used as the ownship side of each candidate pair.
-            intruder: Intruder traffic state; normally the same object, but may be an ADS-B-derived copy.
+            ownship: Traffic view used for the ownship side of candidate pairs.
+            intruder: Traffic view used for the intruder side of candidate pairs.
         """
         if not self.activate:
             return
@@ -404,7 +401,7 @@ class ConflictDetection(TrafficArrays):
         hpz: q.VerticalDistanceM[np.ndarray],
         dtlookahead: q.DurationS[np.ndarray],
     ) -> ConflictDetectionResult:
-        """Conflict detection between ownship (traf) and intruder (traf/adsb).
+        """Detect conflicts between ownship and intruder traffic states.
 
         State-based detection with spatial candidate pruning: a KD-tree on
         flat-earth-projected positions selects the pairs within horizontal
@@ -423,11 +420,11 @@ class ConflictDetection(TrafficArrays):
         differ per aircraft, the largest value of each pair is used.
 
         Args:
-            ownship: Ownship traffic state.
-            intruder: Intruder traffic state, which may come from surveillance.
+            ownship: Traffic view used for the ownship side of each pair.
+            intruder: Traffic view used for the intruder side of each pair.
             rpz: Per-aircraft horizontal separation minimum.
             hpz: Per-aircraft vertical separation minimum.
-            dtlookahead: Per-aircraft conflict lookahead time.
+            dtlookahead: Per-aircraft conflict lookahead horizon.
         """
         ntraf = ownship.ntraf
         if ntraf < 2:

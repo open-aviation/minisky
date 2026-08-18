@@ -97,9 +97,6 @@ class Multicopter(plugin_api.Entity):
 
         Membership follows from the typecode; the body heading starts
         unconstrained (nose follows track) at the default yaw rate.
-
-        Args:
-            n: Number of aircraft appended to the traffic arrays.
         """
         super().create(n)
         self.ismulticopter[-n:] = [
@@ -149,17 +146,16 @@ class Multicopter(plugin_api.Entity):
         """
         self.select_implementations()
 
-    @plugin_api.command
-    def mcopt(self, idx: AcId, flag: OnOff | None = None) -> Result[str, str]:
-        """Toggle multicopter behavior for a configured aircraft type.
-
-        Args:
-            idx: Aircraft callsign.
-            flag: ON/OFF mode; omit to query the current setting.
-        """
+    @plugin_api.command(name="MCOPT")
+    def mcopt_status(self, idx: AcId) -> Result[str, str]:
+        """Report whether multicopter behavior is enabled for an aircraft."""
         callsign = self.traffic.callsign[idx]
-        if flag is None:
-            return Ok(f"MCOPT {callsign}: {'ON' if self.ismulticopter[idx] else 'OFF'}")
+        return Ok(f"MCOPT {callsign}: {'ON' if self.ismulticopter[idx] else 'OFF'}")
+
+    @plugin_api.command(name="MCOPT")
+    def set_mcopt(self, idx: AcId, flag: OnOff) -> Result[str, str]:
+        """Enable or disable multicopter behavior for an aircraft."""
+        callsign = self.traffic.callsign[idx]
         if flag and self.traffic.typecode[idx].upper() not in self.typespecs:
             return Err(f"MCOPT: {callsign} type is not configured as a multicopter")
 
@@ -179,10 +175,6 @@ class Multicopter(plugin_api.Entity):
 
         The velocity vector keeps following the track command from the FMS
         or conflict resolution, so this rotates the aircraft in place.
-
-        Args:
-            idx: Aircraft callsign.
-            hdg: Commanded body heading.
         """
         if not self.ismulticopter[idx]:
             callsign = self.traffic.callsign[idx]
@@ -197,21 +189,19 @@ class Multicopter(plugin_api.Entity):
         return Ok(f"YAW {self.traffic.callsign[idx]}: nose to {resolved_hdg:.0f} deg")
 
     @plugin_api.command(name="YAWRATE")
-    def setyawrate(
+    def yawrate_status(self, idx: AcId) -> Result[str, str]:
+        """Report the maximum yaw rate of a multicopter."""
+        callsign = self.traffic.callsign[idx]
+        return Ok(f"YAWRATE {callsign}: {self.yawrate[idx]:.0f} deg/s")
+
+    @plugin_api.command(name="YAWRATE")
+    def set_yawrate(
         self,
         idx: AcId,
-        yawrate: q.YawRateDegPerS[PositiveFiniteFloat] | None = None,
+        yawrate: q.YawRateDegPerS[PositiveFiniteFloat],
     ) -> Result[str, str]:
-        """Set or report the maximum yaw rate of a multicopter.
-
-        Args:
-            idx: Aircraft callsign.
-            yawrate: Maximum yaw rate; omit to query the current maximum.
-        """
+        """Set the maximum yaw rate of a multicopter."""
         callsign = self.traffic.callsign[idx]
-        if yawrate is None:
-            return Ok(f"YAWRATE {callsign}: {self.yawrate[idx]:.0f} deg/s")
-
         self.yawrate[idx] = yawrate
         return Ok(f"YAWRATE {callsign}: {yawrate:.0f} deg/s")
 
@@ -232,11 +222,6 @@ class Multicopter(plugin_api.Entity):
         re-engaged. Repeating the command while hovering updates the hold
         time and altitude, and a plain ALT command changes the hover
         altitude as well.
-
-        Args:
-            idx: Aircraft callsign.
-            duration: Hold time; omit to hover indefinitely.
-            alt: Hover altitude; omit to hold the current altitude.
         """
         # Deferred import: the autopilot module imports this one.
         from minisky_multicopter.autopilot import MulticopterAutopilot
@@ -248,11 +233,7 @@ class Multicopter(plugin_api.Entity):
 
     @plugin_api.command
     def batt(self, idx: AcId) -> Result[str, str]:
-        """Report the battery state of charge, power draw and endurance.
-
-        Args:
-            idx: Aircraft callsign.
-        """
+        """Report the battery state of charge, power draw and endurance."""
         # Deferred import: the perf module imports this one.
         from minisky_multicopter.perf import MulticopterPerf
 

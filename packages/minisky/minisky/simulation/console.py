@@ -45,8 +45,8 @@ class ConsoleIO:
 
     Simulation code never prints directly, it calls `echo`. Each message goes
     to stdout with a prefix, replaces `output_buffer` until
-    `read_output_buffer` drains it, and reaches every subscriber registered
-    with `subscribe`.
+    [`read_output_buffer`][.read_output_buffer] drains it, and reaches every subscriber registered
+    with [`subscribe`][.subscribe].
     """
 
     prefix: str = "MINISKY:  "
@@ -94,8 +94,8 @@ class ConsoleIO:
         earlier message `read_output_buffer` has not drained yet is lost.
 
         Args:
-            text: Message to echo; each line is printed on its own.
-            flag: Accepted and ignored.
+            text: Message to echo; each line is printed separately.
+            flag: Compatibility argument accepted and ignored.
         """
         del flag
         self.output_buffer.truncate(0)
@@ -122,8 +122,8 @@ class ConsoleIO:
         """Register a callback receiving every future `echo`.
 
         Returns:
-            A subscription; close it, or use it as a context manager, to
-            unregister the callback.
+            A subscription whose `close()` method unregisters the callback;
+            it can also be used as a context manager.
         """
         token = self._next_subscription
         self._next_subscription += 1

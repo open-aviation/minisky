@@ -28,7 +28,7 @@ from minisky.core.trafficarrays import OptionalArray, VariantArray
 from minisky.plugin import AcIdSelection, HeadingDeg
 from minisky.result import Err, Ok, Result
 from minisky.traffic.autopilot import Autopilot
-from minisky.types import AirspeedKind, StdPressureAltM
+from minisky.types import AircraftIndex, AirspeedKind, StdPressureAltM
 
 from minisky_multicopter.entity import get_multicopter
 
@@ -67,9 +67,6 @@ class MulticopterAutopilot(Autopilot):
         New aircraft start with no hover active; new multicopters get
         fly-over waypoints by default (they fly point-to-point, without a
         turn-anticipation arc).
-
-        Args:
-            n: Number of aircraft appended to the traffic arrays.
         """
         super().create(n)
         self.swhover[-n:] = False
@@ -139,10 +136,6 @@ class MulticopterAutopilot(Autopilot):
         it rotates the body without touching the track, and LNAV stays
         engaged — the velocity vector keeps following the FMS or conflict
         resolution. Other aircraft keep the stock behaviour.
-
-        Args:
-            idx: Aircraft selection to update.
-            hdg: Selected heading.
         """
         mc = get_multicopter(self.traffic)
         if mc is None:
@@ -166,7 +159,7 @@ class MulticopterAutopilot(Autopilot):
 
     def hover(
         self,
-        idx: int,
+        idx: AircraftIndex,
         duration: q.DurationS[float] | None = None,
         alt: StdPressureAltM | None = None,
     ) -> Result[str, str]:
@@ -177,7 +170,6 @@ class MulticopterAutopilot(Autopilot):
         autopilot instance being swapped on reset.
 
         Args:
-            idx: Aircraft index.
             duration: Hold time; `None` holds indefinitely.
             alt: Hover altitude; `None` holds the current altitude.
         """
@@ -203,7 +195,7 @@ class MulticopterAutopilot(Autopilot):
             return Ok(f"HOVER {callsign}: holding position (resume with LNAV {callsign} ON)")
         return Ok(f"HOVER {callsign}: holding position for {duration:.0f} s")
 
-    def _suspend_route(self, idx: int) -> None:
+    def _suspend_route(self, idx: AircraftIndex) -> None:
         """Save the route state of one aircraft and command a hover."""
         traf = self.traffic
         self.resume_lnav[idx] = traf.swlnav[idx]

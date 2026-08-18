@@ -1,16 +1,16 @@
-"""Route implementation for the BlueSky FMS.
+"""Route storage, flight-plan calculations, and route commands.
 
-Contains the per-aircraft [`Route`][minisky.traffic.route.Route] class (the flight plan: an ordered
+Contains the per-aircraft [`Route`][.Route] class (the flight plan: an ordered
 list of waypoints with optional altitude, airspeed, RTA and turn constraints)
-plus the route-editing functions used by [`RouteCommands`][minisky.traffic.route.RouteCommands],
+plus the route-editing functions used by [`RouteCommands`][.RouteCommands],
 the runtime-owned command component for ADDWPT, ADDWPTMODE, AFTER, BEFORE,
 AT, DIRECT, RTA, LISTRTE, DELRTE and DELWPT.
 
 The route itself is passive data with flight-plan pre-calculations
-(calcfp()); the actual guidance along the route is performed by
+([`calcfp`][.Route.calcfp]); the actual guidance along the route is performed by
 [`Autopilot`][minisky.traffic.autopilot.Autopilot], which pulls waypoint data
 into the vectorized [`ActiveWaypoint`][minisky.traffic.activewpdata.ActiveWaypoint]
-arrays via getnextwp()/getnextturnwp().
+arrays via [`getnextwp`][.Route.getnextwp] and [`getnextturnwp`][.Route.getnextturnwp].
 """
 
 from __future__ import annotations
@@ -54,13 +54,15 @@ from minisky.tools.aero import cas2tas, g0, mach2tas, vcas2tas
 from minisky.tools.convert import degto180
 from minisky.tools.position import AirportPosition, NavaidPosition, ResolvedRunwayPosition, txt2pos
 from minisky.types import (
+    AircraftCallsign,
+    AircraftIndex,
     CasMps,
     LatLonDegrees,
     Mach,
     OptionalAirspeedKind,
+    RouteWaypointIndex,
     RunwayIdentifier,
     StdPressureAltM,
-    WaypointReference,
 )
 
 if TYPE_CHECKING:
@@ -93,6 +95,8 @@ class TurnHeadingRate(NamedTuple):
 
 
 TurnGeometry: TypeAlias = TurnRadius | TurnHeadingRate
+RouteWaypointName: TypeAlias = str
+"""Name assigned to a waypoint within one aircraft route."""
 
 
 class TurnParameters(NamedTuple):
@@ -104,7 +108,7 @@ class NextTurn(NamedTuple):
     latitude: q.LatitudeDeg[float]
     longitude: q.LongitudeDeg[float]
     turn: TurnParameters
-    waypoint_index: int
+    waypoint_index: RouteWaypointIndex
 
 
 class AltitudeTarget(NamedTuple):
@@ -131,8 +135,7 @@ class Route:
     A Route is an ordered list of waypoints, each with an optional altitude
     constraint, airspeed constraint, required time of arrival (RTA), turn
     specification (fly-by/fly-over/fly-turn with radius, [`CAS` in m/s][minisky.types.CasMps]
-    or heading rate) and stack commands to execute when the waypoint is passed. One
-    Route object is kept per aircraft in [`runtime.traffic.ap.route`][minisky.traffic.route.Route].
+    or heading rate) and stack commands to execute when the waypoint is passed.
 
     Waypoints from the navigation database are resolved to the entry
     closest to the given lat/lon. For plain lat/lon waypoints the aircraft
@@ -141,14 +144,14 @@ class Route:
     Created by: Jacco M. Hoekstra
     """
 
-    def __init__(self, traffic: Traffic, acid: str) -> None:
+    def __init__(self, traffic: Traffic, callsign: AircraftCallsign) -> None:
         # NOTE(abraham): does Route really need the entire Traffic object?
         self.traffic = traffic
         self.navigation = traffic.navigation
-        self.acid = acid
+        self.callsign = callsign
 
         # TODO(abraham): instead of forcefully adopting SoA maybe we should just use Waypoint record
-        self.wpname: list[WaypointReference] = []
+        self.wpname: list[RouteWaypointName] = []
         self.wptype: list[WaypointType] = []
         self.wplat: list[q.LatitudeDeg[float]] = []  # pyright: ignore[reportGeneralTypeIssues]
         self.wplon: list[q.LongitudeDeg[float]] = []  # pyright: ignore[reportGeneralTypeIssues]
@@ -164,7 +167,7 @@ class Route:
         self.wpturn: list[TurnParameters | None] = []
         """Optional explicit fly-turn parameters for each waypoint."""
 
-        self.iactwp: int | None = None
+        self.iactwp: RouteWaypointIndex | None = None
         """Index of the active waypoint, or `None` when no waypoint is active."""
 
         # TODO(abraham): replace swflyby/swflyturn plus per-waypoint flags with one
@@ -192,8 +195,8 @@ class Route:
 
     def insert_wpt_data(
         self,
-        wpidx: int,
-        wpname: str,
+        wpidx: RouteWaypointIndex,
+        wpname: RouteWaypointName,
         wplat: q.LatitudeDeg[float],
         wplon: q.LongitudeDeg[float],
         wptype: WaypointType,
@@ -205,14 +208,6 @@ class Route:
         All per-waypoint lists are updated consistently; the current default
         fly-by/fly-turn mode and turn parameters of the route are applied to
         the new waypoint, and no RTA is set.
-
-        Args:
-            wpidx: List index at which to insert the waypoint.
-            wpname: Waypoint name.
-            wptype: Waypoint type.
-            wpalt: Optional altitude constraint.
-            wpairspeed: Optional explicit [`CAS` in m/s][minisky.types.CasMps]
-                or [`Mach`][minisky.types.Mach] constraint.
         """
 
         self.wpname.insert(wpidx, wpname)
@@ -228,16 +223,16 @@ class Route:
 
     def add_waypoint(
         self,
-        iac: int,
+        iac: AircraftIndex,
         name: str,
         wptype: WaypointType,
         lat: q.LatitudeDeg[float],
         lon: q.LongitudeDeg[float],
         alt: q.PressureAltitudeM[float] | None = None,
         airspeed: CasMps | Mach | None = None,
-        afterwp: str = "",
-        beforewp: str = "",
-    ) -> int | None:
+        afterwp: RouteWaypointName = "",
+        beforewp: RouteWaypointName = "",
+    ) -> RouteWaypointIndex | None:
         """Add a waypoint to the route and update the flight plan.
 
         Handles all waypoint types: origin/destination airports (placed at
@@ -246,21 +241,9 @@ class Route:
         position), runways and plain lat/lon waypoints. The insertion point
         can be steered with afterwp/beforewp; by default waypoints are
         appended just before the destination. Afterwards the flight-plan
-        tables are recalculated (calcfp()) and, when a waypoint is active,
-        the guidance towards it is refreshed.
-
-        Args:
-            iac: Aircraft index.
-            name: Waypoint name, or callsign for a lat/lon waypoint.
-            wptype: Waypoint type.
-            alt: Optional altitude constraint.
-            airspeed: Optional explicit [`CAS` in m/s][minisky.types.CasMps]
-                or [`Mach`][minisky.types.Mach] constraint.
-            afterwp: Optional waypoint after which to insert.
-            beforewp: Optional waypoint before which to insert.
-
-        Returns:
-            Index of the added waypoint, or `None` on failure.
+        tables are recalculated ([`calcfp`][..calcfp]) and, when a waypoint is active,
+        the guidance towards it is refreshed. Returns `None` when the waypoint
+        cannot be resolved or inserted.
         """
 
         n_wpt = len(self.wplat)
@@ -397,7 +380,7 @@ class Route:
         """Guidance state produced when a route activates its next waypoint."""
 
         position: LatLonDegrees
-        """Active waypoint position [deg]."""
+        """Active waypoint position."""
         airspeed: CasMps | Mach | None
         """Optional [`CAS` in m/s][minisky.types.CasMps] or [`Mach`][minisky.types.Mach] constraint."""
         profile: RouteProfile
@@ -450,13 +433,13 @@ class Route:
 
             wphdg = self.navigation.rwythresholds[name[:4]][rwykey][2]
 
-            self.traffic.stack_command("HDG " + str(self.acid) + " " + str(wphdg))
+            self.traffic.stack_command("HDG " + str(self.callsign) + " " + str(wphdg))
 
             self.traffic.stack_command(
-                "DELAY " + "10 " + "SPD " + str(self.acid) + " " + "10KT[CAS]"
+                "DELAY " + "10 " + "SPD " + str(self.callsign) + " " + "10KT[CAS]"
             )
 
-            self.traffic.stack_command("DELAY " + "42 " + "DEL " + str(self.acid))
+            self.traffic.stack_command("DELAY " + "42 " + "DEL " + str(self.callsign))
 
             return self.WaypointTransition(
                 LatLonDegrees(self.wplat[active_idx], self.wplon[active_idx]),
@@ -520,7 +503,7 @@ class Route:
         for cmdline in self.wpstack[active_idx]:
             self.traffic.stack_command(cmdline)
 
-    def insertcalcwp(self, i: int, name: str) -> None:
+    def insertcalcwp(self, i: RouteWaypointIndex, name: RouteWaypointName) -> None:
         """Insert an empty calculated waypoint (T/C, T/D) at location i."""
 
         self.wpname.insert(i, name)
@@ -573,7 +556,7 @@ class Route:
         # Also add "from direction" as to directions so no need to shift for actwpdata
         # direction to will be overwritten in actwpdata in case of a direct to
         # Add current pos to first waypoint as default value for direction to 1st waypoint
-        iac = self.traffic.callsign.index(self.acid)
+        iac = self.traffic.callsign.index(self.callsign)
         qdr, _dist = geo.qdrdist(
             self.traffic.lat[iac], self.traffic.lon[iac], self.wplat[0], self.wplon[0]
         )
@@ -640,7 +623,7 @@ class Route:
 
             self.wpprofile[i] = self.wpprofile[i]._replace(rta=rta_target)
 
-    def findact(self, i: int) -> int | None:
+    def findact(self, i: AircraftIndex) -> RouteWaypointIndex | None:
         """Find the best default active waypoint for an aircraft.
 
         Called when LNAV is (re-)engaged. Selects the waypoint closest to
@@ -648,13 +631,6 @@ class Route:
         to the next waypoint when the closest one cannot be reached with
         the required heading change (turn time exceeds straight flight
         time).
-
-        Args:
-            i: Aircraft index.
-
-        Returns:
-            Index of the suggested active waypoint in this route, or None
-            for an empty route.
         """
 
         n_wpt = len(self.wpname)
@@ -702,7 +678,7 @@ class Route:
         return None
 
     def getnextqdr(self) -> q.BearingDeg[float] | None:
-        """Return the bearing of the leg after the active waypoint [deg]."""
+        """Return the bearing of the leg after the active waypoint."""
         if (active_idx := self.iactwp) is None:
             return None
         if (next_leg := self.getnextleg()) is None:
@@ -716,7 +692,12 @@ class Route:
         return float(nextqdr)
 
 
-def get_available_name(data: list, name_: str, callsigns: list[str], len_: int = 2) -> str:
+def get_available_name(
+    data: list[RouteWaypointName],
+    name_: str,
+    callsigns: list[AircraftCallsign],
+    len_: int = 2,
+) -> RouteWaypointName:
     """Make a waypoint name unique by appending a zero-padded number.
 
     Checks if the name already exists in the given list (or matches an
@@ -724,12 +705,10 @@ def get_available_name(data: list, name_: str, callsigns: list[str], len_: int =
     (01, 02, 03, ...) until the name is unique.
 
     Args:
-        data: Existing names (e.g. the wpname list of a route).
+        data: Names that are already in use.
         name_: Requested base name.
-        len_: Number of digits of the appended counter (default 2).
-
-    Returns:
-        str: A name that does not yet occur in data.
+        callsigns: Aircraft callsigns that the generated name must also avoid.
+        len_: Width of the zero-padded numeric suffix.
     """
     appi = 0  # appended integer to name starts at zero (=nothing)
     # Use Python 3 formatting syntax: "{:03d}".format(7) => "007"
@@ -820,7 +799,7 @@ def _parse_runway(
 RunwayArg = Annotated[RunwayPosition, CmdParser(_parse_runway)]
 
 
-def _waypoint_mode_status(traffic: Traffic, acidx: int) -> Result[str, str]:
+def _waypoint_mode_status(traffic: Traffic, acidx: AircraftIndex) -> Result[str, str]:
     acrte = traffic.ap.route[acidx]
     if acrte.swflyturn:
         mode = "FLYTURN"
@@ -831,7 +810,9 @@ def _waypoint_mode_status(traffic: Traffic, acidx: int) -> Result[str, str]:
     return Ok(f"Current ADDWPT mode is {mode}.")
 
 
-def _set_waypoint_mode(traffic: Traffic, acidx: int, mode: WaypointMode) -> Result[str, str]:
+def _set_waypoint_mode(
+    traffic: Traffic, acidx: AircraftIndex, mode: WaypointMode
+) -> Result[str, str]:
     """Set fly-by/fly-over/fly-turn behavior for newly added route waypoints."""
     acrte = traffic.ap.route[acidx]
     acrte.swflyby = mode is WaypointMode.FLYBY
@@ -840,7 +821,7 @@ def _set_waypoint_mode(traffic: Traffic, acidx: int, mode: WaypointMode) -> Resu
 
 
 def _set_turn_radius(
-    traffic: Traffic, acidx: int, value: TurnRadiusMArg | None
+    traffic: Traffic, acidx: AircraftIndex, value: TurnRadiusMArg | None
 ) -> Result[str, str]:
     acrte = traffic.ap.route[acidx]
     geometry = acrte.turn.geometry
@@ -854,7 +835,7 @@ def _set_turn_radius(
     return Ok("")
 
 
-def _set_turn_cas(traffic: Traffic, acidx: int, value: CasMps | None) -> Result[str, str]:
+def _set_turn_cas(traffic: Traffic, acidx: AircraftIndex, value: CasMps | None) -> Result[str, str]:
     acrte = traffic.ap.route[acidx]
     acrte.turn = acrte.turn._replace(cas=None if value is None else value.value)
     acrte.swflyby = False
@@ -863,7 +844,7 @@ def _set_turn_cas(traffic: Traffic, acidx: int, value: CasMps | None) -> Result[
 
 
 def _set_turn_heading_rate(
-    traffic: Traffic, acidx: int, value: TurnHeadingRateArg | None
+    traffic: Traffic, acidx: AircraftIndex, value: TurnHeadingRateArg | None
 ) -> Result[str, str]:
     acrte = traffic.ap.route[acidx]
     geometry = acrte.turn.geometry
@@ -878,7 +859,7 @@ def _set_turn_heading_rate(
 
 
 def _clear_turn_parameter(
-    traffic: Traffic, acidx: int, parameter: TurnParameter
+    traffic: Traffic, acidx: AircraftIndex, parameter: TurnParameter
 ) -> Result[str, str]:
     if parameter is TurnParameter.RADIUS:
         return _set_turn_radius(traffic, acidx, None)
@@ -888,7 +869,7 @@ def _clear_turn_parameter(
 
 
 def _add_takeoff_waypoint(
-    traffic: Traffic, acidx: int, runway: RunwayPosition | None = None
+    traffic: Traffic, acidx: AircraftIndex, runway: RunwayPosition | None = None
 ) -> Result[str, str]:
     callsign = traffic.callsign[acidx]
     acrte = traffic.ap.route[acidx]
@@ -940,7 +921,7 @@ def _add_takeoff_waypoint(
 
 def _add_route_waypoint(
     traffic: Traffic,
-    acidx: int,
+    acidx: AircraftIndex,
     waypoint: Wpt,
     altitude: StdPressureAltM | None = None,
     airspeed: CasMps | Mach | None = None,
@@ -1086,12 +1067,13 @@ AtConstraintsArg = Annotated[
 
 @dataclass(frozen=True, slots=True)
 class _AtWaypoint:
-    acid: str
     route: Route
-    index: int
+    index: RouteWaypointIndex
 
 
-def _route_waypoint_index(traffic: Traffic, acidx: int, wpname: str) -> Result[int, str]:
+def _route_waypoint_index(
+    traffic: Traffic, acidx: AircraftIndex, wpname: RouteWaypointName
+) -> Result[RouteWaypointIndex, str]:
     route = traffic.ap.route[acidx]
     try:
         return Ok(route.wpname.index(wpname.upper()))
@@ -1099,20 +1081,26 @@ def _route_waypoint_index(traffic: Traffic, acidx: int, wpname: str) -> Result[i
         return Err(f"Waypoint {wpname} not found in the route of {traffic.callsign[acidx]}")
 
 
-def _at_waypoint(traffic: Traffic, acidx: int, atwp: str) -> Result[_AtWaypoint, str]:
+def _at_waypoint(
+    traffic: Traffic, acidx: AircraftIndex, atwp: RouteWaypointName
+) -> Result[_AtWaypoint, str]:
     if isinstance(index := _route_waypoint_index(traffic, acidx, atwp), Err):
         return index
-    return Ok(_AtWaypoint(traffic.callsign[acidx], traffic.ap.route[acidx], index.ok()))
+    return Ok(_AtWaypoint(traffic.ap.route[acidx], index.ok()))
 
 
-def _finish_at_mutation(traffic: Traffic, acidx: int, target: _AtWaypoint) -> Result[str, str]:
+def _finish_at_mutation(
+    traffic: Traffic, acidx: AircraftIndex, target: _AtWaypoint
+) -> Result[str, str]:
     target.route.calcfp()
     if (active_idx := target.route.iactwp) is not None:
         direct(traffic, acidx, target.route.wpname[active_idx])
     return Ok("")
 
 
-def _format_at_query(acrte: Route, wpidx: int, atwp: str, query: AtQuery) -> str:
+def _format_at_query(
+    acrte: Route, wpidx: RouteWaypointIndex, atwp: RouteWaypointName, query: AtQuery
+) -> str:
     show_altitude = query in {AtQuery.ALL, AtQuery.ALTITUDE}
     show_airspeed = query in {AtQuery.ALL, AtQuery.AIRSPEED}
     show_stack = query in {AtQuery.ALL, AtQuery.STACK}
@@ -1151,7 +1139,7 @@ def _format_at_query(acrte: Route, wpidx: int, atwp: str, query: AtQuery) -> str
     return text
 
 
-def direct(traffic: Traffic, acidx: int, wpname: str) -> bool:
+def direct(traffic: Traffic, acidx: AircraftIndex, wpname: RouteWaypointName) -> bool:
     """Go direct to a specified waypoint in the route.
 
     Implements the DIRECT stack command: `DIRECT acid wpname`. Makes the
@@ -1160,13 +1148,6 @@ def direct(traffic: Traffic, acidx: int, wpname: str) -> bool:
     recalculates the flight plan and the VNAV profile, sets the next-leg
     airspeed from any airspeed constraint, computes the turn distance for the
     new leg, and engages LNAV.
-
-    Args:
-        acidx: Aircraft index.
-        wpname: Name of the waypoint in the route to fly direct to.
-
-    Returns:
-        bool: True on success.
     """
     # TODO(abraham): this is a giant cross-object transaction, mutating Route,
     # ActiveWaypoint, Autopilot and Traffic. make things pure.
@@ -1298,21 +1279,13 @@ def direct(traffic: Traffic, acidx: int, wpname: str) -> bool:
 
 
 def set_rta(
-    traffic: Traffic, acidx: int, wpname: str, time: SimTimeS
+    traffic: Traffic, acidx: AircraftIndex, wpname: RouteWaypointName, time: SimTimeS
 ) -> bool:  # all arguments of setRTA
     """Set a required time of arrival (RTA) at a route waypoint.
 
     Implements the RTA stack command: `RTA acid, wpname, time`. The RTA
     is stored with the waypoint and the guidance to the active waypoint is
     recomputed so the autopilot can adjust its airspeed schedule.
-
-    Args:
-        acidx: Aircraft index.
-        wpname: Name of the waypoint in the route.
-        time: Required time of arrival as simulation time [s].
-
-    Returns:
-        bool: True on success.
     """
     traffic.callsign[acidx]
     acrte = traffic.ap.route[acidx]
@@ -1326,7 +1299,7 @@ def set_rta(
     return True
 
 
-def listrte(traffic: Traffic, acidx: int, ipagetxt: str = "0") -> Result[None, str]:
+def listrte(traffic: Traffic, acidx: AircraftIndex, ipagetxt: str = "0") -> Result[None, str]:
     """Show the route of an aircraft in the console, page by page.
 
     Implements the LISTRTE stack command: `LISTRTE acid, [pagenr]`.
@@ -1335,13 +1308,6 @@ def listrte(traffic: Traffic, acidx: int, ipagetxt: str = "0") -> Result[None, s
     ([`CAS` in m/s][minisky.types.CasMps] or [`Mach`][minisky.types.Mach]) and
     type ([orig], [dest], [C] fly-by, [|] fly-over, [U] fly-turn). Seven
     waypoints are shown per page.
-
-    Args:
-        acidx: Aircraft index.
-        ipagetxt: Page number as text (default "0").
-
-    Returns:
-        Result: `Ok(None)` after listing the route, or `Err` when no route exists.
     """
     ipage = int(ipagetxt)
     acrte = traffic.ap.route[acidx]
@@ -1392,20 +1358,18 @@ def listrte(traffic: Traffic, acidx: int, ipagetxt: str = "0") -> Result[None, s
     return Ok(None)
 
 
-def delrte(traffic: Traffic, acidx: int) -> Result[str, str]:
+def delrte(traffic: Traffic, acidx: AircraftIndex) -> Result[str, str]:
     """Delete the complete route (including origin/destination) of an
     aircraft.
 
     Implements the DELRTE stack command: `DELRTE acid`. The route is
-    re-initialized empty and LNAV/VNAV are disengaged. When no callsign is
-    given and an aircraft exists, that aircraft is used.
-
-    Args:
-        acidx: Aircraft index; may be None when a single aircraft exists.
+    re-initialized empty and LNAV/VNAV are disengaged.
     """
-    acid = traffic.callsign[acidx]
+    callsign = traffic.callsign[acidx]
     acrte = traffic.ap.route[acidx]
-    acrte.__init__(traffic, acid)
+    # TODO(abraham): don't reset an existing Route by calling __init__ directly;
+    # give route state an explicit clear/reset operation.
+    acrte.__init__(traffic, callsign)
 
     traffic.swlnav[acidx] = False
     traffic.swvnav[acidx] = False
@@ -1416,17 +1380,13 @@ def delrte(traffic: Traffic, acidx: int) -> Result[str, str]:
     return Ok("")
 
 
-def delwpt(traffic: Traffic, acidx: int, wpname: str) -> Result[str, str]:
+def delwpt(traffic: Traffic, acidx: AircraftIndex, wpname: RouteWaypointName) -> Result[str, str]:
     """Delete a single waypoint from the route of an aircraft.
 
     Implements the DELWPT stack command: `DELWPT acid, wpname`. When the
     deleted waypoint is the active one (and not the last), guidance is
     redirected to the following waypoint. LNAV/VNAV are disengaged when
     the route becomes empty.
-
-    Args:
-        acidx: Aircraft index.
-        wpname: Name of the waypoint to delete.
     """
 
     acrte = traffic.ap.route[acidx]

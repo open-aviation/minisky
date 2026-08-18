@@ -1,12 +1,12 @@
-"""Simulate wind in BlueSky.
+"""Wind-field storage and interpolation for MiniSky.
 
 Implements a wind field defined by wind vectors at arbitrary lat/lon
 positions, optionally with altitude profiles. The field is interpolated
 (inverse-distance weighting horizontally, linear in altitude) to obtain
-the wind at any aircraft position. [`Windfield`][] contains the field
-data and interpolation; [`Wind`][] adds the stack-command interface
+the wind at any aircraft position. [`Windfield`][.Windfield] contains the field
+data and interpolation; [`Wind`][.Wind] adds the stack-command interface
 (WIND to define wind, GETWIND to query it) and is available at runtime as
-[`runtime.traffic.wind`][minisky.traffic.wind.Wind]. The traffic model uses the wind to compute ground
+[`runtime.traffic.wind`][.Wind]. The traffic model uses the wind to compute ground
 speed and track from heading and airspeed.
 """
 
@@ -110,15 +110,16 @@ class Windfield:
     ) -> None:
         """Add wind vectors given as north/east speed components.
 
-        Vectorized alternative to addpoint() for defining many wind points
+        Vectorized alternative to [`addpoint`][..addpoint] for defining many wind points
         at once. When altitudes are given, a scipy interpolator over
         (altitude, lat, lon) is set up for regular grids; otherwise the
-        profiles are resampled onto the fixed altitude axis.
+        profiles are resampled onto the fixed altitude axis. With a profile,
+        north/east component arrays are altitude-by-position and share shape.
 
         Args:
-            vnorth: North component; altitude-by-position when `windalt` is given.
-            veast: East component with the same shape as `vnorth`.
-            windalt: Optional profile altitudes corresponding to component-array rows.
+            vnorth: North components; with a profile, rows correspond to `windalt` and columns to positions.
+            veast: East components with the same shape as `vnorth`.
+            windalt: Optional altitude levels corresponding to component-array rows.
         """
         has_profile = windalt is not None and len(windalt) > 1
         if has_profile:
@@ -197,15 +198,16 @@ class Windfield:
         The wind is converted to north/east components and stored on the
         fixed altitude axis. When an altitude array is given, the wind
         profile is interpolated onto that axis and the field becomes 3D
-        (altitude dependent).
+        (altitude dependent). Returns the stored point index accepted by
+        [`remove`][..remove].
 
         Args:
-            winddir: Direction the wind comes from; an array for an altitude profile.
+            winddir: Direction the wind comes from; an array when defining an altitude profile.
             windspd: Wind speed with the same dimensionality as `winddir`.
-            windalt: Optional altitudes defining the profile at this position.
+            windalt: Optional altitude levels for the profile.
 
         Returns:
-            Index of the added wind point, suitable for `remove()`.
+            Index of the added wind point, suitable for [`remove`][..remove].
         """
 
         # If scalar, copy into table for altitude axis
@@ -244,7 +246,9 @@ class Windfield:
 
         return idx
 
-    # TODO: break this down and cleanup so its easier to follow
+    # TODO(abraham): split interpolation by field kind and return a named wind
+    # vector instead of a shape-polymorphic positional tuple; the current
+    # scalar/list/array and 2D/3D branches are difficult to reason about.
     def getdata(
         self,
         userlat: q.LatitudeDeg,
@@ -259,15 +263,16 @@ class Windfield:
         points horizontally, and linear interpolation along the altitude
         axis for 3D fields. Constant and empty fields are handled as
         special cases. When no altitude is given for a 3D field, sea-level
-        wind is returned.
+        wind is returned. North/east outputs preserve the query positions'
+        scalar/list/array container shape.
 
         Args:
-            userlat: Scalar, list, or ndarray of query latitudes.
+            userlat: Scalar, list, or array of query latitudes.
             userlon: Query longitudes with the same shape as `userlat`.
             useralt: Query altitudes; defaults to sea level.
 
         Returns:
-            North/east wind components with the same container shape as the query positions.
+            North/east wind components preserving the query positions' scalar/list/array container shape.
         """
         eps = 1e-20  # [m2] to avoid divison by zero for using exact same points
 
@@ -359,7 +364,7 @@ class Windfield:
         """Remove a wind definition point by index.
 
         Args:
-            idx: Point index returned by `addpoint()`.
+            idx: Point index returned by [`addpoint`][..addpoint].
         """
         if idx < len(self.lat):
             self.lat = np.delete(self.lat, idx)
@@ -426,9 +431,8 @@ WindLevelArg = Annotated[
 class Wind(TrafficArrays, Windfield):
     """Wind field with the stack-command interface of the simulation.
 
-    Combines the [`Windfield`][minisky.traffic.wind.Windfield] data and interpolation with the
+    Combines the [`Windfield`][..Windfield] data and interpolation with the
     TrafficArrays machinery so the field is cleared on simulation reset.
-    Available at runtime as [`runtime.traffic.wind`][minisky.traffic.wind.Wind].
     """
 
     @command(name="WIND")

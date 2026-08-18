@@ -1,7 +1,7 @@
 """OpenAP-based aircraft performance model.
 
-This module provides [`OpenAP`][minisky.traffic.performance.perfoap.OpenAP], the aircraft performance implementation
-used by the MiniSky traffic object ([`runtime.traffic.perf`][minisky.traffic.performance.perfoap.OpenAP]). It combines the
+This module provides [`OpenAP`][.OpenAP], the aircraft performance implementation
+used by the MiniSky traffic object ([`runtime.traffic.perf`][.OpenAP]). It combines the
 coefficient database (`coeff`), flight-phase logic (`phase`), and the
 empirical thrust/fuel-flow models (`thrust`) into per-aircraft vectorised
 computations of drag, thrust, fuel flow, and kinematic envelope limits. All
@@ -19,6 +19,7 @@ from minisky.command import AcId, command
 from minisky.core.trafficarrays import TrafficArrays
 from minisky.result import Ok, Result
 from minisky.tools import aero
+from minisky.types import AircraftIndex
 
 from . import coeff, thrust
 from . import phase as ph
@@ -124,10 +125,10 @@ class OpenAP(TrafficArrays):
         (simpler) rotor envelope; unknown fixed-wing types default to B744.
 
         Args:
-            n: Number of newly created aircraft; the batch is assumed to share
-                the typecode of the last created aircraft.
+            n: Number of appended aircraft. The current implementation assumes the whole batch shares the final aircraft's typecode.
         """
-        # cautious! considering multiple created aircraft with same type
+        # TODO(abraham): create(n) assumes the whole appended batch has the typecode
+        # of the final aircraft. make batch creation carry per-row type information.
         super().create(n)
 
         actype = self.traffic.typecode[-1].upper()
@@ -230,7 +231,6 @@ class OpenAP(TrafficArrays):
         - net thrust as drag plus mass times current acceleration;
         - fuel flow from the quadratic ICAO fuel-flow fit;
         - maximum acceleration and phase-dependent maximum bank angle.
-
         """
         self.phase = ph.get(self.lifttype, self.traffic.vs, self.traffic.alt)
 
@@ -319,11 +319,8 @@ class OpenAP(TrafficArrays):
 
     class PerformanceLimits(NamedTuple):
         tas: q.TrueAirspeedMps[np.ndarray]
-        """Allowed true airspeed [m/s]."""
         vertical_speed: q.VerticalRateMps[np.ndarray]
-        """Allowed vertical speed [m/s]."""
         altitude: q.PressureAltitudeM[np.ndarray]
-        """Allowed altitude [m]."""
 
     def limits(
         self,
@@ -332,7 +329,7 @@ class OpenAP(TrafficArrays):
         intent_h: q.PressureAltitudeM[np.ndarray],
         ax: q.AccelerationMps2[np.ndarray],
     ) -> PerformanceLimits:
-        """apply limits on indent speed, vertical speed, and altitude (called in pilot module)
+        """Apply the aircraft performance envelope to commanded state.
 
         Clips the intended state to the aircraft flight envelope: altitude to
         the ceiling, speed to the CAS limits of the current flight phase and
@@ -340,12 +337,6 @@ class OpenAP(TrafficArrays):
         limits (reduced when simultaneously accelerating). Aircraft on the
         ground below their takeoff speed get zero vertical speed. Rotorcraft
         speed limits are applied directly on TAS.
-
-        Args:
-            intent_v_tas: Intended true airspeed.
-            intent_vs: Intended vertical speed.
-            intent_h: Intended altitude.
-            ax: Current longitudinal acceleration.
         """
         allow_h = np.where(intent_h > self.hmax, self.hmax, intent_h)
 
@@ -392,15 +383,17 @@ class OpenAP(TrafficArrays):
         minimum_vertical_speed: q.VerticalRateMps
         maximum_vertical_speed: q.VerticalRateMps
 
-    def currentlimits(self, idx: int | np.ndarray | None = None) -> CurrentPerformanceLimits:
-        """Get current kinematic performance envelop.
+    def currentlimits(
+        self, idx: AircraftIndex | np.ndarray | None = None
+    ) -> CurrentPerformanceLimits:
+        """Get the current kinematic performance envelope.
 
         Converts the phase-dependent CAS limits to TAS at the current
         altitude; the maximum is additionally capped by the maximum
         operating Mach number.
 
         Args:
-            idx: Aircraft index or indices; omit to return limits for the whole fleet.
+            idx: Aircraft index/indices, or `None` to return limits for the full fleet.
         """
         vtasmin = aero.vcas2tas(self.vmin, self.traffic.alt)
 
@@ -422,16 +415,18 @@ class OpenAP(TrafficArrays):
         """Maximum speed; fixed-wing rows are CAS and rotor rows are TAS."""
 
     def _construct_v_limits(self, mask: bool | np.ndarray = True) -> SpeedLimits:
-        """Compute speed limist base on aircraft model and flight phases
+        """Compute speed limits from aircraft model and flight phase.
 
         For fixed-wing aircraft the applicable minimum and maximum calibrated
         airspeed of the current flight phase is selected (initial climb,
         en-route, approach, or ground). Rotorcraft keep their static limits.
+        The default mask selects every aircraft.
 
         Args:
-            mask: Indices (boolean) for aircraft to construct speed limits for.
-                  When no indices are passed, all aircraft are updated.
+            mask: Boolean mask selecting aircraft; the scalar default `True` selects the full fleet.
         """
+        # TODO(abraham): `bool | ndarray` is an awkward mask contract; use `None`
+        # for all aircraft and a typed boolean mask for subsets.
         n = len(self.actype)
         vmin = np.zeros(n)
         vmax = np.zeros(n)
@@ -493,7 +488,7 @@ class OpenAP(TrafficArrays):
         return axmax
 
     @command(name="PERFSTATS", aliases=("PERFINFO", "PERFDATA"))
-    def show_performance(self, acid: AcId) -> Result[str, str]:
+    def show_performance(self, acidx: AcId) -> Result[str, str]:
         """Report the current performance state of an aircraft.
 
         Implements the PERFSTATS stack command output: flight phase, thrust,
@@ -501,11 +496,11 @@ class OpenAP(TrafficArrays):
         aviation units (kN, kg/s, kts, fpm, ft).
         """
         return Ok(
-            f"Flight phase: {ph.readable_phase(FlightPhase(int(self.phase[acid])))}\n"
-            f"Thrust: {q.n_to_kn(self.thrust[acid]):.0f} kN\n"
-            f"Drag: {q.n_to_kn(self.drag[acid]):.0f} kN\n"
-            f"Fuel flow: {self.fuelflow[acid]:.2f} kg/s\n"
-            f"Speed envelope: [{q.mps_to_kt(self.vmin[acid]):.0f}, {q.mps_to_kt(self.vmax[acid]):.0f}] kts\n"
-            f"Vertical speed envelope: [{q.mps_to_fpm(self.vsmin[acid]):.0f}, {q.mps_to_fpm(self.vsmax[acid]):.0f}] fpm\n"
-            f"Ceiling: {q.m_to_ft(self.hmax[acid]):.0f} ft"
+            f"Flight phase: {ph.readable_phase(FlightPhase(int(self.phase[acidx])))}\n"
+            f"Thrust: {q.n_to_kn(self.thrust[acidx]):.0f} kN\n"
+            f"Drag: {q.n_to_kn(self.drag[acidx]):.0f} kN\n"
+            f"Fuel flow: {self.fuelflow[acidx]:.2f} kg/s\n"
+            f"Speed envelope: [{q.mps_to_kt(self.vmin[acidx]):.0f}, {q.mps_to_kt(self.vmax[acidx]):.0f}] kts\n"
+            f"Vertical speed envelope: [{q.mps_to_fpm(self.vsmin[acidx]):.0f}, {q.mps_to_fpm(self.vsmax[acidx]):.0f}] fpm\n"
+            f"Ceiling: {q.m_to_ft(self.hmax[acidx]):.0f} ft"
         )

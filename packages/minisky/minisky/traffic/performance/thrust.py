@@ -25,10 +25,9 @@ def compute_max_thr_ratio(
     vs: q.VerticalRateMps[np.ndarray],
     thr0: q.ForceN[np.ndarray],
 ) -> np.ndarray:
-    """Computer the dynamic thrust based on engine bypass-ratio, static maximum
-    thrust, aircraft true airspeed, and aircraft altitude
+    """Compute the available maximum turbofan thrust ratio.
 
-    Selects the takeoff thrust model (:func:`tr_takeoff`) for aircraft on the
+    Selects the takeoff thrust model (`tr_takeoff`) for aircraft on the
     ground and the in-flight model (:func:`inflight`) otherwise. The result
     is the ratio of the currently available maximum thrust to the maximum
     static thrust ``thr0``.
@@ -60,7 +59,7 @@ def tr_takeoff(
     v: q.TrueAirspeedMps[np.ndarray],
     h: q.PressureAltitudeM[np.ndarray],
 ) -> np.ndarray:
-    """Compute thrust ration at take-off.
+    """Compute the takeoff thrust ratio.
 
     Empirical polynomial model of the thrust lapse of a turbofan during the
     takeoff regime, as a function of Mach number and ambient pressure ratio,
@@ -94,7 +93,7 @@ def inflight(
     vs: q.VerticalRateMps[np.ndarray],
     thr0: q.ForceN[np.ndarray],
 ) -> np.ndarray:
-    """Compute thrust ration for inflight.
+    """Compute the in-flight thrust ratio.
 
     Empirical model of the in-flight maximum thrust of a turbofan. The
     thrust at a reference top-of-climb condition (Mach 0.8 at 35000 ft) is
@@ -178,7 +177,7 @@ def compute_eng_ff_coeff(
     ffco: q.MassFlowKgPerS,
     ffto: q.MassFlowKgPerS,
 ) -> FuelFlowCoefficients:
-    """Compute fuel flow based on engine icao fuel flow model
+    """Fit the ICAO engine fuel-flow model.
 
     Fits a quadratic polynomial through the four fuel-flow measurement
     points of the ICAO engine emission databank (at 7%, 30%, 85%, and 100%
@@ -186,10 +185,10 @@ def compute_eng_ff_coeff(
     engine as a function of thrust ratio x: ff = a*x^2 + b*x + c.
 
     Args:
-        ffidl: Measured fuel flow at idle thrust (7%)
-        ffapp: Measured fuel flow at approach thrust (30%)
-        ffco: Measured fuel flow at climb-out thrust (85%)
-        ffto: Measured fuel flow at takeoff thrust (100%)
+        ffidl: Fuel flow measured at 7% thrust.
+        ffapp: Fuel flow measured at 30% thrust.
+        ffco: Fuel flow measured at 85% thrust.
+        ffto: Fuel flow measured at 100% thrust.
     """
 
     # standard fuel flow at test thrust ratios
