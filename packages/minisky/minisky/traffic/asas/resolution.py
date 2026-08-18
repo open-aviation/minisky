@@ -1,16 +1,16 @@
 """Conflict resolution base class.
 
-This module provides [`ConflictResolution`][minisky.traffic.asas.resolution.ConflictResolution], the base class for all
+This module provides [`ConflictResolution`][.ConflictResolution], the base class for all
 conflict resolution (CR) implementations in MiniSky. It manages the shared
 resolution machinery: per-aircraft resolution advisories (heading, speed,
 vertical speed, altitude), resolution zone margins relative to the detection
 protected zone, priority rules, per-aircraft opt-outs (NORESO/RESOOFF), and
 the logic that decides when an aircraft may resume normal navigation after a
-conflict has been resolved ([`ConflictResolution.resumenav`][minisky.traffic.asas.resolution.ConflictResolution.resumenav]).
+conflict has been resolved ([`ConflictResolution.resumenav`][.ConflictResolution.resumenav]).
 
 Actual resolution algorithms (e.g. the Modified Voltage Potential method in
 `minisky.traffic.asas.mvp`) subclass this class and override
-[`ConflictResolution.resolve`][minisky.traffic.asas.resolution.ConflictResolution.resolve].
+[`ConflictResolution.resolve`][.ConflictResolution.resolve].
 """
 
 from __future__ import annotations
@@ -62,14 +62,14 @@ class ConflictResolution(TrafficArrays):
     """Base class for Conflict Resolution implementations.
 
     Each update step, when resolution is active and conflicts are detected,
-    [`ConflictResolution.resolve`][minisky.traffic.asas.resolution.ConflictResolution.resolve] is called to compute resolution advisories for all
+    [`resolve`][.resolve] is called to compute resolution advisories for all
     aircraft. These advisories are stored in the per-aircraft arrays below and
     are followed by the autopilot for aircraft whose `active` flag is True.
-    [`ConflictResolution.resumenav`][minisky.traffic.asas.resolution.ConflictResolution.resumenav] then decides per aircraft whether to keep following the
+    [`resumenav`][.resumenav] then decides per aircraft whether to keep following the
     resolution or to resume the flight plan (after the conflict pair has
     passed its closest point of approach).
 
-    The base class itself performs no avoidance: its [`ConflictResolution.resolve`][minisky.traffic.asas.resolution.ConflictResolution.resolve] simply
+    The base class itself performs no avoidance: its [`resolve`][.resolve] simply
     returns the autopilot values. Subclasses implement an actual algorithm.
     """
 
@@ -188,11 +188,6 @@ class ConflictResolution(TrafficArrays):
         resolution of conflicts. See for instance minisky.traffic.asas.mvp.
         The base implementation returns the autopilot values, i.e. no
         avoidance manoeuvre.
-
-        Args:
-            conf: Conflict detector containing the current conflicts.
-            ownship: Ownship traffic state.
-            intruder: Intruder traffic state.
         """
         # If resolution is off, and detection is on, and a conflict is detected
         # then asas will be active for that airplane. Since resolution is off, it
@@ -203,13 +198,8 @@ class ConflictResolution(TrafficArrays):
         """Perform an update step of the Conflict Resolution implementation.
 
         When resolution is active, computes new resolution advisories with
-        [`ConflictResolution.resolve`][minisky.traffic.asas.resolution.ConflictResolution.resolve] if there are current conflicts, and updates which
-        aircraft should keep following the resolution with [`ConflictResolution.resumenav`][minisky.traffic.asas.resolution.ConflictResolution.resumenav].
-
-        Args:
-            conf: Conflict detector containing the current conflicts.
-            ownship: Ownship traffic state.
-            intruder: Intruder traffic state.
+        [`resolve`][..resolve] if there are current conflicts, and updates which
+        aircraft should keep following the resolution with [`resumenav`][..resumenav].
         """
         if self.activate:
             if conf.confpairs:
@@ -233,11 +223,6 @@ class ConflictResolution(TrafficArrays):
         conflict). Once none of its conflicts require resolution anymore,
         the aircraft is released and directed back to its next active
         flight-plan waypoint.
-
-        Args:
-            conf: Conflict detector containing the current and recent conflict pairs.
-            ownship: Ownship traffic state.
-            intruder: Intruder traffic state.
         """
         # Add new conflicts to resopairs and confpairs_all and new losses to lospairs_all
         self.resopairs.update(conf.confpairs)

@@ -4,7 +4,7 @@ Loads and prepares aircraft performance coefficients for the OpenAP
 performance model: aircraft and engine properties, kinematic flight
 envelopes (WRAP model), and drag polars for fixed-wing aircraft from the
 OpenAP database, plus a small local JSON database for rotorcraft. All
-values are stored in SI units. The [`Coefficient`][] container is instantiated once by the
+values are stored in SI units. The [`Coefficient`][.Coefficient] container is instantiated once by the
 [`OpenAP`][minisky.traffic.performance.perfoap.OpenAP] performance model.
 """
 

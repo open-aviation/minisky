@@ -24,9 +24,6 @@ def txt2tim(txt: str) -> q.DurationS[float]:
     MM:SS.hh
     HH.MM.SS.hh
 
-    Args:
-        txt: Time text, with colon-separated fields.
-
     Raises:
         ValueError: When the text cannot be parsed as a time.
     """

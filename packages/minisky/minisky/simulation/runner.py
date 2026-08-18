@@ -57,9 +57,6 @@ class Runner:
         until simulation time reaches the target. The jump stops
         `JUMP_SETTLE_STEPS` timesteps short of the requested time, so the
         final approach runs at the configured speed.
-
-        Args:
-            seconds: Duration of simulated time to jump forward [s].
         """
         self.jump_to = self.simulation.simt + seconds - JUMP_SETTLE_STEPS * self.simulation.simdt
         self.jumping = True
@@ -71,10 +68,6 @@ class Runner:
         The loop targets a simulation step every `simdt / speed` wall-clock
         seconds, so a larger multiplier makes simulated time advance faster
         relative to the wall clock.
-
-        Args:
-            mult: Simulation speed factor relative to real time; must be
-                positive.
         """
         self.speed = mult
         return Ok(f"Simulation speed set to {mult}x")

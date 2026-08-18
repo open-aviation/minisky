@@ -28,7 +28,7 @@ from minisky.result import Ok, Result
 from minisky.tools import aero
 from minisky.traffic.performance import coeff
 from minisky.traffic.performance.perfoap import OpenAP
-from minisky.types import AircraftTypeCode
+from minisky.types import AircraftIndex, AircraftTypeCode
 
 from minisky_multicopter import quantities as mq
 from minisky_multicopter.config import MulticopterTypeSpec, RotorAirframeSpec
@@ -101,9 +101,6 @@ class MulticopterPerf(OpenAP):
         onto a mixed fleet stays correct. Membership comes from the
         performance table because the Multicopter entity may sit after this
         object in the traffic tree.
-
-        Args:
-            n: Number of aircraft appended to the traffic arrays.
         """
         super().create(n)
         mc = get_multicopter(self.traffic)
@@ -210,15 +207,12 @@ class MulticopterPerf(OpenAP):
         vs[low] = np.minimum(vs[low], mc.config.lowbatt_vs_factor * self.vsmax[low])
         return self.PerformanceLimits(tas, vs, alt)
 
-    def batt(self, idx: int) -> Result[str, str]:
+    def batt(self, idx: AircraftIndex) -> Result[str, str]:
         """Report battery state of charge, power draw and endurance.
 
         Backs the `BATT` stack command declared on the Multicopter entity,
         which delegates here at call time so the command survives the
         performance instance being swapped on reset.
-
-        Args:
-            idx: Aircraft index.
         """
         callsign = self.traffic.callsign[idx]
         soc = self.soc[idx]

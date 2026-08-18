@@ -1,12 +1,13 @@
 """The stack parses all text-based commands in the simulation.
 
 The stack is MiniSky's text-command interpreter. Every instruction to the
-simulator—typed by a user, read from a scenario (`.scn`) file, or issued by
-a plugin—enters as a line of text such as
+simulator (typed by a user, read from a scenario (`.scn`) file, or issued by
+a plugin) enters as a line of text such as
 `CRE KL204 B744 52.0 4.0 90 FL300 250KT[CAS]`. Command lines are queued with
-[`CommandStack.stack`][minisky.stack.CommandStack.stack] and executed once per simulation step by [`CommandStack.process`][minisky.stack.CommandStack.process].
+[`CommandStack.stack`][.CommandStack.stack] and executed once per simulation
+step by [`CommandStack.process`][.CommandStack.process].
 
-Each available command is represented by a [Command][minisky.stack.Command] object, which
+Each available command is represented by a [`Command`][.Command] object, which
 couples the command name to the Python function that implements it and to
 the argument parsers that convert argument text into typed values.
 Core and plugin callbacks declare commands directly with
@@ -17,9 +18,9 @@ declaration and preparation path with a separate load and unload lifecycle.
 Each `CommandStack` owns a runtime's command registry, pending command
 queue, scenario buffer, and sender state.
 
-This module also implements scenario handling: [`CommandStack.ic`][minisky.stack.CommandStack.ic] loads a scenario file,
+This module also implements scenario handling: [`CommandStack.ic`][.CommandStack.ic] loads a scenario file,
 whose timestamped command lines are buffered and moved onto the stack by
-[`CommandStack.checkscen`][minisky.stack.CommandStack.checkscen] when the
+[`CommandStack.checkscen`][.CommandStack.checkscen] when the
 simulation time passes their timestamps.
 """
 
@@ -680,11 +681,8 @@ class CommandStack:
 
         Parses lines of the form `HH:MM:SS.hh>CMDLINE`, skips full-line comments,
         supports continuation with a trailing backslash, and yields commands
-        in stable timestamp order.
-
-        Args:
-            scn: Scenario source: path to a .scn file (str or Path; the .scn
-                suffix is added when missing), or a StringIO object.
+        in stable timestamp order. Path-like sources are normalized to a `.scn`
+        suffix; `StringIO` sources are read directly.
 
         Yields:
             A scheduled command containing its time and command text.
@@ -735,14 +733,11 @@ class CommandStack:
 
     @command(name="IC", aliases=("LOAD", "OPEN"))
     def ic(self, scn: Text) -> Result[str, str]:
-        """IC: Load a scenario file.
+        """Load a scenario file.
 
-        Resets the simulation, reads the scenario file, and buffers its
-        timestamped commands for execution when the simulation time passes
-        their timestamps (see checkscen).
-
-        Args:
-            scn: The filename of the scenario, relative to the project root.
+        Resets the simulation, reads the scenario file relative to the project
+        root, and buffers its timestamped commands for execution when the
+        simulation time passes their timestamps.
         """
 
         self.simulation.reset()
@@ -759,14 +754,11 @@ class CommandStack:
         return Ok(f"scenario {scn_path} loaded.")
 
     def ic_StringIO(self, scn: StringIO, scn_name: str | None = None) -> Result[str, str]:
-        """IC: Load a scenario from a StringIO object.
+        """Load a scenario from a StringIO object.
 
-        Resets the simulation, reads scenario lines from the StringIO object,
-        and buffers the timestamped commands for execution (see checkscen).
-
-        Args:
-            scn: StringIO object containing scenario lines.
-            scn_name: The name of the scenario (optional).
+        Resets the simulation, reads scenario lines from the `StringIO` object,
+        and buffers the timestamped commands for execution (see [`checkscen`][..checkscen]). An
+        optional `scn_name` becomes the current scenario name.
         """
 
         self.simulation.reset()
@@ -780,11 +772,7 @@ class CommandStack:
 
     @command(name="SCENARIO", aliases=("SCEN",))
     def scenario(self, name: Text) -> Result[str, str]:
-        """Set the scenario name for the current simulation.
-
-        Args:
-            name: The name to give the scenario.
-        """
+        """Set the scenario name for the current simulation."""
         self.scenname = name
         return Ok("Starting scenario " + name)
 
@@ -794,14 +782,6 @@ class CommandStack:
 
         The command is inserted into the scenario buffer, keeping the buffer
         sorted by execution time.
-
-        Args:
-            time: Absolute simulation time [s] at which the command should
-                be executed.
-            cmdline: The command line to be executed.
-
-        Returns:
-            bool: True (the command is always scheduled).
         """
         command = ScheduledCommand(time, cmdline)
         index = next(
@@ -815,15 +795,8 @@ class CommandStack:
     def delay(self, time: TimeS, cmdline: Text) -> bool:
         """Delay a stack command by a time interval.
 
-        Like schedule(), but the given time is relative to the current
+        Like [`schedule`][..schedule], but the given time is relative to the current
         simulation time.
-
-        Args:
-            time: Time interval [s] by which the command should be delayed.
-            cmdline: The command line to be executed after the delay.
-
-        Returns:
-            bool: True (the command is always scheduled).
         """
         return self.schedule(self.simulation.simt + time, cmdline)
 
@@ -866,7 +839,7 @@ class CommandStack:
     def stack(self, *cmdlines: str, sender_id: bytes | None = None) -> None:
         """Stack commands separated by ";".
 
-        The queued commands are executed on the next call to process().
+        The queued commands are executed on the next call to [`process`][..process].
 
         Args:
             *cmdlines: Command line strings; each may contain multiple

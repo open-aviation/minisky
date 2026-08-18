@@ -60,9 +60,6 @@ class Kinematics(TrafficArrays):
         engaged. Called from ``Traffic.create_children()`` after the traffic
         state of the new aircraft has been set, so subclasses may seed their
         own state from the owning traffic object.
-
-        Args:
-            n: Number of aircraft that were appended to the traffic arrays.
         """
         super().create(n)
         self.ax[-n:] = 0.0

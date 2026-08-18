@@ -1,11 +1,11 @@
 """Active waypoint data for FMS guidance.
 
 Holds, as per-aircraft numpy arrays, all data of the waypoint each aircraft
-is currently flying towards. The [`ActiveWaypoint`][minisky.traffic.activewpdata.ActiveWaypoint] arrays form the
+is currently flying towards. The [`ActiveWaypoint`][.ActiveWaypoint] arrays form the
 interface between the per-aircraft [`Route`][minisky.traffic.route.Route]
 objects (event-driven, scalar waypoint switching) and the vectorized
 LNAV/VNAV guidance in [`Autopilot`][minisky.traffic.autopilot.Autopilot].
-Available as [`runtime.traffic.actwp`][minisky.traffic.activewpdata.ActiveWaypoint].
+Available as [`runtime.traffic.actwp`][.ActiveWaypoint].
 """
 
 from __future__ import annotations
@@ -26,10 +26,11 @@ if TYPE_CHECKING:
 class ActiveWaypoint(TrafficArrays):
     """Per-aircraft data of the active (and next) waypoint.
 
-    The autopilot copies waypoint data from the route into these arrays
-    upon waypoint switching (see Autopilot.wppassingcheck() and
-    route.direct()), so the continuous guidance can be vectorized. Simple optional
-    per-aircraft values use `OptionalArray`; optional [`CAS` in m/s][minisky.types.CasMps]
+    The autopilot copies waypoint data from the route into these arrays upon
+    waypoint switching (see [`Autopilot.wppassingcheck`][minisky.traffic.autopilot.Autopilot.wppassingcheck]
+    and [`route.direct`][minisky.traffic.route.direct]), so continuous guidance
+    can be vectorized. Simple optional per-aircraft values use `OptionalArray`;
+    optional [`CAS` in m/s][minisky.types.CasMps]
     or [`Mach`][minisky.types.Mach] values use `VariantArray`.
     """
 
@@ -132,9 +133,6 @@ class ActiveWaypoint(TrafficArrays):
 
         Optional values start absent; required state uses neutral defaults until a route
         waypoint is activated.
-
-        Args:
-            n: Number of aircraft that were appended to the traffic arrays.
         """
         super().create(n)
         self.lat[-n:] = 0.0
@@ -170,16 +168,16 @@ class ActiveWaypoint(TrafficArrays):
         aircraft with LNAV engaged are considered. Also updates turndist.
 
         Args:
-            qdr: Bearing from each aircraft to its active waypoint [deg].
-            dist: Distance to the active waypoint [m].
-            flyby: Fly-by switch per aircraft.
-            flyturn: Fly-turn switch per aircraft.
-            turnrad: Optional specified turn radius.
-            turnhdgr: Optional specified turn heading rate.
-            swlastwp: Switch: active waypoint is the last waypoint.
+            qdr: Bearing from each aircraft to its active waypoint.
+            dist: Distance from each aircraft to its active waypoint.
+            flyby: Per-aircraft fly-by mode.
+            flyturn: Per-aircraft fly-turn mode.
+            turnrad: Optional explicit turn radius.
+            turnhdgr: Optional explicit turn heading rate.
+            swlastwp: Whether the active waypoint is the final route waypoint.
 
         Returns:
-            ndarray: Indices of the aircraft that reached their waypoint.
+            Integer indices of aircraft that reached or passed their active waypoint.
         """
         # Calculate distance before waypoint where to start the turn
         # Note: this is a vectorized function, called with numpy traffic arrays
@@ -226,9 +224,8 @@ class ActiveWaypoint(TrafficArrays):
 
     class TurnGeometry(NamedTuple):
         distance: q.DistanceM
-        """Turn-initiation distance [m]."""
+        """Turn-initiation distance."""
         radius: q.TurnRadiusM
-        """Turn radius [m]."""
 
     def calcturn(
         self,

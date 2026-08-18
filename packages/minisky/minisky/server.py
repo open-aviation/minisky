@@ -6,7 +6,7 @@ active. Endpoints expose aircraft state, conflict information, simulation-time
 control, plugin management, a passthrough for stack commands, a per-tick push
 stream (`GET /stream`, WebSocket), and the command dictionary (`GET /commands`).
 
-[`create_app`][] constructs the application and stores its runtime on
+[`create_app`][.create_app] constructs the application and stores its runtime on
 `app.state.runtime`. The supported CLI entry point is `minisky server`.
 
 Run with:

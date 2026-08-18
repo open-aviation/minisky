@@ -1,6 +1,6 @@
 """Autopilot Implementation.
 
-Contains the [`Autopilot`][minisky.traffic.autopilot.Autopilot] class, which combines classic autopilot
+Contains the [`Autopilot`][.Autopilot] class, which combines classic autopilot
 modes (selected heading, altitude, vertical speed and airspeed) with FMS
 guidance along the aircraft route: LNAV (lateral navigation towards the
 active waypoint, including fly-by/fly-over/fly-turn logic) and VNAV
@@ -42,6 +42,7 @@ from minisky.tools.aero import g0, tas2cas, vcas2tas, vcasmach2tas
 from minisky.tools.convert import degto180
 from minisky.tools.position import txt2pos
 from minisky.types import (
+    AircraftIndex,
     AirspeedKind,
     CasMps,
     LatLonDegrees,
@@ -59,7 +60,7 @@ if TYPE_CHECKING:
     from minisky.traffic import Traffic
 
 
-def _waypoint_name(waypoint: WaypointSpec) -> str:
+def _waypoint_name(waypoint: WaypointSpec) -> WaypointReference:
     match waypoint:
         case NamedWaypoint(name):
             return name
@@ -68,7 +69,7 @@ def _waypoint_name(waypoint: WaypointSpec) -> str:
 
 
 def _resolve_waypoint(
-    traffic: Traffic, acidx: int, route: Route, waypoint: WaypointSpec
+    traffic: Traffic, acidx: AircraftIndex, route: Route, waypoint: WaypointSpec
 ) -> Result[LatLonDegrees, str]:
     if isinstance(waypoint, CoordinateWaypoint):
         return Ok(waypoint.coordinates)
@@ -98,14 +99,14 @@ def _resolve_waypoint(
 
 
 class Autopilot(TrafficArrays):
-    """BlueSky Autopilot implementation.
+    """Autopilot and FMS guidance implementation.
 
     Computes, per aircraft, the commanded track, altitude, vertical speed
     and true airspeed from the selected pilot airspeed reference and, when LNAV/VNAV are
     engaged, from the route stored in the per-aircraft [`Route`][minisky.traffic.route.Route]
-    objects. Waypoint switching is event driven (see wppassingcheck()),
-    while the continuous guidance in update() is fully vectorized over all
-    aircraft. Accessible as [`runtime.traffic.ap`][minisky.traffic.autopilot.Autopilot].
+    objects. Waypoint switching is event driven (see [`wppassingcheck`][.wppassingcheck]),
+    while the continuous guidance in [`update`][.update] is fully vectorized over all
+    aircraft.
     """
 
     def __init__(self, traffic: Traffic, get_simulation: Callable[[], Simulation]) -> None:
@@ -194,9 +195,6 @@ class Autopilot(TrafficArrays):
         arrays, enables ToC/ToD logic, sets the default vertical speed
         (1500 fpm) and bank limit (25 deg), and creates an empty Route
         object for each new aircraft.
-
-        Args:
-            n: Number of aircraft appended to the traffic arrays.
         """
         super().create(n)
 
@@ -224,8 +222,8 @@ class Autopilot(TrafficArrays):
 
         self.bankdef[-n:] = np.radians(25.0)
 
-        for ridx, acid in enumerate(self.traffic.callsign[-n:]):
-            self.route[ridx - n] = Route(self.traffic, acid)
+        for ridx, callsign in enumerate(self.traffic.callsign[-n:]):
+            self.route[ridx - n] = Route(self.traffic, callsign)
 
     def wppassingcheck(self, qdr: q.BearingDeg[np.ndarray], dist: q.DistanceM[np.ndarray]) -> None:
         """
@@ -614,11 +612,11 @@ class Autopilot(TrafficArrays):
 
         Called every simulation step. Recomputes bearing and distance to the
         active waypoints, performs the event-driven waypoint switching via
-        wppassingcheck(), and then applies the vectorized guidance:
+        [`wppassingcheck`][..wppassingcheck], and then applies the vectorized guidance:
 
         - VNAV altitude guidance: engage climb/descent when within dist2vs
           of the active waypoint (using the vertical speed prepared by
-          ComputeVNAV()).
+          [`ComputeVNAV`][..ComputeVNAV]).
         - LNAV track guidance: command the bearing to the active waypoint.
         - FMS airspeed guidance: anticipate deceleration for upcoming turn
           waypoints and acceleration/deceleration for airspeed constraints on
@@ -888,37 +886,39 @@ class Autopilot(TrafficArrays):
         )
 
     def ComputeVNAV(
-        self, idx: int, profile: RouteProfile, distance_to_waypoint: q.DistanceM[float]
+        self, idx: AircraftIndex, profile: RouteProfile, distance_to_waypoint: q.DistanceM[float]
     ) -> None:
         """
-        This function to do VNAV (and RTA) calculations is only called only once per leg for an aircraft index.
+        This function performs VNAV (and RTA) calculations once per leg for an aircraft index.
         If:
          - switching to next waypoint
          - when VNAV is activated
          - when a DIRECT is given
 
-        It prepares the profile of this leg using the the current altitude and the next altitude constraint (nextaltco).
+        It prepares the profile of this leg using the current altitude and the next altitude constraint (nextaltco).
         The distance to the next altitude constraint is given by xtoalt [m] after active waypoint.
 
         Options are (classic VNAV logic, swtoc and swtod True):
+
         - no altitude constraint in the future, do nothing
-        - Top of CLimb logic (swtoc=True): if next altitude constrain is baove us, climb as soon as possible with default steepness
-        - Top of Descent Logic (swtod =True) Use ToD logic: descend as late aspossible, based on
+        - Top of CLimb logic (swtoc=True): if next altitude constraint is above us, climb as soon as possible with default steepness
+        - Top of Descent Logic (swtod =True) Use ToD logic: descend as late as possible, based on
           steepness. Prepare a ToD somewhere on the leg if necessary based on distance to next altitude constraint.
           This is done by calculating distance to next waypoint where descent should start
 
         Alternative logic (e.g. for UAVs or GA):
+
         - swtoc=False and next alt co is above us, climb with the angle/steepness needed to arrive at the altitude at
         the waypoint with the altitude constraint (xtoalt m after active waypoint)
         - swtod=False and next altco is below us, descend with the angle/steepness needed to arrive at at the altitude at
         the waypoint with the altitude constraint (xtoalt m after active waypoint)
 
-        Output if this function:
+        Output of this function:
+
         self.dist2vs = distance 2 next waypoint where climb/descent needs to activated
         self.traffic.actwp.vs =  V/S to be used during climb/descent part, so when dist2wp<dist2vs [m] (to next waypoint)
 
         Args:
-            idx: Aircraft index (scalar).
             profile: Optional altitude and RTA targets ahead of the active waypoint.
             distance_to_waypoint: Current distance to the active waypoint [m].
         """
@@ -1090,20 +1090,18 @@ class Autopilot(TrafficArrays):
         return
 
     def set_airspeed_for_rta(
-        self, idx: int, target: RtaTarget | None, distance_to_waypoint: q.DistanceM[float]
+        self, idx: AircraftIndex, target: RtaTarget | None, distance_to_waypoint: q.DistanceM[float]
     ) -> q.CalibratedAirspeedMps[float] | None:
         """Compute and set the [`CAS` in m/s][minisky.types.CasMps] required to meet an RTA constraint.
 
         Calculates the ground speed needed to cover the remaining distance
-        to the RTA waypoint exactly at the required time (see calcvrta()),
+        to the RTA waypoint exactly at the required time (see [`calcvrta`][...calcvrta]),
         corrects for the tailwind component and converts to CAS. When no
         explicit airspeed constraint is active and VNAV airspeed guidance is on,
-        the result is stored as the active waypoint airspeed command.
 
         Args:
-            idx: Aircraft index (scalar).
-            target: RTA guidance target, or None when no RTA remains.
-            distance_to_waypoint: Distance to the active waypoint [m].
+            target: Next RTA target, or `None` when no RTA remains.
+            distance_to_waypoint: Current distance to the active waypoint.
 
         Returns:
             Required [`CAS` in m/s][minisky.types.CasMps], or None when there is no feasible RTA.
@@ -1152,11 +1150,6 @@ class Autopilot(TrafficArrays):
         vertical speed is given and the currently selected vertical speed
         opposes the required climb/descent direction, it is reset so the
         default vertical speed is used.
-
-        Args:
-            idx: Aircraft index (or collection of indices).
-            alt: Selected altitude [m].
-            vspd: Optional vertical speed [m/s].
         """
         self.traffic.selalt[idx] = alt.value
         self.traffic.swvnav[idx] = False
@@ -1181,10 +1174,6 @@ class Autopilot(TrafficArrays):
 
         Implements the VS stack command: `VS acid, vspd (ft/min)`.
         Setting a vertical speed disengages VNAV for this aircraft.
-
-        Args:
-            idx: Aircraft index.
-            vspd: Selected vertical speed [m/s].
         """
         self.traffic.selvs[idx] = vspd
         self.traffic.swvnav[idx] = False
@@ -1199,10 +1188,6 @@ class Autopilot(TrafficArrays):
         the commanded track is computed from the given heading and the local
         wind; otherwise track equals heading. Selecting a heading disengages
         LNAV for this aircraft.
-
-        Args:
-            idx: Aircraft index.
-            hdg: Selected heading [deg].
         """
 
         resolved_hdg: q.TrueHeadingDegrees
@@ -1450,13 +1435,10 @@ def calcvrta(
     simple average speed dx/deltime when no physical solution exists.
 
     Args:
-        v0: Current ground speed [m/s].
-        dx: Remaining leg distance [m].
-        deltime: Remaining time until the RTA [s].
-        trafax: Available longitudinal acceleration [m/s2].
-
-    Returns:
-        float: Required target ground speed [m/s].
+        v0: Current ground speed.
+        dx: Remaining distance to the RTA waypoint.
+        deltime: Remaining time until the RTA.
+        trafax: Available longitudinal acceleration.
     """
     # Calculate required target ground speed v1 [m/s]
     # to meet an RTA at this leg
@@ -1531,12 +1513,8 @@ def distaccel(
     Works on scalars as well as numpy arrays.
 
     Args:
-        v0: Start speed [m/s].
-        v1: End speed [m/s].
-        axabs: Acceleration/deceleration of which the absolute value is
-            used [m/s2].
-
-    Returns:
-        Distance travelled during the speed change [m].
+        v0: Speed at the start of the speed change.
+        v1: Speed at the end of the speed change.
+        axabs: Acceleration magnitude; its absolute value is used.
     """
     return 0.5 * np.abs(v1 * v1 - v0 * v0) / np.maximum(0.001, np.abs(axabs))

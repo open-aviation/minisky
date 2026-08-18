@@ -1,19 +1,8 @@
-"""This module defines a set of standard aerodynamic functions and constants.
+"""Aerodynamic relations, ISA atmosphere models, and airspeed conversions.
 
-The aeronautics conversion and atmosphere library of MiniSky. It provides:
-
-- International Standard Atmosphere constants and aerodynamic relations in SI units.
-- The International Standard Atmosphere (ISA): pressure [Pa], density
-  [kg/m3], temperature [K], and speed of sound [m/s] as a function of
-  altitude [m].
-- Conversions between calibrated airspeed (CAS), equivalent airspeed
-  (EAS), true airspeed (TAS) - all in [m/s] - and Mach number [-] at a
-  given altitude [m].
-
-Functions prefixed with a "v" are vectorized and accept numpy arrays;
-these use a simplified two-layer ISA (troposphere and lower stratosphere,
-valid up to approximately 72000ft / 22 km).
-The scalar variants without prefix use the full multi-layer ISA table.
+Functions prefixed with `v` are vectorised and accept NumPy arrays. They use
+a simplified two-layer ISA model through the lower stratosphere. The
+scalar variants use the full multi-layer ISA table.
 """
 
 from typing import NamedTuple
@@ -198,9 +187,7 @@ def atmos(h: q.PressureAltitudeM[float]) -> ScalarAtmosphere:
     values corrected to avoid small discontinuities at the layer borders.
     Isothermal layers use an exponential pressure decay; gradient layers
     use the standard lapse-rate relation.
-
-    Args:
-        h: 0.0 < h < 84852.0 (clipped when outside range).
+    Altitude is clamped to 0-86852 m.
     """
 
     # Base values and gradient in table from hand-out
@@ -261,10 +248,8 @@ def atmos(h: q.PressureAltitudeM[float]) -> ScalarAtmosphere:
 def temp(h: q.PressureAltitudeM[float]) -> q.StaticTemperatureK[float]:
     """Temperature-only version of the ISA atmosphere (scalar).
 
-    Saves time relative to atmos() when only the temperature is needed.
-
-    Args:
-        h: 0.0 < h < 84852.0 (clipped when outside range).
+    Saves time relative to [`atmos`][..atmos] when only the temperature is needed.
+    Altitude is clamped to 0-86852 m.
     """
 
     # Base values and gradient in table from hand-out
@@ -387,7 +372,7 @@ def tas2cas(
 ) -> q.CalibratedAirspeedMps[float]:
     """True airspeed to calibrated airspeed conversion (scalar).
 
-    Inverse of cas2tas(), using the compressible-flow relation at the
+    Inverse of [`cas2tas`][..cas2tas], using the compressible-flow relation at the
     given ISA altitude. Negative input speeds yield negative output
     speeds.
     """

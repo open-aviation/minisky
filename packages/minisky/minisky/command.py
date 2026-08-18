@@ -102,7 +102,7 @@ from annotated_types import (
 )
 
 from minisky import quantities as q
-from minisky import types as value_types
+from minisky import types as t
 from minisky.identifiers import normalize_command_name
 from minisky.result import Err, Ok, Result
 from minisky.tools.convert import (
@@ -536,7 +536,7 @@ Token = Annotated[str, _TOKEN_PARSER]
 """A non-empty BlueSky command field parsed as text.
 
 Normal tokenization applies: spaces or commas terminate bare fields and surrounding
-quotes are removed. Unlike [`Text`][minisky.command.Text], `Token` never consumes
+quotes are removed. Unlike [`Text`][..Text], `Token` never consumes
 the rest of the command.
 """
 
@@ -550,11 +550,11 @@ def parse_keyword(context: CommandParseContext, cursor: CommandCursor) -> ParseR
 
 _KEYWORD_PARSER = CmdParser(parse_keyword)
 Keyword = Annotated[str, _KEYWORD_PARSER]
-"""A [`Token`][minisky.command.Token] normalized to upper case.
+"""A [`Token`][..Token] normalized to upper case.
 
 Use this for case-insensitive command keywords whose value remains data.
 Python `Literal[...]` annotations use
-[`LiteralSyntax`][minisky.command.LiteralSyntax] when the keyword is grammar.
+[`LiteralSyntax`][..LiteralSyntax] when the keyword is grammar.
 """
 
 
@@ -592,7 +592,7 @@ Text = Annotated[str, CmdParser(parse_text)]
 """The complete remaining framed-command text, consumed verbatim.
 
 This intentionally preserves BlueSky's `string` terminal for nested commands such
-as ECHO and DELAY. Unlike [`Token`][minisky.command.Token], quotes are not stripped
+as ECHO and DELAY. Unlike [`Token`][..Token], quotes are not stripped
 because no further tokenization occurs.
 """
 
@@ -622,18 +622,18 @@ def _vertical_metres(value: str, unit: str) -> float:
     return float(value) if unit.upper() == "M" else q.ft_to_m(float(value))
 
 
-def parse_pressure_altitude_value(value: str) -> value_types.StdPressureAltM:
+def parse_pressure_altitude_value(value: str) -> t.StdPressureAltM:
     if match := _FLIGHT_LEVEL.fullmatch(value):
-        return value_types.StdPressureAltM(q.ft_to_m(100.0 * int(match.group("level"))))
+        return t.StdPressureAltM(q.ft_to_m(100.0 * int(match.group("level"))))
     if (match := _STD_ALTITUDE.fullmatch(value)) is None:
         raise ValueError
-    return value_types.StdPressureAltM(_vertical_metres(match.group("value"), match.group("unit")))
+    return t.StdPressureAltM(_vertical_metres(match.group("value"), match.group("unit")))
 
 
-def _parse_msl_altitude(value: str) -> value_types.MslAltM:
+def _parse_msl_altitude(value: str) -> t.MslAltM:
     if (match := _MSL_ALTITUDE.fullmatch(value)) is None:
         raise ValueError
-    return value_types.MslAltM(_vertical_metres(match.group("value"), match.group("unit")))
+    return t.MslAltM(_vertical_metres(match.group("value"), match.group("unit")))
 
 
 # Numeric altitudes require an explicit unit. AGL stays out until ground
@@ -705,24 +705,24 @@ or `90KMH`.
 """
 
 
-def parse_cas_value(value: str) -> value_types.CasMps:
+def parse_cas_value(value: str) -> t.CasMps:
     """Parse CAS with an explicit unit and required `[CAS]` quantity tag."""
     if (match := _CAS.fullmatch(value)) is None:
         raise ValueError
     unit_value = f"{match.group('value')}{match.group('unit')}"
-    return value_types.CasMps(parse_speed_value(unit_value))
+    return t.CasMps(parse_speed_value(unit_value))
 
 
-def _parse_mach(value: str) -> value_types.Mach:
+def _parse_mach(value: str) -> t.Mach:
     if (match := _MACH.fullmatch(value)) is None:
         raise ValueError
     mach = float(match.group("value"))
     if mach <= 0.0:
         raise ValueError
-    return value_types.Mach(mach)
+    return t.Mach(mach)
 
 
-def parse_selected_airspeed_value(value: str) -> value_types.CasMps | value_types.Mach:
+def parse_selected_airspeed_value(value: str) -> t.CasMps | t.Mach:
     return _parse_mach(value) if value.upper().startswith("M") else parse_cas_value(value)
 
 
@@ -754,15 +754,15 @@ def _matched_number(pattern: re.Pattern[str], value: str) -> float:
     return float(match.group("value"))
 
 
-def _parse_true_heading(value: str) -> value_types.TrueHeadingDeg:
-    return value_types.TrueHeadingDeg(_matched_number(_TRUE_HEADING, value))
+def _parse_true_heading(value: str) -> t.TrueHeadingDeg:
+    return t.TrueHeadingDeg(_matched_number(_TRUE_HEADING, value))
 
 
-def _parse_magnetic_heading(value: str) -> value_types.MagneticHeadingDeg:
-    return value_types.MagneticHeadingDeg(_matched_number(_MAGNETIC_HEADING, value))
+def _parse_magnetic_heading(value: str) -> t.MagneticHeadingDeg:
+    return t.MagneticHeadingDeg(_matched_number(_MAGNETIC_HEADING, value))
 
 
-def _parse_heading(value: str) -> value_types.TrueHeadingDeg | value_types.MagneticHeadingDeg:
+def _parse_heading(value: str) -> t.TrueHeadingDeg | t.MagneticHeadingDeg:
     return (
         _parse_magnetic_heading(value)
         if value.upper().endswith("M")
@@ -771,14 +771,14 @@ def _parse_heading(value: str) -> value_types.TrueHeadingDeg | value_types.Magne
 
 
 HeadingDeg = Annotated[
-    value_types.TrueHeadingDeg | value_types.MagneticHeadingDeg,
+    t.TrueHeadingDeg | t.MagneticHeadingDeg,
     CmdParser.value(_parse_heading, "a heading"),
 ]
 """Heading syntax preserving whether the input refers to true or magnetic north."""
 
 
-def _parse_ground_track(value: str) -> value_types.GroundTrackDeg:
-    return value_types.GroundTrackDeg(_matched_number(_GROUND_TRACK, value))
+def _parse_ground_track(value: str) -> t.GroundTrackDeg:
+    return t.GroundTrackDeg(_matched_number(_GROUND_TRACK, value))
 
 
 @dataclass(frozen=True, slots=True)
@@ -804,14 +804,18 @@ in their annotation, for example `HeadingDeg | UseRunwayHeading`.
 """
 
 
-def _aircraft_index(context: CommandParseContext, callsign: str) -> Result[int, ArgumentIssue]:
+def _aircraft_index(
+    context: CommandParseContext, callsign: t.AircraftCallsign
+) -> Result[t.AircraftIndex, ArgumentIssue]:
     index = context.traffic.idx(callsign)
     if index is None:
         return Err(ArgumentIssue.expected("an existing aircraft", callsign))
     return Ok(index)
 
 
-def parse_aircraft(context: CommandParseContext, cursor: CommandCursor) -> ParseResult[int]:
+def parse_aircraft(
+    context: CommandParseContext, cursor: CommandCursor
+) -> ParseResult[t.AircraftIndex]:
     result = cursor.next_value("an aircraft")
     if isinstance(result, Err):
         return result
@@ -826,7 +830,7 @@ def parse_aircraft(context: CommandParseContext, cursor: CommandCursor) -> Parse
     return Ok(token.map(index.ok()))
 
 
-AcId = Annotated[int, CmdParser(parse_aircraft)]
+AcId = Annotated[t.AircraftIndex, CmdParser(parse_aircraft)]
 """An existing aircraft callsign resolved to its traffic-array index."""
 
 
@@ -867,15 +871,15 @@ def aircraft_indices(
 class NamedWaypoint:
     """A waypoint expression that should be resolved by name."""
 
-    name: value_types.WaypointReference
+    name: t.WaypointReference
 
 
 @dataclass(frozen=True, slots=True)
 class CoordinateWaypoint:
     """A waypoint expressed directly as latitude and longitude."""
 
-    coordinates: value_types.LatLonDegrees
-    source: value_types.WaypointReference
+    coordinates: t.LatLonDegrees
+    source: t.WaypointReference
 
 
 WaypointSpec: TypeAlias = NamedWaypoint | CoordinateWaypoint
@@ -906,7 +910,7 @@ def parse_waypoint(
             )
         span = SourceSpan(token.span.start, longitude.span.end)
         try:
-            coordinates = value_types.LatLonDegrees(txt2lat(name), txt2lon(longitude.value))
+            coordinates = t.LatLonDegrees(txt2lat(name), txt2lon(longitude.value))
         except ValueError:
             return Err(
                 ArgumentIssue.expected(
@@ -936,11 +940,11 @@ Wpt = Annotated[WaypointSpec, _WAYPOINT_PARSER]
 class RunwayPosition:
     """Resolved runway coordinates and their runway heading."""
 
-    coordinates: value_types.LatLonDegrees
+    coordinates: t.LatLonDegrees
     runway_heading: q.TrueHeadingDegrees[float]
 
 
-ResolvedPosition: TypeAlias = value_types.LatLonDegrees | RunwayPosition
+ResolvedPosition: TypeAlias = t.LatLonDegrees | RunwayPosition
 
 
 def _resolve_named_position(
@@ -957,15 +961,11 @@ def _resolve_named_position(
             return Err(
                 ArgumentIssue.expected("a waypoint, airport, runway, or aircraft id", name, span)
             )
-        return Ok(RunwayPosition(value_types.LatLonDegrees(float(lat), float(lon)), float(heading)))
+        return Ok(RunwayPosition(t.LatLonDegrees(float(lat), float(lon)), float(heading)))
 
     if name in navigation.aptid:
         index = navigation.aptid.index(name)
-        return Ok(
-            value_types.LatLonDegrees(
-                float(navigation.aptlat[index]), float(navigation.aptlon[index])
-            )
-        )
+        return Ok(t.LatLonDegrees(float(navigation.aptlat[index]), float(navigation.aptlon[index])))
 
     occurrences = navigation.wpid.count(name)
     if occurrences > 1:
@@ -974,11 +974,7 @@ def _resolve_named_position(
         )
     if occurrences == 1:
         index = navigation.wpid.index(name)
-        return Ok(
-            value_types.LatLonDegrees(
-                float(navigation.wplat[index]), float(navigation.wplon[index])
-            )
-        )
+        return Ok(t.LatLonDegrees(float(navigation.wplat[index]), float(navigation.wplon[index])))
 
     return Err(ArgumentIssue.expected("a waypoint, airport, runway, or aircraft id", name, span))
 
@@ -996,7 +992,7 @@ def parse_resolved_position(
 
     index = context.traffic.idx(waypoint.name)
     if index is not None:
-        coordinates = value_types.LatLonDegrees(
+        coordinates = t.LatLonDegrees(
             float(context.traffic.lat[index]), float(context.traffic.lon[index])
         )
         return Ok(parsed.map(coordinates))
@@ -1010,7 +1006,7 @@ _RESOLVED_POSITION_PARSER = CmdParser(parse_resolved_position)
 ResolvedPositionArg = Annotated[ResolvedPosition, _RESOLVED_POSITION_PARSER]
 """A position expression resolved against navigation data and traffic.
 
-Runways retain their heading in [`RunwayPosition`][minisky.command.RunwayPosition];
+Runways retain their heading in [`RunwayPosition`][..RunwayPosition];
 other positions become [`LatLonDegrees`][minisky.types.LatLonDegrees]. Ambiguous
 waypoint identifiers are rejected because this grammar has no geographic reference.
 """
@@ -1018,7 +1014,7 @@ waypoint identifiers are rejected because this grammar has no geographic referen
 
 def parse_lat_lon(
     context: CommandParseContext, cursor: CommandCursor
-) -> ParseResult[value_types.LatLonDegrees]:
+) -> ParseResult[t.LatLonDegrees]:
     if isinstance(result := _RESOLVED_POSITION_PARSER(context, cursor), Err):
         return result
     parsed = result.ok()
@@ -1028,11 +1024,11 @@ def parse_lat_lon(
     return Ok(parsed.map(coordinates))
 
 
-LatLonDeg = Annotated[value_types.LatLonDegrees, CmdParser(parse_lat_lon)]
+LatLonDeg = Annotated[t.LatLonDegrees, CmdParser(parse_lat_lon)]
 """A resolved position reduced to latitude and longitude degrees.
 
 It accepts the same BlueSky position expressions as
-[`ResolvedPositionArg`][minisky.command.ResolvedPositionArg] but intentionally
+[`ResolvedPositionArg`][..ResolvedPositionArg] but intentionally
 discards runway-specific heading after resolution.
 """
 
@@ -1041,29 +1037,27 @@ _VALUE_PARSERS: dict[Any, CmdParser[Any]] = {
     bool: _ON_OFF_PARSER,
     int: _INT_PARSER,
     float: _FLOAT_PARSER,
-    value_types.CasMps: CmdParser.value(
+    t.CasMps: CmdParser.value(
         parse_cas_value,
         "CAS such as 250KT[CAS] or 128MPS[CAS]",
         field="CAS",
     ),
-    value_types.Mach: CmdParser.value(_parse_mach, "Mach such as M0.78 or M.78", field="Mach"),
-    value_types.StdPressureAltM: CmdParser.value(
+    t.Mach: CmdParser.value(_parse_mach, "Mach such as M0.78 or M.78", field="Mach"),
+    t.StdPressureAltM: CmdParser.value(
         parse_pressure_altitude_value,
         "pressure altitude such as FL100, 10000FT[STD], or 3048M[STD]",
         field="pressure altitude",
     ),
-    value_types.MslAltM: CmdParser.value(
+    t.MslAltM: CmdParser.value(
         _parse_msl_altitude,
         "MSL altitude such as 10000FT[MSL] or 3048M[MSL]",
         field="MSL altitude",
     ),
-    value_types.TrueHeadingDeg: CmdParser.value(
-        _parse_true_heading, "a true heading", field="true heading"
-    ),
-    value_types.MagneticHeadingDeg: CmdParser.value(
+    t.TrueHeadingDeg: CmdParser.value(_parse_true_heading, "a true heading", field="true heading"),
+    t.MagneticHeadingDeg: CmdParser.value(
         _parse_magnetic_heading, "a magnetic heading", field="magnetic heading"
     ),
-    value_types.GroundTrackDeg: CmdParser.value(
+    t.GroundTrackDeg: CmdParser.value(
         _parse_ground_track, "a ground track such as 090TRK", field="ground track"
     ),
 }
@@ -1317,7 +1311,7 @@ def _constraints(metadata: Iterable[object]) -> Iterator[_Constraint]:
 
 
 def _constraint_operand(value: Any) -> Any:
-    if isinstance(value, value_types.RuntimeNewType):
+    if isinstance(value, t.RuntimeNewType):
         return value.value
     return value
 

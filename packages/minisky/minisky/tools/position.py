@@ -1,9 +1,8 @@
 """Parsing of position texts in MiniSky.
 
-Translates the position notations used in stack commands - lat/lon pairs
-(decimal or degrees/minutes/seconds), navaid and fix names, airport ICAO
-identifiers, runways (e.g. "EHAM/RW06"), and aircraft callsigns - into
-latitude/longitude coordinates [deg].
+Translates stack-command position syntax-coordinates, navaids and fixes,
+airport identifiers, runways such as `EHAM/RW06`, and aircraft callsigns into
+typed latitude/longitude positions.
 """
 
 from __future__ import annotations
