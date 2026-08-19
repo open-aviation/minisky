@@ -27,7 +27,8 @@ from minisky._internal.autopilot import Autopilot
 from minisky._internal.command import (
     AcId,
     AcIdSelection,
-    CmdParser,
+    CommandField,
+    Converter,
     DistanceM,
     HeadingDeg,
     Keyword,
@@ -95,7 +96,11 @@ def _parse_throttle(value: str) -> float:
 
 
 Throttle = Annotated[
-    float, CmdParser.value(_parse_throttle, "a throttle fraction or percentage"), Ge(0), Le(1)
+    float,
+    CommandField(name="throttle", examples=("0.8", "80%")),
+    Converter(_parse_throttle),
+    Ge(0),
+    Le(1),
 ]
 
 LatitudeArg = Annotated[q.LatitudeDeg[float], Ge(-90), Le(90)]

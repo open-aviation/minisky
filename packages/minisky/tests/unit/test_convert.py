@@ -43,13 +43,3 @@ class TestAngles:
     )
     def test_degto180_wraps(self, angle: float, expected: float) -> None:
         assert cv.degto180(angle) == pytest.approx(expected)
-
-
-class TestBool:
-    @pytest.mark.parametrize("txt", ["ON", "TRUE", "YES", "1"])
-    def test_truthy(self, txt: str) -> None:
-        assert cv.txt2bool(txt) is True
-
-    @pytest.mark.parametrize("txt", ["OFF", "FALSE", "NO", "0"])
-    def test_falsy(self, txt: str) -> None:
-        assert cv.txt2bool(txt) is False

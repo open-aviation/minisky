@@ -71,7 +71,7 @@ from __future__ import annotations
 import inspect
 import re
 from collections.abc import Callable, Iterable, Iterator, Mapping
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from types import UnionType
 from typing import (
     TYPE_CHECKING,
@@ -103,7 +103,6 @@ from annotated_types import (
 from minisky import quantities as q
 from minisky import types as t
 from minisky._internal.convert import (
-    txt2bool,
     txt2lat,
     txt2lon,
     txt2tim,
@@ -179,14 +178,14 @@ ParseResult: TypeAlias = Result[Spanned[ValueT_co], ArgumentIssue]
 
 
 @dataclass(frozen=True, slots=True)
-class CommandField:
+class _LexicalField:
     """One lexical field; `None` is the grammar's omitted-field variant."""
 
     value: str | None
     span: SourceSpan
 
 
-_FieldResult: TypeAlias = Result[CommandField | None, ArgumentIssue]
+_FieldResult: TypeAlias = Result[_LexicalField | None, ArgumentIssue]
 
 
 @dataclass(slots=True)
@@ -256,7 +255,7 @@ class CommandCursor:
         if text[index] == ",":
             start = index
             self.pos = self._skip_spaces(index + 1)
-            return Ok(CommandField(None, SourceSpan(start, start + 1)))
+            return Ok(_LexicalField(None, SourceSpan(start, start + 1)))
 
         token_start = index
         quote = text[index] if text[index] in ("'", '"') else None
@@ -301,7 +300,7 @@ class CommandCursor:
         if index < self.end and text[index] == ",":
             index = self._skip_spaces(index + 1)
         self.pos = index
-        return Ok(CommandField(value, SourceSpan(token_start, token_end)))
+        return Ok(_LexicalField(value, SourceSpan(token_start, token_end)))
 
     def next_value(self, expected: str) -> Result[Spanned[str], ArgumentIssue]:
         """Consume a non-omitted field value with a semantic expectation."""
@@ -368,65 +367,112 @@ class CommandCursor:
 
 
 #
-# parser schema
+# parser inputs
 #
 
 
 @dataclass(frozen=True, slots=True)
 class CommandParseContext:
-    """Read-only runtime services available while parsing a command value.
-
-    BlueSky uses mutable `bs.ref` fields as cross-argument registers. We
-    intentionally expose only runtime lookup services here.
-    """
+    """Read-only runtime services available while parsing a command value."""
 
     traffic: Traffic
     navigation: Navdatabase
 
 
 @dataclass(frozen=True, slots=True)
-class NamedFields:
-    """Semantic field names used when rendering command usage.
+class CommandField:
+    """Metadata and compiled syntax for a lexical command field."""
 
-    A parser may consume several BlueSky fields. For example, a wind level
-    consumes altitude, direction, and speed.
-    """
-
-    names: tuple[str, ...]
-
-    def __post_init__(self) -> None:
-        if not self.names:
-            raise ValueError("command parser fields cannot be empty")
+    kind: Literal["field"] = field(init=False, default="field", repr=False)
+    name: str | None = None
+    examples: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
-class LiteralSyntax:
-    """Exact keywords used when rendering command usage.
+class _RecordInput:
+    kind: Literal["record"] = field(init=False, default="record", repr=False)
+    name: str
+    fields: tuple[CommandField, ...]
 
-    Values are stored in their case-insensitive command form.
-    """
 
+@dataclass(frozen=True, slots=True)
+class _LiteralInput:
+    kind: Literal["literal"] = field(init=False, default="literal", repr=False)
     values: tuple[str, ...]
 
 
 @dataclass(frozen=True, slots=True)
-class OmittedSyntax:
-    """A field that must be present syntactically but contain no value.
-
-    BlueSky command text uses adjacent commas to skip positional fields. In
-    `CMD A,,B`, the middle field is omitted.
-    """
+class _BooleanInput:
+    kind: Literal["boolean"] = field(init=False, default="boolean", repr=False)
+    true: tuple[str, ...]
+    false: tuple[str, ...]
 
 
 @dataclass(frozen=True, slots=True)
-class ChoiceSyntax:
-    """Alternative syntax used when rendering a union annotation."""
-
-    alternatives: tuple[ParserSyntax | None, ...]
+class _OmittedInput:
+    kind: Literal["omitted"] = field(init=False, default="omitted", repr=False)
 
 
-ParserSyntax: TypeAlias = NamedFields | LiteralSyntax | OmittedSyntax | ChoiceSyntax
-"""Structured parser syntax available to help and documentation renderers."""
+@dataclass(frozen=True, slots=True)
+class _TextInput:
+    kind: Literal["text"] = field(init=False, default="text", repr=False)
+    examples: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class _ChoiceInput:
+    kind: Literal["choice"] = field(init=False, default="choice", repr=False)
+    alternatives: tuple[CommandInput, ...]
+
+
+CommandInput: TypeAlias = (
+    CommandField
+    | _RecordInput
+    | _LiteralInput
+    | _BooleanInput
+    | _OmittedInput
+    | _TextInput
+    | _ChoiceInput
+)
+"""Inspectable command grammar shared by runtime parsing and static schemas."""
+
+
+def _join_examples(values: tuple[str, ...]) -> str:
+    if len(values) == 1:
+        return values[0]
+    if len(values) == 2:
+        return f"{values[0]} or {values[1]}"
+    return f"{', '.join(values[:-1])}, or {values[-1]}"
+
+
+def _input_expectation(name: str | None, examples: tuple[str, ...]) -> str:
+    if not name:
+        return f"a value such as {_join_examples(examples)}" if examples else "a value"
+    if examples:
+        return f"{name} such as {_join_examples(examples)}"
+    lowered = name.lower()
+    if lowered.startswith(("a ", "an ", "the ")) or not name[0].islower():
+        return name
+    article = "an" if name[0] in "aeiou" else "a"
+    return f"{article} {name}"
+
+
+def _input_expected(value: CommandInput) -> str:
+    match value:
+        case CommandField(name=name, examples=examples):
+            return _input_expectation(name, examples)
+        case _RecordInput(name, fields):
+            return f"{name} ({', '.join(field.name or 'value' for field in fields)})"
+        case _LiteralInput(values):
+            return _join_examples(values)
+        case _BooleanInput(true, false):
+            return f"a boolean ({_join_examples((*true, *false))})"
+        case _OmittedInput():
+            return "an omitted comma field"
+        case _TextInput(examples):
+            return _input_expectation("text", examples)
+        case _ChoiceInput(alternatives):
+            return " or ".join(_input_expected(alternative) for alternative in alternatives)
 
 
 ParseFunction: TypeAlias = Callable[[CommandParseContext, CommandCursor], ParseResult[ValueT_co]]
@@ -434,46 +480,22 @@ ParseFunction: TypeAlias = Callable[[CommandParseContext, CommandCursor], ParseR
 
 @dataclass(frozen=True, slots=True)
 class CmdParser(Generic[ValueT_co]):
-    """Connect a Python value type to command parsing and usage syntax.
-
-    This is the metadata inside `Annotated`, which describes what a callback
-    receives. Use `fields()` for a multi-field value's usage names and the
-    syntax helpers when generated usage needs more detail than a parameter name.
-
-    Custom parsers may advance only the supplied cursor. `CmdParser` restores the
-    cursor automatically when they return `Err`.
-    """
+    """Executable parser paired with its inspectable command-input contract."""
 
     func: ParseFunction[ValueT_co]
-    """A transactional cursor-to-value parser."""
-    syntax: ParserSyntax | None = None
-    # NOTE: not collapsing it to a string here
-    # TODO: make zensical macros consume this to build a rich display
-    # and serialise it to tangram
+    input: CommandInput
 
     @classmethod
     def fields(cls, func: ParseFunction[ValueT_co], names: tuple[str, ...]) -> CmdParser[ValueT_co]:
-        return cls(func, NamedFields(names))
-
-    @classmethod
-    def omitted(cls, func: ParseFunction[ValueT_co]) -> CmdParser[ValueT_co]:
-        return cls(func, OmittedSyntax())
+        """Temporary compatibility for bespoke multi-field parsers."""
+        return cls(func, _RecordInput("record", tuple(CommandField(name) for name in names)))
 
     @staticmethod
-    def value(
-        converter: Callable[[str], MappedT], expected: str, *, field: str | None = None
-    ) -> CmdParser[MappedT]:
-        def parse(_context: CommandParseContext, cursor: CommandCursor) -> ParseResult[MappedT]:
-            return parse_field(cursor, converter, expected)
-
-        syntax = NamedFields((field,)) if field is not None else None
-        return CmdParser(parse, syntax)
-
-    @staticmethod
-    def keywords(mapping: Mapping[str, MappedT], expected: str) -> CmdParser[MappedT]:
+    def choices(mapping: Mapping[str, MappedT]) -> CmdParser[MappedT]:
         normalized = {key.upper(): value for key, value in mapping.items()}
         if len(normalized) != len(mapping):
-            raise ValueError("command parser keywords must be unique ignoring case")
+            raise ValueError("command parser choices must be unique ignoring case")
+        input_spec = _LiteralInput(tuple(normalized))
 
         def parse(context: CommandParseContext, cursor: CommandCursor) -> ParseResult[MappedT]:
             result = _KEYWORD_PARSER(context, cursor)
@@ -481,10 +503,12 @@ class CmdParser(Generic[ValueT_co]):
                 return result
             token = result.ok()
             if token.value not in normalized:
-                return Err(ArgumentIssue.expected(expected, token.value, token.span))
+                return Err(
+                    ArgumentIssue.expected(_input_expected(input_spec), token.value, token.span)
+                )
             return Ok(token.map(normalized[token.value]))
 
-        return CmdParser(parse, LiteralSyntax(tuple(normalized)))
+        return CmdParser(parse, input_spec)
 
     def __call__(
         self, context: CommandParseContext, cursor: CommandCursor
@@ -496,15 +520,31 @@ class CmdParser(Generic[ValueT_co]):
         return result
 
 
+@dataclass(frozen=True, slots=True)
+class Converter(Generic[MappedT]):
+    """Convert a lexical command field before semantic validation."""
+
+    func: Callable[[str], MappedT]
+
+
+def _converter_parser(
+    converter: Converter[MappedT], input_spec: CommandField
+) -> CmdParser[MappedT]:
+    def parse(_context: CommandParseContext, cursor: CommandCursor) -> ParseResult[MappedT]:
+        return _parse_field(cursor, converter.func, input_spec)
+
+    return CmdParser(parse, input_spec)
+
+
 #
 # primitives
 #
 
 
-def parse_field(
-    cursor: CommandCursor, converter: Callable[[str], MappedT], expected: str
+def _parse_field(
+    cursor: CommandCursor, converter: Callable[[str], MappedT], input_spec: CommandField
 ) -> ParseResult[MappedT]:
-    """Consume a field and convert its text into a semantic value."""
+    expected = _input_expected(input_spec)
     result = cursor.next_value(expected)
     if isinstance(result, Err):
         return result
@@ -516,24 +556,29 @@ def parse_field(
     return Ok(token.map(value))
 
 
-def parse_token(_context: CommandParseContext, cursor: CommandCursor) -> ParseResult[str]:
-    result = cursor.next_value("a non-empty argument")
-    if isinstance(result, Err):
-        return result
-    token = result.ok()
-    if not token.value:
-        return Err(ArgumentIssue.expected("a non-empty argument", "empty input", token.span))
-    return Ok(token)
+def parse_field(
+    cursor: CommandCursor, converter: Callable[[str], MappedT], expected: str
+) -> ParseResult[MappedT]:
+    """Compatibility helper for remaining bespoke field parsers."""
+    return _parse_field(cursor, converter, CommandField(expected))
 
 
-_TOKEN_PARSER = CmdParser(parse_token)
+def _token_parser(input_spec: CommandField) -> CmdParser[str]:
+    def parse(_context: CommandParseContext, cursor: CommandCursor) -> ParseResult[str]:
+        result = cursor.next_value(_input_expected(input_spec))
+        if isinstance(result, Err):
+            return result
+        token = result.ok()
+        if not token.value:
+            return Err(ArgumentIssue.expected("a non-empty argument", "empty input", token.span))
+        return Ok(token)
+
+    return CmdParser(parse, input_spec)
+
+
+_TOKEN_PARSER = _token_parser(CommandField())
 Token = Annotated[str, _TOKEN_PARSER]
-"""A non-empty BlueSky command field parsed as text.
-
-Normal tokenization applies: spaces or commas terminate bare fields and surrounding
-quotes are removed. Unlike [`Text`][..Text], `Token` never consumes
-the rest of the command.
-"""
+"""A non-empty BlueSky command field parsed as text."""
 
 
 def parse_keyword(context: CommandParseContext, cursor: CommandCursor) -> ParseResult[str]:
@@ -543,14 +588,9 @@ def parse_keyword(context: CommandParseContext, cursor: CommandCursor) -> ParseR
     return Ok(token.map(token.value.upper()))
 
 
-_KEYWORD_PARSER = CmdParser(parse_keyword)
+_KEYWORD_PARSER = CmdParser(parse_keyword, CommandField())
 Keyword = Annotated[str, _KEYWORD_PARSER]
-"""A [`Token`][..Token] normalized to upper case.
-
-Use this for case-insensitive command keywords whose value remains data.
-Python `Literal[...]` annotations use
-`LiteralSyntax` when the keyword is grammar.
-"""
+"""A command token normalized to upper case."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -575,26 +615,40 @@ def parse_omitted_field(
     return Ok(Spanned(_OMITTED_FIELD, token.span))
 
 
-Omitted = Annotated[OmittedField, CmdParser.omitted(parse_omitted_field)]
-"""A required empty positional field, such as the middle field in `CMD A,,B`."""
+_OMITTED_INPUT = _OmittedInput()
+Omitted = Annotated[OmittedField, CmdParser(parse_omitted_field, _OMITTED_INPUT)]
 
 
 def parse_text(_context: CommandParseContext, cursor: CommandCursor) -> ParseResult[str]:
     return cursor.take_text()
 
 
-Text = Annotated[str, CmdParser(parse_text)]
-"""The complete remaining framed-command text, consumed verbatim.
-
-This intentionally preserves BlueSky's `string` terminal for nested commands such
-as ECHO and DELAY. Unlike [`Token`][..Token], quotes are not stripped
-because no further tokenization occurs.
-"""
+_TEXT_INPUT = _TextInput()
+Text = Annotated[str, CmdParser(parse_text, _TEXT_INPUT)]
 
 
-_INT_PARSER = CmdParser.value(int, "an integer")
-_FLOAT_PARSER = CmdParser.value(float, "a number")
-_ON_OFF_PARSER = CmdParser.value(txt2bool, "ON or OFF")
+_BOOLEAN_INPUT = _BooleanInput(
+    true=("TRUE", "YES", "Y", "1", "ON"),
+    false=("FALSE", "NO", "N", "0", "OFF"),
+)
+
+
+def _parse_boolean(_context: CommandParseContext, cursor: CommandCursor) -> ParseResult[bool]:
+    result = cursor.next_value(_input_expected(_BOOLEAN_INPUT))
+    if isinstance(result, Err):
+        return result
+    token = result.ok()
+    value = token.value.upper()
+    if value in _BOOLEAN_INPUT.true:
+        return Ok(token.map(True))
+    if value in _BOOLEAN_INPUT.false:
+        return Ok(token.map(False))
+    return Err(ArgumentIssue.expected(_input_expected(_BOOLEAN_INPUT), token.value, token.span))
+
+
+_INT_PARSER = _converter_parser(Converter(int), CommandField())
+_FLOAT_PARSER = _converter_parser(Converter(float), CommandField())
+_ON_OFF_PARSER = CmdParser(_parse_boolean, _BOOLEAN_INPUT)
 OnOff = Annotated[bool, _ON_OFF_PARSER]
 
 
@@ -656,10 +710,8 @@ def parse_distance_value(value: str) -> q.DistanceM[float]:
 
 DistanceM = Annotated[
     q.DistanceM[float],
-    CmdParser.value(
-        parse_distance_value,
-        "a distance with units, such as 5NM, 9.26KM, 9260M, or 3000FT",
-    ),
+    CommandField(name="distance", examples=("5NM", "9.26KM", "9260M", "3000FT")),
+    Converter(parse_distance_value),
 ]
 """Quantity-kind-free distance normalized to metres.
 
@@ -688,10 +740,8 @@ def parse_speed_value(value: str) -> q.SpeedMps[float]:
 
 SpeedMps = Annotated[
     q.SpeedMps[float],
-    CmdParser.value(
-        parse_speed_value,
-        "a speed with units, such as 10MPS, 600FT/MIN, 20KT, or 90KMH",
-    ),
+    CommandField(name="speed", examples=("10MPS", "600FT/MIN", "20KT", "90KMH")),
+    Converter(parse_speed_value),
 ]
 """Quantity-kind-free speed normalized to metres per second.
 
@@ -723,14 +773,19 @@ def parse_selected_airspeed_value(value: str) -> t.CasMps | t.Mach:
 
 VspdMps = Annotated[
     q.VerticalRateMps[float],
-    CmdParser.value(
-        parse_speed_value,
-        "a vertical speed with units, such as 1500FT/MIN or 7.62MPS",
-        field="vertical speed",
-    ),
+    CommandField(name="vertical speed", examples=("1500FT/MIN", "7.62MPS")),
+    Converter(parse_speed_value),
 ]
-TimeS = Annotated[q.DurationS[float], CmdParser.value(txt2tim, "a time")]
-SimTimeS = Annotated[q.SimulationTimeS[float], CmdParser.value(txt2tim, "a time")]
+TimeS = Annotated[
+    q.DurationS[float],
+    CommandField(name="time", examples=("90", "01:30", "01:02:03")),
+    Converter(txt2tim),
+]
+SimTimeS = Annotated[
+    q.SimulationTimeS[float],
+    CommandField(name="time", examples=("90", "01:30", "01:02:03")),
+    Converter(txt2tim),
+]
 
 
 #
@@ -767,7 +822,8 @@ def _parse_heading(value: str) -> t.TrueHeadingDeg | t.MagneticHeadingDeg:
 
 HeadingDeg = Annotated[
     t.TrueHeadingDeg | t.MagneticHeadingDeg,
-    CmdParser.value(_parse_heading, "a heading"),
+    CommandField(name="heading", examples=("090", "090T", "090M")),
+    Converter(_parse_heading),
 ]
 """Heading syntax preserving whether the input refers to true or magnetic north."""
 
@@ -790,7 +846,7 @@ class RunwayHeadingRequest:
 _RUNWAY_HEADING = RunwayHeadingRequest()
 UseRunwayHeading = Annotated[
     RunwayHeadingRequest,
-    CmdParser.keywords({"*": _RUNWAY_HEADING}, "*"),
+    CmdParser.choices({"*": _RUNWAY_HEADING}),
 ]
 """The `*` heading form, preserved as an explicit callback value.
 
@@ -808,10 +864,13 @@ def _aircraft_index(
     return Ok(index)
 
 
+_AIRCRAFT_INPUT = CommandField(name="aircraft")
+
+
 def parse_aircraft(
     context: CommandParseContext, cursor: CommandCursor
 ) -> ParseResult[t.AircraftIndex]:
-    result = cursor.next_value("an aircraft")
+    result = cursor.next_value(_input_expected(_AIRCRAFT_INPUT))
     if isinstance(result, Err):
         return result
     token = result.ok()
@@ -825,14 +884,17 @@ def parse_aircraft(
     return Ok(token.map(index.ok()))
 
 
-AcId = Annotated[t.AircraftIndex, CmdParser(parse_aircraft)]
+AcId = Annotated[t.AircraftIndex, CmdParser(parse_aircraft, _AIRCRAFT_INPUT)]
 """An existing aircraft callsign resolved to its traffic-array index."""
+
+
+_AIRCRAFT_SELECTION_INPUT = CommandField(name="aircraft or group", examples=("*", "ALL"))
 
 
 def parse_aircraft_selection(
     context: CommandParseContext, cursor: CommandCursor
 ) -> ParseResult[np.ndarray[Any, Any]]:
-    result = cursor.next_value("an existing aircraft or group")
+    result = cursor.next_value(_input_expected(_AIRCRAFT_SELECTION_INPUT))
     if isinstance(result, Err):
         return result
     token = result.ok()
@@ -850,7 +912,9 @@ def parse_aircraft_selection(
     return Ok(token.map(np.asarray([index.ok()], dtype=int)))
 
 
-AcIdSelection = Annotated[np.ndarray[Any, Any], CmdParser(parse_aircraft_selection)]
+AcIdSelection = Annotated[
+    np.ndarray[Any, Any], CmdParser(parse_aircraft_selection, _AIRCRAFT_SELECTION_INPUT)
+]
 """An aircraft, a traffic group, or `*`/`ALL`, resolved to traffic indices."""
 
 
@@ -926,7 +990,22 @@ def parse_waypoint(
     return Ok(Spanned(NamedWaypoint(name), token.span))
 
 
-_WAYPOINT_PARSER = CmdParser(parse_waypoint)
+_WAYPOINT_INPUT = _ChoiceInput(
+    (
+        _RecordInput(
+            "coordinate waypoint",
+            (
+                CommandField(name="latitude", examples=("52.5", "N52'30'")),
+                CommandField(name="longitude", examples=("4.5", "E004'30'")),
+            ),
+        ),
+        _RecordInput(
+            "named waypoint",
+            (CommandField(name="waypoint", examples=("SUGOL", "EHAM", "EHAM/RW06")),),
+        ),
+    )
+)
+_WAYPOINT_PARSER = CmdParser(parse_waypoint, _WAYPOINT_INPUT)
 Wpt = Annotated[WaypointSpec, _WAYPOINT_PARSER]
 """A named or coordinate waypoint expression, preserved as structured syntax."""
 
@@ -997,7 +1076,7 @@ def parse_resolved_position(
     return Ok(parsed.map(resolved.ok()))
 
 
-_RESOLVED_POSITION_PARSER = CmdParser(parse_resolved_position)
+_RESOLVED_POSITION_PARSER = CmdParser(parse_resolved_position, _WAYPOINT_INPUT)
 ResolvedPositionArg = Annotated[ResolvedPosition, _RESOLVED_POSITION_PARSER]
 """A position expression resolved against navigation data and traffic.
 
@@ -1019,7 +1098,7 @@ def parse_lat_lon(
     return Ok(parsed.map(coordinates))
 
 
-LatLonDeg = Annotated[t.LatLonDegrees, CmdParser(parse_lat_lon)]
+LatLonDeg = Annotated[t.LatLonDegrees, CmdParser(parse_lat_lon, _WAYPOINT_INPUT)]
 """A resolved position reduced to latitude and longitude degrees.
 
 It accepts the same BlueSky position expressions as
@@ -1032,28 +1111,33 @@ _VALUE_PARSERS: dict[Any, CmdParser[Any]] = {
     bool: _ON_OFF_PARSER,
     int: _INT_PARSER,
     float: _FLOAT_PARSER,
-    t.CasMps: CmdParser.value(
-        parse_cas_value,
-        "CAS such as 250KT[CAS] or 128MPS[CAS]",
-        field="CAS",
+    t.CasMps: _converter_parser(
+        Converter(parse_cas_value),
+        CommandField(name="CAS", examples=("250KT[CAS]", "128MPS[CAS]")),
     ),
-    t.Mach: CmdParser.value(_parse_mach, "Mach such as M0.78 or M.78", field="Mach"),
-    t.StdPressureAltM: CmdParser.value(
-        parse_pressure_altitude_value,
-        "pressure altitude such as FL100, 10000FT[STD], or 3048M[STD]",
-        field="pressure altitude",
+    t.Mach: _converter_parser(
+        Converter(_parse_mach),
+        CommandField(name="Mach", examples=("M0.78", "M.78")),
     ),
-    t.MslAltM: CmdParser.value(
-        _parse_msl_altitude,
-        "MSL altitude such as 10000FT[MSL] or 3048M[MSL]",
-        field="MSL altitude",
+    t.StdPressureAltM: _converter_parser(
+        Converter(parse_pressure_altitude_value),
+        CommandField(name="pressure altitude", examples=("FL100", "10000FT[STD]", "3048M[STD]")),
     ),
-    t.TrueHeadingDeg: CmdParser.value(_parse_true_heading, "a true heading", field="true heading"),
-    t.MagneticHeadingDeg: CmdParser.value(
-        _parse_magnetic_heading, "a magnetic heading", field="magnetic heading"
+    t.MslAltM: _converter_parser(
+        Converter(_parse_msl_altitude),
+        CommandField(name="MSL altitude", examples=("10000FT[MSL]", "3048M[MSL]")),
     ),
-    t.GroundTrackDeg: CmdParser.value(
-        _parse_ground_track, "a ground track such as 090TRK", field="ground track"
+    t.TrueHeadingDeg: _converter_parser(
+        Converter(_parse_true_heading),
+        CommandField(name="true heading", examples=("090", "090T")),
+    ),
+    t.MagneticHeadingDeg: _converter_parser(
+        Converter(_parse_magnetic_heading),
+        CommandField(name="magnetic heading", examples=("090M",)),
+    ),
+    t.GroundTrackDeg: _converter_parser(
+        Converter(_parse_ground_track),
+        CommandField(name="ground track", examples=("090TRK",)),
     ),
 }
 
@@ -1137,7 +1221,9 @@ class Parameter:
         return Ok(_ArgumentValues(tuple(values)))
 
     def _missing(self, span: SourceSpan, actual: str) -> ArgumentIssue:
-        return ArgumentIssue.expected("a value", actual, span).at_argument(self.name, span)
+        return ArgumentIssue.expected(_input_expected(self.parser.input), actual, span).at_argument(
+            self.name, span
+        )
 
     def _parse_one(
         self, context: CommandParseContext, cursor: CommandCursor
@@ -1221,15 +1307,51 @@ def _argument_type(annotation: Any) -> _ArgumentType | None:
 
 def _parser_for(annotation: Any) -> CmdParser[Any] | None:
     annotation = _without_none(annotation)
+    if get_origin(annotation) is Annotated:
+        base, *metadata = get_args(annotation)
+        parsers = tuple(item for item in metadata if isinstance(item, CmdParser))
+        converters = tuple(item for item in metadata if isinstance(item, Converter))
+        if len(parsers) > 1:
+            raise TypeError("stack annotation contains multiple CmdParser markers")
+        if len(converters) > 1:
+            raise TypeError("stack annotation contains multiple Converter markers")
+        if parsers and converters:
+            raise TypeError("stack annotation cannot contain both CmdParser and Converter")
+
+        field_markers = tuple(item for item in metadata if isinstance(item, CommandField))
+        field_marker: CommandField | None = None
+        if field_markers:
+            name: str | None = None
+            examples: tuple[str, ...] = ()
+            for marker in field_markers:
+                if marker.name is not None:
+                    name = marker.name
+                if marker.examples:
+                    examples = marker.examples
+            field_marker = CommandField(name, examples)
+
+        if parsers:
+            if field_marker is not None:
+                raise TypeError("CommandField cannot override an explicit CmdParser input")
+            return parsers[0]
+        if converters:
+            return _converter_parser(converters[0], field_marker or CommandField())
+
+        parser = _parser_for(base)
+        if parser is None or field_marker is None:
+            return parser
+        if not isinstance(parser.input, CommandField):
+            raise TypeError("CommandField metadata can only annotate a single command field")
+        merged = CommandField(
+            field_marker.name if field_marker.name is not None else parser.input.name,
+            field_marker.examples or parser.input.examples,
+        )
+        return CmdParser(parser.func, merged)
+
     if get_origin(annotation) is Literal:
         return _literal_parser(annotation)
     if annotation is inspect._empty or annotation is str or annotation is Any:
         return _TOKEN_PARSER
-    parser = _annotated_parser(annotation)
-    if parser is not None:
-        return parser
-    if get_origin(annotation) is Annotated:
-        return _parser_for(get_args(annotation)[0])
     return _VALUE_PARSERS.get(annotation)
 
 
@@ -1244,8 +1366,9 @@ def _choice_parser(alternatives: tuple[_ArgumentType, ...]) -> CmdParser[Any]:
         assert failure is not None
         return Err(failure)
 
-    syntax = ChoiceSyntax(tuple(alternative.parser.syntax for alternative in alternatives))
-    return CmdParser(parse, syntax)
+    return CmdParser(
+        parse, _ChoiceInput(tuple(alternative.parser.input for alternative in alternatives))
+    )
 
 
 def _literal_parser(annotation: Any) -> CmdParser[str]:
@@ -1254,7 +1377,7 @@ def _literal_parser(annotation: Any) -> CmdParser[str]:
         raise TypeError("stack command Literal values must be strings")
     literals = tuple(value.upper() for value in values)
     try:
-        return CmdParser.keywords(dict(zip(values, literals, strict=True)), " or ".join(literals))
+        return CmdParser.choices(dict(zip(values, literals, strict=True)))
     except ValueError:
         raise TypeError("stack command Literal repeats a case-insensitive value") from None
 
@@ -1277,15 +1400,6 @@ def _union_members(annotation: Any) -> tuple[Any, ...]:
 def _without_none(annotation: Any) -> Any:
     members = _union_members(annotation)
     return members[0] if len(members) == 1 else annotation
-
-
-def _annotated_parser(annotation: Any) -> CmdParser[Any] | None:
-    if get_origin(annotation) is not Annotated:
-        return None
-    parsers = tuple(item for item in get_args(annotation)[1:] if isinstance(item, CmdParser))
-    if len(parsers) > 1:
-        raise TypeError("stack annotation contains multiple CmdParser markers")
-    return parsers[0] if parsers else None
 
 
 def _annotation_constraints(annotation: Any) -> tuple[_Constraint, ...]:
@@ -1450,26 +1564,28 @@ def _underlying_function(value: Any) -> Any:
 #
 
 
-def _format_parser_syntax(syntax: ParserSyntax | None, parameter_name: str) -> str:
-    """Render structured parser syntax as legacy command text."""
-    match syntax:
-        case NamedFields(names):
-            return ",".join(names)
-        case LiteralSyntax(values):
+def _format_input(input_spec: CommandInput, parameter_name: str) -> str:
+    match input_spec:
+        case CommandField(name=name):
+            return name or parameter_name
+        case _RecordInput(_, fields):
+            return ",".join(field.name or parameter_name for field in fields)
+        case _LiteralInput(values):
             return "|".join(values)
-        case OmittedSyntax():
-            return ""
-        case ChoiceSyntax(alternatives):
-            return "|".join(
-                _format_parser_syntax(alternative, parameter_name) for alternative in alternatives
-            )
-        case None:
+        case _BooleanInput():
             return parameter_name
+        case _OmittedInput():
+            return ""
+        case _TextInput():
+            return parameter_name
+        case _ChoiceInput(alternatives):
+            return "|".join(
+                _format_input(alternative, parameter_name) for alternative in alternatives
+            )
 
 
 def _format_parameter(parameter: Parameter) -> str:
-    """Render a compiled command parameter as legacy command text."""
-    text = _format_parser_syntax(parameter.parser.syntax, parameter.name)
+    text = _format_input(parameter.parser.input, parameter.name)
     if parameter.repeat:
         text += "..."
     if parameter.optional or parameter.nullable:
@@ -1478,7 +1594,6 @@ def _format_parameter(parameter: Parameter) -> str:
 
 
 def format_command_form(name: str, parameters: Iterable[Parameter]) -> str:
-    """Render a command form as legacy command text."""
     rendered = ",".join(_format_parameter(parameter) for parameter in parameters)
     return f"{name} {rendered}" if rendered else name
 
@@ -1489,8 +1604,17 @@ def format_command_form(name: str, parameters: Iterable[Parameter]) -> str:
 
 
 @dataclass(frozen=True, slots=True)
+class ParameterSchema:
+    name: str
+    input: CommandInput
+    optional: bool = False
+    nullable: bool = False
+    repeat: bool = False
+
+
+@dataclass(frozen=True, slots=True)
 class CommandFormSchema:
-    syntax: str
+    parameters: tuple[ParameterSchema, ...]
     doc: str = ""
 
 
@@ -1510,7 +1634,16 @@ def build_command_schema(commands: Iterable[Command]) -> CommandSchema:
         command.name: CommandEntry(
             forms=tuple(
                 CommandFormSchema(
-                    syntax=format_command_form(command.name, form.parameters),
+                    parameters=tuple(
+                        ParameterSchema(
+                            name=parameter.name,
+                            input=parameter.parser.input,
+                            optional=parameter.optional,
+                            nullable=parameter.nullable,
+                            repeat=parameter.repeat,
+                        )
+                        for parameter in form.parameters
+                    ),
                     doc=form.help.strip(),
                 )
                 for form in command.forms

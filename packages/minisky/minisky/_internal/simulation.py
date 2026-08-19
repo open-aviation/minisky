@@ -20,7 +20,8 @@ from annotated_types import Ge, Le
 
 from minisky import quantities as q
 from minisky._internal.command import (
-    CmdParser,
+    CommandField,
+    Converter,
     OnOff,
     command,
 )
@@ -67,7 +68,11 @@ def _parse_clock_time(value: str) -> datetime.time:
     )
 
 
-ClockTimeArg = Annotated[datetime.time, CmdParser.value(_parse_clock_time, "a UTC time")]
+ClockTimeArg = Annotated[
+    datetime.time,
+    CommandField(name="UTC time", examples=("12:34:56", "12:34:56.123456")),
+    Converter(_parse_clock_time),
+]
 
 
 def _calendar_datetime(

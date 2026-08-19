@@ -30,6 +30,7 @@ from minisky._internal.command import (
     ArgumentIssue,
     CmdParser,
     CommandCursor,
+    CommandField,
     CommandParseContext,
     CoordinateWaypoint,
     DistanceM,
@@ -779,11 +780,11 @@ _TURN_PARAMETERS = {
 
 WaypointModeArg = Annotated[
     WaypointMode,
-    CmdParser.keywords(_WAYPOINT_MODES, "FLYBY, FLYOVER, or FLYTURN"),
+    CmdParser.choices(_WAYPOINT_MODES),
 ]
 TurnParameterArg = Annotated[
     TurnParameter,
-    CmdParser.keywords(_TURN_PARAMETERS, "a supported turn parameter"),
+    CmdParser.choices(_TURN_PARAMETERS),
 ]
 TurnRadiusMArg = Gt0[DistanceM]
 TurnHeadingRateArg = q.TurnRateDegPerS[IsFinite[Gt0[float]]]
@@ -801,7 +802,13 @@ def _parse_runway(
     return Ok(Spanned(parsed.value, parsed.span))
 
 
-RunwayArg = Annotated[RunwayPosition, CmdParser(_parse_runway)]
+RunwayArg = Annotated[
+    RunwayPosition,
+    CmdParser(
+        _parse_runway,
+        CommandField(name="runway", examples=("EHAM/RW06", "LFPG/RWY23")),
+    ),
+]
 
 
 def _waypoint_mode_status(traffic: Traffic, acidx: AircraftIndex) -> Result[str, str]:
@@ -1066,7 +1073,7 @@ def _parse_at_constraints(
 
 
 AtConstraintsArg = Annotated[
-    AtConstraints, CmdParser.fields(_parse_at_constraints, ("altitude/airspeed",))
+    AtConstraints, CmdParser(_parse_at_constraints, CommandField(name="altitude/airspeed"))
 ]
 
 
