@@ -1,1 +1,1 @@
-{"commands":{"PASSENGERS":{"forms":[{"syntax":"PASSENGERS index","doc":"Show the number of passengers on an aircraft."},{"syntax":"PASSENGERS index,count","doc":"Set the number of passengers on an aircraft."}]}}}
+{"commands":{"PASSENGERS":{"forms":[{"parameters":[{"name":"index","input":{"kind":"field","name":"aircraft"}}],"doc":"Show the number of passengers on an aircraft."},{"parameters":[{"name":"index","input":{"kind":"field","name":"aircraft"}},{"name":"count","input":{"kind":"field"}}],"doc":"Set the number of passengers on an aircraft."}]}}}

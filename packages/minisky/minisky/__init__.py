@@ -17,7 +17,9 @@ from minisky._internal.command import (
     ArgumentIssue,
     CmdParser,
     CommandCursor,
+    CommandField,
     CommandParseContext,
+    Converter,
     CoordinateWaypoint,
     DistanceM,
     HeadingDeg,
@@ -150,6 +152,8 @@ __all__ = (  # noqa: RUF022 - public API and docs use this semantic order
     "CoordinateWaypoint",
     # custom command parsers
     "CmdParser",
+    "CommandField",
+    "Converter",
     "CommandParseContext",
     "CommandCursor",
     "ParseResult",

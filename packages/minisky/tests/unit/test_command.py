@@ -11,6 +11,7 @@ from minisky import quantities as q
 from minisky._internal.command import (
     ArgumentIssue,
     CommandCursor,
+    CommandField,
     CoordinateWaypoint,
     HeadingDeg,
     LatLonDeg,
@@ -393,7 +394,7 @@ def test_heading_wildcard_is_not_global_heading_syntax(
     result = heading.parse_arguments("HDGREF *")
 
     assert isinstance(result, Err)
-    assert "expected a heading" in result.err().message
+    assert "got *" in result.err().message
 
 
 def test_cre_runway_heading_marker_requires_runway(runtime: MiniSky) -> None:
@@ -438,5 +439,9 @@ def test_command_schema_describes_existing_forms(runtime: MiniSky) -> None:
     assert tuple(schema.commands) == ("TESTSCHEMA",)
     entry = schema.commands["TESTSCHEMA"]
     assert entry.aliases == ("TS",)
-    assert entry.forms[0].syntax == "TESTSCHEMA value"
-    assert entry.forms[0].doc == "Record one integer."
+    form = entry.forms[0]
+    assert form.doc == "Record one integer."
+    assert len(form.parameters) == 1
+    parameter = form.parameters[0]
+    assert parameter.name == "value"
+    assert parameter.input == CommandField()

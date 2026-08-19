@@ -46,24 +46,6 @@ def txt2tim(txt: str) -> q.DurationS[float]:
         raise ValueError(f'Could not parse "{txt}" as time') from None
 
 
-def txt2bool(txt: str) -> bool:
-    """Convert string to boolean.
-
-    Args:
-        txt: Boolean text: "true"/"yes"/"y"/"1"/"on" or
-            "false"/"no"/"n"/"0"/"off" (case insensitive).
-
-    Raises:
-        ValueError: When the text is not a recognized boolean.
-    """
-    ltxt = txt.lower()
-    if ltxt in ("true", "yes", "y", "1", "on"):
-        return True
-    if ltxt in ("false", "no", "n", "0", "off"):
-        return False
-    raise ValueError(f"Could not parse {txt} as bool.")
-
-
 def i2txt(i: int, n: int) -> str:
     """Convert integer to string with leading zeros to make it n chars long"""
     return f"{i:0{n}d}"
