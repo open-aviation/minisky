@@ -11,7 +11,10 @@ from __future__ import annotations
 from abc import ABC
 from dataclasses import dataclass
 from enum import IntEnum
-from typing import TypeAlias
+from typing import Annotated, TypeAlias
+
+from annotated_types import Ge, Gt
+from typing_extensions import TypeVar
 
 from minisky import quantities as q
 
@@ -44,6 +47,15 @@ RunwayIdentifier: TypeAlias = str
 
 AirwayIdentifier: TypeAlias = str
 """Published airway identifier, for example `UL620`."""
+
+
+_T = TypeVar("_T")
+
+Ge0: TypeAlias = Annotated[_T, Ge(0)]
+"""A value greater than or equal to zero."""
+
+Gt0: TypeAlias = Annotated[_T, Gt(0)]
+"""A value greater than zero."""
 
 
 class RuntimeNewType(ABC):

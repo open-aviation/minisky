@@ -4,11 +4,10 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from types import MappingProxyType
-from typing import Annotated, NamedTuple, Protocol
+from typing import NamedTuple, Protocol
 
 import numpy as np
 import shapely
-from annotated_types import Ge
 
 from minisky import quantities as q
 from minisky._internal.command import (
@@ -19,9 +18,9 @@ from minisky._internal.command import (
 )
 from minisky._internal.result import Err, Ok, Result
 from minisky.geo import kwikdist
-from minisky.types import LatLonDegrees, StdPressureAltM
+from minisky.types import Ge0, LatLonDegrees, StdPressureAltM
 
-CircleRadiusM = Annotated[DistanceM, Ge(0)]
+CircleRadiusM = Ge0[DistanceM]
 
 
 class Shapes:

@@ -20,10 +20,9 @@ aviation units (NM, ft).
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Annotated, NamedTuple
+from typing import TYPE_CHECKING, NamedTuple
 
 import numpy as np
-from annotated_types import Ge
 from scipy.spatial import KDTree
 
 from minisky import quantities as q
@@ -39,13 +38,13 @@ from minisky._internal.config import MiniSkyConfig
 from minisky._internal.result import Ok, Result
 from minisky._internal.traffic_arrays import TrafficArrays
 from minisky.geo import _MEAN_EARTH_RADIUS
+from minisky.types import Ge0
 
 if TYPE_CHECKING:
     from minisky._internal.traffic import Traffic
 
-NonNegativeTime = Annotated[TimeS, Ge(0)]
-ProtectedRadiusM = Annotated[DistanceM, Ge(0)]
-ProtectedHeightM = Annotated[DistanceM, Ge(0)]
+ProtectedRadiusM = Ge0[DistanceM]
+ProtectedHeightM = Ge0[DistanceM]
 
 
 class ConflictPair(NamedTuple):
@@ -310,7 +309,7 @@ class ConflictDetection(TrafficArrays):
         return Ok(f"DTLOOK[time]\nCurrent value: {self.dtlookahead_def: .1f} sec")
 
     @command(name="DTLOOK")
-    def set_detection_lookahead(self, time: NonNegativeTime) -> Result[str, str]:
+    def set_detection_lookahead(self, time: TimeS) -> Result[str, str]:
         """Set the default conflict-detection lookahead."""
         self.dtlookahead_def = time
         if self.global_dtlook:
@@ -319,7 +318,7 @@ class ConflictDetection(TrafficArrays):
 
     @command(name="DTLOOK")
     def set_aircraft_detection_lookahead(
-        self, time: NonNegativeTime, first: AcIdSelection, *additional: AcIdSelection
+        self, time: TimeS, first: AcIdSelection, *additional: AcIdSelection
     ) -> Result[str, str]:
         """Set conflict-detection lookahead for selected aircraft."""
         idx = aircraft_indices((first, *additional))
@@ -333,7 +332,7 @@ class ConflictDetection(TrafficArrays):
         return Ok(f"DTNOLOOK[time]\nCurrent value: {self.dtnolook_def: .1f} sec")
 
     @command(name="DTNOLOOK")
-    def set_detection_no_look(self, time: NonNegativeTime) -> Result[str, str]:
+    def set_detection_no_look(self, time: TimeS) -> Result[str, str]:
         """Set the default post-resolution no-look interval."""
         self.dtnolook_def = time
         if self.global_dtnolook:
@@ -342,7 +341,7 @@ class ConflictDetection(TrafficArrays):
 
     @command(name="DTNOLOOK")
     def set_aircraft_detection_no_look(
-        self, time: NonNegativeTime, first: AcIdSelection, *additional: AcIdSelection
+        self, time: TimeS, first: AcIdSelection, *additional: AcIdSelection
     ) -> Result[str, str]:
         """Set the post-resolution no-look interval for selected aircraft."""
         idx = aircraft_indices((first, *additional))

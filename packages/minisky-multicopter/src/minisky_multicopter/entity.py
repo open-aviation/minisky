@@ -19,6 +19,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import numpy as np
+from annotated_types import IsFinite
 from minisky import (
     AcId,
     Entity,
@@ -26,7 +27,6 @@ from minisky import (
     HeadingDeg,
     Ok,
     OnOff,
-    PositiveFiniteFloat,
     Result,
     TimeS,
     command,
@@ -34,7 +34,7 @@ from minisky import (
     hook,
 )
 from minisky import quantities as q
-from minisky.types import MagneticHeadingDeg, StdPressureAltM
+from minisky.types import Gt0, MagneticHeadingDeg, StdPressureAltM
 
 from minisky_multicopter.config import (
     MulticopterConfig,
@@ -202,7 +202,7 @@ class Multicopter(Entity):
     def set_yawrate(
         self,
         idx: AcId,
-        yawrate: q.YawRateDegPerS[PositiveFiniteFloat],
+        yawrate: q.YawRateDegPerS[IsFinite[Gt0[float]]],
     ) -> Result[str, str]:
         """Set the maximum yaw rate of a multicopter."""
         callsign = self.traffic.callsign[idx]

@@ -19,7 +19,7 @@ from math import isfinite
 from typing import Annotated, Literal
 
 import numpy as np
-from annotated_types import Ge
+from annotated_types import IsFinite
 from scipy.interpolate import LinearNDInterpolator, interp1d
 
 from minisky import quantities as q
@@ -28,7 +28,6 @@ from minisky._internal.command import (
     CmdParser,
     CommandCursor,
     CommandParseContext,
-    FiniteFloat,
     LatLonDeg,
     Omitted,
     ParseResult,
@@ -42,10 +41,10 @@ from minisky._internal.command import (
 )
 from minisky._internal.result import Err, Ok, Result
 from minisky._internal.traffic_arrays import TrafficArrays
-from minisky.types import StdPressureAltM
+from minisky.types import Ge0, StdPressureAltM
 
-WindDirectionArg = q.WindDirectionDeg[FiniteFloat]
-NonNegativeSpeedMps = Annotated[SpeedMps, Ge(0)]
+WindDirectionArg = q.WindDirectionDeg[IsFinite[float]]
+NonNegativeSpeedMps = Ge0[SpeedMps]
 
 
 class WindFieldKind(Enum):
