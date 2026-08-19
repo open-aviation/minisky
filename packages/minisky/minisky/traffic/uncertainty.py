@@ -18,8 +18,8 @@ from minisky import quantities as q
 from minisky.core.trafficarrays import TrafficArrays
 
 if TYPE_CHECKING:
-    from minisky.simulation import Simulation
-    from minisky.traffic import Traffic
+    from minisky.simulation.simulation import Simulation
+    from minisky.traffic.traffic import Traffic
 
 
 class SurveillanceUncertainty(TrafficArrays):

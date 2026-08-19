@@ -8,7 +8,7 @@ the base entity wiring and the replaceable round-trip (select + revert).
 from __future__ import annotations
 
 from minisky import MiniSky
-from minisky.simulation import Simulation
+from minisky.simulation.simulation import Simulation
 from minisky.traffic.kinematics import Kinematics
 from minisky.types import CasMps, StdPressureAltM
 

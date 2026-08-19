@@ -23,7 +23,9 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from minisky import quantities as q
-from minisky.command import (
+from minisky.core.trafficarrays import OptionalArray, TrafficArrays, VariantArray
+from minisky.result import Err, Ok, Result
+from minisky.stack_command import (
     AcId,
     AcIdSelection,
     CoordinateWaypoint,
@@ -35,12 +37,19 @@ from minisky.command import (
     Wpt,
     command,
 )
-from minisky.core.trafficarrays import OptionalArray, TrafficArrays, VariantArray
-from minisky.result import Err, Ok, Result
 from minisky.tools import geo
 from minisky.tools.aero import g0, tas2cas, vcas2tas, vcasmach2tas
 from minisky.tools.convert import degto180
 from minisky.tools.position import txt2pos
+from minisky.traffic.route import (
+    Route,
+    RouteProfile,
+    RtaTarget,
+    TurnHeadingRate,
+    TurnRadius,
+    WaypointType,
+    direct,
+)
 from minisky.types import (
     AircraftIndex,
     AirspeedKind,
@@ -53,11 +62,9 @@ from minisky.types import (
     WaypointReference,
 )
 
-from .route import Route, RouteProfile, RtaTarget, TurnHeadingRate, TurnRadius, WaypointType, direct
-
 if TYPE_CHECKING:
-    from minisky.simulation import Simulation
-    from minisky.traffic import Traffic
+    from minisky.simulation.simulation import Simulation
+    from minisky.traffic.traffic import Traffic
 
 
 def _waypoint_name(waypoint: WaypointSpec) -> WaypointReference:

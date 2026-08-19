@@ -19,9 +19,9 @@ from typing import Any, NamedTuple
 
 import numpy as np
 
-from minisky.command import Token, command
-from minisky.core import TrafficArrays
+from minisky.core.trafficarrays import TrafficArrays
 from minisky.result import Err, Ok, Result
+from minisky.stack_command import Token, command
 
 
 class VariableSource(NamedTuple):

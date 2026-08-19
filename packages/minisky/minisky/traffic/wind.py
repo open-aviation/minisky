@@ -23,7 +23,9 @@ from annotated_types import Ge
 from scipy.interpolate import LinearNDInterpolator, interp1d
 
 from minisky import quantities as q
-from minisky.command import (
+from minisky.core.trafficarrays import TrafficArrays
+from minisky.result import Err, Ok, Result
+from minisky.stack_command import (
     ArgumentIssue,
     CmdParser,
     CommandCursor,
@@ -40,8 +42,6 @@ from minisky.command import (
     parse_pressure_altitude_value,
     parse_speed_value,
 )
-from minisky.core.trafficarrays import TrafficArrays
-from minisky.result import Err, Ok, Result
 from minisky.types import StdPressureAltM
 
 WindDirectionArg = q.WindDirectionDeg[FiniteFloat]

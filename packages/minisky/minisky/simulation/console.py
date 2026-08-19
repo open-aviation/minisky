@@ -11,7 +11,7 @@ from typing import Self
 
 from colorama import Fore, Style
 
-from minisky.command import Text, command
+from minisky.stack_command import Text, command
 
 ConsoleCallback = Callable[[str], None]
 

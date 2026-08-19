@@ -53,7 +53,7 @@ For performance-critical internal logic, we strongly recommend using [`typing.An
 When defining your own [plugin command](./commands.md), simply annotate the arguments of your method:
 
 ```py
-from minisky.command import command
+from minisky import command
 from minisky.types import CasMps, Mach
 
 @command
@@ -65,7 +65,7 @@ def set_speed(self, speed: CasMps | Mach):
             # handle mach...
 ```
 
-Here, the [`@command` decorator][minisky.command.command] internally extracts the annotation of the `speed` argument and understands how to parse both forms (e.g. `130KT[CAS]` or `M.78`).
+Here, the [`@command` decorator][minisky.command] internally extracts the annotation of the `speed` argument and understands how to parse both forms (e.g. `130KT[CAS]` or `M.78`).
 
 Conceptually, [`CasMps`][minisky.types.CasMps] and [`Mach`][minisky.types.Mach] are just simple wrappers over a [`float`][]:
 

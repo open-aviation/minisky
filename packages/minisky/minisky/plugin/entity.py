@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 from minisky.core.trafficarrays import TrafficArrays
 
 if TYPE_CHECKING:
-    from minisky.traffic import Traffic
+    from minisky.traffic.traffic import Traffic
 
 
 class Entity(TrafficArrays):

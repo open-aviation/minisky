@@ -6,7 +6,7 @@ from collections.abc import Callable, Iterator
 
 import pytest
 from minisky import MiniSky, MiniSkyConfig
-from minisky.simulation import Simulation
+from minisky.simulation.simulation import Simulation
 
 
 @pytest.fixture(scope="session")

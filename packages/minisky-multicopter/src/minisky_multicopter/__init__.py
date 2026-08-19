@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from minisky import plugin as plugin_api
+from minisky import Plugin, PluginContext, PluginSpec
 
 from minisky_multicopter.activewp import MulticopterActiveWaypoint
 from minisky_multicopter.aporasas import MulticopterAPorASAS
@@ -32,7 +32,7 @@ __all__ = (
 )
 
 
-def build(context: plugin_api.PluginContext[MulticopterConfig]) -> plugin_api.PluginSpec:
+def build(context: PluginContext[MulticopterConfig]) -> PluginSpec:
     typespecs = load_type_table(context.config.performance_path)
     context.mount(Multicopter(typespecs, context.config))
     return context.finish(
@@ -46,4 +46,4 @@ def build(context: plugin_api.PluginContext[MulticopterConfig]) -> plugin_api.Pl
     )
 
 
-plugin = plugin_api.Plugin(build=build, config_class=MulticopterConfig)
+plugin = Plugin(build=build, config_class=MulticopterConfig)

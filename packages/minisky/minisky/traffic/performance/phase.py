@@ -5,8 +5,7 @@ from enum import IntEnum
 import numpy as np
 
 from minisky import quantities as q
-
-from .coeff import LiftType
+from minisky.traffic.performance.coeff import LiftType
 
 
 class FlightPhase(IntEnum):

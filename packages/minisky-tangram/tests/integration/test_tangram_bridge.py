@@ -8,7 +8,7 @@ from typing import Any
 import fakeredis
 import pytest
 from minisky import MiniSky
-from minisky.simulation import Simulation, SimulationState
+from minisky.simulation.simulation import Simulation, SimulationState
 from minisky_tangram import TangramBridge
 from redis.client import PubSub
 

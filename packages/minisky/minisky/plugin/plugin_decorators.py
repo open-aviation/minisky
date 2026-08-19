@@ -1,7 +1,7 @@
 """Decorators for plugin hooks and replacements.
 
 The decorators store metadata only. Typed plugins mount an instance with
-[PluginContext][minisky.plugin.plugin.PluginContext] before MiniSky binds its
+[PluginContext][minisky.PluginContext] before MiniSky binds its
 declarations to that runtime.
 """
 
@@ -11,7 +11,7 @@ from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal, TypeVar, overload
 
-from minisky.command import _bound_method, _declared_attributes, _underlying_function
+from minisky.stack_command import _bound_method, _declared_attributes, _underlying_function
 
 if TYPE_CHECKING:
     from minisky.core.trafficarrays import TrafficArrays

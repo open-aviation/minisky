@@ -49,11 +49,21 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from typing import Any, TypedDict
 
-from minisky import plugin as plugin_api
+from minisky import (
+    Err,
+    Ok,
+    Plugin,
+    PluginContext,
+    PluginRuntime,
+    PluginSpec,
+    PluginStatus,
+    Result,
+    SimulationState,
+    Snapshot,
+    command,
+    hook,
+)
 from minisky import quantities as q
-from minisky.result import Err, Ok, Result
-from minisky.simulation import SimulationState
-from minisky.streaming import Snapshot
 from pydantic import BaseModel, ConfigDict
 
 
@@ -232,7 +242,7 @@ class TangramBridge:
         self.last_error = ""
 
         self._snapshot_builder: Callable[[], Snapshot] | None = None
-        self._status_builder: Callable[[], plugin_api.PluginStatus] | None = None
+        self._status_builder: Callable[[], PluginStatus] | None = None
         self._stack_command: Callable[[str], None] | None = None
         self._last_build = 0.0
         self._last_payload: TangramPayload | None = None
@@ -242,7 +252,7 @@ class TangramBridge:
         self._thread: threading.Thread | None = None
         self.ready = threading.Event()
 
-    def start(self, runtime: plugin_api.PluginRuntime) -> Result[str, str]:
+    def start(self, runtime: PluginRuntime) -> Result[str, str]:
         """Bind runtime capabilities and start the Redis thread."""
         try:
             if self.redis_factory is None:
@@ -279,7 +289,7 @@ class TangramBridge:
         self._status_builder = None
         self._stack_command = None
 
-    @plugin_api.command(name="TANGRAM")
+    @command(name="TANGRAM")
     def status(self) -> Result[str, str]:
         """Show the status of the tangram Redis bridge."""
         status = "connected" if self.connected else "disconnected"
@@ -291,7 +301,7 @@ class TangramBridge:
             text += f"\nLast error: {self.last_error}"
         return Ok(text)
 
-    @plugin_api.hook("update")
+    @hook("update")
     def tick(self) -> None:
         """Build and enqueue a rate-capped snapshot while operating."""
         snapshot_builder = self._snapshot_builder
@@ -303,7 +313,7 @@ class TangramBridge:
         self._last_build = now
         self._enqueue(convert_snapshot(snapshot_builder()))
 
-    @plugin_api.hook("reset")
+    @hook("reset")
     def reset(self) -> None:
         """Push an empty payload so the frontend clears the map."""
         snapshot_builder = self._snapshot_builder
@@ -414,7 +424,7 @@ class TangramBridge:
 
 
 # --8<-- [start:lifespan]
-def build(context: plugin_api.PluginContext[TangramConfig]) -> plugin_api.PluginSpec:
+def build(context: PluginContext[TangramConfig]) -> PluginSpec:
     bridge = context.mount(
         TangramBridge(
             redis_url=context.config.redis_url,
@@ -424,7 +434,7 @@ def build(context: plugin_api.PluginContext[TangramConfig]) -> plugin_api.Plugin
     )
 
     @asynccontextmanager
-    async def lifespan(runtime: plugin_api.PluginRuntime) -> AsyncGenerator[None]:
+    async def lifespan(runtime: PluginRuntime) -> AsyncGenerator[None]:
         runtime.subscribe_console(bridge.capture_console)
         match bridge.start(runtime):
             case Ok(message):
@@ -440,5 +450,5 @@ def build(context: plugin_api.PluginContext[TangramConfig]) -> plugin_api.Plugin
     return context.finish(lifespan=lifespan)
 
 
-plugin = plugin_api.Plugin(build=build, config_class=TangramConfig)
+plugin = Plugin(build=build, config_class=TangramConfig)
 # --8<-- [end:lifespan]

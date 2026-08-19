@@ -19,20 +19,20 @@ from typing import TYPE_CHECKING, Any, Generic, Literal, TypeVar
 
 from pydantic import TypeAdapter
 
-from minisky.command import Keyword, command
 from minisky.core.trafficarrays import PreparedReplacement, TrafficArrays
 from minisky.identifiers import validate_plugin_id
 from minisky.plugin.entity import Entity
 from minisky.plugin.plugin_decorators import HookName, declared_hooks, declared_replacement
 from minisky.result import Err, Ok, Result
+from minisky.stack_command import Keyword, command
 from minisky.streaming import Snapshot, build_snapshot
 
 if TYPE_CHECKING:
     from minisky.core.config import MiniSkyConfig
     from minisky.core.varexplorer import VariableExplorer
     from minisky.runtime import MiniSky
-    from minisky.simulation import ConsoleIO, Simulation
-    from minisky.simulation.console import ConsoleSubscription
+    from minisky.simulation.console import ConsoleIO, ConsoleSubscription
+    from minisky.simulation.simulation import Simulation
     from minisky.stack import Command, CommandStack
 
 ConfigT = TypeVar("ConfigT")

@@ -29,9 +29,9 @@ from typing import Any, Generic, TypeVar
 
 import numpy as np
 
-from minisky.command import Keyword, command
 from minisky.identifiers import normalize_public_name
 from minisky.result import Err, Ok, Result
+from minisky.stack_command import Keyword, command
 
 defaults = MappingProxyType({"float": 0.0, "int": 0, "uint": 0, "bool": False, "S": "", "str": ""})
 
@@ -290,7 +290,7 @@ class VariantArray(Generic[ArrayValueT]):
 
     !!! note
 
-        [traffic arrays][minisky.core.TrafficArrays] by default zero-fills new
+        [traffic arrays][minisky.core.trafficarrays.TrafficArrays] by default zero-fills new
         `kind` lanes, so make sure the '0' value used in your discriminant
         means the default.
 

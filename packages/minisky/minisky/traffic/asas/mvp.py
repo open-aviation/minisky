@@ -36,7 +36,7 @@ _CRUISE_VERTICAL_RATE: q.VerticalRateMps[float] = 0.1
 _HEAD_ON_CPA_FLOOR: q.DistanceM[float] = 10.0
 
 if TYPE_CHECKING:
-    from minisky.traffic import Traffic
+    from minisky.traffic.traffic import Traffic
 
     from .detection import ConflictDetection
 

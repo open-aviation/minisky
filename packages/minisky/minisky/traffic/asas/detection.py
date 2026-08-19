@@ -27,7 +27,10 @@ from annotated_types import Ge
 from scipy.spatial import KDTree
 
 from minisky import quantities as q
-from minisky.command import (
+from minisky.core.config import MiniSkyConfig
+from minisky.core.trafficarrays import TrafficArrays
+from minisky.result import Ok, Result
+from minisky.stack_command import (
     AcIdSelection,
     DistanceM,
     OnOff,
@@ -35,13 +38,10 @@ from minisky.command import (
     aircraft_indices,
     command,
 )
-from minisky.core.config import MiniSkyConfig
-from minisky.core.trafficarrays import TrafficArrays
-from minisky.result import Ok, Result
 from minisky.tools.geo import _MEAN_EARTH_RADIUS
 
 if TYPE_CHECKING:
-    from minisky.traffic import Traffic
+    from minisky.traffic.traffic import Traffic
 
 NonNegativeTime = Annotated[TimeS, Ge(0)]
 ProtectedRadiusM = Annotated[DistanceM, Ge(0)]

@@ -18,8 +18,8 @@ from minisky.core.trafficarrays import TrafficArrays
 from minisky.tools.aero import Rearth
 
 if TYPE_CHECKING:
-    from minisky.simulation import Simulation
-    from minisky.traffic import Traffic
+    from minisky.simulation.simulation import Simulation
+    from minisky.traffic.traffic import Traffic
 
 
 class Turbulence(TrafficArrays):

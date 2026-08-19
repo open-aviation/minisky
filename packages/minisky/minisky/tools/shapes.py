@@ -11,13 +11,13 @@ import shapely
 from annotated_types import Ge
 
 from minisky import quantities as q
-from minisky.command import (
+from minisky.result import Err, Ok, Result
+from minisky.stack_command import (
     DistanceM,
     Keyword,
     LatLonDeg,
     command,
 )
-from minisky.result import Err, Ok, Result
 from minisky.tools.geo import kwikdist
 from minisky.types import LatLonDegrees, StdPressureAltM
 

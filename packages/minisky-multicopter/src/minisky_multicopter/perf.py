@@ -22,9 +22,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import numpy as np
-from minisky import plugin as plugin_api
+from minisky import Ok, Result, replacement
 from minisky import quantities as q
-from minisky.result import Ok, Result
 from minisky.tools import aero
 from minisky.traffic.performance import coeff
 from minisky.traffic.performance.perfoap import OpenAP
@@ -35,10 +34,10 @@ from minisky_multicopter.config import MulticopterTypeSpec, RotorAirframeSpec
 from minisky_multicopter.entity import get_multicopter
 
 if TYPE_CHECKING:
-    from minisky.traffic import Traffic
+    from minisky.traffic.traffic import Traffic
 
 
-@plugin_api.replacement
+@replacement
 class MulticopterPerf(OpenAP):
     """OpenAP performance with an electric model for multicopter rows."""
 

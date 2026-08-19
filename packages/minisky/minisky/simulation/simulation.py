@@ -19,22 +19,22 @@ import numpy as np
 from annotated_types import Ge, Le
 
 from minisky import quantities as q
-from minisky.command import (
+from minisky.result import Err, Ok, Result
+from minisky.stack import ScenarioData
+from minisky.stack_command import (
     CmdParser,
     OnOff,
     command,
 )
-from minisky.result import Err, Ok, Result
-from minisky.stack import ScenarioData
 
 if TYPE_CHECKING:
     from minisky.core.trafficarrays import ReplaceableManager
-    from minisky.plugin import PluginManager
+    from minisky.plugin.plugin import PluginManager
     from minisky.simulation.console import ConsoleIO
     from minisky.stack import CommandStack
     from minisky.tools.navdata import Navdatabase
     from minisky.tools.shapes import Shapes
-    from minisky.traffic import Traffic
+    from minisky.traffic.traffic import Traffic
 
 
 class SimulationState(IntEnum):

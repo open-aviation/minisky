@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Annotated, TypeAlias
 from annotated_types import Ge
 
 from minisky import quantities as q
-from minisky.command import (
+from minisky.stack_command import (
     AcId,
     DistanceM,
     LatLonDeg,
@@ -27,7 +27,7 @@ from minisky.types import (
 )
 
 if TYPE_CHECKING:
-    from minisky.traffic import Traffic
+    from minisky.traffic.traffic import Traffic
 
 
 @dataclass(slots=True)

@@ -115,7 +115,7 @@ from minisky.tools.position import islat
 
 if TYPE_CHECKING:
     from minisky.tools.navdata import Navdatabase
-    from minisky.traffic import Traffic
+    from minisky.traffic.traffic import Traffic
 
 CommandCallback = Callable[..., Any]
 CommandTarget = TypeVar("CommandTarget", bound=CommandCallback)
@@ -554,7 +554,7 @@ Keyword = Annotated[str, _KEYWORD_PARSER]
 
 Use this for case-insensitive command keywords whose value remains data.
 Python `Literal[...]` annotations use
-[`LiteralSyntax`][..LiteralSyntax] when the keyword is grammar.
+[`LiteralSyntax`][minisky.stack_command.LiteralSyntax] when the keyword is grammar.
 """
 
 
@@ -1028,7 +1028,7 @@ LatLonDeg = Annotated[t.LatLonDegrees, CmdParser(parse_lat_lon)]
 """A resolved position reduced to latitude and longitude degrees.
 
 It accepts the same BlueSky position expressions as
-[`ResolvedPositionArg`][..ResolvedPositionArg] but intentionally
+[`ResolvedPositionArg`][minisky.stack_command.ResolvedPositionArg] but intentionally
 discards runway-specific heading after resolution.
 """
 

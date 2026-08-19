@@ -20,7 +20,7 @@ from minisky.tools.aero import g0, vcas2tas
 from minisky.tools.convert import degto180
 
 if TYPE_CHECKING:
-    from minisky.traffic import Traffic
+    from minisky.traffic.traffic import Traffic
 
 
 class ActiveWaypoint(TrafficArrays):

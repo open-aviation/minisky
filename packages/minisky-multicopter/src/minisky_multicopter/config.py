@@ -9,9 +9,8 @@ from pathlib import Path
 from typing import Annotated, TypeAlias
 
 from annotated_types import Ge, Le, Lt, MinLen
+from minisky import PositiveFiniteFloat, default_user_config_dir
 from minisky import quantities as q
-from minisky.core.config import default_user_config_dir
-from minisky.plugin import PositiveFiniteFloat
 from minisky.types import AircraftTypeCode
 from pydantic import BaseModel, ConfigDict, FiniteFloat, StringConstraints
 

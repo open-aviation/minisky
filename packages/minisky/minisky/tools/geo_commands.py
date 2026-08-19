@@ -1,7 +1,7 @@
 """Stack commands backed by geographic utilities."""
 
-from minisky.command import LatLonDeg, command
 from minisky.result import Ok, Result
+from minisky.stack_command import LatLonDeg, command
 from minisky.tools.geo import magdec
 
 

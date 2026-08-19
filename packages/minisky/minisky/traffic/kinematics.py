@@ -24,8 +24,8 @@ from minisky.core.trafficarrays import TrafficArrays
 from minisky.tools.aero import Rearth, g0, vtas2cas, vtas2mach
 
 if TYPE_CHECKING:
-    from minisky.simulation import Simulation
-    from minisky.traffic import Traffic
+    from minisky.simulation.simulation import Simulation
+    from minisky.traffic.traffic import Traffic
 
 
 class Kinematics(TrafficArrays):
