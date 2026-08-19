@@ -8,9 +8,11 @@ The example packages under `packages/minisky-example*` and `packages/minisky-tan
 
 Your package should expose a [`Plugin`][minisky.Plugin] value through the `minisky.plugins` entry-point group:
 
+<!-- fmt:off -->
 ```toml
 --8<-- "packages/minisky-example/pyproject.toml:entry-point"
 ```
+<!-- fmt:on -->
 
 The entry-point name is the plugin ID. Use lowercase letters, digits, and underscores, such as `example`, `custom_autopilot`, or `tangram`.
 
@@ -18,9 +20,11 @@ The entry-point name is the plugin ID. Use lowercase letters, digits, and unders
 
 A build function creates fresh components for a MiniSky runtime. Mount the components you want MiniSky to manage, finish the context, and export the resulting plugin declaration:
 
+<!-- fmt:off -->
 ```python
 --8<-- "packages/minisky-example/src/minisky_example/__init__.py:declaration"
 ```
+<!-- fmt:on -->
 
 !!! important
     Create fresh component instances in every build. Do not reuse components between runtimes or load attempts.
@@ -31,9 +35,11 @@ By default, the first mounted component is also available through MiniSky's vari
 
 When your plugin accepts config, define a Pydantic-compatible model and pass it as `config_class`. You can then read the validated config from `context.config`:
 
+<!-- fmt:off -->
 ```python
 --8<-- "packages/minisky-tangram/src/minisky_tangram/__init__.py:configuration"
 ```
+<!-- fmt:on -->
 
 Users place the config under the plugin ID in their [MiniSky config file](configuration.md):
 
@@ -50,9 +56,11 @@ Derive from [`Entity`][minisky.Entity] when your plugin needs an array or list w
 
 The example plugin also shows a command and a periodic hook on the same component:
 
+<!-- fmt:off -->
 ```python
 --8<-- "packages/minisky-example/src/minisky_example/__init__.py:entity"
 ```
+<!-- fmt:on -->
 
 You can use `self.traffic` after the plugin has loaded. Do not use it in `__init__`; the entity is still detached while the plugin is being built.
 
@@ -85,9 +93,11 @@ Use an async lifespan when your plugin opens files, starts tasks or threads, con
 
 Tangram uses its lifespan to start and stop the Redis bridge:
 
+<!-- fmt:off -->
 ```python
 --8<-- "packages/minisky-tangram/src/minisky_tangram/__init__.py:lifespan"
 ```
+<!-- fmt:on -->
 
 The lifespan receives a [`PluginRuntime`][minisky.PluginRuntime] with the small set of runtime operations intended for plugins: read status or a snapshot, write to the console, subscribe to console messages, and submit a stack command after startup completes.
 
@@ -100,9 +110,11 @@ Put cleanup in the lifespan's `finally` block so it runs when the MiniSky runtim
 
 Use [`@replacement`][minisky.replacement] on a supported traffic component subclass, then include it in `context.finish()`:
 
+<!-- fmt:off -->
 ```python
 --8<-- "packages/minisky-example-customautopilot/src/minisky_example_customautopilot/__init__.py:replacement"
 ```
+<!-- fmt:on -->
 
 After the plugin loads, select the implementation with the stack:
 

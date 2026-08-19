@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 from minisky import MiniSky
 from minisky import quantities as q
-from minisky.tools.aero import g0
+from minisky.aero import g0
 from minisky_multicopter.entity import get_multicopter
 from minisky_multicopter.perf import MulticopterPerf
 from tests._types import RunCommand, StepUntil

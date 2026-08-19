@@ -11,9 +11,9 @@ import numpy as np
 import pytest
 from minisky import Err, MiniSky, Ok
 from minisky import quantities as q
-from minisky.simulation.simulation import Simulation
-from minisky.stack import ScheduledCommand
-from minisky.stack_command import ArgumentIssue, command
+from minisky._internal.command import ArgumentIssue, command
+from minisky._internal.simulation import Simulation
+from minisky._internal.stack import ScheduledCommand
 from minisky.types import AirspeedKind
 from tests._types import RunCommand
 

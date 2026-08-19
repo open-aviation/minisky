@@ -5,8 +5,8 @@ from __future__ import annotations
 import pytest
 from minisky import MiniSky
 from minisky import quantities as q
-from minisky.simulation.simulation import Simulation
-from minisky.traffic.asas.mvp import MVP
+from minisky._internal.conflict.mvp import MVP
+from minisky._internal.simulation import Simulation
 from tests._types import RunCommand, StepUntil
 
 

@@ -1,6 +1,6 @@
 """Multicopter pilot-logic override.
 
-The core [`APorASAS`][minisky.traffic.aporasas.APorASAS] derives the desired
+The core [`APorASAS`][minisky.APorASAS] derives the desired
 *heading* from the desired *track* (with a wind-drift correction), baking
 the fixed-wing assumption "the aircraft flies where its nose points" into
 the command path. A multicopter redirects thrust instead, so for multicopter
@@ -13,8 +13,7 @@ Selected with `SELECTIMPL APORASAS MULTICOPTERAPORASAS`.
 from __future__ import annotations
 
 import numpy as np
-from minisky import replacement
-from minisky.traffic.aporasas import APorASAS
+from minisky import APorASAS, replacement
 
 from minisky_multicopter.entity import get_multicopter
 

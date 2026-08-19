@@ -1,5 +1,5 @@
 from minisky import MiniSky, MiniSkyConfig
-from minisky.stack_command import format_command_form
+from minisky._internal.command import format_command_form
 
 
 def _summary(text: str) -> str:

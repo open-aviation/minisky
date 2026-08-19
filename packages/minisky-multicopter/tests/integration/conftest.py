@@ -13,9 +13,7 @@ import asyncio
 from collections.abc import Callable, Iterator
 
 import pytest
-from minisky import MiniSky
-from minisky.core.config import MiniSkyConfig
-from minisky.simulation.simulation import Simulation
+from minisky import MiniSky, MiniSkyConfig, Simulation
 from tests._types import RunCommand, StepUntil
 
 

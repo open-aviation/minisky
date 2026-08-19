@@ -8,8 +8,7 @@ import pytest
 from annotated_types import Gt
 from minisky import MiniSky
 from minisky import quantities as q
-from minisky.result import Err, Ok
-from minisky.stack_command import (
+from minisky._internal.command import (
     ArgumentIssue,
     CommandCursor,
     CoordinateWaypoint,
@@ -22,6 +21,7 @@ from minisky.stack_command import (
     Wpt,
     command,
 )
+from minisky._internal.result import Err, Ok
 from minisky.types import (
     GroundTrackDeg,
     LatLonDegrees,

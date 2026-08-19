@@ -1,8 +1,7 @@
 """Integration tests owned by the custom-autopilot example package."""
 
 import pytest
-from minisky import MiniSky, MiniSkyConfig
-from minisky.traffic.autopilot import Autopilot
+from minisky import Autopilot, MiniSky, MiniSkyConfig
 from minisky_example_customautopilot import CustomAutoPilot
 
 

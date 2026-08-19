@@ -19,10 +19,10 @@ from prompt_toolkit.completion import NestedCompleter, PathCompleter
 from prompt_toolkit.history import FileHistory
 from pydantic import ValidationError
 
-from minisky.core.config import MiniSkyConfig, default_user_config_toml_path
+from minisky._internal.config import MiniSkyConfig, default_user_config_toml_path
 
 if TYPE_CHECKING:
-    from minisky.runtime import MiniSky
+    from minisky._internal.runtime import MiniSky
 
 app = typer.Typer(help="MiniSky command-line tools.", no_args_is_help=True)
 
@@ -102,7 +102,7 @@ def server_cmd(
 
     if reload:
         uvicorn.run(
-            "minisky.server:create_app",
+            "minisky._internal.server:create_app",
             factory=True,
             host=host,
             port=port,
@@ -110,7 +110,7 @@ def server_cmd(
         )
         return
 
-    from minisky.server import create_app
+    from minisky._internal.server import create_app
 
     uvicorn.run(
         create_app(_new_runtime(loaded_config)),

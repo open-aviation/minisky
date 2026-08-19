@@ -1,8 +1,4 @@
-"""Integration tests for the per-tick streaming API and DTMULT command.
-
-Covers [`build_snapshot`][minisky.streaming.build_snapshot] against a live simulation and
-the `DTMULT` stack command that sets the runner speed multiplier.
-"""
+"""Integration tests for the per-tick streaming API and DTMULT command."""
 
 from __future__ import annotations
 
@@ -10,8 +6,8 @@ import json
 
 import pytest
 from minisky import MiniSky
-from minisky.simulation.simulation import Simulation, SimulationState
-from minisky.streaming import STREAM_MAX_HZ, StreamHub, build_snapshot
+from minisky._internal.simulation import Simulation, SimulationState
+from minisky._internal.streaming import STREAM_MAX_HZ, StreamHub, build_snapshot
 from tests._types import RunCommand
 
 

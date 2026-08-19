@@ -4,8 +4,7 @@ import asyncio
 from pathlib import Path
 
 import pytest
-from minisky import MiniSky
-from minisky.core.config import MiniSkyConfig
+from minisky import MiniSky, MiniSkyConfig
 from minisky_multicopter.config import load_type_table
 from minisky_multicopter.entity import get_multicopter
 from minisky_multicopter.perf import MulticopterPerf

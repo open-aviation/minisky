@@ -4,13 +4,12 @@ from __future__ import annotations
 
 from typing import ClassVar
 
+import minisky._internal.route as route_commands
 import numpy as np
 import pytest
-from minisky import MiniSky
+from minisky import MiniSky, geo
 from minisky import quantities as q
-from minisky.tools import geo
-from minisky.traffic import route as route_commands
-from minisky.traffic.route import Route, TurnHeadingRate
+from minisky._internal.route import Route, TurnHeadingRate
 from minisky.types import CasMps
 from tests._types import RunCommand, StepUntil
 

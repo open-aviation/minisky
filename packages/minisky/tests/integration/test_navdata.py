@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from minisky import MiniSky
-from minisky.simulation.simulation import Simulation
+from minisky._internal.simulation import Simulation
 
 
 class TestDefwpt:
