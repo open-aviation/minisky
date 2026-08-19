@@ -400,23 +400,15 @@ class PluginManager:
             except Exception as exc:
                 raise PluginError(f"plugin {key} configuration is invalid: {exc}") from exc
 
-        context = PluginContext(config, self.runtime.python_random)
-        spec = declaration.build(context)
+        spec = declaration.build(PluginContext(config, self.runtime.python_random))
         if not isinstance(spec, PluginSpec):
             raise PluginError(f"plugin {key} build did not return PluginSpec")
         return spec
 
     def _prepare(self, key: str, spec: PluginSpec) -> _PreparedPlugin:
-        commands: list[Command] = []
-        for component in spec.components:
-            try:
-                commands.extend(self.commands.prepare_component(component))
-            except (TypeError, ValueError) as exc:
-                raise PluginError(str(exc)) from exc
         try:
-            command_tuple = tuple(commands)
-            self.commands.validate_commands(command_tuple)
-        except ValueError as exc:
+            command_tuple = self.commands.prepare_components(spec.components)
+        except (TypeError, ValueError) as exc:
             raise PluginError(str(exc)) from exc
 
         hooks: list[_Hook] = []

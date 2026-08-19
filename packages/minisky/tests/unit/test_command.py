@@ -19,6 +19,7 @@ from minisky._internal.command import (
     SourceSpan,
     UseRunwayHeading,
     Wpt,
+    build_command_schema,
     command,
 )
 from minisky._internal.result import Err, Ok
@@ -425,3 +426,17 @@ def test_route_waypoint_membership_is_validated_by_route_command(
     error = result.err()
     assert isinstance(error, str)
     assert "Waypoint MISSING not found in the route of ROUTE1" in error
+
+
+def test_command_schema_describes_existing_forms(runtime: MiniSky) -> None:
+    def record(value: int) -> None:
+        """Record one integer."""
+
+    command = runtime.commands.prepare_command(record, name="TESTSCHEMA", aliases=("TS",))
+    schema = build_command_schema((command,))
+
+    assert tuple(schema.commands) == ("TESTSCHEMA",)
+    entry = schema.commands["TESTSCHEMA"]
+    assert entry.aliases == ("TS",)
+    assert entry.forms[0].syntax == "TESTSCHEMA value"
+    assert entry.forms[0].doc == "Record one integer."

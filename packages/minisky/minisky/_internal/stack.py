@@ -388,13 +388,18 @@ class CommandStack:
             )
         return tuple(merged[name] for name in order)
 
-    def mount_components(self, components: Iterable[object]) -> tuple[Command, ...]:
-        """Prepare and install commands from provider components."""
+    def prepare_components(self, components: Iterable[object]) -> tuple[Command, ...]:
+        """Compile and validate commands from a set of provider components."""
         prepared = tuple(
             command for component in components for command in self.prepare_component(component)
         )
-        # same-name overloads belong to a provider; duplicate providers are errors.
+        # same-name overloads belong to one component; duplicate providers are errors.
         self.validate_commands(prepared)
+        return prepared
+
+    def mount_components(self, components: Iterable[object]) -> tuple[Command, ...]:
+        """Prepare and install commands from provider components."""
+        prepared = self.prepare_components(components)
         self.install_commands(prepared)
         return prepared
 
