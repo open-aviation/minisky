@@ -1,0 +1,1 @@
+{"commands":{"PASSENGERS":{"forms":[{"syntax":"PASSENGERS index","doc":"Show the number of passengers on an aircraft."},{"syntax":"PASSENGERS index,count","doc":"Set the number of passengers on an aircraft."}]}}}

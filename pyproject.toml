@@ -39,6 +39,7 @@ extend-select = [
 
 [tool.pyright]
 include = [
+    "scripts",
     "packages/minisky/minisky",
     "packages/minisky-example*/src",
     "packages/minisky-multicopter/src",
