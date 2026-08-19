@@ -1,0 +1,13 @@
+{% for plugin in command_reference %}
+## `{{ plugin.name }}`
+
+{% for command_name, command in plugin.commands.items() %}
+### `{{ command_name }}`
+
+{% if command.aliases %}Aliases: {% for alias in command.aliases %}`{{ alias }}`{% if not loop.last %}, {% endif %}{% endfor %}
+
+{% endif %}{% for form in command.forms %}- `{{ form.syntax }}`{% if form.doc %} — {{ form.doc }}{% endif %}
+{% endfor %}
+
+{% endfor %}
+{% endfor %}
