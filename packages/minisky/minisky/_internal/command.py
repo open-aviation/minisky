@@ -1520,3 +1520,9 @@ def build_command_schema(commands: Iterable[Command]) -> CommandSchema:
         for command in sorted(commands, key=lambda item: item.name)
     }
     return CommandSchema(entries)
+
+
+def load_command_schema(data: str | bytes) -> CommandSchema:
+    from pydantic import TypeAdapter
+
+    return TypeAdapter(CommandSchema).validate_json(data)
