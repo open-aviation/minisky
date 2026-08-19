@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from minisky import MiniSky
 from minisky import quantities as q
-from minisky.simulation import Simulation
+from minisky.simulation.simulation import Simulation
 from minisky_multicopter.autopilot import MulticopterAutopilot
 from tests._types import RunCommand, StepUntil
 

@@ -22,11 +22,9 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import numpy as np
-from minisky import plugin as plugin_api
+from minisky import AcIdSelection, Err, HeadingDeg, Ok, Result, replacement
 from minisky import quantities as q
 from minisky.core.trafficarrays import OptionalArray, VariantArray
-from minisky.plugin import AcIdSelection, HeadingDeg
-from minisky.result import Err, Ok, Result
 from minisky.traffic.autopilot import Autopilot
 from minisky.types import AircraftIndex, AirspeedKind, StdPressureAltM
 
@@ -35,11 +33,11 @@ from minisky_multicopter.entity import get_multicopter
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from minisky.simulation import Simulation
-    from minisky.traffic import Traffic
+    from minisky.simulation.simulation import Simulation
+    from minisky.traffic.traffic import Traffic
 
 
-@plugin_api.replacement
+@replacement
 class MulticopterAutopilot(Autopilot):
     """Autopilot with a multicopter hover primitive."""
 

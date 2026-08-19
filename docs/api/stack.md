@@ -17,4 +17,4 @@ for the available commands.
 
 Parsers for the aviation-aware argument types (`alt`, `spd`, `hdg`, positions, waypoints, ...) used in command signatures.
 
-::: minisky.command
+::: minisky.stack_command

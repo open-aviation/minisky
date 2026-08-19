@@ -1,7 +1,7 @@
 """Unit tests for the pure functions of the tangram bridge plugin."""
 
 import pytest
-from minisky.streaming import Snapshot
+from minisky import Snapshot
 from minisky_tangram import convert_snapshot, extract_command
 
 

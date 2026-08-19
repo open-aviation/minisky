@@ -11,7 +11,7 @@ Each available command is represented by a [`Command`][.Command] object, which
 couples the command name to the Python function that implements it and to
 the argument parsers that convert argument text into typed values.
 Core and plugin callbacks declare commands directly with
-[`@command`][minisky.command.command]. The runtime composition root mounts
+[`@command`][minisky.command]. The runtime composition root mounts
 declarations from its explicitly owned core components; plugins use the same
 declaration and preparation path with a separate load and unload lifecycle.
 
@@ -41,7 +41,9 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 
 from minisky import quantities as q
-from minisky.command import (
+from minisky.identifiers import normalize_command_name
+from minisky.result import Err, Ok, Result
+from minisky.stack_command import (
     ArgumentIssue,
     CommandCursor,
     CommandParseContext,
@@ -56,17 +58,17 @@ from minisky.command import (
     declared_commands,
     format_command_form,
 )
-from minisky.identifiers import normalize_command_name
-from minisky.result import Err, Ok, Result
 
 if TYPE_CHECKING:
     from minisky.core.trafficarrays import ReplaceableManager
     from minisky.core.varexplorer import VariableExplorer
-    from minisky.plugin import PluginManager
-    from minisky.simulation import ConsoleIO, Runner, Simulation
+    from minisky.plugin.plugin import PluginManager
+    from minisky.simulation.console import ConsoleIO
+    from minisky.simulation.runner import Runner
+    from minisky.simulation.simulation import Simulation
     from minisky.tools.navdata import Navdatabase
     from minisky.tools.shapes import Shapes
-    from minisky.traffic import Traffic
+    from minisky.traffic.traffic import Traffic
 
 
 @dataclass(frozen=True, slots=True)
@@ -270,7 +272,7 @@ class CommandStack:
         self._get_runner = get_runner
         # TODO(abraham): package bundled scenarios inside minisky and resolve
         # them with importlib.resources for wheel installs.
-        self.scenario_root = scenario_root or Path(__file__).parent.parent.parent
+        self.scenario_root = scenario_root or Path(__file__).parent.parent
         self.cmddict: dict[str, Command] = {}
         """Canonical command names and aliases mapped to compiled commands."""
         self._queue_lock = Lock()

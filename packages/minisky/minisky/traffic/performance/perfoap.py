@@ -14,19 +14,18 @@ from typing import TYPE_CHECKING, NamedTuple
 
 import numpy as np
 
+import minisky.traffic.performance.phase as ph
 from minisky import quantities as q
-from minisky.command import AcId, command
 from minisky.core.trafficarrays import TrafficArrays
 from minisky.result import Ok, Result
+from minisky.stack_command import AcId, command
 from minisky.tools import aero
+from minisky.traffic.performance import coeff, thrust
+from minisky.traffic.performance.phase import FlightPhase
 from minisky.types import AircraftIndex
 
-from . import coeff, thrust
-from . import phase as ph
-from .phase import FlightPhase
-
 if TYPE_CHECKING:
-    from minisky.traffic import Traffic
+    from minisky.traffic.traffic import Traffic
 
 
 class OpenAP(TrafficArrays):

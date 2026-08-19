@@ -12,8 +12,8 @@ import asyncio
 from typing import TYPE_CHECKING
 
 from minisky import quantities as q
-from minisky.command import PositiveFiniteFloat, command
 from minisky.result import Ok, Result
+from minisky.stack_command import PositiveFiniteFloat, command
 
 if TYPE_CHECKING:
     from minisky.simulation.console import ConsoleIO

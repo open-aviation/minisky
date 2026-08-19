@@ -43,8 +43,8 @@ from fastapi.staticfiles import StaticFiles
 
 from minisky import MiniSky
 from minisky import quantities as q
-from minisky.command import format_command_form
 from minisky.result import Err, Ok, Result
+from minisky.stack_command import format_command_form
 from minisky.types import AircraftTypeCode, AirspeedKind
 
 

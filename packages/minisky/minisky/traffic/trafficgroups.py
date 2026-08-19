@@ -25,9 +25,9 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from minisky.command import Keyword, command
-from minisky.core import TrafficArrays
+from minisky.core.trafficarrays import TrafficArrays
 from minisky.result import Err, Ok, Result
+from minisky.stack_command import Keyword, command
 
 if TYPE_CHECKING:
     from minisky.tools.shapes import Shapes

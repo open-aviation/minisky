@@ -5,16 +5,16 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
-from minisky import plugin as plugin_api
+from minisky import Plugin, PluginContext, PluginSpec, replacement
 from minisky.traffic.autopilot import Autopilot
 
 if TYPE_CHECKING:
-    from minisky.simulation import Simulation
-    from minisky.traffic import Traffic
+    from minisky.simulation.simulation import Simulation
+    from minisky.traffic.traffic import Traffic
 
 
 # --8<-- [start:replacement]
-@plugin_api.replacement
+@replacement
 class CustomAutoPilot(Autopilot):
     """Extend the base autopilot with an example value."""
 
@@ -27,9 +27,9 @@ class CustomAutoPilot(Autopilot):
         self.new_variable += 1
 
 
-def build(context: plugin_api.PluginContext[object]) -> plugin_api.PluginSpec:
+def build(context: PluginContext[object]) -> PluginSpec:
     return context.finish(replacements=(CustomAutoPilot,))
 
 
-plugin = plugin_api.Plugin(build=build)
+plugin = Plugin(build=build)
 # --8<-- [end:replacement]

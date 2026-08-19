@@ -10,21 +10,25 @@ import numpy as np
 from minisky.core.config import MiniSkyConfig, data, default_user_config_toml_path
 from minisky.core.trafficarrays import ReplaceableManager
 from minisky.core.varexplorer import VariableExplorer
-from minisky.plugin import PluginManager
-from minisky.simulation import ConsoleIO, Runner, Simulation, SimulationState
+from minisky.plugin.plugin import PluginManager
+from minisky.simulation.console import ConsoleIO
+from minisky.simulation.runner import Runner
+from minisky.simulation.simulation import Simulation, SimulationState
 from minisky.stack import CommandStack
 from minisky.streaming import StreamHub, build_snapshot
 from minisky.tools.geo_commands import GeoCommands
 from minisky.tools.navdata import Navdatabase
 from minisky.tools.shapes import Shapes
-from minisky.traffic import Traffic
 from minisky.traffic.activewpdata import ActiveWaypoint
 from minisky.traffic.aporasas import APorASAS
-from minisky.traffic.asas import MVP, ConflictDetection, ConflictResolution
+from minisky.traffic.asas.detection import ConflictDetection
+from minisky.traffic.asas.mvp import MVP
+from minisky.traffic.asas.resolution import ConflictResolution
 from minisky.traffic.autopilot import Autopilot
 from minisky.traffic.kinematics import Kinematics
 from minisky.traffic.performance.perfoap import OpenAP
 from minisky.traffic.route import RouteCommands
+from minisky.traffic.traffic import Traffic
 
 
 class MiniSky:

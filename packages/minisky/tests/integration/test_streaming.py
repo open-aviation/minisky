@@ -10,7 +10,7 @@ import json
 
 import pytest
 from minisky import MiniSky
-from minisky.simulation import Simulation, SimulationState
+from minisky.simulation.simulation import Simulation, SimulationState
 from minisky.streaming import STREAM_MAX_HZ, StreamHub, build_snapshot
 from tests._types import RunCommand
 

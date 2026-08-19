@@ -12,12 +12,11 @@ from typing import TYPE_CHECKING, NamedTuple, TypeAlias
 
 from minisky import quantities as q
 from minisky.result import Err, Ok, Result
-
-from .convert import txt2lat, txt2lon
+from minisky.tools.convert import txt2lat, txt2lon
 
 if TYPE_CHECKING:
     from minisky.tools.navdata import Navdatabase
-    from minisky.traffic import Traffic
+    from minisky.traffic.traffic import Traffic
 
 
 class _ReferencePosition(NamedTuple):

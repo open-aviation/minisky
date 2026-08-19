@@ -14,10 +14,10 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from minisky import quantities as q
-from minisky.core import TrafficArrays
+from minisky.core.trafficarrays import TrafficArrays
 
 if TYPE_CHECKING:
-    from minisky.traffic import Traffic
+    from minisky.traffic.traffic import Traffic
 
 
 class APorASAS(TrafficArrays):

@@ -6,7 +6,7 @@ The example packages under `packages/minisky-example*` and `packages/minisky-tan
 
 ## Create a plugin package
 
-Your package should expose a [`Plugin`][minisky.plugin.Plugin] value through the `minisky.plugins` entry-point group:
+Your package should expose a [`Plugin`][minisky.Plugin] value through the `minisky.plugins` entry-point group:
 
 ```toml
 --8<-- "packages/minisky-example/pyproject.toml:entry-point"
@@ -46,7 +46,7 @@ A table under `[plugins.<id>]` both configures the plugin and loads it during no
 
 ## Add per-aircraft data
 
-Derive from [`Entity`][minisky.plugin.Entity] when your plugin needs an array or list with an entry for every aircraft. Register those values inside `settrafarrays()` so MiniSky keeps them aligned when aircraft are created, deleted, or reset.
+Derive from [`Entity`][minisky.Entity] when your plugin needs an array or list with an entry for every aircraft. Register those values inside `settrafarrays()` so MiniSky keeps them aligned when aircraft are created, deleted, or reset.
 
 The example plugin also shows a command and a periodic hook on the same component:
 
@@ -63,14 +63,17 @@ See [commands](./commands.md)
 
 ## Add simulation hooks
 
-Use [`@plugin.hook`][minisky.plugin.plugin_decorators.hook] for work tied to the simulation cycle:
+Use [`@hook`][minisky.hook] for work tied to the simulation cycle:
 
 ```python
+from minisky import hook
+
+
 class Component:
-    @plugin_api.hook("preupdate")
+    @hook("preupdate")
     def before_traffic(self) -> None: ...
 
-    @plugin_api.hook("update", interval=2.0)
+    @hook("update", interval=2.0)
     def every_two_seconds(self, dt: float) -> None: ...
 ```
 
@@ -86,7 +89,7 @@ Tangram uses its lifespan to start and stop the Redis bridge:
 --8<-- "packages/minisky-tangram/src/minisky_tangram/__init__.py:lifespan"
 ```
 
-The lifespan receives a [`PluginRuntime`][minisky.plugin.PluginRuntime] with the small set of runtime operations intended for plugins: read status or a snapshot, write to the console, subscribe to console messages, and submit a stack command after startup completes.
+The lifespan receives a [`PluginRuntime`][minisky.PluginRuntime] with the small set of runtime operations intended for plugins: read status or a snapshot, write to the console, subscribe to console messages, and submit a stack command after startup completes.
 
 Put cleanup in the lifespan's `finally` block so it runs when the MiniSky runtime closes. You do not need to close console subscriptions separately when they are created through `PluginRuntime`; MiniSky owns them and closes them during teardown.
 
@@ -95,7 +98,7 @@ Put cleanup in the lifespan's `finally` block so it runs when the MiniSky runtim
 
 ## Add a replaceable implementation
 
-Use [`@plugin.replacement`][minisky.plugin.plugin_decorators.replacement] on a supported traffic component subclass, then include it in `context.finish()`:
+Use [`@replacement`][minisky.replacement] on a supported traffic component subclass, then include it in `context.finish()`:
 
 ```python
 --8<-- "packages/minisky-example-customautopilot/src/minisky_example_customautopilot/__init__.py:replacement"
@@ -135,7 +138,7 @@ match await runtime.plugins.load("example"):
         # ... handle the error
 ```
 
-Plugin IDs are case-insensitive. `load()` returns [`Result[str, str]`][minisky.result.Result]`.
+Plugin IDs are case-insensitive. `load()` returns [`Result[str, str]`][minisky.Result]`.
 
 To inspect the plugins known to the runtime, use `listing()`:
 

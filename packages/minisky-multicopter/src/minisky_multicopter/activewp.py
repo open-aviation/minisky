@@ -18,15 +18,15 @@ from the autopilot update would be overwritten before it is ever used.
 from __future__ import annotations
 
 import numpy as np
-from minisky import plugin as plugin_api
 from minisky import quantities as q
+from minisky import replacement
 from minisky.core.trafficarrays import OptionalArray
 from minisky.traffic.activewpdata import ActiveWaypoint
 
 from minisky_multicopter.entity import get_multicopter
 
 
-@plugin_api.replacement
+@replacement
 class MulticopterActiveWaypoint(ActiveWaypoint):
     """Active-waypoint data with a fixed capture radius for multicopters."""
 

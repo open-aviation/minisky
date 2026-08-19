@@ -19,16 +19,20 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import numpy as np
-from minisky import plugin as plugin_api
-from minisky import quantities as q
-from minisky.plugin import (
+from minisky import (
     AcId,
+    Entity,
+    Err,
     HeadingDeg,
+    Ok,
     OnOff,
     PositiveFiniteFloat,
+    Result,
     TimeS,
+    command,
+    hook,
 )
-from minisky.result import Err, Ok, Result
+from minisky import quantities as q
 from minisky.tools import geo
 from minisky.types import MagneticHeadingDeg, StdPressureAltM
 
@@ -41,7 +45,7 @@ from minisky_multicopter.config import (
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-    from minisky.traffic import Traffic
+    from minisky.traffic.traffic import Traffic
 
 DEFAULT_YAWRATE: q.YawRateDegPerS[float] = 90.0
 
@@ -72,7 +76,7 @@ def get_multicopter(traffic: Traffic) -> Multicopter | None:
     )
 
 
-class Multicopter(plugin_api.Entity):
+class Multicopter(Entity):
     """Per-aircraft multicopter state."""
 
     def __init__(
@@ -125,7 +129,7 @@ class Multicopter(plugin_api.Entity):
                 raise RuntimeError(f"MULTICOPTER: {result.err()}")
         self._selected = True
 
-    @plugin_api.hook("preupdate")
+    @hook("preupdate")
     def ensure_implementations(self) -> None:
         """Select the multicopter implementations on the first step after load.
 
@@ -137,7 +141,7 @@ class Multicopter(plugin_api.Entity):
         if not self._selected:
             self.select_implementations()
 
-    @plugin_api.hook("reset")
+    @hook("reset")
     def reselect_implementations(self) -> None:
         """Re-select the multicopter implementations after a reset.
 
@@ -146,13 +150,13 @@ class Multicopter(plugin_api.Entity):
         """
         self.select_implementations()
 
-    @plugin_api.command(name="MCOPT")
+    @command(name="MCOPT")
     def mcopt_status(self, idx: AcId) -> Result[str, str]:
         """Report whether multicopter behavior is enabled for an aircraft."""
         callsign = self.traffic.callsign[idx]
         return Ok(f"MCOPT {callsign}: {'ON' if self.ismulticopter[idx] else 'OFF'}")
 
-    @plugin_api.command(name="MCOPT")
+    @command(name="MCOPT")
     def set_mcopt(self, idx: AcId, flag: OnOff) -> Result[str, str]:
         """Enable or disable multicopter behavior for an aircraft."""
         callsign = self.traffic.callsign[idx]
@@ -169,7 +173,7 @@ class Multicopter(plugin_api.Entity):
             self.swselhdg[idx] = False
         return Ok(f"MCOPT {callsign}: {'ON' if flag else 'OFF'}")
 
-    @plugin_api.command
+    @command
     def yaw(self, idx: AcId, hdg: HeadingDeg) -> Result[str, str]:
         """Command the body heading (nose direction) of a multicopter.
 
@@ -188,13 +192,13 @@ class Multicopter(plugin_api.Entity):
         self.swselhdg[idx] = True
         return Ok(f"YAW {self.traffic.callsign[idx]}: nose to {resolved_hdg:.0f} deg")
 
-    @plugin_api.command(name="YAWRATE")
+    @command(name="YAWRATE")
     def yawrate_status(self, idx: AcId) -> Result[str, str]:
         """Report the maximum yaw rate of a multicopter."""
         callsign = self.traffic.callsign[idx]
         return Ok(f"YAWRATE {callsign}: {self.yawrate[idx]:.0f} deg/s")
 
-    @plugin_api.command(name="YAWRATE")
+    @command(name="YAWRATE")
     def set_yawrate(
         self,
         idx: AcId,
@@ -205,7 +209,7 @@ class Multicopter(plugin_api.Entity):
         self.yawrate[idx] = yawrate
         return Ok(f"YAWRATE {callsign}: {yawrate:.0f} deg/s")
 
-    @plugin_api.command
+    @command
     def hover(
         self,
         idx: AcId,
@@ -231,7 +235,7 @@ class Multicopter(plugin_api.Entity):
             return Err("HOVER: SELECTIMPL AUTOPILOT MULTICOPTERAUTOPILOT first")
         return ap.hover(idx, duration, alt)
 
-    @plugin_api.command
+    @command
     def batt(self, idx: AcId) -> Result[str, str]:
         """Report the battery state of charge, power draw and endurance."""
         # Deferred import: the perf module imports this one.

@@ -21,7 +21,10 @@ import numpy as np
 from annotated_types import Ge, Le, Lt
 
 from minisky import quantities as q
-from minisky.command import (
+from minisky.core.config import MiniSkyConfig
+from minisky.core.trafficarrays import TrafficArrays, VariantArray
+from minisky.result import Err, Ok, Result
+from minisky.stack_command import (
     AcId,
     AcIdSelection,
     CmdParser,
@@ -41,9 +44,6 @@ from minisky.command import (
     VspdMps,
     command,
 )
-from minisky.core.config import MiniSkyConfig
-from minisky.core.trafficarrays import TrafficArrays, VariantArray
-from minisky.result import Err, Ok, Result
 from minisky.tools import geo
 from minisky.tools.aero import (
     cas2tas,
@@ -57,7 +57,18 @@ from minisky.tools.aero import (
 )
 from minisky.tools.convert import latlon2txt
 from minisky.tools.shapes import Shapes
-from minisky.traffic.asas import ConflictDetection, ConflictResolution
+from minisky.traffic.activewpdata import ActiveWaypoint
+from minisky.traffic.aporasas import APorASAS
+from minisky.traffic.asas.detection import ConflictDetection
+from minisky.traffic.asas.resolution import ConflictResolution
+from minisky.traffic.autopilot import Autopilot
+from minisky.traffic.conditional import Condition
+from minisky.traffic.kinematics import Kinematics
+from minisky.traffic.performance.perfoap import OpenAP
+from minisky.traffic.trafficgroups import TrafficGroups
+from minisky.traffic.turbulence import Turbulence
+from minisky.traffic.uncertainty import SurveillanceUncertainty
+from minisky.traffic.wind import Wind
 from minisky.types import (
     AircraftCallsign,
     AircraftIndex,
@@ -70,19 +81,9 @@ from minisky.types import (
     StdPressureAltM,
 )
 
-from .activewpdata import ActiveWaypoint
-from .aporasas import APorASAS
-from .autopilot import Autopilot
-from .conditional import Condition
-from .kinematics import Kinematics
-from .performance.perfoap import OpenAP
-from .trafficgroups import TrafficGroups
-from .turbulence import Turbulence
-from .uncertainty import SurveillanceUncertainty
-from .wind import Wind
-
 if TYPE_CHECKING:
-    from minisky.simulation import ConsoleIO, Simulation
+    from minisky.simulation.console import ConsoleIO
+    from minisky.simulation.simulation import Simulation
     from minisky.tools.navdata import Navdatabase
 
 

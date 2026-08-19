@@ -20,8 +20,8 @@ import numpy as np
 import pandas as pd
 
 from minisky import quantities as q
-from minisky.command import Keyword, LatLonDeg, command
 from minisky.result import Err, Ok, Result
+from minisky.stack_command import Keyword, LatLonDeg, command
 from minisky.tools import geo
 from minisky.types import AirportIdentifier, AirwayIdentifier, RunwayIdentifier, WaypointIdentifier
 

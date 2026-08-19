@@ -24,7 +24,9 @@ import numpy as np
 from annotated_types import Gt
 
 from minisky import quantities as q
-from minisky.command import (
+from minisky.core.trafficarrays import OptionalArray
+from minisky.result import Err, Ok, Result
+from minisky.stack_command import (
     AcId,
     ArgumentIssue,
     CmdParser,
@@ -47,8 +49,6 @@ from minisky.command import (
     parse_resolved_position,
     parse_selected_airspeed_value,
 )
-from minisky.core.trafficarrays import OptionalArray
-from minisky.result import Err, Ok, Result
 from minisky.tools import geo
 from minisky.tools.aero import cas2tas, g0, mach2tas, vcas2tas
 from minisky.tools.convert import degto180
@@ -66,7 +66,7 @@ from minisky.types import (
 )
 
 if TYPE_CHECKING:
-    from minisky.traffic import Traffic
+    from minisky.traffic.traffic import Traffic
 
 
 # TODO(abraham): bluesky-era WaypointType mixes source (LATLON/NAV), route role (ORIGIN/DESTINATION),

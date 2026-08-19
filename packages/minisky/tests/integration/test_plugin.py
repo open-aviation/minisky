@@ -12,12 +12,25 @@ from typing import cast
 
 import numpy as np
 import pytest
-from minisky import Err, MiniSky, MiniSkyConfig, Ok, Result
-from minisky import plugin as plugin_api
+from minisky import (
+    Entity,
+    Err,
+    MiniSky,
+    MiniSkyConfig,
+    Ok,
+    Plugin,
+    PluginContext,
+    PluginRuntime,
+    PluginSpec,
+    Result,
+    command,
+    hook,
+    replacement,
+)
 from minisky import quantities as q
-from minisky.simulation import Simulation
-from minisky.traffic import Traffic
+from minisky.simulation.simulation import Simulation
 from minisky.traffic.autopilot import Autopilot
+from minisky.traffic.traffic import Traffic
 from minisky.types import CasMps, StdPressureAltM
 from pydantic import BaseModel
 
@@ -82,7 +95,7 @@ async def test_entity_backfill_follows_lifespan_startup(
     entered = asyncio.Event()
     release = asyncio.Event()
 
-    class Callsigns(plugin_api.Entity):
+    class Callsigns(Entity):
         def __init__(self) -> None:
             super().__init__()
             with self.settrafarrays():
@@ -95,16 +108,16 @@ async def test_entity_backfill_follows_lifespan_startup(
     entity = Callsigns()
 
     @asynccontextmanager
-    async def lifespan(_runtime: plugin_api.PluginRuntime) -> AsyncGenerator[None]:
+    async def lifespan(_runtime: PluginRuntime) -> AsyncGenerator[None]:
         entered.set()
         await release.wait()
         yield
 
-    def build(context: plugin_api.PluginContext[object]) -> plugin_api.PluginSpec:
+    def build(context: PluginContext[object]) -> PluginSpec:
         context.mount(entity)
         return context.finish(lifespan=lifespan)
 
-    install(monkeypatch, FakeEntryPoint("callsigns", plugin_api.Plugin(build=build)))
+    install(monkeypatch, FakeEntryPoint("callsigns", Plugin(build=build)))
     runtime = MiniSky(MiniSkyConfig())
     load_task = asyncio.create_task(runtime.plugins.load("CALLSIGNS"))
     try:
@@ -133,20 +146,18 @@ async def test_typed_declaration_builds_validated_runtime_state(
         value: int
         random: object
 
-    def build(context: plugin_api.PluginContext[Config]) -> plugin_api.PluginSpec:
+    def build(context: PluginContext[Config]) -> PluginSpec:
         context.mount(State(context.config.value, context.python_random))
         return context.finish()
 
-    install(
-        monkeypatch, FakeEntryPoint("typed", plugin_api.Plugin(build=build, config_class=Config))
-    )
+    install(monkeypatch, FakeEntryPoint("typed", Plugin(build=build, config_class=Config)))
     runtime = MiniSky(MiniSkyConfig(plugins={"typed": {"value": 7}}))
     try:
         result = await runtime.plugins.load("TYPED")
         assert result.is_ok(), result.err()
         state = State(7, runtime.python_random)
         assert runtime.variables.varlist["typed"] == (state, ["value", "random"])
-        assert runtime.plugins.plugins["TYPED"].spec == plugin_api.PluginSpec((state,), state)
+        assert runtime.plugins.plugins["TYPED"].spec == PluginSpec((state,), state)
     finally:
         await runtime.aclose()
 
@@ -161,7 +172,7 @@ async def test_mount_binds_command_to_exact_instance_and_respects_annotation(
         def __init__(self) -> None:
             self.values: list[int] = []
 
-        @plugin_api.command(name="SAVE", aliases=("RECORD",))
+        @command(name="SAVE", aliases=("RECORD",))
         def record(self, idx: int) -> Result[str, str]:
             """Record an integer."""
             self.values.append(idx)
@@ -169,24 +180,24 @@ async def test_mount_binds_command_to_exact_instance_and_respects_annotation(
 
     component = Component()
 
-    def build(context: plugin_api.PluginContext[object]) -> plugin_api.PluginSpec:
+    def build(context: PluginContext[object]) -> PluginSpec:
         context.mount(component)
         return context.finish()
 
-    install(monkeypatch, FakeEntryPoint("mounted", plugin_api.Plugin(build=build)))
+    install(monkeypatch, FakeEntryPoint("mounted", Plugin(build=build)))
     runtime = MiniSky(MiniSkyConfig())
     try:
         assert "SAVE" not in runtime.commands.cmddict
         result = await runtime.plugins.load("MOUNTED")
         assert result.is_ok(), result.err()
-        command = runtime.commands.cmddict["SAVE"]
-        assert runtime.commands.cmddict["RECORD"] is command
-        assert getattr(command.forms[0].callback, "__self__", None) is component
-        assert command.name == "SAVE"
-        assert command.aliases == ("RECORD",)
-        assert len(command.forms) == 1
-        assert command.forms[0].parameters[0].name == "idx"
-        assert command.forms[0].help == "Record an integer."
+        declaration = runtime.commands.cmddict["SAVE"]
+        assert runtime.commands.cmddict["RECORD"] is declaration
+        assert getattr(declaration.forms[0].callback, "__self__", None) is component
+        assert declaration.name == "SAVE"
+        assert declaration.aliases == ("RECORD",)
+        assert len(declaration.forms) == 1
+        assert declaration.forms[0].parameters[0].name == "idx"
+        assert declaration.forms[0].help == "Record an integer."
 
         runtime.commands.stack("RECORD 7")
         runtime.simulation.step()
@@ -202,18 +213,18 @@ async def test_multiple_hook_declarations_keep_independent_timing(
     events: list[tuple[str, float]] = []
 
     class Component:
-        @plugin_api.hook("preupdate", name="before")
-        @plugin_api.hook("update", interval=2.0, name="after")
+        @hook("preupdate", name="before")
+        @hook("update", interval=2.0, name="after")
         def pulse(self, dt: float) -> None:
             events.append(("pulse", dt))
 
     component = Component()
 
-    def build(context: plugin_api.PluginContext[object]) -> plugin_api.PluginSpec:
+    def build(context: PluginContext[object]) -> PluginSpec:
         context.mount(component, expose=False)
         return context.finish()
 
-    install(monkeypatch, FakeEntryPoint("hooks", plugin_api.Plugin(build=build)))
+    install(monkeypatch, FakeEntryPoint("hooks", Plugin(build=build)))
     runtime = MiniSky(MiniSkyConfig())
     try:
         result = await runtime.plugins.load("HOOKS")
@@ -234,22 +245,22 @@ async def test_failing_hook_is_disabled_without_disabling_plugin(
     calls = {"broken": 0, "healthy": 0}
 
     class Component:
-        @plugin_api.hook
+        @hook
         def update(self) -> None:
             calls["broken"] += 1
             raise RuntimeError("hook failed")
 
-        @plugin_api.hook("update", name="healthy")
+        @hook("update", name="healthy")
         def healthy(self) -> None:
             calls["healthy"] += 1
 
     component = Component()
 
-    def build(context: plugin_api.PluginContext[object]) -> plugin_api.PluginSpec:
+    def build(context: PluginContext[object]) -> PluginSpec:
         context.mount(component, expose=False)
         return context.finish()
 
-    install(monkeypatch, FakeEntryPoint("hooks", plugin_api.Plugin(build=build)))
+    install(monkeypatch, FakeEntryPoint("hooks", Plugin(build=build)))
     runtime = MiniSky(MiniSkyConfig())
     try:
         result = await runtime.plugins.load("HOOKS")
@@ -266,7 +277,7 @@ async def test_failing_hook_is_disabled_without_disabling_plugin(
 async def test_replacement_arrays_size_existing_traffic(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    @plugin_api.replacement
+    @replacement
     class ArrayAutopilot(Autopilot):
         def __init__(self, traffic: Traffic, get_simulation: Callable[[], Simulation]) -> None:
             super().__init__(traffic, get_simulation)
@@ -283,10 +294,10 @@ async def test_replacement_arrays_size_existing_traffic(
             self.alt_commands += 1
             return super().selaltcmd(idx, alt, vspd)
 
-    def build(context: plugin_api.PluginContext[object]) -> plugin_api.PluginSpec:
+    def build(context: PluginContext[object]) -> PluginSpec:
         return context.finish(replacements=(ArrayAutopilot,))
 
-    install(monkeypatch, FakeEntryPoint("arrays", plugin_api.Plugin(build=build)))
+    install(monkeypatch, FakeEntryPoint("arrays", Plugin(build=build)))
     runtime = MiniSky(MiniSkyConfig())
     try:
         runtime.traffic.cre("KL001", alt=StdPressureAltM(3000.0), airspeed=CasMps(150.0))
@@ -310,15 +321,15 @@ async def test_lifespan_wraps_publication_and_runtime_is_revoked(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     events: list[tuple[str, bool]] = []
-    capability: plugin_api.PluginRuntime | None = None
+    capability: PluginRuntime | None = None
 
     class Component:
-        @plugin_api.command(name="LIFECYCLE")
+        @command(name="LIFECYCLE")
         def command(self) -> None:
             pass
 
     @asynccontextmanager
-    async def lifespan(runtime_api: plugin_api.PluginRuntime) -> AsyncGenerator[None]:
+    async def lifespan(runtime_api: PluginRuntime) -> AsyncGenerator[None]:
         nonlocal capability
         capability = runtime_api
         events.append(("enter", "LIFECYCLE" in runtime.commands.cmddict))
@@ -331,11 +342,11 @@ async def test_lifespan_wraps_publication_and_runtime_is_revoked(
                 runtime_api.status()
             events.append(("exit", "LIFECYCLE" in runtime.commands.cmddict))
 
-    def build(context: plugin_api.PluginContext[object]) -> plugin_api.PluginSpec:
+    def build(context: PluginContext[object]) -> PluginSpec:
         context.mount(Component(), expose=False)
         return context.finish(lifespan=lifespan)
 
-    install(monkeypatch, FakeEntryPoint("lifecycle", plugin_api.Plugin(build=build)))
+    install(monkeypatch, FakeEntryPoint("lifecycle", Plugin(build=build)))
     runtime = MiniSky(MiniSkyConfig())
     result = await runtime.plugins.load("LIFECYCLE")
     assert result.is_ok(), result.err()
@@ -356,7 +367,7 @@ async def test_shutdown_cancels_pending_command_before_lifespan_exit(
     events: list[str] = []
 
     class Component:
-        @plugin_api.command(name="BLOCK")
+        @command(name="BLOCK")
         async def block(self) -> None:
             events.append("command started")
             try:
@@ -365,17 +376,17 @@ async def test_shutdown_cancels_pending_command_before_lifespan_exit(
                 events.append("command cancelled")
 
     @asynccontextmanager
-    async def lifespan(_runtime: plugin_api.PluginRuntime) -> AsyncGenerator[None]:
+    async def lifespan(_runtime: PluginRuntime) -> AsyncGenerator[None]:
         try:
             yield
         finally:
             events.append("lifespan exited")
 
-    def build(context: plugin_api.PluginContext[object]) -> plugin_api.PluginSpec:
+    def build(context: PluginContext[object]) -> PluginSpec:
         context.mount(Component(), expose=False)
         return context.finish(lifespan=lifespan)
 
-    install(monkeypatch, FakeEntryPoint("blocked", plugin_api.Plugin(build=build)))
+    install(monkeypatch, FakeEntryPoint("blocked", Plugin(build=build)))
     runtime = MiniSky(MiniSkyConfig())
     result = await runtime.plugins.load("BLOCKED")
     assert result.is_ok(), result.err()
@@ -393,27 +404,27 @@ async def test_shutdown_cancels_pending_command_before_lifespan_exit(
 async def test_failed_lifespan_startup_is_atomic(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    capability: plugin_api.PluginRuntime | None = None
+    capability: PluginRuntime | None = None
     console_messages: list[str] = []
 
     class Component:
-        @plugin_api.command(name="FAILEDSTART")
+        @command(name="FAILEDSTART")
         def command(self) -> None:
             pass
 
     @asynccontextmanager
-    async def lifespan(runtime_api: plugin_api.PluginRuntime) -> AsyncGenerator[None]:
+    async def lifespan(runtime_api: PluginRuntime) -> AsyncGenerator[None]:
         nonlocal capability
         capability = runtime_api
         runtime_api.subscribe_console(console_messages.append)
         raise RuntimeError("startup failed")
         yield
 
-    def build(context: plugin_api.PluginContext[object]) -> plugin_api.PluginSpec:
+    def build(context: PluginContext[object]) -> PluginSpec:
         context.mount(Component())
         return context.finish(lifespan=lifespan)
 
-    install(monkeypatch, FakeEntryPoint("failedstart", plugin_api.Plugin(build=build)))
+    install(monkeypatch, FakeEntryPoint("failedstart", Plugin(build=build)))
     runtime = MiniSky(MiniSkyConfig())
     result = await runtime.plugins.load("FAILEDSTART")
 
@@ -436,14 +447,14 @@ async def test_failed_lifespan_startup_is_atomic(
 async def test_load_configured_continues_after_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    def build(context: plugin_api.PluginContext[object]) -> plugin_api.PluginSpec:
+    def build(context: PluginContext[object]) -> PluginSpec:
         return context.finish()
 
     install(
         monkeypatch,
-        FakeEntryPoint("first", plugin_api.Plugin(build=build)),
+        FakeEntryPoint("first", Plugin(build=build)),
         FakeEntryPoint("broken", object()),
-        FakeEntryPoint("last", plugin_api.Plugin(build=build)),
+        FakeEntryPoint("last", Plugin(build=build)),
     )
     runtime = MiniSky(MiniSkyConfig(plugins={"first": {}, "broken": {}, "last": {}}))
     try:
@@ -461,9 +472,9 @@ async def test_shutdown_is_reverse_order_and_aggregates_failures(
 ) -> None:
     events: list[str] = []
 
-    def declaration(name: str) -> plugin_api.Plugin:
+    def declaration(name: str) -> Plugin:
         @asynccontextmanager
-        async def lifespan(runtime_api: plugin_api.PluginRuntime) -> AsyncGenerator[None]:
+        async def lifespan(runtime_api: PluginRuntime) -> AsyncGenerator[None]:
             events.append(f"enter {name}")
             try:
                 yield
@@ -473,10 +484,10 @@ async def test_shutdown_is_reverse_order_and_aggregates_failures(
                 events.append(f"exit {name}")
                 raise RuntimeError(f"{name} shutdown failed")
 
-        def build(context: plugin_api.PluginContext[object]) -> plugin_api.PluginSpec:
+        def build(context: PluginContext[object]) -> PluginSpec:
             return context.finish(lifespan=lifespan)
 
-        return plugin_api.Plugin(build=build)
+        return Plugin(build=build)
 
     install(
         monkeypatch,

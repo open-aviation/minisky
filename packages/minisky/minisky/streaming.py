@@ -33,9 +33,10 @@ from minisky import quantities as q
 from minisky.types import AircraftCallsign, AircraftTypeCode
 
 if TYPE_CHECKING:
-    from minisky.simulation import Runner, Simulation
+    from minisky.simulation.runner import Runner
+    from minisky.simulation.simulation import Simulation
     from minisky.stack import CommandStack
-    from minisky.traffic import Traffic
+    from minisky.traffic.traffic import Traffic
 
 # Default upper bound on how often a snapshot is published, in Hz. The
 # simulation may step much faster than this in fast-forward; publishing is
