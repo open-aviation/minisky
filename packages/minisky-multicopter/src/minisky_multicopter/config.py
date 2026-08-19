@@ -8,11 +8,11 @@ from importlib.resources.abc import Traversable
 from pathlib import Path
 from typing import Annotated, TypeAlias
 
-from annotated_types import Ge, Le, Lt, MinLen
-from minisky import PositiveFiniteFloat, default_user_config_dir
+from annotated_types import Ge, IsFinite, Le, Lt, MinLen
+from minisky import default_user_config_dir
 from minisky import quantities as q
-from minisky.types import AircraftTypeCode
-from pydantic import BaseModel, ConfigDict, FiniteFloat, StringConstraints
+from minisky.types import AircraftTypeCode, Ge0, Gt0
+from pydantic import BaseModel, ConfigDict, StringConstraints
 
 from minisky_multicopter import quantities as mq
 
@@ -27,16 +27,16 @@ class RotorAirframeSpec(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    oew: q.OewKg[PositiveFiniteFloat]
-    mtow: q.MtowKg[PositiveFiniteFloat]
+    oew: q.OewKg[IsFinite[Gt0[float]]]
+    mtow: q.MtowKg[IsFinite[Gt0[float]]]
     n_engines: Annotated[int, Ge(1)]
-    engine_power: q.PowerW[PositiveFiniteFloat]
-    v_min: Annotated[q.VelocityMps[FiniteFloat], Le(0)]
-    v_max: q.TrueAirspeedMps[PositiveFiniteFloat]
-    vs_min: Annotated[q.VerticalRateMps[FiniteFloat], Lt(0)]
-    vs_max: q.VerticalRateMps[PositiveFiniteFloat]
-    h_max: q.PressureAltitudeM[PositiveFiniteFloat]
-    range_max: q.DistanceM[PositiveFiniteFloat]
+    engine_power: q.PowerW[IsFinite[Gt0[float]]]
+    v_min: Annotated[q.VelocityMps[IsFinite[float]], Le(0)]
+    v_max: q.TrueAirspeedMps[IsFinite[Gt0[float]]]
+    vs_min: Annotated[q.VerticalRateMps[IsFinite[float]], Lt(0)]
+    vs_max: q.VerticalRateMps[IsFinite[Gt0[float]]]
+    h_max: q.PressureAltitudeM[IsFinite[Gt0[float]]]
+    range_max: q.DistanceM[IsFinite[Gt0[float]]]
 
 
 class MulticopterTypeSpec(BaseModel):
@@ -44,9 +44,9 @@ class MulticopterTypeSpec(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    battery_energy: q.EnergyWh[PositiveFiniteFloat] | None = None
-    cds: mq.FlatPlateDragAreaM2[PositiveFiniteFloat] = 0.01
-    twr: mq.ThrustToWeightRatio[PositiveFiniteFloat] = 2.0
+    battery_energy: q.EnergyWh[IsFinite[Gt0[float]]] | None = None
+    cds: mq.FlatPlateDragAreaM2[IsFinite[Gt0[float]]] = 0.01
+    twr: mq.ThrustToWeightRatio[IsFinite[Gt0[float]]] = 2.0
     airframe: RotorAirframeSpec
 
 
@@ -61,14 +61,14 @@ class MulticopterConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    capture_radius: q.DistanceM[PositiveFiniteFloat] = 10.0
+    capture_radius: q.DistanceM[IsFinite[Gt0[float]]] = 10.0
     performance_path: Path | None = None
-    soc_low: Annotated[FiniteFloat, Ge(0), Lt(1)] = 0.2
-    lowbatt_spd_factor: Annotated[PositiveFiniteFloat, Le(1)] = 0.6
-    lowbatt_vs_factor: Annotated[PositiveFiniteFloat, Le(1)] = 0.5
-    gs_hover: q.GroundSpeedMps[PositiveFiniteFloat] = 0.1
-    alt_capture: q.VerticalDistanceM[PositiveFiniteFloat] = 0.5
-    cruise_speed_fraction: mq.CruiseSpeedFraction[Annotated[PositiveFiniteFloat, Le(1)]] = 0.8
+    soc_low: Annotated[IsFinite[Ge0[float]], Lt(1)] = 0.2
+    lowbatt_spd_factor: Annotated[IsFinite[Gt0[float]], Le(1)] = 0.6
+    lowbatt_vs_factor: Annotated[IsFinite[Gt0[float]], Le(1)] = 0.5
+    gs_hover: q.GroundSpeedMps[IsFinite[Gt0[float]]] = 0.1
+    alt_capture: q.VerticalDistanceM[IsFinite[Gt0[float]]] = 0.5
+    cruise_speed_fraction: mq.CruiseSpeedFraction[Annotated[IsFinite[Gt0[float]], Le(1)]] = 0.8
 
 
 def default_user_performance_path() -> Path:

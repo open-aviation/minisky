@@ -4,9 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Annotated, TypeAlias
-
-from annotated_types import Ge
+from typing import TYPE_CHECKING, TypeAlias
 
 from minisky import quantities as q
 from minisky._internal.command import (
@@ -21,6 +19,7 @@ from minisky.types import (
     AircraftCallsign,
     AircraftIndex,
     CasMps,
+    Ge0,
     LatLonDegrees,
     Mach,
     StdPressureAltM,
@@ -148,7 +147,7 @@ class Condition:
         self,
         acidx: AcId,
         position: LatLonDeg,
-        targdist: Annotated[DistanceM, Ge(0)],
+        targdist: Ge0[DistanceM],
         cmdtxt: Text,
     ) -> bool:
         """Schedule a command for crossing a distance."""

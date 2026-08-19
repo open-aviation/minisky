@@ -93,7 +93,6 @@ from annotated_types import (
     Ge,
     GroupedMetadata,
     Gt,
-    IsFinite,
     Le,
     Lt,
     MaxLen,
@@ -499,11 +498,6 @@ class CmdParser(Generic[ValueT_co]):
 #
 # primitives
 #
-
-
-FiniteFloat: TypeAlias = IsFinite[float]
-NonNegativeFiniteFloat: TypeAlias = Annotated[FiniteFloat, Ge(0)]
-PositiveFiniteFloat: TypeAlias = Annotated[FiniteFloat, Gt(0)]
 
 
 def parse_field(

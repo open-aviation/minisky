@@ -18,7 +18,7 @@ from random import Random
 from typing import TYPE_CHECKING, Annotated, Literal, overload
 
 import numpy as np
-from annotated_types import Ge, Le, Lt
+from annotated_types import Ge, IsFinite, Le, Lt
 
 import minisky.geo as geo  # noqa: PLR0402
 from minisky import quantities as q
@@ -29,12 +29,10 @@ from minisky._internal.command import (
     AcIdSelection,
     CmdParser,
     DistanceM,
-    FiniteFloat,
     HeadingDeg,
     Keyword,
     LatLonDeg,
     OnOff,
-    PositiveFiniteFloat,
     ResolvedPositionArg,
     RunwayHeadingRequest,
     RunwayPosition,
@@ -76,6 +74,7 @@ from minisky.types import (
     AirspeedKind,
     AirwayIdentifier,
     CasMps,
+    Gt0,
     Mach,
     MagneticHeadingDeg,
     StdPressureAltM,
@@ -101,8 +100,8 @@ Throttle = Annotated[
 
 LatitudeArg = Annotated[q.LatitudeDeg[float], Ge(-90), Le(90)]
 LongitudeArg = Annotated[q.LongitudeDeg[float], Ge(-180), Le(180)]
-ConflictAngleDeg = q.AngleDeg[FiniteFloat]
-BankLimitDeg = Annotated[q.BankAngleDeg[PositiveFiniteFloat], Lt(90)]
+ConflictAngleDeg = q.AngleDeg[IsFinite[float]]
+BankLimitDeg = Annotated[q.BankAngleDeg[IsFinite[Gt0[float]]], Lt(90)]
 
 
 _DEFAULT_ALTITUDE = StdPressureAltM(q.ft_to_m(25000.0))

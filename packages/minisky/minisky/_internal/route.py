@@ -21,7 +21,7 @@ from enum import Enum, IntEnum, auto
 from typing import TYPE_CHECKING, Annotated, Literal, NamedTuple, TypeAlias
 
 import numpy as np
-from annotated_types import Gt
+from annotated_types import IsFinite
 
 import minisky.geo as geo  # noqa: PLR0402
 from minisky import quantities as q
@@ -37,7 +37,6 @@ from minisky._internal.command import (
     NamedWaypoint,
     Omitted,
     ParseResult,
-    PositiveFiniteFloat,
     RunwayPosition,
     SimTimeS,
     Spanned,
@@ -62,6 +61,7 @@ from minisky.types import (
     AircraftCallsign,
     AircraftIndex,
     CasMps,
+    Gt0,
     LatLonDegrees,
     Mach,
     OptionalAirspeedKind,
@@ -785,8 +785,8 @@ TurnParameterArg = Annotated[
     TurnParameter,
     CmdParser.keywords(_TURN_PARAMETERS, "a supported turn parameter"),
 ]
-TurnRadiusMArg = Annotated[DistanceM, Gt(0)]
-TurnHeadingRateArg = q.TurnRateDegPerS[PositiveFiniteFloat]
+TurnRadiusMArg = Gt0[DistanceM]
+TurnHeadingRateArg = q.TurnRateDegPerS[IsFinite[Gt0[float]]]
 
 
 def _parse_runway(
@@ -1465,7 +1465,7 @@ class RouteCommands:
         self,
         acidx: AcId,
         _parameter: Literal["TURNSPD", "TURNSPEED"],
-        value: Annotated[CasMps, Gt(0)],
+        value: Gt0[CasMps],
     ) -> Result[str, str]:
         """Set the default fly-turn [`CAS`][minisky.types.CasMps] using an explicit quantity such as `250KT[CAS]`."""
         return _set_turn_cas(self.traffic, acidx, value)
@@ -1514,7 +1514,7 @@ class RouteCommands:
         self,
         acidx: AcId,
         _parameter: Literal["TURNSPD", "TURNSPEED"],
-        value: Annotated[CasMps, Gt(0)],
+        value: Gt0[CasMps],
     ) -> Result[str, str]:
         """Set fly-turn CAS through ADDWPT using an explicit quantity such as `250KT[CAS]`."""
         return _set_turn_cas(self.traffic, acidx, value)

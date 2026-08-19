@@ -11,9 +11,12 @@ from __future__ import annotations
 import asyncio
 from typing import TYPE_CHECKING
 
+from annotated_types import IsFinite
+
 from minisky import quantities as q
-from minisky._internal.command import PositiveFiniteFloat, command
+from minisky._internal.command import command
 from minisky._internal.result import Ok, Result
+from minisky.types import Gt0
 
 if TYPE_CHECKING:
     from minisky._internal.console import ConsoleIO
@@ -62,7 +65,7 @@ class Runner:
         self.jumping = True
 
     @command(name="DTMULT", aliases=("RTF",))
-    def setspeed(self, mult: PositiveFiniteFloat) -> Result[str, str]:
+    def setspeed(self, mult: IsFinite[Gt0[float]]) -> Result[str, str]:
         """Set the simulation speed multiplier.
 
         The loop targets a simulation step every `simdt / speed` wall-clock

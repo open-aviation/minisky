@@ -17,10 +17,10 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from enum import Enum
-from typing import TYPE_CHECKING, Annotated, Literal, NamedTuple
+from typing import TYPE_CHECKING, Literal, NamedTuple
 
 import numpy as np
-from annotated_types import Ge
+from annotated_types import IsFinite
 
 from minisky import quantities as q
 from minisky._internal import route
@@ -28,7 +28,6 @@ from minisky._internal.command import (
     AcIdSelection,
     DistanceM,
     OnOff,
-    PositiveFiniteFloat,
     aircraft_indices,
     command,
 )
@@ -36,6 +35,7 @@ from minisky._internal.config import MiniSkyConfig
 from minisky._internal.conflict.detection import ConflictPair
 from minisky._internal.result import Err, Ok, Result
 from minisky._internal.traffic_arrays import TrafficArrays
+from minisky.types import Ge0, Gt0
 
 if TYPE_CHECKING:
     from minisky._internal.traffic import Traffic
@@ -52,8 +52,8 @@ class PriorityCode(Enum):
 
 
 PriorityCodeArg = Literal["FF1", "FF2", "FF3", "LAY1", "LAY2"]
-ResolutionRadiusM = Annotated[DistanceM, Ge(0)]
-ResolutionHeightM = Annotated[DistanceM, Ge(0)]
+ResolutionRadiusM = Ge0[DistanceM]
+ResolutionHeightM = Ge0[DistanceM]
 HorizontalResolutionMethod = Literal["BOTH", "SPD", "HDG", "NONE", "ON", "OFF", "OF"]
 VerticalResolutionMethod = Literal["NONE", "ON", "OFF", "OF", "V/S"]
 
@@ -373,7 +373,7 @@ class ConflictResolution(TrafficArrays):
         return Ok(f"RFACH [FACTOR]\nCurrent horizontal resolution factor is: {self.resofach}")
 
     @command(name="RFACH")
-    def set_horizontal_resolution_factor(self, factor: PositiveFiniteFloat) -> Result[str, str]:
+    def set_horizontal_resolution_factor(self, factor: IsFinite[Gt0[float]]) -> Result[str, str]:
         """Set the horizontal resolution factor."""
         self.resofach = factor
         self.resorrelative = True
@@ -386,7 +386,7 @@ class ConflictResolution(TrafficArrays):
         return Ok(f"RFACV [FACTOR]\nCurrent vertical resolution factor is: {self.resofacv}")
 
     @command(name="RFACV")
-    def set_vertical_resolution_factor(self, factor: PositiveFiniteFloat) -> Result[str, str]:
+    def set_vertical_resolution_factor(self, factor: IsFinite[Gt0[float]]) -> Result[str, str]:
         """Set the vertical resolution factor."""
         self.resofacv = factor
         # Size of resolution zone dh, vertically, set relative to CD zone
