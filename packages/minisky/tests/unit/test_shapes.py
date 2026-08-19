@@ -2,7 +2,7 @@
 
 import numpy as np
 import pytest
-from minisky.tools.shapes import Box, Circle, HasArea, Poly, Shapes
+from minisky._internal.shapes import Box, Circle, HasArea, Poly, Shapes
 from minisky.types import LatLonDegrees
 
 

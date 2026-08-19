@@ -5,8 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterator
 
 import pytest
-from minisky import MiniSky, MiniSkyConfig
-from minisky.simulation.simulation import Simulation
+from minisky import MiniSky, MiniSkyConfig, Simulation
 
 
 @pytest.fixture(scope="session")

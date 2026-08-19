@@ -30,10 +30,10 @@ from minisky import (
     Result,
     TimeS,
     command,
+    geo,
     hook,
 )
 from minisky import quantities as q
-from minisky.tools import geo
 from minisky.types import MagneticHeadingDeg, StdPressureAltM
 
 from minisky_multicopter.config import (
@@ -45,7 +45,7 @@ from minisky_multicopter.config import (
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-    from minisky.traffic.traffic import Traffic
+    from minisky import Traffic
 
 DEFAULT_YAWRATE: q.YawRateDegPerS[float] = 90.0
 

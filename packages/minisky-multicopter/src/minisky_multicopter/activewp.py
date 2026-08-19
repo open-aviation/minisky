@@ -8,9 +8,9 @@ radius instead, configurable as `capture_radius` under
 `[plugins.multicopter]` (see `minisky_multicopter.config`).
 
 This must live in an
-[`ActiveWaypoint`][minisky.traffic.activewpdata.ActiveWaypoint] subclass
+[`ActiveWaypoint`][minisky.ActiveWaypoint] subclass
 (selected with `SELECTIMPL ACTIVEWAYPOINT MULTICOPTERACTIVEWAYPOINT`)
-because [`ActiveWaypoint.reached`][minisky.traffic.activewpdata.ActiveWaypoint.reached]
+because [`ActiveWaypoint.reached`][minisky.ActiveWaypoint.reached]
 recomputes `turndist` from the bank-angle formula every step — clamping it
 from the autopilot update would be overwritten before it is ever used.
 """
@@ -18,10 +18,8 @@ from the autopilot update would be overwritten before it is ever used.
 from __future__ import annotations
 
 import numpy as np
+from minisky import ActiveWaypoint, OptionalArray, replacement
 from minisky import quantities as q
-from minisky import replacement
-from minisky.core.trafficarrays import OptionalArray
-from minisky.traffic.activewpdata import ActiveWaypoint
 
 from minisky_multicopter.entity import get_multicopter
 

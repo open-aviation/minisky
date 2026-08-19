@@ -1,4 +1,4 @@
-"""Integration tests for aircraft creation/deletion (minisky.traffic.traffic.Traffic)."""
+"""Integration tests for aircraft creation/deletion (minisky._internal.traffic.Traffic)."""
 
 from __future__ import annotations
 
@@ -6,9 +6,9 @@ import numpy as np
 import pytest
 from minisky import MiniSky
 from minisky import quantities as q
-from minisky.simulation.simulation import Simulation
-from minisky.traffic.conditional import AirspeedCondition, AltitudeCondition
-from minisky.traffic.wind import WindFieldKind
+from minisky._internal.conditions import AirspeedCondition, AltitudeCondition
+from minisky._internal.simulation import Simulation
+from minisky._internal.wind import WindFieldKind
 from minisky.types import CasMps, Mach, StdPressureAltM
 from tests._types import RunCommand
 

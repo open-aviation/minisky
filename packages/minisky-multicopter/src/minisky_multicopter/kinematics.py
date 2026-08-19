@@ -1,7 +1,7 @@
 """Multicopter flight integration.
 
 Replaces the bank-to-turn kinematics of the core
-[`Kinematics`][minisky.traffic.kinematics.Kinematics] entity for multicopter
+[`Kinematics`][minisky.Kinematics] entity for multicopter
 rows: heading slews at a fixed yaw rate (valid at zero airspeed, so
 hover-yaw works), and the velocity vector follows the *commanded track*
 rather than the heading, so track and heading are decoupled.
@@ -13,9 +13,8 @@ rows keep the base-class behaviour untouched.
 from __future__ import annotations
 
 import numpy as np
+from minisky import Kinematics, replacement
 from minisky import quantities as q
-from minisky import replacement
-from minisky.traffic.kinematics import Kinematics
 
 from minisky_multicopter.entity import get_multicopter
 
@@ -25,7 +24,7 @@ class MulticopterKinematics(Kinematics):
     """Yaw-rate-limited, track-driven integration for multicopter rows.
 
     Only `update_airspeed` and `update_groundspeed` are overridden; the
-    inherited [`Kinematics.update`][minisky.traffic.kinematics.Kinematics.update]
+    inherited [`Kinematics.update`][minisky.Kinematics.update]
     still runs a single `update_pos` pass afterwards, so position is
     integrated exactly once from the corrected velocity.
     """

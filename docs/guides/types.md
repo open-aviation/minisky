@@ -72,9 +72,11 @@ Conceptually, [`CasMps`][minisky.types.CasMps] and [`Mach`][minisky.types.Mach] 
 ```py
 from dataclasses import dataclass
 
+
 @dataclass(frozen=True, slots=True)
 class CasMps:
     value: float
+
 
 @dataclass(frozen=True, slots=True)
 class Mach:
@@ -93,12 +95,14 @@ Instead, minisky follows the [FastAPI convention of embedding metadata into type
 from dataclasses import dataclass
 from minisky import quantities as q
 
+
 # use in data structures:
 @dataclass
 class GasState:
     temperature: q.StaticTemperatureK
     pressure: q.StaticPressurePa
     density: q.DensityKgPerM3
+
 
 # use in functions:
 def mach(tas: q.TrueAirspeedMps, a: SpeedOfSoundMps):

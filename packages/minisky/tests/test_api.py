@@ -21,7 +21,7 @@ pytestmark = pytest.mark.api
 
 @pytest.fixture(scope="module")
 def server_app(config: MiniSkyConfig) -> FastAPI:
-    from minisky.server import create_app
+    from minisky._internal.server import create_app
 
     return create_app(MiniSky(config))
 

@@ -13,7 +13,7 @@ import ast
 from typing import TYPE_CHECKING, Any
 
 from griffe import Docstring, Extension
-from minisky.identifiers import normalize_command_name
+from minisky._internal.identifiers import normalize_command_name
 
 if TYPE_CHECKING:
     from griffe import Function, Inspector, Visitor

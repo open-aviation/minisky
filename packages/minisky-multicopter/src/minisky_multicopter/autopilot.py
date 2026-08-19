@@ -1,7 +1,7 @@
 """Multicopter mission autopilot.
 
 A thin subclass of the core
-[`Autopilot`][minisky.traffic.autopilot.Autopilot]: LNAV already emits a
+[`Autopilot`][minisky.Autopilot]: LNAV already emits a
 *track* command, which is exactly what the decoupled multicopter kinematics
 consumes, so no guidance rewrite is needed. What the stock FMS cannot
 express is added here — the `HOVER` primitive, rerouted `HDG` semantics
@@ -22,10 +22,18 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import numpy as np
-from minisky import AcIdSelection, Err, HeadingDeg, Ok, Result, replacement
+from minisky import (
+    AcIdSelection,
+    Autopilot,
+    Err,
+    HeadingDeg,
+    Ok,
+    OptionalArray,
+    Result,
+    VariantArray,
+    replacement,
+)
 from minisky import quantities as q
-from minisky.core.trafficarrays import OptionalArray, VariantArray
-from minisky.traffic.autopilot import Autopilot
 from minisky.types import AircraftIndex, AirspeedKind, StdPressureAltM
 
 from minisky_multicopter.entity import get_multicopter
@@ -33,8 +41,7 @@ from minisky_multicopter.entity import get_multicopter
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from minisky.simulation.simulation import Simulation
-    from minisky.traffic.traffic import Traffic
+    from minisky import Simulation, Traffic
 
 
 @replacement

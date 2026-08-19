@@ -1,0 +1,200 @@
+"""Empirical turbofan thrust and fuel-flow models for the OpenAP performance model.
+
+Provides vectorised estimates of the maximum available thrust of turbofan
+engines as a fraction of their maximum static thrust, based on engine bypass
+ratio, airspeed, altitude, and vertical rate. Separate models are used for
+the takeoff regime and for three in-flight altitude segments (below 10000 ft,
+10000-35000 ft, above 35000 ft). Also provides a quadratic fit of the ICAO
+engine emission databank fuel-flow points as a function of thrust ratio.
+"""
+
+from typing import NamedTuple
+
+import numpy as np
+
+import minisky.aero as aero  # noqa: PLR0402
+from minisky import quantities as q
+from minisky._internal.performance.phase import FlightPhase
+
+
+def compute_max_thr_ratio(
+    phase: np.ndarray,
+    bpr: q.BypassRatio[np.ndarray],
+    v: q.TrueAirspeedMps[np.ndarray],
+    h: q.PressureAltitudeM[np.ndarray],
+    vs: q.VerticalRateMps[np.ndarray],
+    thr0: q.ForceN[np.ndarray],
+) -> np.ndarray:
+    """Compute the available maximum turbofan thrust ratio.
+
+    Selects the takeoff thrust model (`tr_takeoff`) for aircraft on the
+    ground and the in-flight model (:func:`inflight`) otherwise. The result
+    is the ratio of the currently available maximum thrust to the maximum
+    static thrust ``thr0``.
+
+    Args:
+        phase: Flight phase, using `FlightPhase` values.
+        thr0: Total maximum static thrust of all engines.
+
+    Returns:
+        Available maximum thrust as a fraction of `thr0`.
+    """
+
+    n = len(phase)
+
+    ratio_takeoff = tr_takeoff(bpr, v, h)
+
+    ratio_inflight = inflight(v, h, vs, thr0)
+
+    # thrust ratio array
+    #   LD and GN assume ZERO thrust
+    tr = np.ones(n) * ratio_inflight
+    tr = np.where(phase == FlightPhase.GROUND, ratio_takeoff, tr)
+
+    return tr
+
+
+def tr_takeoff(
+    bpr: q.BypassRatio[np.ndarray],
+    v: q.TrueAirspeedMps[np.ndarray],
+    h: q.PressureAltitudeM[np.ndarray],
+) -> np.ndarray:
+    """Compute the takeoff thrust ratio.
+
+    Empirical polynomial model of the thrust lapse of a turbofan during the
+    takeoff regime, as a function of Mach number and ambient pressure ratio,
+    parameterised by the engine bypass ratio.
+
+    Returns:
+        Available takeoff thrust as a fraction of static thrust.
+    """
+    G0 = 0.0606 * bpr + 0.6337
+    Mach = aero.vtas2mach(v, h)
+    P0 = aero.p0
+    P = aero.vpressure(h)
+    PP = P / P0
+
+    A = -0.4327 * PP**2 + 1.3855 * PP + 0.0472
+    Z = 0.9106 * PP**3 - 1.7736 * PP**2 + 1.8697 * PP
+    X = 0.1377 * PP**3 - 0.4374 * PP**2 + 1.3003 * PP
+
+    ratio = (
+        A
+        - 0.377 * (1 + bpr) / np.sqrt((1 + 0.82 * bpr) * G0) * Z * Mach
+        + (0.23 + 0.19 * np.sqrt(bpr)) * X * Mach**2
+    )
+
+    return ratio
+
+
+def inflight(
+    v: q.TrueAirspeedMps[np.ndarray],
+    h: q.PressureAltitudeM[np.ndarray],
+    vs: q.VerticalRateMps[np.ndarray],
+    thr0: q.ForceN[np.ndarray],
+) -> np.ndarray:
+    """Compute the in-flight thrust ratio.
+
+    Empirical model of the in-flight maximum thrust of a turbofan. The
+    thrust at a reference top-of-climb condition (Mach 0.8 at 35000 ft) is
+    estimated from the static thrust, then scaled with pressure-ratio-based
+    lapse laws for three altitude segments (above 35000 ft, 10000-35000 ft,
+    and below 10000 ft), with corrections for calibrated airspeed and rate
+    of climb. The result is converted back to a fraction of the maximum
+    static thrust.
+
+    Args:
+        thr0: Total maximum static thrust of all engines.
+
+    Returns:
+        Available in-flight thrust as a fraction of `thr0`.
+    """
+
+    def dfunc(mratio):
+        d = -0.4204 * mratio + 1.0824
+        return d
+
+    def nfunc(roc):
+        n = 2.667e-05 * roc + 0.8633
+        return n
+
+    def mfunc(vratio, roc):
+        m = -1.2043e-1 * vratio - 8.8889e-9 * roc**2 + 2.4444e-5 * roc + 4.7379e-1
+        return m
+
+    roc = np.abs(np.asarray(q.mps_to_fpm(vs)))
+    v = np.where(v < 10, 10, v)
+
+    mach = aero.vtas2mach(v, h)
+    vcas = aero.vtas2cas(v, h)
+
+    p = aero.vpressure(h)
+    alt10 = q.ft_to_m(10000.0)
+    alt35 = q.ft_to_m(35000.0)
+    p10 = aero.vpressure(alt10)
+    p35 = aero.vpressure(alt35)
+
+    # approximate thrust at top of climb (REF 2)
+    F35 = q.lbf_to_n(200.0 + 0.2 * q.n_to_lbf(thr0))
+    mach_ref = 0.8
+    vcas_ref = aero.vmach2cas(mach_ref, alt35)
+
+    # segment 3: alt > 35000:
+    d = dfunc(mach / mach_ref)
+    b = (mach / mach_ref) ** (-0.11)
+    ratio_seg3 = d * np.log(p / p35) + b
+
+    # segment 2: 10000 < alt <= 35000:
+    a = (vcas / vcas_ref) ** (-0.1)
+    n = nfunc(roc)
+    ratio_seg2 = a * (p / p35) ** (-0.355 * (vcas / vcas_ref) + n)
+
+    # segment 1: alt <= 10000:
+    F10 = F35 * a * (p10 / p35) ** (-0.355 * (vcas / vcas_ref) + n)
+    m = mfunc(vcas / vcas_ref, roc)
+    ratio_seg1 = m * (p / p35) + (F10 / F35 - m * (p10 / p35))
+
+    ratio = np.where(
+        h > alt35,
+        ratio_seg3,
+        np.where(h > alt10, ratio_seg2, ratio_seg1),
+    )
+
+    ratio_F0 = ratio * F35 / thr0
+
+    return ratio_F0
+
+
+class FuelFlowCoefficients(NamedTuple):
+    quadratic: q.MassFlowKgPerS
+    linear: q.MassFlowKgPerS
+    constant: q.MassFlowKgPerS
+
+
+def compute_eng_ff_coeff(
+    ffidl: q.MassFlowKgPerS,
+    ffapp: q.MassFlowKgPerS,
+    ffco: q.MassFlowKgPerS,
+    ffto: q.MassFlowKgPerS,
+) -> FuelFlowCoefficients:
+    """Fit the ICAO engine fuel-flow model.
+
+    Fits a quadratic polynomial through the four fuel-flow measurement
+    points of the ICAO engine emission databank (at 7%, 30%, 85%, and 100%
+    thrust) plus the origin. The resulting coefficients give fuel flow per
+    engine as a function of thrust ratio x: ff = a*x^2 + b*x + c.
+
+    Args:
+        ffidl: Fuel flow measured at 7% thrust.
+        ffapp: Fuel flow measured at 30% thrust.
+        ffco: Fuel flow measured at 85% thrust.
+        ffto: Fuel flow measured at 100% thrust.
+    """
+
+    # standard fuel flow at test thrust ratios
+    y = [0, ffidl, ffapp, ffco, ffto]
+    x = [0, 0.07, 0.3, 0.85, 1.0]
+
+    a, b, c = np.polyfit(x, y, 2)
+
+    return FuelFlowCoefficients(a, b, c)

@@ -13,6 +13,7 @@ You can model this in Python with [`@command`][minisky.command]:
 ```python
 from minisky import Ok, Result, command
 
+
 @command
 def greet(self, name: str) -> Result[str, str]:
     """Greet someone from the stack."""
@@ -34,6 +35,7 @@ A common pattern is to put defensive checks inside the method:
 ```python
 from minisky import Err, Result, command
 
+
 @command(name="PASSENGERS")
 def set_passenger_count(self, callsign: str, count: int) -> Result[str, str]:
     idx = self.traffic.idx(callsign)
@@ -54,12 +56,9 @@ from typing import Annotated
 from annotated_types import Ge, Gt, Le
 from minisky import AcId, command
 
+
 @command(name="PASSENGERS", aliases=("PAX",))
-def set_passenger_count(
-    self,
-    idx: AcId,
-    count: Annotated[int, Ge(0), Le(500)]
-) -> Result[str, str]:
+def set_passenger_count(self, idx: AcId, count: Annotated[int, Ge(0), Le(500)]) -> Result[str, str]:
     self.passengers[idx] = count
     return Ok(f"passenger count set to {count}")
 ```
@@ -126,6 +125,7 @@ Define two methods with the same `name`:
 ```python
 @command(name="MASS")
 def set_mass(self, idx: AcId, value: Annotated[float, Gt(0)]) -> Result[str, str]: ...
+
 
 @command(name="MASS")
 def get_mass(self, idx: AcId) -> Result[float, str]: ...

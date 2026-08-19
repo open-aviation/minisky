@@ -7,18 +7,11 @@ For physical quantities and semantic runtime values, use
 [`minisky.quantities`][] and [`minisky.types`][].
 """
 
-from minisky.core.config import (
-    MiniSkyConfig,
-    default_user_config_dir,
-    default_user_config_toml_path,
-)
-from minisky.plugin.entity import Entity
-from minisky.plugin.plugin import Plugin, PluginContext, PluginRuntime, PluginSpec, PluginStatus
-from minisky.plugin.plugin_decorators import hook, replacement
-from minisky.result import Err, Ok, Result, UnwrapError
-from minisky.runtime import MiniSky
-from minisky.simulation.simulation import SimulationState
-from minisky.stack_command import (
+from minisky import aero as aero
+from minisky import geo as geo
+from minisky._internal.active_waypoint import ActiveWaypoint
+from minisky._internal.autopilot import Autopilot
+from minisky._internal.command import (
     AcId,
     AcIdSelection,
     ArgumentIssue,
@@ -37,6 +30,7 @@ from minisky.stack_command import (
     ParseResult,
     PositiveFiniteFloat,
     SimTimeS,
+    SourceSpan,
     Spanned,
     SpeedMps,
     Text,
@@ -46,14 +40,62 @@ from minisky.stack_command import (
     Wpt,
     command,
 )
-from minisky.streaming import Snapshot
+from minisky._internal.config import (
+    MiniSkyConfig,
+    ServerConfig,
+    default_user_config_dir,
+    default_user_config_toml_path,
+)
+from minisky._internal.conflict.detection import ConflictDetection
+from minisky._internal.conflict.resolution import ConflictResolution
+from minisky._internal.console import ConsoleIO, ConsoleSubscription
+from minisky._internal.guidance import APorASAS
+from minisky._internal.kinematics import Kinematics
+from minisky._internal.navigation import Navdatabase
+from minisky._internal.performance.openap import OpenAP
+from minisky._internal.plugin import (
+    Plugin,
+    PluginBuild,
+    PluginContext,
+    PluginLifespan,
+    PluginManager,
+    PluginRuntime,
+    PluginSpec,
+    PluginStatus,
+)
+from minisky._internal.plugin_decorators import HookName, hook, replacement
+from minisky._internal.plugin_entity import Entity
+from minisky._internal.result import Err, Ok, Result, UnwrapError
+from minisky._internal.route import Route
+from minisky._internal.runner import Runner
+from minisky._internal.runtime import MiniSky
+from minisky._internal.simulation import Simulation, SimulationState
+from minisky._internal.stack import CommandStack
+from minisky._internal.streaming import AcData, SimInfo, Snapshot
+from minisky._internal.traffic import Traffic
+from minisky._internal.traffic_arrays import (
+    OptionalArray,
+    ReplaceableManager,
+    TrafficArrays,
+    VariantArray,
+)
 
 __all__ = (  # noqa: RUF022 - public API and docs use this semantic order
     # runtime
     "MiniSky",
     "MiniSkyConfig",
+    "ServerConfig",
+    "Simulation",
     "SimulationState",
+    "Runner",
+    "CommandStack",
+    "ConsoleIO",
+    "ConsoleSubscription",
+    "Traffic",
+    "Navdatabase",
     "Snapshot",
+    "SimInfo",
+    "AcData",
     "default_user_config_dir",
     "default_user_config_toml_path",
     # plugin authoring
@@ -62,9 +104,29 @@ __all__ = (  # noqa: RUF022 - public API and docs use this semantic order
     "PluginSpec",
     "PluginRuntime",
     "PluginStatus",
+    "PluginBuild",
+    "PluginLifespan",
+    "PluginManager",
+    "HookName",
     "Entity",
     "hook",
     "replacement",
+    # replacement authoring
+    "ActiveWaypoint",
+    "Autopilot",
+    "APorASAS",
+    "Kinematics",
+    "OpenAP",
+    "ConflictDetection",
+    "ConflictResolution",
+    "TrafficArrays",
+    "OptionalArray",
+    "VariantArray",
+    "ReplaceableManager",
+    "Route",
+    # public utility modules
+    "aero",
+    "geo",
     # results
     "Result",
     "Ok",
@@ -85,6 +147,7 @@ __all__ = (  # noqa: RUF022 - public API and docs use this semantic order
     "VspdMps",
     "TimeS",
     "SimTimeS",
+    "SourceSpan",
     "Wpt",
     "NamedWaypoint",
     "CoordinateWaypoint",

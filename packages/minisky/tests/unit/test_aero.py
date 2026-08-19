@@ -1,11 +1,11 @@
-"""Unit tests for minisky.tools.aero (ISA atmosphere and speed conversions).
+"""Unit tests for minisky.aero (ISA atmosphere and speed conversions).
 
 All aero functions use SI units: altitude in meters, speed in m/s.
 """
 
 import numpy as np
 import pytest
-from minisky.tools import aero
+from minisky import aero
 
 
 class TestAtmosphere:

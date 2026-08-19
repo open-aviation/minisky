@@ -17,9 +17,9 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
+from minisky import geo
 from minisky import quantities as q
-from minisky.tools import geo
-from minisky.traffic.asas.detection import ConflictDetection
+from minisky._internal.conflict.detection import ConflictDetection
 
 
 def detect_reference(ownship, intruder, rpz, hpz, dtlookahead):

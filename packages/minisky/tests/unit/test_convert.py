@@ -1,7 +1,7 @@
-"""Unit tests for minisky.tools.convert (text parsers)."""
+"""Unit tests for minisky._internal.convert (text parsers)."""
 
+import minisky._internal.convert as cv
 import pytest
-from minisky.tools import convert as cv
 
 
 class TestTime:

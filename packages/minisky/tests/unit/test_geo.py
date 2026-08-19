@@ -1,9 +1,9 @@
-"""Unit tests for minisky.tools.geo; all distance APIs use metres."""
+"""Unit tests for minisky.geo; all distance APIs use metres."""
 
 import numpy as np
 import pytest
+from minisky import geo
 from minisky import quantities as q
-from minisky.tools import geo
 
 
 class TestQdrDist:

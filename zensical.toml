@@ -19,17 +19,12 @@ nav = [
   ] },
   { "Reference" = [
     { "Stack commands" = "reference/commands.md" },
-    { "API" = [
+    { "API reference" = [
       { "minisky" = "api/minisky.md" },
       { "quantities" = "api/quantities.md" },
       { "types" = "api/types.md" },
-      { "Internal API" = [
-        { "simulation" = "api/simulation.md" },
-        { "traffic" = "api/traffic.md" },
-        { "command and stack" = "api/stack.md" },
-        { "core" = "api/core.md" },
-        { "tools" = "api/tools.md" },
-      ] },
+      { "aero" = "api/aero.md" },
+      { "geo" = "api/geo.md" },
       { "Plugins" = [
         { "tangram_multicopter" = "api/multicopter.md" },
         { "tangram_minisky" = "api/tangram-minisky.md" },

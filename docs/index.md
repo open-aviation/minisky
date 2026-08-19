@@ -33,7 +33,12 @@ reach a bare-minimum simulator that is easy to read, embed, and extend.
 
     with MiniSky() as runtime:
         runtime.traffic.cre(
-            "KL315", lat=52.0, lon=4.0, hdg=45, alt=StdPressureAltM(q.ft_to_m(5000.0)), airspeed=CasMps(q.kt_to_mps(250.0))
+            "KL315",
+            lat=52.0,
+            lon=4.0,
+            hdg=45,
+            alt=StdPressureAltM(q.ft_to_m(5000.0)),
+            airspeed=CasMps(q.kt_to_mps(250.0)),
         )
         runtime.simulation.step()
     ```

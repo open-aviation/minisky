@@ -1,6 +1,6 @@
 r"""Electric performance for multicopters.
 
-Adds what the core [`OpenAP`][minisky.traffic.performance.perfoap.OpenAP]
+Adds what the core [`OpenAP`][minisky.OpenAP]
 model lacks for rotor aircraft: required thrust from mass and acceleration,
 electrical power from a momentum-theory scaling anchored to the installed
 power (`engnum * engpower`), and a battery state of charge integrated each
@@ -21,12 +21,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import minisky._internal.performance.coefficients as coeff
 import numpy as np
-from minisky import Ok, Result, replacement
+from minisky import Ok, OpenAP, Result, aero, replacement
 from minisky import quantities as q
-from minisky.tools import aero
-from minisky.traffic.performance import coeff
-from minisky.traffic.performance.perfoap import OpenAP
 from minisky.types import AircraftIndex, AircraftTypeCode
 
 from minisky_multicopter import quantities as mq
@@ -34,7 +32,7 @@ from minisky_multicopter.config import MulticopterTypeSpec, RotorAirframeSpec
 from minisky_multicopter.entity import get_multicopter
 
 if TYPE_CHECKING:
-    from minisky.traffic.traffic import Traffic
+    from minisky import Traffic
 
 
 @replacement

@@ -13,6 +13,7 @@ from typing import cast
 import numpy as np
 import pytest
 from minisky import (
+    Autopilot,
     Entity,
     Err,
     MiniSky,
@@ -28,9 +29,8 @@ from minisky import (
     replacement,
 )
 from minisky import quantities as q
-from minisky.simulation.simulation import Simulation
-from minisky.traffic.autopilot import Autopilot
-from minisky.traffic.traffic import Traffic
+from minisky._internal.simulation import Simulation
+from minisky._internal.traffic import Traffic
 from minisky.types import CasMps, StdPressureAltM
 from pydantic import BaseModel
 
@@ -48,7 +48,7 @@ class TestDiscovery:
             def load(self) -> object:
                 pytest.fail("discovery imported the plugin")
 
-        module = importlib.import_module("minisky.plugin.plugin")
+        module = importlib.import_module("minisky._internal.plugin")
         monkeypatch.setattr(module.metadata, "entry_points", lambda *, group: (LazyEntryPoint(),))
         runtime = MiniSky(MiniSkyConfig())
         try:
@@ -84,7 +84,7 @@ class FakeEntryPoint:
 
 
 def install(monkeypatch: pytest.MonkeyPatch, *entries: FakeEntryPoint) -> None:
-    module = importlib.import_module("minisky.plugin.plugin")
+    module = importlib.import_module("minisky._internal.plugin")
     monkeypatch.setattr(module.metadata, "entry_points", lambda *, group: entries)
 
 

@@ -5,12 +5,10 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
-from minisky import Plugin, PluginContext, PluginSpec, replacement
-from minisky.traffic.autopilot import Autopilot
+from minisky import Autopilot, Plugin, PluginContext, PluginSpec, replacement
 
 if TYPE_CHECKING:
-    from minisky.simulation.simulation import Simulation
-    from minisky.traffic.traffic import Traffic
+    from minisky import Simulation, Traffic
 
 
 # --8<-- [start:replacement]

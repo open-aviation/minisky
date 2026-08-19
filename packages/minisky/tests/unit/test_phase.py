@@ -2,9 +2,9 @@
 
 import numpy as np
 from minisky import quantities as q
-from minisky.traffic.performance import phase
-from minisky.traffic.performance.coeff import LiftType
-from minisky.traffic.performance.phase import FlightPhase
+from minisky._internal.performance import phase
+from minisky._internal.performance.coefficients import LiftType
+from minisky._internal.performance.phase import FlightPhase
 
 
 def fixwing_phase(alt_ft: float, roc_fpm: float) -> FlightPhase:

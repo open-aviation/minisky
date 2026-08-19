@@ -14,7 +14,7 @@ uv run minisky run --scenario scenarios/kl204.scn --speed 10
 | `--speed` | `1` | Simulation speed multiplier relative to wall time |
 | `--config` | not set | Explicit TOML config override |
 
-The script initialises the simulator with the scenario, applies the optional [config](configuration.md), loads configured plugins, and runs the [`Runner`][minisky.simulation.runner.Runner] loop until the
+The script initialises the simulator with the scenario, applies the optional [config](configuration.md), loads configured plugins, and runs the [`Runner`][minisky.Runner] loop until the
 scenario ends the simulation.
 
 ## Scenario files
