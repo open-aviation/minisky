@@ -114,6 +114,7 @@ from minisky._internal.result import Err, Ok, Result
 
 if TYPE_CHECKING:
     from minisky._internal.navigation import Navdatabase
+    from minisky._internal.stack import Command
     from minisky._internal.traffic import Traffic
 
 CommandCallback = Callable[..., Any]
@@ -1480,3 +1481,42 @@ def format_command_form(name: str, parameters: Iterable[Parameter]) -> str:
     """Render a command form as legacy command text."""
     rendered = ",".join(_format_parameter(parameter) for parameter in parameters)
     return f"{name} {rendered}" if rendered else name
+
+
+#
+# schema
+#
+
+
+@dataclass(frozen=True, slots=True)
+class CommandFormSchema:
+    syntax: str
+    doc: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class CommandEntry:
+    forms: tuple[CommandFormSchema, ...]
+    aliases: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class CommandSchema:
+    commands: dict[str, CommandEntry]
+
+
+def build_command_schema(commands: Iterable[Command]) -> CommandSchema:
+    entries = {
+        command.name: CommandEntry(
+            forms=tuple(
+                CommandFormSchema(
+                    syntax=format_command_form(command.name, form.parameters),
+                    doc=form.help.strip(),
+                )
+                for form in command.forms
+            ),
+            aliases=tuple(sorted(command.aliases)),
+        )
+        for command in sorted(commands, key=lambda item: item.name)
+    }
+    return CommandSchema(entries)
