@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, NamedTuple
 
 import pytest
 from annotated_types import Gt, IsFinite
@@ -198,6 +198,22 @@ def test_variadic_is_zero_or_more(runtime: MiniSky) -> None:
     assert isinstance(empty, Ok)
     assert isinstance(multiple, Ok)
     assert received == [(), (1, 2, 3)]
+
+
+class _Pair(NamedTuple):
+    left: int
+    right: int
+
+
+def test_variadic_namedtuple_parses_repeated_records(runtime: MiniSky) -> None:
+    received: list[tuple[_Pair, ...]] = []
+
+    def record(*pairs: _Pair) -> None:
+        received.append(pairs)
+
+    prepared = runtime.commands.prepare_command(record, name="TESTRECORD")
+    assert isinstance(prepared("1,2,3,4"), Ok)
+    assert received == [(_Pair(1, 2), _Pair(3, 4))]
 
 
 def test_altitude_reference_is_preserved(runtime: MiniSky) -> None:

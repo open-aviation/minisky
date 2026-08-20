@@ -84,6 +84,7 @@ from typing import (
     Union,
     get_args,
     get_origin,
+    get_type_hints,
     overload,
 )
 
@@ -1454,6 +1455,16 @@ def _argument_contract(annotation: Any) -> _ArgumentContract:
         parser = _converter_parser(info.converter, _merge_field(CommandField(), info.field))
         return _contract(parser, info.annotation, info.constraints, nullable=info.nullable)
 
+    if (
+        isinstance(info.base, type)
+        and issubclass(info.base, tuple)
+        and isinstance(getattr(info.base, "_fields", None), tuple)
+        and bool(getattr(info.base, "__annotations__", None))
+    ):
+        if info.field is not None:
+            raise TypeError("CommandField metadata can only annotate a single command field")
+        return _namedtuple_contract(info)
+
     base = info.base
     if get_origin(base) is Literal:
         if info.field is not None:
@@ -1479,6 +1490,55 @@ def _argument_contract(annotation: Any) -> _ArgumentContract:
     else:
         raise TypeError(f"unsupported stack annotation: {info.annotation!r}")
 
+    return _contract(parser, info.annotation, info.constraints, nullable=info.nullable)
+
+
+def _namedtuple_contract(info: _Annotation) -> _ArgumentContract:
+    """Compile a NamedTuple so consecutive command fields produce one record."""
+    namedtuple_type: type[tuple[Any, ...]] = info.base
+    if getattr(namedtuple_type, "_field_defaults", {}):
+        raise TypeError(
+            f"command NamedTuple {namedtuple_type.__name__} cannot define field defaults"
+        )
+
+    annotations = get_type_hints(namedtuple_type, include_extras=True)
+    field_names: tuple[str, ...] = namedtuple_type._fields  # type: ignore[attr-defined]
+    fields: list[_ArgumentContract] = []
+    inputs: list[CommandField] = []
+    for name in field_names:
+        field_annotation = annotations[name]
+        field_info = _annotation(field_annotation)
+        contract = _argument_contract(field_annotation)
+        if contract.nullable:
+            raise TypeError(
+                f"command NamedTuple field {namedtuple_type.__name__}.{name} cannot be nullable"
+            )
+        if not isinstance(contract.parser.input, CommandField):
+            raise TypeError(
+                f"command NamedTuple field {namedtuple_type.__name__}.{name} must consume one field"
+            )
+        input_spec = contract.parser.input
+        if field_info.field is None or field_info.field.name is None:
+            input_spec = replace(input_spec, name=name)
+        fields.append(contract)
+        inputs.append(input_spec)
+
+    def parse(context: CommandParseContext, cursor: CommandCursor) -> ParseResult[Any]:
+        start = cursor.checkpoint()
+        values: list[Any] = []
+        end = start
+        for name, contract in zip(field_names, fields, strict=True):
+            field_start = cursor.checkpoint()
+            result = contract.parser(context, cursor)
+            if isinstance(result, Err):
+                issue = result.err()
+                return Err(issue.at_argument(name, SourceSpan(field_start, field_start + 1)))
+            parsed = result.ok()
+            values.append(parsed.value)
+            end = parsed.span.end
+        return Ok(Spanned(namedtuple_type(*values), SourceSpan(start, end)))
+
+    parser = CmdParser(parse, _RecordInput(namedtuple_type.__name__, tuple(inputs)))
     return _contract(parser, info.annotation, info.constraints, nullable=info.nullable)
 
 
