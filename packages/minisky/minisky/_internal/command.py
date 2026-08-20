@@ -1673,8 +1673,117 @@ def format_command_form(name: str, parameters: Iterable[Parameter]) -> str:
 
 
 @dataclass(frozen=True, slots=True)
+class CommandBoundConstraint:
+    kind: Literal["gt", "ge", "lt", "le"]
+    value: int | float
+
+
+@dataclass(frozen=True, slots=True)
+class CommandLengthConstraint:
+    kind: Literal["min_length", "max_length"]
+    value: int
+
+
+@dataclass(frozen=True, slots=True)
+class CommandFiniteConstraint:
+    kind: Literal["finite"] = "finite"
+
+
+@dataclass(frozen=True, slots=True)
+class CommandPredicateConstraint:
+    name: str
+    kind: Literal["predicate"] = "predicate"
+
+
+CommandConstraint: TypeAlias = (
+    CommandBoundConstraint
+    | CommandLengthConstraint
+    | CommandFiniteConstraint
+    | CommandPredicateConstraint
+)
+
+
+@dataclass(frozen=True, slots=True)
+class CommandValue:
+    name: str
+    unit: str | None = None
+    constraints: tuple[CommandConstraint, ...] = ()
+
+
+def _constraint_schema(constraint: _Constraint) -> CommandConstraint:
+    if isinstance(constraint, Gt):
+        return CommandBoundConstraint("gt", constraint.gt)  # type: ignore[arg-type]
+    if isinstance(constraint, Ge):
+        return CommandBoundConstraint("ge", constraint.ge)  # type: ignore[arg-type]
+    if isinstance(constraint, Lt):
+        return CommandBoundConstraint("lt", constraint.lt)  # type: ignore[arg-type]
+    if isinstance(constraint, Le):
+        return CommandBoundConstraint("le", constraint.le)  # type: ignore[arg-type]
+    if isinstance(constraint, MinLen):
+        return CommandLengthConstraint("min_length", constraint.min_length)
+    if isinstance(constraint, MaxLen):
+        return CommandLengthConstraint("max_length", constraint.max_length)
+    name = getattr(constraint.func, "__name__", "predicate")
+    if name == "isfinite":
+        return CommandFiniteConstraint()
+    return CommandPredicateConstraint(name)
+
+
+def _value_name(value: Any) -> str:
+    if get_origin(value) is Literal:
+        return "str"
+    origin = get_origin(value)
+    semantic = origin if isinstance(origin, type) else value
+    if semantic is inspect._empty or semantic is Any:
+        return "Any"
+    if isinstance(semantic, type):
+        return semantic.__name__
+    return str(value).replace("typing.", "").rsplit(".", maxsplit=1)[-1]
+
+
+def _value_info(annotation: Any, constraints: tuple[_Constraint, ...]) -> CommandValue:
+    import isqx
+
+    info = _annotation(annotation)
+    unit_metadata = info.metadata
+    value = info.base
+    origin = get_origin(value)
+    semantic = origin if isinstance(origin, type) else value
+    if isinstance(semantic, type) and issubclass(semantic, t.RuntimeNewType):
+        carrier = get_type_hints(semantic, include_extras=True)["value"]
+        unit_metadata = (*unit_metadata, *_annotation(carrier).metadata)
+    unit = next(
+        (
+            str(item.reference).splitlines()[0]
+            for item in unit_metadata
+            if isinstance(item, isqx.Tagged)
+        ),
+        None,
+    )
+    return CommandValue(
+        name=_value_name(value),
+        unit=unit,
+        constraints=tuple(_constraint_schema(item) for item in constraints),
+    )
+
+
+def _command_values(
+    annotation: Any, constraints: tuple[_Constraint, ...]
+) -> tuple[CommandValue, ...]:
+    info = _annotation(annotation)
+    if info.members:
+        return tuple(
+            value
+            for member in info.members
+            for value in _command_values(member, _annotation(member).constraints)
+        )
+    return (_value_info(annotation, constraints),)
+
+
+@dataclass(frozen=True, slots=True)
 class CommandVariant:
     input: CommandInput
+    values: tuple[CommandValue, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -1718,7 +1827,11 @@ def build_command_schema(commands: Iterable[Command]) -> CommandSchema:
                         ParameterSchema(
                             name=parameter.name,
                             variants=tuple(
-                                CommandVariant(variant.input) for variant in parameter.variants
+                                CommandVariant(
+                                    input=variant.input,
+                                    values=_command_values(variant.annotation, variant.constraints),
+                                )
+                                for variant in parameter.variants
                             ),
                             optional=parameter.optional,
                             nullable=parameter.nullable,
