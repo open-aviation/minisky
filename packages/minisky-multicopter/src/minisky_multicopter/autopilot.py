@@ -26,7 +26,6 @@ from minisky import (
     AcIdSelection,
     Autopilot,
     Err,
-    HeadingDeg,
     Ok,
     OptionalArray,
     Result,
@@ -34,7 +33,13 @@ from minisky import (
     replacement,
 )
 from minisky import quantities as q
-from minisky.types import AircraftIndex, AirspeedKind, StdPressureAltM
+from minisky.types import (
+    AircraftIndex,
+    AirspeedKind,
+    MagneticHeadingDeg,
+    StdPressureAltM,
+    TrueHeadingDeg,
+)
 
 from minisky_multicopter.entity import get_multicopter
 
@@ -134,7 +139,9 @@ class MulticopterAutopilot(Autopilot):
         self.swhover = self.swhover & ~resume
         self.hovertimer.clear(resume)
 
-    def selhdgcmd(self, idx: AcIdSelection, hdg: HeadingDeg) -> Result[str, str]:
+    def selhdgcmd(
+        self, idx: AcIdSelection, hdg: TrueHeadingDeg | MagneticHeadingDeg
+    ) -> Result[str, str]:
         """Select the autopilot heading; for multicopters, yaw the nose only.
 
         For multicopter rows the HDG stack command is an alias of `YAW`:

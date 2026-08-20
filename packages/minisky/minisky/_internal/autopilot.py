@@ -28,7 +28,6 @@ from minisky._internal.command import (
     AcId,
     AcIdSelection,
     CoordinateWaypoint,
-    HeadingDeg,
     NamedWaypoint,
     OnOff,
     VspdMps,
@@ -59,6 +58,7 @@ from minisky.types import (
     MagneticHeadingDeg,
     OptionalAirspeedKind,
     StdPressureAltM,
+    TrueHeadingDeg,
     WaypointReference,
 )
 
@@ -1187,7 +1187,9 @@ class Autopilot(TrafficArrays):
         return Ok(f"vertical speed set to {q.mps_to_fpm(vspd)} ft/min")
 
     @command(name="HDG", aliases=("HEADING", "TURN"))
-    def selhdgcmd(self, idx: AcIdSelection, hdg: HeadingDeg) -> Result[str, str]:  # HDG command
+    def selhdgcmd(
+        self, idx: AcIdSelection, hdg: TrueHeadingDeg | MagneticHeadingDeg
+    ) -> Result[str, str]:  # HDG command
         """Select the autopilot heading.
 
         Implements the HDG stack command: `HDG acid, hdg (deg)`. When a

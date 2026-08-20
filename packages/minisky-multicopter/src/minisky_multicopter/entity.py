@@ -24,7 +24,6 @@ from minisky import (
     AcId,
     Entity,
     Err,
-    HeadingDeg,
     Ok,
     OnOff,
     Result,
@@ -34,7 +33,7 @@ from minisky import (
     hook,
 )
 from minisky import quantities as q
-from minisky.types import Gt0, MagneticHeadingDeg, StdPressureAltM
+from minisky.types import Gt0, MagneticHeadingDeg, StdPressureAltM, TrueHeadingDeg
 
 from minisky_multicopter.config import (
     MulticopterConfig,
@@ -174,7 +173,7 @@ class Multicopter(Entity):
         return Ok(f"MCOPT {callsign}: {'ON' if flag else 'OFF'}")
 
     @command
-    def yaw(self, idx: AcId, hdg: HeadingDeg) -> Result[str, str]:
+    def yaw(self, idx: AcId, hdg: TrueHeadingDeg | MagneticHeadingDeg) -> Result[str, str]:
         """Command the body heading (nose direction) of a multicopter.
 
         The velocity vector keeps following the track command from the FMS

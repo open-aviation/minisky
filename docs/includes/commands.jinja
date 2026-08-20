@@ -22,7 +22,8 @@
 {% if command.aliases %}Aliases: {% for alias in command.aliases %}`{{ alias }}`{% if not loop.last %}, {% endif %}{% endfor %}
 
 {% endif %}{% for form in command.forms %}- `{{ command_name }}{% if form.parameters %} {% endif %}{% for parameter in form.parameters %}{% if parameter.optional or parameter.nullable %}[{% endif %}{{ input_syntax(parameter.input, parameter.name) }}{% if parameter.repeat %}...{% endif %}{% if parameter.optional or parameter.nullable %}]{% endif %}{% if not loop.last %},{% endif %}{% endfor %}`{% if form.doc %} — {{ form.doc }}{% endif %}
-{% endfor %}
+{% for parameter in form.parameters if parameter.variants | length > 1 or parameter.nullable %}  - `{{ parameter.name }}`: One of {% for variant in parameter.variants %}`{{ input_syntax(variant.input, parameter.name) }}`{% if not loop.last or parameter.nullable %}, {% endif %}{% endfor %}{% if parameter.nullable %}`None`{% endif %}
+{% endfor %}{% endfor %}
 
 {% endfor %}
 {% endfor %}

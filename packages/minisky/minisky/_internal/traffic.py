@@ -30,7 +30,6 @@ from minisky._internal.command import (
     CommandField,
     Converter,
     DistanceM,
-    HeadingDeg,
     Keyword,
     LatLonDeg,
     OnOff,
@@ -79,6 +78,7 @@ from minisky.types import (
     Mach,
     MagneticHeadingDeg,
     StdPressureAltM,
+    TrueHeadingDeg,
 )
 
 if TYPE_CHECKING:
@@ -283,7 +283,7 @@ class Traffic(TrafficArrays):
         callsign: Keyword,
         actype: Keyword,
         position: ResolvedPositionArg,
-        hdg: HeadingDeg | UseRunwayHeading | None = None,
+        hdg: TrueHeadingDeg | MagneticHeadingDeg | UseRunwayHeading | None = None,
         alt: StdPressureAltM = _DEFAULT_ALTITUDE,
         airspeed: CasMps | Mach = _DEFAULT_AIRSPEED,
     ) -> Result[str, str]:
@@ -730,7 +730,7 @@ class Traffic(TrafficArrays):
         idx: AcId,
         position: LatLonDeg,
         alt: StdPressureAltM | None = None,
-        hdg: HeadingDeg | None = None,
+        hdg: TrueHeadingDeg | MagneticHeadingDeg | None = None,
         airspeed: CasMps | Mach | None = None,
         vspd: VspdMps | None = None,
     ) -> None:
