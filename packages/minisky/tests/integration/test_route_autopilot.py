@@ -66,11 +66,10 @@ class TestAddwpt:
         assert target.altitude == pytest.approx(q.ft_to_m(15000.0), rel=1e-3)
         assert target.distance == 0.0
 
-    @pytest.mark.parametrize("runway", ["EHAM/RW06", "EHAM RW06"])
     def test_addwpt_takeoff_with_explicit_runway(
-        self, runtime: MiniSky, run_cmd: RunCommand, aircraft: str, runway: str
+        self, runtime: MiniSky, run_cmd: RunCommand, aircraft: str
     ) -> None:
-        out = run_cmd(f"ADDWPT {aircraft} TAKEOFF {runway}")
+        out = run_cmd(f"ADDWPT {aircraft} TAKEOFF EHAM/RW06")
         route = runtime.traffic.ap.route[0]
         assert "error:" not in out.lower()
         assert route.wpname == [f"T/O-{aircraft}"]

@@ -32,8 +32,6 @@ from minisky._internal.command import (
     NamedWaypoint,
     OnOff,
     VspdMps,
-    WaypointSpec,
-    Wpt,
     command,
 )
 from minisky._internal.convert import degto180
@@ -70,16 +68,20 @@ if TYPE_CHECKING:
     from minisky._internal.traffic import Traffic
 
 
-def _waypoint_name(waypoint: WaypointSpec) -> WaypointReference:
+def _waypoint_name(waypoint: CoordinateWaypoint | NamedWaypoint) -> WaypointReference:
+    # TODO(abraham): bluesky stores origin and destination as strings, don't do so
     match waypoint:
         case NamedWaypoint(name):
             return name
-        case CoordinateWaypoint(_, source):
-            return source
+        case CoordinateWaypoint():
+            return f"{waypoint.latitude},{waypoint.longitude}"
 
 
 def _resolve_waypoint(
-    traffic: Traffic, acidx: AircraftIndex, route: Route, waypoint: WaypointSpec
+    traffic: Traffic,
+    acidx: AircraftIndex,
+    route: Route,
+    waypoint: CoordinateWaypoint | NamedWaypoint,
 ) -> Result[LatLonDegrees, str]:
     if isinstance(waypoint, CoordinateWaypoint):
         return Ok(waypoint.coordinates)
@@ -1155,7 +1157,6 @@ class Autopilot(TrafficArrays):
     ) -> Result[str, str]:
         """Select the autopilot altitude, optionally with a vertical speed.
 
-        Implements the ALT stack command: `ALT acid, alt, [vspd]`.
         Selecting an altitude disengages VNAV for this aircraft. When no
         vertical speed is given and the currently selected vertical speed
         opposes the required climb/descent direction, it is reset so the
@@ -1182,7 +1183,6 @@ class Autopilot(TrafficArrays):
     def selvspdcmd(self, idx: AcIdSelection, vspd: VspdMps) -> Result[str, str]:
         """Select the autopilot vertical speed.
 
-        Implements the VS stack command: `VS acid, vspd (ft/min)`.
         Setting a vertical speed disengages VNAV for this aircraft.
         """
         self.traffic.selvs[idx] = vspd
@@ -1194,11 +1194,10 @@ class Autopilot(TrafficArrays):
         self,
         idx: AcIdSelection,
         hdg: TrueHeadingDeg[IsFinite[float]] | MagneticHeadingDeg[IsFinite[float]],
-    ) -> Result[str, str]:  # HDG command
+    ) -> Result[str, str]:
         """Select the autopilot heading.
 
-        Implements the HDG stack command: `HDG acid, hdg (deg)`. When a
-        wind field is defined and the aircraft is airborne (above 50 ft),
+        When a wind field is defined and the aircraft is airborne (above 50 ft),
         the commanded track is computed from the given heading and the local
         wind; otherwise track equals heading. Selecting a heading disengages
         LNAV for this aircraft.
@@ -1260,7 +1259,7 @@ class Autopilot(TrafficArrays):
     def set_destination(
         self,
         acidx: AcId,
-        waypoint: Wpt,
+        waypoint: CoordinateWaypoint | NamedWaypoint,
         airspeed: CasMps[IsFinite[Ge0[float]]] | Mach[IsFinite[Gt0[float]]] | None = None,
     ) -> Result[str, str]:
         """Set the destination with an optional [`CAS` in m/s][minisky.types.CasMps] or [`Mach`][minisky.types.Mach] constraint."""
@@ -1298,7 +1297,9 @@ class Autopilot(TrafficArrays):
         return Ok(f"ORIG {self.traffic.callsign[acidx]}: {self.orig[acidx]}")
 
     @command(name="ORIG")
-    def set_origin(self, acidx: AcId, waypoint: Wpt) -> Result[str, str]:
+    def set_origin(
+        self, acidx: AcId, waypoint: CoordinateWaypoint | NamedWaypoint
+    ) -> Result[str, str]:
         """Set the origin of an aircraft."""
         route = self.route[acidx]
         wpname = _waypoint_name(waypoint)

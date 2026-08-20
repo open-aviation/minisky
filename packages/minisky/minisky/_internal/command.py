@@ -79,6 +79,7 @@ from typing import (
     Any,
     Generic,
     Literal,
+    NamedTuple,
     TypeAlias,
     TypeVar,
     Union,
@@ -925,88 +926,49 @@ def aircraft_indices(
     return np.fromiter(indices, dtype=int)
 
 
-@dataclass(frozen=True, slots=True)
-class NamedWaypoint:
-    """A waypoint expression that should be resolved by name."""
+def _parse_waypoint_reference(value: str) -> t.WaypointReference:
+    name = value.upper()
+    if not name or islat(name):
+        raise ValueError
+    return name
 
-    name: t.WaypointReference
+
+_LatitudeArg = Annotated[
+    q.LatitudeDeg[IsFinite[float]],
+    CommandField(name="latitude", examples=("52.5", "N52'30'")),
+    Converter(txt2lat),
+    Ge(-90),
+    Le(90),
+]
+_LongitudeArg = Annotated[
+    q.LongitudeDeg[IsFinite[float]],
+    CommandField(name="longitude", examples=("4.5", "E004'30'")),
+    Converter(txt2lon),
+    Ge(-180),
+    Le(180),
+]
+_WaypointReferenceArg = Annotated[
+    t.WaypointReference,
+    CommandField(name="waypoint", examples=("SUGOL", "EHAM", "EHAM/RW06")),
+    Converter(_parse_waypoint_reference),
+]
 
 
-@dataclass(frozen=True, slots=True)
-class CoordinateWaypoint:
+class CoordinateWaypoint(NamedTuple):
     """A waypoint expressed directly as latitude and longitude."""
 
-    coordinates: t.LatLonDegrees
-    source: t.WaypointReference
+    latitude: _LatitudeArg
+    longitude: _LongitudeArg
+
+    @property
+    def coordinates(self) -> t.LatLonDegrees:
+        return t.LatLonDegrees(self.latitude, self.longitude)
 
 
-WaypointSpec: TypeAlias = NamedWaypoint | CoordinateWaypoint
-"""Structured waypoint syntax consumed by route and origin/destination commands."""
+class NamedWaypoint(NamedTuple):
+    """A waypoint expression that should be resolved by name."""
 
-
-def parse_waypoint(
-    _context: CommandParseContext, cursor: CommandCursor
-) -> ParseResult[WaypointSpec]:
-    first = cursor.next_value("a waypoint")
-    if isinstance(first, Err):
-        return first
-    token = first.ok()
-    if not token.value:
-        return Err(ArgumentIssue.expected("a waypoint", "empty input", token.span))
-
-    name = token.value.upper()
-    if islat(name):
-        longitude_result = cursor.next_value("a longitude after the latitude")
-        if isinstance(longitude_result, Err):
-            return longitude_result
-        longitude = longitude_result.ok()
-        if not longitude.value:
-            return Err(
-                ArgumentIssue.expected(
-                    "a longitude after the latitude", "empty input", longitude.span
-                )
-            )
-        span = SourceSpan(token.span.start, longitude.span.end)
-        try:
-            coordinates = t.LatLonDegrees(txt2lat(name), txt2lon(longitude.value))
-        except ValueError:
-            return Err(
-                ArgumentIssue.expected(
-                    "a latitude and longitude", f"{name},{longitude.value}", span
-                )
-            )
-        return Ok(Spanned(CoordinateWaypoint(coordinates, f"{name},{longitude.value}"), span))
-
-    checkpoint = cursor.checkpoint()
-    runway_result = cursor.next_field()
-    if isinstance(runway_result, Err):
-        return runway_result
-    runway = runway_result.ok()
-    if runway is not None and runway.value is not None and runway.value.upper().startswith("RW"):
-        span = SourceSpan(token.span.start, runway.span.end)
-        return Ok(Spanned(NamedWaypoint(f"{name}/{runway.value.upper()}"), span))
-    cursor.restore(checkpoint)
-    return Ok(Spanned(NamedWaypoint(name), token.span))
-
-
-_WAYPOINT_INPUT = _ChoiceInput(
-    (
-        _RecordInput(
-            "coordinate waypoint",
-            (
-                CommandField(name="latitude", examples=("52.5", "N52'30'")),
-                CommandField(name="longitude", examples=("4.5", "E004'30'")),
-            ),
-        ),
-        _RecordInput(
-            "named waypoint",
-            (CommandField(name="waypoint", examples=("SUGOL", "EHAM", "EHAM/RW06")),),
-        ),
-    )
-)
-_WAYPOINT_PARSER = CmdParser(parse_waypoint, _WAYPOINT_INPUT)
-Wpt = Annotated[WaypointSpec, _WAYPOINT_PARSER]
-"""A named or coordinate waypoint expression, preserved as structured syntax."""
+    name: _WaypointReferenceArg
 
 
 @dataclass(frozen=True, slots=True)
@@ -1017,12 +979,9 @@ class RunwayPosition:
     runway_heading: q.TrueHeadingDegrees[float]
 
 
-ResolvedPosition: TypeAlias = t.LatLonDegrees | RunwayPosition
-
-
 def _resolve_named_position(
     context: CommandParseContext, name: str, span: SourceSpan
-) -> Result[ResolvedPosition, ArgumentIssue]:
+) -> Result[t.LatLonDegrees | RunwayPosition, ArgumentIssue]:
     navigation = context.navigation
 
     if "/RW" in name:
@@ -1052,37 +1011,30 @@ def _resolve_named_position(
     return Err(ArgumentIssue.expected("a waypoint, airport, runway, or aircraft id", name, span))
 
 
-def parse_resolved_position(
-    context: CommandParseContext, cursor: CommandCursor
-) -> ParseResult[ResolvedPosition]:
-    if isinstance(result := _WAYPOINT_PARSER(context, cursor), Err):
-        return result
-    parsed = result.ok()
-    waypoint = parsed.value
-
+def _resolve_position(
+    context: CommandParseContext, waypoint: CoordinateWaypoint | NamedWaypoint, span: SourceSpan
+) -> Result[t.LatLonDegrees | RunwayPosition, ArgumentIssue]:
     if isinstance(waypoint, CoordinateWaypoint):
-        return Ok(parsed.map(waypoint.coordinates))
+        return Ok(waypoint.coordinates)
 
     index = context.traffic.idx(waypoint.name)
     if index is not None:
-        coordinates = t.LatLonDegrees(
-            float(context.traffic.lat[index]), float(context.traffic.lon[index])
+        return Ok(
+            t.LatLonDegrees(float(context.traffic.lat[index]), float(context.traffic.lon[index]))
         )
-        return Ok(parsed.map(coordinates))
 
-    if isinstance(resolved := _resolve_named_position(context, waypoint.name, parsed.span), Err):
+    return _resolve_named_position(context, waypoint.name, span)
+
+
+def parse_resolved_position(
+    context: CommandParseContext, cursor: CommandCursor
+) -> ParseResult[t.LatLonDegrees | RunwayPosition]:
+    if isinstance(result := _WAYPOINT_CONTRACT.parser(context, cursor), Err):
+        return result
+    parsed = result.ok()
+    if isinstance(resolved := _resolve_position(context, parsed.value, parsed.span), Err):
         return resolved
     return Ok(parsed.map(resolved.ok()))
-
-
-_RESOLVED_POSITION_PARSER = CmdParser(parse_resolved_position, _WAYPOINT_INPUT)
-ResolvedPositionArg = Annotated[ResolvedPosition, _RESOLVED_POSITION_PARSER]
-"""A position expression resolved against navigation data and traffic.
-
-Runways retain their heading in [`RunwayPosition`][..RunwayPosition];
-other positions become [`LatLonDegrees`][minisky.types.LatLonDegrees]. Ambiguous
-waypoint identifiers are rejected because this grammar has no geographic reference.
-"""
 
 
 def parse_lat_lon(
@@ -1095,15 +1047,6 @@ def parse_lat_lon(
         parsed.value.coordinates if isinstance(parsed.value, RunwayPosition) else parsed.value
     )
     return Ok(parsed.map(coordinates))
-
-
-LatLonDeg = Annotated[t.LatLonDegrees, CmdParser(parse_lat_lon, _WAYPOINT_INPUT)]
-"""A resolved position reduced to latitude and longitude degrees.
-
-It accepts the same BlueSky position expressions as
-`ResolvedPositionArg` but intentionally
-discards runway-specific heading after resolution.
-"""
 
 
 _RUNTIME_NEWTYPE_METADATA: dict[
@@ -1563,6 +1506,18 @@ def compile_parameter(parameter: inspect.Parameter) -> Parameter:
         default=parameter.default,
         repeat=parameter.kind is inspect.Parameter.VAR_POSITIONAL,
     )
+
+
+_WAYPOINT_CONTRACT = _argument_contract(CoordinateWaypoint | NamedWaypoint)
+_RESOLVED_POSITION_PARSER = CmdParser(parse_resolved_position, _WAYPOINT_CONTRACT.parser.input)
+ResolvedPositionArg = Annotated[
+    t.LatLonDegrees | RunwayPosition,
+    _RESOLVED_POSITION_PARSER,
+]
+LatLonDeg = Annotated[
+    t.LatLonDegrees,
+    CmdParser(parse_lat_lon, _WAYPOINT_CONTRACT.parser.input),
+]
 
 
 #

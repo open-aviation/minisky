@@ -35,7 +35,6 @@ from minisky._internal.command import (
     TimeS,
     Token,
     VspdMps,
-    Wpt,
     command,
 )
 from minisky._internal.config import (
@@ -145,7 +144,6 @@ __all__ = (  # noqa: RUF022 - public API and docs use this semantic order
     "TimeS",
     "SimTimeS",
     "SourceSpan",
-    "Wpt",
     "NamedWaypoint",
     "CoordinateWaypoint",
     # custom command parsers
