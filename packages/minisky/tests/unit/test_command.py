@@ -10,8 +10,10 @@ from minisky import MiniSky
 from minisky import quantities as q
 from minisky._internal.command import (
     ArgumentIssue,
+    CommandBoundConstraint,
     CommandCursor,
     CommandField,
+    CommandFiniteConstraint,
     CoordinateWaypoint,
     LatLonDeg,
     NamedWaypoint,
@@ -24,9 +26,11 @@ from minisky._internal.command import (
 from minisky._internal.result import Err, Ok
 from minisky.types import (
     CasMps,
+    Ge0,
     GroundTrackDeg,
     Gt0,
     LatLonDegrees,
+    Mach,
     MagneticHeadingDeg,
     MslAltM,
     StdPressureAltM,
@@ -474,6 +478,21 @@ def test_command_schema_describes_existing_forms(runtime: MiniSky) -> None:
     assert parameter.name == "value"
     assert parameter.input == CommandField()
     assert len(parameter.variants) == 1
+
+
+def test_command_schema_preserves_union_branch_metadata(runtime: MiniSky) -> None:
+    def record(value: CasMps[IsFinite[Ge0[float]]] | Mach[IsFinite[Gt0[float]]]) -> None:
+        pass
+
+    command = runtime.commands.prepare_command(record, name="TESTSCHEMA")
+    parameter = build_command_schema((command,)).commands["TESTSCHEMA"].forms[0].parameters[0]
+
+    assert tuple(
+        (variant.values[0].name, variant.values[0].constraints) for variant in parameter.variants
+    ) == (
+        ("CasMps", (CommandBoundConstraint("ge", 0), CommandFiniteConstraint())),
+        ("Mach", (CommandBoundConstraint("gt", 0), CommandFiniteConstraint())),
+    )
 
 
 def test_command_schema_keeps_union_inputs(runtime: MiniSky) -> None:
