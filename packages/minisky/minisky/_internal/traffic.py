@@ -74,6 +74,7 @@ from minisky.types import (
     AirspeedKind,
     AirwayIdentifier,
     CasMps,
+    Ge0,
     Gt0,
     Mach,
     MagneticHeadingDeg,
@@ -96,10 +97,9 @@ def _parse_throttle(value: str) -> float:
 
 
 Throttle = Annotated[
-    float,
+    IsFinite[Ge0[float]],
     CommandField(name="throttle", examples=("0.8", "80%")),
     Converter(_parse_throttle),
-    Ge(0),
     Le(1),
 ]
 
@@ -283,9 +283,12 @@ class Traffic(TrafficArrays):
         callsign: Keyword,
         actype: Keyword,
         position: ResolvedPositionArg,
-        hdg: TrueHeadingDeg | MagneticHeadingDeg | UseRunwayHeading | None = None,
-        alt: StdPressureAltM = _DEFAULT_ALTITUDE,
-        airspeed: CasMps | Mach = _DEFAULT_AIRSPEED,
+        hdg: TrueHeadingDeg[IsFinite[float]]
+        | MagneticHeadingDeg[IsFinite[float]]
+        | UseRunwayHeading
+        | None = None,
+        alt: StdPressureAltM[IsFinite[float]] = _DEFAULT_ALTITUDE,
+        airspeed: CasMps[IsFinite[Ge0[float]]] | Mach[IsFinite[Gt0[float]]] = _DEFAULT_AIRSPEED,
     ) -> Result[str, str]:
         """Create an aircraft."""
         if isinstance(position, RunwayPosition):
@@ -323,8 +326,8 @@ class Traffic(TrafficArrays):
         lat: q.LatitudeDeg[float] = 53.0,
         lon: q.LongitudeDeg[float] = 4.0,
         hdg: q.TrueHeadingDegrees[float] = 45.0,
-        alt: StdPressureAltM = _DEFAULT_ALTITUDE,
-        airspeed: CasMps | Mach = _DEFAULT_AIRSPEED,
+        alt: StdPressureAltM[IsFinite[float]] = _DEFAULT_ALTITUDE,
+        airspeed: CasMps[IsFinite[Ge0[float]]] | Mach[IsFinite[Gt0[float]]] = _DEFAULT_AIRSPEED,
     ) -> Result[str, str]:
         """Create a single aircraft and add it to the traffic database.
 
@@ -367,8 +370,8 @@ class Traffic(TrafficArrays):
         lat_max: LatitudeArg = 60.0,
         lon_max: LongitudeArg = 10.0,
         actype: Keyword = "A320",
-        acalt: StdPressureAltM | None = None,
-        airspeed: CasMps | Mach | None = None,
+        acalt: StdPressureAltM[IsFinite[float]] | None = None,
+        airspeed: CasMps[IsFinite[Ge0[float]]] | Mach[IsFinite[Gt0[float]]] | None = None,
     ) -> Result[str, str]:
         """Create multiple aircraft at random positions in a lat/lon box.
 
@@ -528,7 +531,7 @@ class Traffic(TrafficArrays):
         tlosh: TimeS,
         dH: DistanceM | None = None,
         tlosv: TimeS | None = None,
-        airspeed: CasMps | Mach | None = None,
+        airspeed: CasMps[IsFinite[Ge0[float]]] | Mach[IsFinite[Gt0[float]]] | None = None,
     ) -> None:
         """Create an aircraft in conflict with a target aircraft.
 
@@ -729,9 +732,9 @@ class Traffic(TrafficArrays):
         self,
         idx: AcId,
         position: LatLonDeg,
-        alt: StdPressureAltM | None = None,
-        hdg: TrueHeadingDeg | MagneticHeadingDeg | None = None,
-        airspeed: CasMps | Mach | None = None,
+        alt: StdPressureAltM[IsFinite[float]] | None = None,
+        hdg: TrueHeadingDeg[IsFinite[float]] | MagneticHeadingDeg[IsFinite[float]] | None = None,
+        airspeed: CasMps[IsFinite[Ge0[float]]] | Mach[IsFinite[Gt0[float]]] | None = None,
         vspd: VspdMps | None = None,
     ) -> None:
         """Instantaneously move an aircraft to a new position/state.
@@ -957,7 +960,7 @@ class Traffic(TrafficArrays):
 
         return Err(f"{name} not found as aircraft, airport, navaid, or waypoint")
 
-    def settrans(self, alt: StdPressureAltM | None = None) -> Result[str, str]:
+    def settrans(self, alt: StdPressureAltM[IsFinite[float]] | None = None) -> Result[str, str]:
         """Set or show the transition level."""
         if alt is not None:
             if alt.value > 0.0:

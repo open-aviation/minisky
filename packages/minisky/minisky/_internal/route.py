@@ -62,6 +62,7 @@ from minisky.types import (
     AircraftCallsign,
     AircraftIndex,
     CasMps,
+    Ge0,
     Gt0,
     LatLonDegrees,
     Mach,
@@ -207,7 +208,7 @@ class Route:
         wplon: q.LongitudeDeg[float],
         wptype: WaypointType,
         wpalt: q.PressureAltitudeM[float] | None,
-        wpairspeed: CasMps | Mach | None,
+        wpairspeed: CasMps[IsFinite[Ge0[float]]] | Mach[IsFinite[Gt0[float]]] | None,
     ) -> None:
         """Insert a new waypoint record at a given index in the route.
 
@@ -235,7 +236,7 @@ class Route:
         lat: q.LatitudeDeg[float],
         lon: q.LongitudeDeg[float],
         alt: q.PressureAltitudeM[float] | None = None,
-        airspeed: CasMps | Mach | None = None,
+        airspeed: CasMps[IsFinite[Ge0[float]]] | Mach[IsFinite[Gt0[float]]] | None = None,
         afterwp: RouteWaypointName = "",
         beforewp: RouteWaypointName = "",
     ) -> RouteWaypointIndex | None:
@@ -387,7 +388,7 @@ class Route:
 
         position: LatLonDegrees
         """Active waypoint position."""
-        airspeed: CasMps | Mach | None
+        airspeed: CasMps[IsFinite[Ge0[float]]] | Mach[IsFinite[Gt0[float]]] | None
         """Optional [`CAS` in m/s][minisky.types.CasMps] or [`Mach`][minisky.types.Mach] constraint."""
         profile: RouteProfile
         """Altitude and RTA guidance targets ahead of the active waypoint."""
@@ -935,8 +936,8 @@ def _add_route_waypoint(
     traffic: Traffic,
     acidx: AircraftIndex,
     waypoint: Wpt,
-    altitude: StdPressureAltM | None = None,
-    airspeed: CasMps | Mach | None = None,
+    altitude: StdPressureAltM[IsFinite[float]] | None = None,
+    airspeed: CasMps[IsFinite[Ge0[float]]] | Mach[IsFinite[Gt0[float]]] | None = None,
     insertion: WaypointInsertion | None = None,
 ) -> Result[str, str]:
     """Apply already-parsed waypoint insertion request."""
@@ -1034,7 +1035,7 @@ class AtConstraints:
     """A complete altitude/airspeed pair; None means an explicit clear."""
 
     altitude: q.PressureAltitudeM[float] | None
-    airspeed: CasMps | Mach | None
+    airspeed: CasMps[IsFinite[Ge0[float]]] | Mach[IsFinite[Gt0[float]]] | None
 
 
 def _parse_at_constraints(
@@ -1060,7 +1061,7 @@ def _parse_at_constraints(
         except ValueError:
             return Err(ArgumentIssue.expected("a pressure altitude", altitude_text, token.span))
 
-    airspeed: CasMps | Mach | None
+    airspeed: CasMps[IsFinite[Ge0[float]]] | Mach[IsFinite[Gt0[float]]] | None
     if cleared(speed_text):
         airspeed = None
     else:
@@ -1472,7 +1473,7 @@ class RouteCommands:
         self,
         acidx: AcId,
         _parameter: Literal["TURNSPD", "TURNSPEED"],
-        value: Gt0[CasMps],
+        value: CasMps[IsFinite[Gt0[float]]],
     ) -> Result[str, str]:
         """Set the default fly-turn [`CAS`][minisky.types.CasMps] using an explicit quantity such as `250KT[CAS]`."""
         return _set_turn_cas(self.traffic, acidx, value)
@@ -1521,7 +1522,7 @@ class RouteCommands:
         self,
         acidx: AcId,
         _parameter: Literal["TURNSPD", "TURNSPEED"],
-        value: Gt0[CasMps],
+        value: CasMps[IsFinite[Gt0[float]]],
     ) -> Result[str, str]:
         """Set fly-turn CAS through ADDWPT using an explicit quantity such as `250KT[CAS]`."""
         return _set_turn_cas(self.traffic, acidx, value)
@@ -1553,8 +1554,8 @@ class RouteCommands:
         self,
         acidx: AcId,
         waypoint: Wpt,
-        altitude: StdPressureAltM | None,
-        airspeed: CasMps | Mach | None,
+        altitude: StdPressureAltM[IsFinite[float]] | None,
+        airspeed: CasMps[IsFinite[Ge0[float]]] | Mach[IsFinite[Gt0[float]]] | None,
         _after: Omitted,
         before: Keyword,
     ) -> Result[str, str]:
@@ -1573,8 +1574,8 @@ class RouteCommands:
         self,
         acidx: AcId,
         waypoint: Wpt,
-        altitude: StdPressureAltM | None,
-        airspeed: CasMps | Mach | None,
+        altitude: StdPressureAltM[IsFinite[float]] | None,
+        airspeed: CasMps[IsFinite[Ge0[float]]] | Mach[IsFinite[Gt0[float]]] | None,
         after: Keyword,
     ) -> Result[str, str]:
         """Insert a route waypoint after an existing waypoint."""
@@ -1592,8 +1593,8 @@ class RouteCommands:
         self,
         acidx: AcId,
         waypoint: Wpt,
-        altitude: StdPressureAltM | None = None,
-        airspeed: CasMps | Mach | None = None,
+        altitude: StdPressureAltM[IsFinite[float]] | None = None,
+        airspeed: CasMps[IsFinite[Ge0[float]]] | Mach[IsFinite[Gt0[float]]] | None = None,
     ) -> Result[str, str]:
         """Append a route waypoint with optional altitude and airspeed constraints."""
         return _add_route_waypoint(self.traffic, acidx, waypoint, altitude, airspeed)
@@ -1605,8 +1606,8 @@ class RouteCommands:
         beforewp: Keyword,
         _keyword: Literal["ADDWPT"],
         waypoint: Wpt,
-        alt: StdPressureAltM | None = None,
-        airspeed: CasMps | Mach | None = None,
+        alt: StdPressureAltM[IsFinite[float]] | None = None,
+        airspeed: CasMps[IsFinite[Ge0[float]]] | Mach[IsFinite[Gt0[float]]] | None = None,
     ) -> Result[str, str]:
         """Insert a waypoint before an existing route waypoint.
 
@@ -1627,8 +1628,8 @@ class RouteCommands:
         afterwp: Keyword,
         _keyword: Literal["ADDWPT"],
         waypoint: Wpt,
-        alt: StdPressureAltM | None = None,
-        airspeed: CasMps | Mach | None = None,
+        alt: StdPressureAltM[IsFinite[float]] | None = None,
+        airspeed: CasMps[IsFinite[Ge0[float]]] | Mach[IsFinite[Gt0[float]]] | None = None,
     ) -> Result[str, str]:
         """Insert a waypoint after an existing route waypoint.
 
@@ -1680,7 +1681,11 @@ class RouteCommands:
 
     @command(name="AT")
     def set_at_altitude(
-        self, acidx: AcId, atwp: Keyword, _action: Literal["ALT"], value: StdPressureAltM
+        self,
+        acidx: AcId,
+        atwp: Keyword,
+        _action: Literal["ALT"],
+        value: StdPressureAltM[IsFinite[float]],
     ) -> Result[str, str]:
         """Set the altitude constraint at a route waypoint."""
         if isinstance(target_result := _at_waypoint(self.traffic, acidx, atwp), Err):
@@ -1695,7 +1700,7 @@ class RouteCommands:
         acidx: AcId,
         atwp: Keyword,
         _action: Literal["SPD", "SPEED"],
-        value: CasMps | Mach,
+        value: CasMps[IsFinite[Ge0[float]]] | Mach[IsFinite[Gt0[float]]],
     ) -> Result[str, str]:
         """Set the airspeed constraint at a route waypoint."""
         if isinstance(target_result := _at_waypoint(self.traffic, acidx, atwp), Err):

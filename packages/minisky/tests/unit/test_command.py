@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Annotated, Any, Literal
 
 import pytest
-from annotated_types import Gt
+from annotated_types import Gt, IsFinite
 from minisky import MiniSky
 from minisky import quantities as q
 from minisky._internal.command import (
@@ -24,7 +24,9 @@ from minisky._internal.command import (
 )
 from minisky._internal.result import Err, Ok
 from minisky.types import (
+    CasMps,
     GroundTrackDeg,
+    Gt0,
     LatLonDegrees,
     MagneticHeadingDeg,
     MslAltM,
@@ -165,6 +167,18 @@ def test_annotated_constraint_is_checked_before_callback(runtime: MiniSky) -> No
     assert isinstance(prepared("0"), Err)
     assert isinstance(prepared("1"), Ok)
     assert received == [1]
+
+
+def test_runtime_newtype_constraints_apply_to_inner_carrier(runtime: MiniSky) -> None:
+    received: list[CasMps[float]] = []
+
+    def record(value: CasMps[IsFinite[Gt0[float]]]) -> None:
+        received.append(value)
+
+    prepared = runtime.commands.prepare_command(record, name="TESTCAS")
+    assert isinstance(prepared("0KT[CAS]"), Err)
+    assert isinstance(prepared("250KT[CAS]"), Ok)
+    assert received == [CasMps(q.kt_to_mps(250.0))]
 
 
 def test_variadic_is_zero_or_more(runtime: MiniSky) -> None:
