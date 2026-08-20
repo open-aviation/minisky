@@ -190,7 +190,7 @@ def _parse_form(
         result = parameter.parse(context, cursor)
         if isinstance(result, Err):
             return result
-        arguments.extend(result.ok().values)
+        arguments.extend(result.ok())
 
     if not cursor.at_end:
         extra_start = cursor.pos

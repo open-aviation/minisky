@@ -13,7 +13,6 @@ from minisky._internal.command import (
     CommandCursor,
     CommandField,
     CoordinateWaypoint,
-    HeadingDeg,
     LatLonDeg,
     NamedWaypoint,
     RunwayHeadingRequest,
@@ -249,7 +248,7 @@ def test_resolved_position_rejects_ambiguous_waypoint_without_ui_reference(
 def test_union_uses_left_to_right_choice(runtime: MiniSky) -> None:
     received: list[object] = []
 
-    def record(value: HeadingDeg | UseRunwayHeading) -> None:
+    def record(value: TrueHeadingDeg | MagneticHeadingDeg | UseRunwayHeading) -> None:
         received.append(value)
 
     prepared = runtime.commands.prepare_command(record, name="TESTUNION")
@@ -445,3 +444,16 @@ def test_command_schema_describes_existing_forms(runtime: MiniSky) -> None:
     parameter = form.parameters[0]
     assert parameter.name == "value"
     assert parameter.input == CommandField()
+    assert len(parameter.variants) == 1
+
+
+def test_command_schema_keeps_union_inputs(runtime: MiniSky) -> None:
+    def record(value: int | str | None = None) -> None:
+        pass
+
+    command = runtime.commands.prepare_command(record, name="TESTUNION")
+    parameter = build_command_schema((command,)).commands["TESTUNION"].forms[0].parameters[0]
+
+    assert len(parameter.variants) == 2
+    assert parameter.nullable
+    assert all(variant.input == CommandField() for variant in parameter.variants)

@@ -812,22 +812,6 @@ def _parse_magnetic_heading(value: str) -> t.MagneticHeadingDeg:
     return t.MagneticHeadingDeg(_matched_number(_MAGNETIC_HEADING, value))
 
 
-def _parse_heading(value: str) -> t.TrueHeadingDeg | t.MagneticHeadingDeg:
-    return (
-        _parse_magnetic_heading(value)
-        if value.upper().endswith("M")
-        else _parse_true_heading(value)
-    )
-
-
-HeadingDeg = Annotated[
-    t.TrueHeadingDeg | t.MagneticHeadingDeg,
-    CommandField(name="heading", examples=("090", "090T", "090M")),
-    Converter(_parse_heading),
-]
-"""Heading syntax preserving whether the input refers to true or magnetic north."""
-
-
 def _parse_ground_track(value: str) -> t.GroundTrackDeg:
     return t.GroundTrackDeg(_matched_number(_GROUND_TRACK, value))
 
@@ -1151,91 +1135,134 @@ _Constraint: TypeAlias = Gt | Ge | Lt | Le | MinLen | MaxLen | Predicate
 
 
 @dataclass(frozen=True, slots=True)
-class _ArgumentType:
-    """Compiled conversion and validation rules for an annotation."""
-
-    parser: CmdParser[Any]
-    constraints: tuple[_Constraint, ...]
-    nullable: bool = False
-
-    def parse(self, context: CommandParseContext, cursor: CommandCursor) -> ParseResult[Any]:
-        checkpoint = cursor.checkpoint()
-        if isinstance(parsed := self.parser(context, cursor), Err):
-            return parsed
-        value = parsed.ok()
-        if isinstance(validation := _validate_constraints(value.value, self.constraints), Err):
-            cursor.restore(checkpoint)
-            return Err(validation.err().with_span(value.span))
-        return parsed
+class _ArgumentVariant:
+    input: CommandInput
+    annotation: Any
+    constraints: tuple[_Constraint, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
-class _ArgumentValues:
-    """Values produced for a callback parameter."""
+class _ArgumentContract:
+    """One executable command parser and its semantic branch descriptions."""
 
-    values: tuple[Any, ...]
+    parser: CmdParser[Any]
+    variants: tuple[_ArgumentVariant, ...]
+    nullable: bool = False
+
+
+def _validate_constraints(
+    value: Any, constraints: Iterable[_Constraint]
+) -> Result[None, ArgumentIssue]:
+    raw: Any = value
+    operand: Any = value.value if isinstance(value, t.RuntimeNewType) else value
+    for constraint in constraints:
+        expected: str | None = None
+        if isinstance(constraint, Gt) and not operand > constraint.gt:
+            expected = f"a value greater than {constraint.gt}"
+        elif isinstance(constraint, Ge) and not operand >= constraint.ge:
+            expected = f"a value greater than or equal to {constraint.ge}"
+        elif isinstance(constraint, Lt) and not operand < constraint.lt:
+            expected = f"a value less than {constraint.lt}"
+        elif isinstance(constraint, Le) and not operand <= constraint.le:
+            expected = f"a value less than or equal to {constraint.le}"
+        elif isinstance(constraint, MinLen) and len(raw) < constraint.min_length:
+            expected = f"a value with length at least {constraint.min_length}"
+        elif isinstance(constraint, MaxLen) and len(raw) > constraint.max_length:
+            expected = f"a value with length at most {constraint.max_length}"
+        elif isinstance(constraint, Predicate) and not constraint.func(operand):
+            name = getattr(constraint.func, "__name__", "predicate")
+            expected = f"a value satisfying {name}"
+        if expected is not None:
+            return Err(ArgumentIssue.expected(expected, value))
+    return Ok(None)
+
+
+def _contract(
+    parser: CmdParser[Any],
+    annotation: Any,
+    constraints: tuple[_Constraint, ...] = (),
+    *,
+    nullable: bool = False,
+) -> _ArgumentContract:
+    input_spec = parser.input
+    if constraints:
+        inner = parser
+
+        def parse(context: CommandParseContext, cursor: CommandCursor) -> ParseResult[Any]:
+            result = inner(context, cursor)
+            if isinstance(result, Err):
+                return result
+            value = result.ok()
+            if isinstance(validation := _validate_constraints(value.value, constraints), Err):
+                return Err(validation.err().with_span(value.span))
+            return Ok(value)
+
+        parser = CmdParser(parse, input_spec)
+
+    return _ArgumentContract(
+        parser=parser,
+        variants=(_ArgumentVariant(input_spec, annotation, constraints),),
+        nullable=nullable,
+    )
 
 
 @dataclass(frozen=True, slots=True)
 class Parameter:
-    """Executable command contract compiled from a callback parameter.
-
-    Parsing mutates only `CommandCursor.pos`.
-    """
+    """Executable command contract compiled from a callback parameter."""
 
     name: str
-    argument_type: _ArgumentType
+    contract: _ArgumentContract
     default: object = inspect.Parameter.empty
     repeat: bool = False
 
     def parse(
         self, context: CommandParseContext, cursor: CommandCursor
-    ) -> Result[_ArgumentValues, ArgumentIssue]:
+    ) -> Result[tuple[Any, ...], ArgumentIssue]:
         if self.repeat:
             return self._parse_repeated(context, cursor)
         if cursor.at_end:
             if self.default is not inspect.Parameter.empty:
-                return Ok(_ArgumentValues((self.default,)))
+                return Ok((self.default,))
             return Err(self._missing(SourceSpan(cursor.pos, cursor.pos), "end of input"))
 
-        if self.argument_type.nullable or self.default is not inspect.Parameter.empty:
+        if self.contract.nullable or self.default is not inspect.Parameter.empty:
             peeked = cursor.peek_field()
             if isinstance(peeked, Err):
                 return peeked
-            field = peeked.ok()
-            if field is not None and field.value is None:
+            field_value = peeked.ok()
+            if field_value is not None and field_value.value is None:
                 cursor.next_field()
-                value = None if self.argument_type.nullable else self.default
-                return Ok(_ArgumentValues((value,)))
+                value = None if self.contract.nullable else self.default
+                return Ok((value,))
         return self._parse_one(context, cursor)
 
     def _parse_repeated(
         self, context: CommandParseContext, cursor: CommandCursor
-    ) -> Result[_ArgumentValues, ArgumentIssue]:
+    ) -> Result[tuple[Any, ...], ArgumentIssue]:
         values: list[Any] = []
         while not cursor.at_end:
             result = self._parse_one(context, cursor)
             if isinstance(result, Err):
                 return result
-            values.extend(result.ok().values)
-        return Ok(_ArgumentValues(tuple(values)))
+            values.extend(result.ok())
+        return Ok(tuple(values))
 
     def _missing(self, span: SourceSpan, actual: str) -> ArgumentIssue:
-        return ArgumentIssue.expected(_input_expected(self.parser.input), actual, span).at_argument(
-            self.name, span
-        )
+        return ArgumentIssue.expected(
+            _input_expected(self.contract.parser.input), actual, span
+        ).at_argument(self.name, span)
 
     def _parse_one(
         self, context: CommandParseContext, cursor: CommandCursor
-    ) -> Result[_ArgumentValues, ArgumentIssue]:
+    ) -> Result[tuple[Any, ...], ArgumentIssue]:
         start = cursor.checkpoint()
-        if isinstance(parsed_result := self.argument_type.parse(context, cursor), Err):
+        if isinstance(parsed_result := self.contract.parser(context, cursor), Err):
             issue = parsed_result.err()
             fallback = issue.span or SourceSpan(start, start + 1)
             return Err(issue.at_argument(self.name, fallback))
         if cursor.pos <= start:
-            raise TypeError(f"parser {self.argument_type.parser!r} consumed no input")
-        return Ok(_ArgumentValues((parsed_result.ok().value,)))
+            raise TypeError(f"parser {self.contract.parser!r} consumed no input")
+        return Ok((parsed_result.ok().value,))
 
     @property
     def optional(self) -> bool:
@@ -1243,11 +1270,15 @@ class Parameter:
 
     @property
     def parser(self) -> CmdParser[Any]:
-        return self.argument_type.parser
+        return self.contract.parser
+
+    @property
+    def variants(self) -> tuple[_ArgumentVariant, ...]:
+        return self.contract.variants
 
     @property
     def nullable(self) -> bool:
-        return self.argument_type.nullable
+        return self.contract.nullable
 
 
 #
@@ -1255,158 +1286,19 @@ class Parameter:
 #
 
 
-def compile_parameter(parameter: inspect.Parameter) -> Parameter:
-    """Compile a callback parameter into an executable command contract."""
-    argument_type = _argument_type(parameter.annotation)
-    if argument_type is None:
-        raise TypeError(
-            f"unsupported stack annotation for {parameter.name}: {parameter.annotation!r}"
-        )
-    if parameter.default is None and not argument_type.nullable:
-        raise TypeError(
-            f"stack parameter {parameter.name} defaults to None but is not annotated T | None"
-        )
-    if (
-        argument_type.nullable
-        and parameter.default is not inspect.Parameter.empty
-        and parameter.default is not None
-    ):
-        raise TypeError(
-            f"nullable stack parameter {parameter.name} must default to None when optional"
-        )
-    return Parameter(
-        name=parameter.name,
-        argument_type=argument_type,
-        default=parameter.default,
-        repeat=parameter.kind is inspect.Parameter.VAR_POSITIONAL,
-    )
+@dataclass(frozen=True, slots=True)
+class _Annotation:
+    """One normalized view of a Python command annotation."""
 
-
-def _argument_type(annotation: Any) -> _ArgumentType | None:
-    nullable = _is_nullable(annotation)
-    members = _union_members(annotation)
-    if len(members) > 1:
-        alternatives = tuple(_argument_type(member) for member in members)
-        if any(alternative is None for alternative in alternatives):
-            return None
-        typed_alternatives = tuple(
-            alternative for alternative in alternatives if alternative is not None
-        )
-        return _ArgumentType(_choice_parser(typed_alternatives), (), nullable=nullable)
-
-    value_annotation = members[0] if members else annotation
-    parser = _parser_for(value_annotation)
-    if parser is None:
-        return None
-    return _ArgumentType(
-        parser,
-        _annotation_constraints(value_annotation),
-        nullable=nullable,
-    )
-
-
-def _parser_for(annotation: Any) -> CmdParser[Any] | None:
-    annotation = _without_none(annotation)
-    if get_origin(annotation) is Annotated:
-        base, *metadata = get_args(annotation)
-        parsers = tuple(item for item in metadata if isinstance(item, CmdParser))
-        converters = tuple(item for item in metadata if isinstance(item, Converter))
-        if len(parsers) > 1:
-            raise TypeError("stack annotation contains multiple CmdParser markers")
-        if len(converters) > 1:
-            raise TypeError("stack annotation contains multiple Converter markers")
-        if parsers and converters:
-            raise TypeError("stack annotation cannot contain both CmdParser and Converter")
-
-        field_markers = tuple(item for item in metadata if isinstance(item, CommandField))
-        field_marker: CommandField | None = None
-        if field_markers:
-            name: str | None = None
-            examples: tuple[str, ...] = ()
-            for marker in field_markers:
-                if marker.name is not None:
-                    name = marker.name
-                if marker.examples:
-                    examples = marker.examples
-            field_marker = CommandField(name, examples)
-
-        if parsers:
-            if field_marker is not None:
-                raise TypeError("CommandField cannot override an explicit CmdParser input")
-            return parsers[0]
-        if converters:
-            return _converter_parser(converters[0], field_marker or CommandField())
-
-        parser = _parser_for(base)
-        if parser is None or field_marker is None:
-            return parser
-        if not isinstance(parser.input, CommandField):
-            raise TypeError("CommandField metadata can only annotate a single command field")
-        merged = CommandField(
-            field_marker.name if field_marker.name is not None else parser.input.name,
-            field_marker.examples or parser.input.examples,
-        )
-        return CmdParser(parser.func, merged)
-
-    if get_origin(annotation) is Literal:
-        return _literal_parser(annotation)
-    if annotation is inspect._empty or annotation is str or annotation is Any:
-        return _TOKEN_PARSER
-    return _VALUE_PARSERS.get(annotation)
-
-
-def _choice_parser(alternatives: tuple[_ArgumentType, ...]) -> CmdParser[Any]:
-    def parse(context: CommandParseContext, cursor: CommandCursor) -> ParseResult[Any]:
-        failure: ArgumentIssue | None = None
-        for alternative in alternatives:
-            result = alternative.parse(context, cursor)
-            if isinstance(result, Ok):
-                return result
-            failure = result.err()
-        assert failure is not None
-        return Err(failure)
-
-    return CmdParser(
-        parse, _ChoiceInput(tuple(alternative.parser.input for alternative in alternatives))
-    )
-
-
-def _literal_parser(annotation: Any) -> CmdParser[str]:
-    values = get_args(annotation)
-    if not values or any(not isinstance(value, str) for value in values):
-        raise TypeError("stack command Literal values must be strings")
-    literals = tuple(value.upper() for value in values)
-    try:
-        return CmdParser.choices(dict(zip(values, literals, strict=True)))
-    except ValueError:
-        raise TypeError("stack command Literal repeats a case-insensitive value") from None
-
-
-def _is_nullable(annotation: Any) -> bool:
-    """Return whether an annotation explicitly allows None."""
-    if get_origin(annotation) is Annotated:
-        return _is_nullable(get_args(annotation)[0])
-    if get_origin(annotation) not in (Union, UnionType):
-        return False
-    return type(None) in get_args(annotation)
-
-
-def _union_members(annotation: Any) -> tuple[Any, ...]:
-    if get_origin(annotation) not in (Union, UnionType):
-        return ()
-    return tuple(member for member in get_args(annotation) if member is not type(None))
-
-
-def _without_none(annotation: Any) -> Any:
-    members = _union_members(annotation)
-    return members[0] if len(members) == 1 else annotation
-
-
-def _annotation_constraints(annotation: Any) -> tuple[_Constraint, ...]:
-    annotation = _without_none(annotation)
-    if get_origin(annotation) is not Annotated:
-        return ()
-    return tuple(_constraints(get_args(annotation)[1:]))
+    annotation: Any
+    base: Any
+    metadata: tuple[object, ...]
+    members: tuple[Any, ...]
+    nullable: bool
+    parser: CmdParser[Any] | None
+    converter: Converter[Any] | None
+    field: CommandField | None
+    constraints: tuple[_Constraint, ...]
 
 
 def _constraints(metadata: Iterable[object]) -> Iterator[_Constraint]:
@@ -1419,36 +1311,163 @@ def _constraints(metadata: Iterable[object]) -> Iterator[_Constraint]:
             raise TypeError(f"unsupported annotated-types constraint: {item!r}")
 
 
-def _constraint_operand(value: Any) -> Any:
-    if isinstance(value, t.RuntimeNewType):
-        return value.value
-    return value
+def _annotation(annotation: Any) -> _Annotation:
+    if get_origin(annotation) is Annotated:
+        base, *metadata = get_args(annotation)
+    else:
+        base, metadata = annotation, []
+
+    parsers = tuple(item for item in metadata if isinstance(item, CmdParser))
+    converters = tuple(item for item in metadata if isinstance(item, Converter))
+    if len(parsers) > 1:
+        raise TypeError("stack annotation contains multiple CmdParser markers")
+    if len(converters) > 1:
+        raise TypeError("stack annotation contains multiple Converter markers")
+    parser = parsers[0] if parsers else None
+    converter = converters[0] if converters else None
+    if parser is not None and converter is not None:
+        raise TypeError("stack annotation cannot contain both CmdParser and Converter")
+
+    field_markers = tuple(item for item in metadata if isinstance(item, CommandField))
+    field_marker: CommandField | None = None
+    if field_markers:
+        name: str | None = None
+        examples: tuple[str, ...] = ()
+        for marker in field_markers:
+            if marker.name is not None:
+                name = marker.name
+            if marker.examples:
+                examples = marker.examples
+        field_marker = CommandField(name, examples)
+
+    origin = get_origin(base)
+    union = origin in (Union, UnionType)
+    members = (
+        tuple(member for member in get_args(base) if member is not type(None)) if union else ()
+    )
+    nullable = union and type(None) in get_args(base)
+    metadata_tuple = tuple(metadata)
+    return _Annotation(
+        annotation=annotation,
+        base=base,
+        metadata=metadata_tuple,
+        members=members,
+        nullable=nullable,
+        parser=parser,
+        converter=converter,
+        field=field_marker,
+        constraints=tuple(_constraints(metadata_tuple)),
+    )
 
 
-def _validate_constraints(
-    value: Any, constraints: Iterable[_Constraint]
-) -> Result[None, ArgumentIssue]:
-    operand = _constraint_operand(value)
-    for constraint in constraints:
-        expected: str | None = None
-        if isinstance(constraint, Gt) and not operand > constraint.gt:
-            expected = f"a value greater than {constraint.gt}"
-        elif isinstance(constraint, Ge) and not operand >= constraint.ge:
-            expected = f"a value greater than or equal to {constraint.ge}"
-        elif isinstance(constraint, Lt) and not operand < constraint.lt:
-            expected = f"a value less than {constraint.lt}"
-        elif isinstance(constraint, Le) and not operand <= constraint.le:
-            expected = f"a value less than or equal to {constraint.le}"
-        elif isinstance(constraint, MinLen) and len(value) < constraint.min_length:
-            expected = f"a value with length at least {constraint.min_length}"
-        elif isinstance(constraint, MaxLen) and len(value) > constraint.max_length:
-            expected = f"a value with length at most {constraint.max_length}"
-        elif isinstance(constraint, Predicate) and not constraint.func(operand):
-            name = getattr(constraint.func, "__name__", "predicate")
-            expected = f"a value satisfying {name}"
-        if expected is not None:
-            return Err(ArgumentIssue.expected(expected, value))
-    return Ok(None)
+def _merge_field(input_spec: CommandField, marker: CommandField | None) -> CommandField:
+    if marker is None:
+        return input_spec
+    return CommandField(
+        marker.name if marker.name is not None else input_spec.name,
+        marker.examples or input_spec.examples,
+    )
+
+
+def _argument_contract(annotation: Any) -> _ArgumentContract:
+    info = _annotation(annotation)
+
+    # Explicit parser/converter metadata owns the whole semantic annotation.
+    # Otherwise a Python union is a command-level left-to-right choice.
+    if info.members and info.parser is None and info.converter is None:
+        if info.field is not None:
+            raise TypeError("CommandField cannot annotate a structural union")
+        if info.constraints:
+            raise TypeError("constraints on a command union must annotate its individual branches")
+        alternatives = tuple(_argument_contract(member) for member in info.members)
+        if len(alternatives) == 1:
+            return replace(alternatives[0], nullable=info.nullable)
+
+        def parse_choice(context: CommandParseContext, cursor: CommandCursor) -> ParseResult[Any]:
+            failure: ArgumentIssue | None = None
+            for alternative in alternatives:
+                result = alternative.parser(context, cursor)
+                if isinstance(result, Ok):
+                    return result
+                failure = result.err()
+            assert failure is not None
+            return Err(failure)
+
+        return _ArgumentContract(
+            parser=CmdParser(
+                parse_choice,
+                _ChoiceInput(tuple(alternative.parser.input for alternative in alternatives)),
+            ),
+            variants=tuple(
+                variant for alternative in alternatives for variant in alternative.variants
+            ),
+            nullable=info.nullable,
+        )
+
+    if info.parser is not None:
+        if info.field is not None:
+            raise TypeError("CommandField cannot override an explicit CmdParser input")
+        return _contract(info.parser, info.annotation, info.constraints, nullable=info.nullable)
+
+    if info.converter is not None:
+        parser = _converter_parser(info.converter, _merge_field(CommandField(), info.field))
+        return _contract(parser, info.annotation, info.constraints, nullable=info.nullable)
+
+    base = info.base
+    if get_origin(base) is Literal:
+        if info.field is not None:
+            raise TypeError("CommandField metadata can only annotate a single command field")
+        values = get_args(base)
+        if not values or any(not isinstance(value, str) for value in values):
+            raise TypeError("stack command Literal values must be strings")
+        literals = tuple(value.upper() for value in values)
+        try:
+            parser = CmdParser.choices(dict(zip(values, literals, strict=True)))
+        except ValueError:
+            raise TypeError("stack command Literal repeats a case-insensitive value") from None
+    elif base is bool:
+        if info.field is not None:
+            raise TypeError("CommandField metadata can only annotate a single command field")
+        parser = _ON_OFF_PARSER
+    elif base is inspect._empty or base is str or base is Any:
+        parser = _token_parser(_merge_field(CommandField(), info.field))
+    elif base is int:
+        parser = _converter_parser(Converter(int), _merge_field(CommandField(), info.field))
+    elif base is float:
+        parser = _converter_parser(Converter(float), _merge_field(CommandField(), info.field))
+    else:
+        parser = _VALUE_PARSERS.get(base)
+        if parser is None:
+            raise TypeError(f"unsupported stack annotation: {info.annotation!r}")
+        if info.field is not None:
+            if not isinstance(parser.input, CommandField):
+                raise TypeError("CommandField metadata can only annotate a single command field")
+            parser = CmdParser(parser.func, _merge_field(parser.input, info.field))
+
+    return _contract(parser, info.annotation, info.constraints, nullable=info.nullable)
+
+
+def compile_parameter(parameter: inspect.Parameter) -> Parameter:
+    """Compile a callback parameter into an executable command contract."""
+    contract = _argument_contract(parameter.annotation)
+    if parameter.default is None and not contract.nullable:
+        raise TypeError(
+            f"stack parameter {parameter.name} defaults to None but is not annotated T | None"
+        )
+    if (
+        contract.nullable
+        and parameter.default is not inspect.Parameter.empty
+        and parameter.default is not None
+    ):
+        raise TypeError(
+            f"nullable stack parameter {parameter.name} must default to None when optional"
+        )
+    return Parameter(
+        name=parameter.name,
+        contract=contract,
+        default=parameter.default,
+        repeat=parameter.kind is inspect.Parameter.VAR_POSITIONAL,
+    )
 
 
 #
@@ -1604,12 +1623,23 @@ def format_command_form(name: str, parameters: Iterable[Parameter]) -> str:
 
 
 @dataclass(frozen=True, slots=True)
+class CommandVariant:
+    input: CommandInput
+
+
+@dataclass(frozen=True, slots=True)
 class ParameterSchema:
     name: str
-    input: CommandInput
+    variants: tuple[CommandVariant, ...]
     optional: bool = False
     nullable: bool = False
     repeat: bool = False
+
+    @property
+    def input(self) -> CommandInput:
+        if len(self.variants) == 1:
+            return self.variants[0].input
+        return _ChoiceInput(tuple(variant.input for variant in self.variants))
 
 
 @dataclass(frozen=True, slots=True)
@@ -1637,7 +1667,9 @@ def build_command_schema(commands: Iterable[Command]) -> CommandSchema:
                     parameters=tuple(
                         ParameterSchema(
                             name=parameter.name,
-                            input=parameter.parser.input,
+                            variants=tuple(
+                                CommandVariant(variant.input) for variant in parameter.variants
+                            ),
                             optional=parameter.optional,
                             nullable=parameter.nullable,
                             repeat=parameter.repeat,
