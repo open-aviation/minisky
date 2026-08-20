@@ -18,7 +18,6 @@ from minisky._internal.command import (
     RunwayHeadingRequest,
     SourceSpan,
     UseRunwayHeading,
-    Wpt,
     build_command_schema,
     command,
 )
@@ -238,7 +237,7 @@ def test_ground_track_requires_explicit_reference(runtime: MiniSky) -> None:
 def test_waypoint_parser_preserves_named_and_coordinate_structure(runtime: MiniSky) -> None:
     received: list[object] = []
 
-    def record(waypoint: Wpt) -> None:
+    def record(waypoint: CoordinateWaypoint | NamedWaypoint) -> None:
         received.append(waypoint)
 
     prepared = runtime.commands.prepare_command(record, name="TESTWPT")
@@ -247,7 +246,7 @@ def test_waypoint_parser_preserves_named_and_coordinate_structure(runtime: MiniS
     assert isinstance(prepared("52.5,5.0"), Ok)
     assert received == [
         NamedWaypoint("EHAM"),
-        CoordinateWaypoint(LatLonDegrees(52.5, 5.0), "52.5,5.0"),
+        CoordinateWaypoint(52.5, 5.0),
     ]
 
 
@@ -406,7 +405,7 @@ def test_cre_omitted_heading_field(run_cmd: RunCommand, runtime: MiniSky) -> Non
 def test_cre_explicit_runway_heading_marker_is_resolved_by_command(
     run_cmd: RunCommand, runtime: MiniSky
 ) -> None:
-    output = run_cmd("CRE RWYREF,A320,EHAM,RWY18L,*,0FT[STD],250KT[CAS]")
+    output = run_cmd("CRE RWYREF,A320,EHAM/RWY18L,*,0FT[STD],250KT[CAS]")
 
     assert "created" in output.lower()
     index = runtime.traffic.idx("RWYREF")

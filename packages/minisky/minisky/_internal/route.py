@@ -32,6 +32,7 @@ from minisky._internal.command import (
     CommandCursor,
     CommandField,
     CommandParseContext,
+    Converter,
     CoordinateWaypoint,
     DistanceM,
     Keyword,
@@ -42,10 +43,8 @@ from minisky._internal.command import (
     SimTimeS,
     Spanned,
     Text,
-    Wpt,
+    _parse_pressure_altitude,
     command,
-    parse_pressure_altitude_value,
-    parse_resolved_position,
     parse_selected_airspeed_value,
 )
 from minisky._internal.convert import degto180
@@ -61,6 +60,7 @@ from minisky.aero import cas2tas, g0, mach2tas, vcas2tas
 from minisky.types import (
     AircraftCallsign,
     AircraftIndex,
+    AirportIdentifier,
     CasMps,
     Ge0,
     Gt0,
@@ -208,7 +208,7 @@ class Route:
         wplon: q.LongitudeDeg[float],
         wptype: WaypointType,
         wpalt: q.PressureAltitudeM[float] | None,
-        wpairspeed: CasMps[IsFinite[Ge0[float]]] | Mach[IsFinite[Gt0[float]]] | None,
+        wpairspeed: CasMps | Mach | None,
     ) -> None:
         """Insert a new waypoint record at a given index in the route.
 
@@ -236,7 +236,7 @@ class Route:
         lat: q.LatitudeDeg[float],
         lon: q.LongitudeDeg[float],
         alt: q.PressureAltitudeM[float] | None = None,
-        airspeed: CasMps[IsFinite[Ge0[float]]] | Mach[IsFinite[Gt0[float]]] | None = None,
+        airspeed: CasMps | Mach | None = None,
         afterwp: RouteWaypointName = "",
         beforewp: RouteWaypointName = "",
     ) -> RouteWaypointIndex | None:
@@ -388,7 +388,7 @@ class Route:
 
         position: LatLonDegrees
         """Active waypoint position."""
-        airspeed: CasMps[IsFinite[Ge0[float]]] | Mach[IsFinite[Gt0[float]]] | None
+        airspeed: CasMps | Mach | None
         """Optional [`CAS` in m/s][minisky.types.CasMps] or [`Mach`][minisky.types.Mach] constraint."""
         profile: RouteProfile
         """Altitude and RTA guidance targets ahead of the active waypoint."""
@@ -779,36 +779,51 @@ _TURN_PARAMETERS = {
 # silently discard behavior. add them only when that state is represented.
 
 
-WaypointModeArg = Annotated[
-    WaypointMode,
-    CmdParser.choices(_WAYPOINT_MODES),
-]
-TurnParameterArg = Annotated[
-    TurnParameter,
-    CmdParser.choices(_TURN_PARAMETERS),
-]
+WaypointModeArg = Annotated[WaypointMode, CmdParser.choices(_WAYPOINT_MODES)]
+TurnParameterArg = Annotated[TurnParameter, CmdParser.choices(_TURN_PARAMETERS)]
 TurnRadiusMArg = Gt0[DistanceM]
 TurnHeadingRateArg = q.TurnRateDegPerS[IsFinite[Gt0[float]]]
 
 
-def _parse_runway(
-    context: CommandParseContext, cursor: CommandCursor
-) -> ParseResult[RunwayPosition]:
-    if isinstance(result := parse_resolved_position(context, cursor), Err):
-        return result
-    parsed = result.ok()
-    if not isinstance(parsed.value, RunwayPosition):
-        actual = cursor.text[parsed.span.start : parsed.span.end]
-        return Err(ArgumentIssue.expected("a runway", actual, parsed.span))
-    return Ok(Spanned(parsed.value, parsed.span))
+class RunwayReference(NamedTuple):
+    """Airport and runway identifiers from one slash-delimited command field."""
+
+    airport: AirportIdentifier
+    runway: RunwayIdentifier
+
+
+def _parse_runway_reference(value: str) -> RunwayReference:
+    # NOTE(abraham): bluesky WptArg/PosArg also accept `EHAM RW06` as two fields
+    # and rewrite it to `EHAM/RW06`. we intentionally only accept the
+    # slash-delimited single-field form so its far easier to lex.
+    airport, separator, runway_text = value.upper().partition("/")
+    if not separator or not airport or not runway_text:
+        raise ValueError
+    if runway_text.startswith("RWY"):
+        runway = runway_text[3:]
+    elif runway_text.startswith("RW"):
+        runway = runway_text[2:]
+    else:
+        raise ValueError
+    if not runway:
+        raise ValueError
+    return RunwayReference(airport, runway)
+
+
+def _resolve_runway_reference(
+    traffic: Traffic, reference: RunwayReference
+) -> Result[RunwayPosition, str]:
+    try:
+        lat, lon, heading = traffic.navigation.rwythresholds[reference.airport][reference.runway]
+    except KeyError:
+        return Err(f"Runway {reference.airport}/RW{reference.runway} not found")
+    return Ok(RunwayPosition(LatLonDegrees(float(lat), float(lon)), float(heading)))
 
 
 RunwayArg = Annotated[
-    RunwayPosition,
-    CmdParser(
-        _parse_runway,
-        CommandField(name="runway", examples=("EHAM/RW06", "LFPG/RWY23")),
-    ),
+    RunwayReference,
+    CommandField(name="runway", examples=("EHAM/RW06", "LFPG/RWY23")),
+    Converter(_parse_runway_reference),
 ]
 
 
@@ -935,9 +950,9 @@ def _add_takeoff_waypoint(
 def _add_route_waypoint(
     traffic: Traffic,
     acidx: AircraftIndex,
-    waypoint: Wpt,
-    altitude: StdPressureAltM[IsFinite[float]] | None = None,
-    airspeed: CasMps[IsFinite[Ge0[float]]] | Mach[IsFinite[Gt0[float]]] | None = None,
+    waypoint: CoordinateWaypoint | NamedWaypoint,
+    altitude: StdPressureAltM | None = None,
+    airspeed: CasMps | Mach | None = None,
     insertion: WaypointInsertion | None = None,
 ) -> Result[str, str]:
     """Apply already-parsed waypoint insertion request."""
@@ -966,10 +981,10 @@ def _add_route_waypoint(
     beforewp = ""
 
     match waypoint:
-        case CoordinateWaypoint(coordinates):
+        case CoordinateWaypoint():
             name = callsign
-            lat = coordinates.lat
-            lon = coordinates.lon
+            lat = waypoint.coordinates.lat
+            lon = waypoint.coordinates.lon
             wptype = WaypointType.LATLON
         case NamedWaypoint(name):
             takeoffwpt = name.replace("-", "") == "TAKEOFF"
@@ -1035,7 +1050,13 @@ class AtConstraints:
     """A complete altitude/airspeed pair; None means an explicit clear."""
 
     altitude: q.PressureAltitudeM[float] | None
-    airspeed: CasMps[IsFinite[Ge0[float]]] | Mach[IsFinite[Gt0[float]]] | None
+    airspeed: CasMps | Mach | None
+
+
+_AT_CONSTRAINTS_INPUT = CommandField(
+    "altitude/airspeed",
+    examples=("FL100/250KT[CAS]", "---/M0.78", "FL100/---"),
+)
 
 
 def _parse_at_constraints(
@@ -1057,11 +1078,11 @@ def _parse_at_constraints(
         altitude = None
     else:
         try:
-            altitude = parse_pressure_altitude_value(altitude_text).value
+            altitude = _parse_pressure_altitude(altitude_text)
         except ValueError:
             return Err(ArgumentIssue.expected("a pressure altitude", altitude_text, token.span))
 
-    airspeed: CasMps[IsFinite[Ge0[float]]] | Mach[IsFinite[Gt0[float]]] | None
+    airspeed: CasMps | Mach | None
     if cleared(speed_text):
         airspeed = None
     else:
@@ -1073,9 +1094,7 @@ def _parse_at_constraints(
     return Ok(Spanned(AtConstraints(altitude, airspeed), token.span))
 
 
-AtConstraintsArg = Annotated[
-    AtConstraints, CmdParser(_parse_at_constraints, CommandField(name="altitude/airspeed"))
-]
+AtConstraintsArg = Annotated[AtConstraints, CmdParser(_parse_at_constraints, _AT_CONSTRAINTS_INPUT)]
 
 
 @dataclass(frozen=True, slots=True)
@@ -1155,8 +1174,7 @@ def _format_at_query(
 def direct(traffic: Traffic, acidx: AircraftIndex, wpname: RouteWaypointName) -> bool:
     """Go direct to a specified waypoint in the route.
 
-    Implements the DIRECT stack command: `DIRECT acid wpname`. Makes the
-    given waypoint the active waypoint, copies its data (position, fly-by/
+    Makes the given waypoint the active waypoint, copies its data (position, fly-by/
     fly-turn settings, next-turn data) into the active-waypoint arrays,
     recalculates the flight plan and the VNAV profile, sets the next-leg
     airspeed from any airspeed constraint, computes the turn distance for the
@@ -1296,8 +1314,7 @@ def set_rta(
 ) -> bool:  # all arguments of setRTA
     """Set a required time of arrival (RTA) at a route waypoint.
 
-    Implements the RTA stack command: `RTA acid, wpname, time`. The RTA
-    is stored with the waypoint and the guidance to the active waypoint is
+    The RTA is stored with the waypoint and the guidance to the active waypoint is
     recomputed so the autopilot can adjust its airspeed schedule.
     """
     traffic.callsign[acidx]
@@ -1315,7 +1332,6 @@ def set_rta(
 def listrte(traffic: Traffic, acidx: AircraftIndex, ipagetxt: str = "0") -> Result[None, str]:
     """Show the route of an aircraft in the console, page by page.
 
-    Implements the LISTRTE stack command: `LISTRTE acid, [pagenr]`.
     Each line shows the waypoint name (active waypoint marked with `*`),
     its altitude constraint (ft or FL), airspeed constraint
     ([`CAS` in m/s][minisky.types.CasMps] or [`Mach`][minisky.types.Mach]) and
@@ -1375,8 +1391,7 @@ def delrte(traffic: Traffic, acidx: AircraftIndex) -> Result[str, str]:
     """Delete the complete route (including origin/destination) of an
     aircraft.
 
-    Implements the DELRTE stack command: `DELRTE acid`. The route is
-    re-initialized empty and LNAV/VNAV are disengaged.
+    The route is re-initialized empty and LNAV/VNAV are disengaged.
     """
     callsign = traffic.callsign[acidx]
     acrte = traffic.ap.route[acidx]
@@ -1396,8 +1411,7 @@ def delrte(traffic: Traffic, acidx: AircraftIndex) -> Result[str, str]:
 def delwpt(traffic: Traffic, acidx: AircraftIndex, wpname: RouteWaypointName) -> Result[str, str]:
     """Delete a single waypoint from the route of an aircraft.
 
-    Implements the DELWPT stack command: `DELWPT acid, wpname`. When the
-    deleted waypoint is the active one (and not the last), guidance is
+    When the deleted waypoint is the active one (and not the last), guidance is
     redirected to the following waypoint. LNAV/VNAV are disengaged when
     the route becomes empty.
     """
@@ -1465,7 +1479,7 @@ class RouteCommands:
         _parameter: Literal["TURNRAD", "TURNRADIUS"],
         value: TurnRadiusMArg,
     ) -> Result[str, str]:
-        """Set the default fly-turn radius using explicit units such as `1NM`."""
+        """Set the default fly-turn radius."""
         return _set_turn_radius(self.traffic, acidx, value)
 
     @command(name="ADDWPTMODE")
@@ -1475,7 +1489,7 @@ class RouteCommands:
         _parameter: Literal["TURNSPD", "TURNSPEED"],
         value: CasMps[IsFinite[Gt0[float]]],
     ) -> Result[str, str]:
-        """Set the default fly-turn [`CAS`][minisky.types.CasMps] using an explicit quantity such as `250KT[CAS]`."""
+        """Set the default fly-turn [`CAS`][minisky.types.CasMps]."""
         return _set_turn_cas(self.traffic, acidx, value)
 
     @command(name="ADDWPTMODE")
@@ -1524,7 +1538,7 @@ class RouteCommands:
         _parameter: Literal["TURNSPD", "TURNSPEED"],
         value: CasMps[IsFinite[Gt0[float]]],
     ) -> Result[str, str]:
-        """Set fly-turn CAS through ADDWPT using an explicit quantity such as `250KT[CAS]`."""
+        """Set fly-turn CAS through ADDWPT."""
         return _set_turn_cas(self.traffic, acidx, value)
 
     @command(name="ADDWPT")
@@ -1542,7 +1556,9 @@ class RouteCommands:
         self, acidx: AcId, _takeoff: Literal["TAKEOFF"], runway: RunwayArg
     ) -> Result[str, str]:
         """Add a takeoff waypoint from an explicit runway."""
-        return _add_takeoff_waypoint(self.traffic, acidx, runway)
+        if isinstance(resolved := _resolve_runway_reference(self.traffic, runway), Err):
+            return resolved
+        return _add_takeoff_waypoint(self.traffic, acidx, resolved.ok())
 
     @command(name="ADDWPT")
     def add_takeoff_waypoint(self, acidx: AcId, _takeoff: Literal["TAKEOFF"]) -> Result[str, str]:
@@ -1553,7 +1569,7 @@ class RouteCommands:
     def insert_waypoint_before(
         self,
         acidx: AcId,
-        waypoint: Wpt,
+        waypoint: CoordinateWaypoint | NamedWaypoint,
         altitude: StdPressureAltM[IsFinite[float]] | None,
         airspeed: CasMps[IsFinite[Ge0[float]]] | Mach[IsFinite[Gt0[float]]] | None,
         _after: Omitted,
@@ -1573,7 +1589,7 @@ class RouteCommands:
     def insert_waypoint_after(
         self,
         acidx: AcId,
-        waypoint: Wpt,
+        waypoint: CoordinateWaypoint | NamedWaypoint,
         altitude: StdPressureAltM[IsFinite[float]] | None,
         airspeed: CasMps[IsFinite[Ge0[float]]] | Mach[IsFinite[Gt0[float]]] | None,
         after: Keyword,
@@ -1592,7 +1608,7 @@ class RouteCommands:
     def append_waypoint(
         self,
         acidx: AcId,
-        waypoint: Wpt,
+        waypoint: CoordinateWaypoint | NamedWaypoint,
         altitude: StdPressureAltM[IsFinite[float]] | None = None,
         airspeed: CasMps[IsFinite[Ge0[float]]] | Mach[IsFinite[Gt0[float]]] | None = None,
     ) -> Result[str, str]:
@@ -1605,16 +1621,11 @@ class RouteCommands:
         acidx: AcId,
         beforewp: Keyword,
         _keyword: Literal["ADDWPT"],
-        waypoint: Wpt,
+        waypoint: CoordinateWaypoint | NamedWaypoint,
         alt: StdPressureAltM[IsFinite[float]] | None = None,
         airspeed: CasMps[IsFinite[Ge0[float]]] | Mach[IsFinite[Gt0[float]]] | None = None,
     ) -> Result[str, str]:
-        """Insert a waypoint before an existing route waypoint.
-
-        Implements `acid BEFORE waypoint ADDWPT new-waypoint [altitude airspeed]`.
-        The ADDWPT keyword is part of the command grammar; insertion
-        uses the same typed mutation path as ADDWPT.
-        """
+        """Insert a waypoint before an existing route waypoint."""
         if isinstance(found := _route_waypoint_index(self.traffic, acidx, beforewp), Err):
             return found
         return _add_route_waypoint(
@@ -1627,16 +1638,11 @@ class RouteCommands:
         acidx: AcId,
         afterwp: Keyword,
         _keyword: Literal["ADDWPT"],
-        waypoint: Wpt,
+        waypoint: CoordinateWaypoint | NamedWaypoint,
         alt: StdPressureAltM[IsFinite[float]] | None = None,
         airspeed: CasMps[IsFinite[Ge0[float]]] | Mach[IsFinite[Gt0[float]]] | None = None,
     ) -> Result[str, str]:
-        """Insert a waypoint after an existing route waypoint.
-
-        Implements `acid AFTER waypoint ADDWPT new-waypoint [altitude airspeed]`.
-        The ADDWPT keyword is part of the command grammar; insertion
-        uses the same typed mutation path as ADDWPT.
-        """
+        """Insert a waypoint after an existing route waypoint."""
         if isinstance(found := _route_waypoint_index(self.traffic, acidx, afterwp), Err):
             return found
         return _add_route_waypoint(
