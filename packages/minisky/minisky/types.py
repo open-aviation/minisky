@@ -11,7 +11,7 @@ from __future__ import annotations
 from abc import ABC
 from dataclasses import dataclass
 from enum import IntEnum
-from typing import Annotated, TypeAlias
+from typing import Annotated, Generic, TypeAlias
 
 from annotated_types import Ge, Gt
 from typing_extensions import TypeVar
@@ -58,26 +58,19 @@ Gt0: TypeAlias = Annotated[_T, Gt(0)]
 """A value greater than zero."""
 
 
-class RuntimeNewType(ABC):
+class RuntimeNewType(ABC, Generic[_T]):
     """Base class for runtime newtypes.
 
-    Subclassing this will ask the command parser to treat this as a transparent
-    wrapper. It will allow you to stack more constraints (such as
-    `annotated_types.Gt`).
+    The generic carrier preserves constraints and container types independently
+    of the semantic wrapper, for example `CasMps[IsFinite[Gt0[float]]]` or
+    `CasMps[np.ndarray]`.
 
     See: https://doc.rust-lang.org/rust-by-example/generics/new_types.html
     """
 
-    # when registering newtypes, remember to subclass this so
-    # the command parser knows to unwrap the inner value for annotated_types
-    # checking!
-
     __slots__ = ()
-    value: float
+    value: _T
 
-
-# NOTE(abraham): maybe switch to generics so callers can customise the inner types
-# for example CasMps[Annotated[float, Gt(0), Le(...)]] instead of Annotatd[CasMps, Gt(0), Le(...)].
 
 #
 # airspeed
@@ -104,21 +97,21 @@ class OptionalAirspeedKind(IntEnum):
 
 
 @dataclass(frozen=True, slots=True)
-class CasMps(RuntimeNewType):
+class CasMps(RuntimeNewType[_T]):
     """Calibrated airspeed normalized to metres per second.
 
     Note that in minisky, IAS is used interchangeably with CAS, assuming zero
     instrument and position errors.
     """
 
-    value: q.CalibratedAirspeedMps[float]
+    value: q.CalibratedAirspeedMps[_T]
 
 
 @dataclass(frozen=True, slots=True)
-class Mach(RuntimeNewType):
+class Mach(RuntimeNewType[_T]):
     """Mach number preserved as a dimensionless value."""
 
-    value: q.MachNumber[float]
+    value: q.MachNumber[_T]
 
 
 #
@@ -127,7 +120,7 @@ class Mach(RuntimeNewType):
 
 
 @dataclass(frozen=True, slots=True)
-class StdPressureAltM(RuntimeNewType):
+class StdPressureAltM(RuntimeNewType[_T]):
     """Barometric pressure altitude on the standard-pressure reference.
 
     QNE is the standard altimeter setting and flight levels are the operational
@@ -139,11 +132,11 @@ class StdPressureAltM(RuntimeNewType):
     - `S + 4 digits` = standard metric level, digits in tens of metres
     """
 
-    value: q.PressureAltitudeM[float]
+    value: q.PressureAltitudeM[_T]
 
 
 @dataclass(frozen=True, slots=True)
-class MslAltM(RuntimeNewType):
+class MslAltM(RuntimeNewType[_T]):
     """Altitude above mean sea level.
 
     QNH is the altimeter subscale pressure setting chosen so a correctly
@@ -156,23 +149,23 @@ class MslAltM(RuntimeNewType):
     - `M + 4 digits` = altitude in tens of metres
     """
 
-    value: q.MslAltitudeM[float]
+    value: q.MslAltitudeM[_T]
 
 
 # TODO(abraham): we don't know how to handle local/ground datum (see #22)
 # keeping them internal for now
 @dataclass(frozen=True, slots=True)
-class _QfeHeightM(RuntimeNewType):  # pyright: ignore[reportUnusedClass]
+class _QfeHeightM(RuntimeNewType[_T]):  # pyright: ignore[reportUnusedClass]
     """Barometric height above the local QFE reference datum."""
 
-    value: q.BarometricHeightM[float]
+    value: q.BarometricHeightM[_T]
 
 
 @dataclass(frozen=True, slots=True)
-class _AglHeightM(RuntimeNewType):  # pyright: ignore[reportUnusedClass]
+class _AglHeightM(RuntimeNewType[_T]):  # pyright: ignore[reportUnusedClass]
     """Height above the ground surface directly beneath the aircraft."""
 
-    value: q.AglHeightM[float]
+    value: q.AglHeightM[_T]
 
 
 #
@@ -181,29 +174,29 @@ class _AglHeightM(RuntimeNewType):  # pyright: ignore[reportUnusedClass]
 
 
 @dataclass(frozen=True, slots=True)
-class TrueHeadingDeg(RuntimeNewType):
+class TrueHeadingDeg(RuntimeNewType[_T]):
     """Heading relative to true north in degrees."""
 
-    value: q.TrueHeadingDegrees[float]
+    value: q.TrueHeadingDegrees[_T]
 
 
 @dataclass(frozen=True, slots=True)
-class MagneticHeadingDeg(RuntimeNewType):
+class MagneticHeadingDeg(RuntimeNewType[_T]):
     """Heading relative to magnetic north in degrees."""
 
-    value: q.MagneticHeadingDegrees[float]
+    value: q.MagneticHeadingDegrees[_T]
 
 
 @dataclass(frozen=True, slots=True)
-class GroundTrackDeg(RuntimeNewType):
+class GroundTrackDeg(RuntimeNewType[_T]):
     """Ground-track direction relative to true north in degrees."""
 
-    value: q.GroundTrackDeg[float]
+    value: q.GroundTrackDeg[_T]
 
 
 @dataclass(frozen=True, slots=True)
-class LatLonDegrees:
+class LatLonDegrees(Generic[_T]):
     """Resolved latitude and longitude in degrees."""
 
-    lat: q.LatitudeDeg[float]
-    lon: q.LongitudeDeg[float]
+    lat: q.LatitudeDeg[_T]
+    lon: q.LongitudeDeg[_T]

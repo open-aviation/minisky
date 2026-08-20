@@ -21,6 +21,7 @@ from math import sqrt
 from typing import TYPE_CHECKING
 
 import numpy as np
+from annotated_types import IsFinite
 
 import minisky.geo as geo  # noqa: PLR0402
 from minisky import quantities as q
@@ -53,6 +54,8 @@ from minisky.types import (
     AircraftIndex,
     AirspeedKind,
     CasMps,
+    Ge0,
+    Gt0,
     LatLonDegrees,
     Mach,
     MagneticHeadingDeg,
@@ -1148,7 +1151,7 @@ class Autopilot(TrafficArrays):
 
     @command(name="ALT")
     def selaltcmd(
-        self, idx: AcIdSelection, alt: StdPressureAltM, vspd: VspdMps | None = None
+        self, idx: AcIdSelection, alt: StdPressureAltM[IsFinite[float]], vspd: VspdMps | None = None
     ) -> Result[str, str]:
         """Select the autopilot altitude, optionally with a vertical speed.
 
@@ -1188,7 +1191,9 @@ class Autopilot(TrafficArrays):
 
     @command(name="HDG", aliases=("HEADING", "TURN"))
     def selhdgcmd(
-        self, idx: AcIdSelection, hdg: TrueHeadingDeg | MagneticHeadingDeg
+        self,
+        idx: AcIdSelection,
+        hdg: TrueHeadingDeg[IsFinite[float]] | MagneticHeadingDeg[IsFinite[float]],
     ) -> Result[str, str]:  # HDG command
         """Select the autopilot heading.
 
@@ -1230,7 +1235,11 @@ class Autopilot(TrafficArrays):
         return Ok(f"heading set to {resolved_hdg} deg")
 
     @command(name="SPD", aliases=("SPEED",))
-    def select_airspeed(self, idx: AcIdSelection, airspeed: CasMps | Mach) -> Result[str, str]:
+    def select_airspeed(
+        self,
+        idx: AcIdSelection,
+        airspeed: CasMps[IsFinite[Ge0[float]]] | Mach[IsFinite[Gt0[float]]],
+    ) -> Result[str, str]:
         """Select [`CAS` in m/s][minisky.types.CasMps] or [`Mach`][minisky.types.Mach] explicitly."""
         self.traffic.selected_airspeed.values[idx] = airspeed.value
         if isinstance(airspeed, CasMps):
@@ -1249,7 +1258,10 @@ class Autopilot(TrafficArrays):
 
     @command(name="DEST")
     def set_destination(
-        self, acidx: AcId, waypoint: Wpt, airspeed: CasMps | Mach | None = None
+        self,
+        acidx: AcId,
+        waypoint: Wpt,
+        airspeed: CasMps[IsFinite[Ge0[float]]] | Mach[IsFinite[Gt0[float]]] | None = None,
     ) -> Result[str, str]:
         """Set the destination with an optional [`CAS` in m/s][minisky.types.CasMps] or [`Mach`][minisky.types.Mach] constraint."""
         route = self.route[acidx]

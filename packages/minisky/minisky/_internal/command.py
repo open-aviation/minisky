@@ -93,6 +93,7 @@ from annotated_types import (
     Ge,
     GroupedMetadata,
     Gt,
+    IsFinite,
     Le,
     Lt,
     MaxLen,
@@ -671,18 +672,23 @@ def _vertical_metres(value: str, unit: str) -> float:
     return float(value) if unit.upper() == "M" else q.ft_to_m(float(value))
 
 
-def parse_pressure_altitude_value(value: str) -> t.StdPressureAltM:
+def _parse_pressure_altitude(value: str) -> q.PressureAltitudeM[float]:
     if match := _FLIGHT_LEVEL.fullmatch(value):
-        return t.StdPressureAltM(q.ft_to_m(100.0 * int(match.group("level"))))
+        return q.ft_to_m(100.0 * int(match.group("level")))
     if (match := _STD_ALTITUDE.fullmatch(value)) is None:
         raise ValueError
-    return t.StdPressureAltM(_vertical_metres(match.group("value"), match.group("unit")))
+    return _vertical_metres(match.group("value"), match.group("unit"))
 
 
-def _parse_msl_altitude(value: str) -> t.MslAltM:
+def parse_pressure_altitude_value(value: str) -> t.StdPressureAltM[float]:
+    """Compatibility wrapper for bespoke parsers not yet migrated."""
+    return t.StdPressureAltM(_parse_pressure_altitude(value))
+
+
+def _parse_msl_altitude(value: str) -> q.MslAltitudeM[float]:
     if (match := _MSL_ALTITUDE.fullmatch(value)) is None:
         raise ValueError
-    return t.MslAltM(_vertical_metres(match.group("value"), match.group("unit")))
+    return _vertical_metres(match.group("value"), match.group("unit"))
 
 
 # Numeric altitudes require an explicit unit. AGL stays out until ground
@@ -709,7 +715,7 @@ def parse_distance_value(value: str) -> q.DistanceM[float]:
 
 
 DistanceM = Annotated[
-    q.DistanceM[float],
+    q.DistanceM[IsFinite[float]],
     CommandField(name="distance", examples=("5NM", "9.26KM", "9260M", "3000FT")),
     Converter(parse_distance_value),
 ]
@@ -739,7 +745,7 @@ def parse_speed_value(value: str) -> q.SpeedMps[float]:
 
 
 SpeedMps = Annotated[
-    q.SpeedMps[float],
+    q.SpeedMps[IsFinite[float]],
     CommandField(name="speed", examples=("10MPS", "600FT/MIN", "20KT", "90KMH")),
     Converter(parse_speed_value),
 ]
@@ -750,39 +756,47 @@ or `90KMH`.
 """
 
 
-def parse_cas_value(value: str) -> t.CasMps:
-    """Parse CAS with an explicit unit and required `[CAS]` quantity tag."""
+def _parse_cas(value: str) -> q.CalibratedAirspeedMps[float]:
     if (match := _CAS.fullmatch(value)) is None:
         raise ValueError
     unit_value = f"{match.group('value')}{match.group('unit')}"
-    return t.CasMps(parse_speed_value(unit_value))
+    return parse_speed_value(unit_value)
 
 
-def _parse_mach(value: str) -> t.Mach:
+def parse_cas_value(value: str) -> t.CasMps[float]:
+    """Compatibility wrapper for bespoke callers not yet migrated."""
+    return t.CasMps(_parse_cas(value))
+
+
+def _parse_mach(value: str) -> q.MachNumber[float]:
     if (match := _MACH.fullmatch(value)) is None:
         raise ValueError
-    mach = float(match.group("value"))
-    if mach <= 0.0:
-        raise ValueError
-    return t.Mach(mach)
+    return float(match.group("value"))
 
 
-def parse_selected_airspeed_value(value: str) -> t.CasMps | t.Mach:
-    return _parse_mach(value) if value.upper().startswith("M") else parse_cas_value(value)
+def parse_selected_airspeed_value(
+    value: str,
+) -> t.CasMps[IsFinite[t.Ge0[float]]] | t.Mach[IsFinite[t.Gt0[float]]]:
+    if value.upper().startswith("M"):
+        mach = _parse_mach(value)
+        if mach <= 0.0:
+            raise ValueError
+        return t.Mach(mach)
+    return t.CasMps(_parse_cas(value))
 
 
 VspdMps = Annotated[
-    q.VerticalRateMps[float],
+    q.VerticalRateMps[IsFinite[float]],
     CommandField(name="vertical speed", examples=("1500FT/MIN", "7.62MPS")),
     Converter(parse_speed_value),
 ]
 TimeS = Annotated[
-    q.DurationS[float],
+    q.DurationS[IsFinite[t.Ge0[float]]],
     CommandField(name="time", examples=("90", "01:30", "01:02:03")),
     Converter(txt2tim),
 ]
 SimTimeS = Annotated[
-    q.SimulationTimeS[float],
+    q.SimulationTimeS[IsFinite[t.Ge0[float]]],
     CommandField(name="time", examples=("90", "01:30", "01:02:03")),
     Converter(txt2tim),
 ]
@@ -804,16 +818,16 @@ def _matched_number(pattern: re.Pattern[str], value: str) -> float:
     return float(match.group("value"))
 
 
-def _parse_true_heading(value: str) -> t.TrueHeadingDeg:
-    return t.TrueHeadingDeg(_matched_number(_TRUE_HEADING, value))
+def _parse_true_heading(value: str) -> q.TrueHeadingDegrees[float]:
+    return _matched_number(_TRUE_HEADING, value)
 
 
-def _parse_magnetic_heading(value: str) -> t.MagneticHeadingDeg:
-    return t.MagneticHeadingDeg(_matched_number(_MAGNETIC_HEADING, value))
+def _parse_magnetic_heading(value: str) -> q.MagneticHeadingDegrees[float]:
+    return _matched_number(_MAGNETIC_HEADING, value)
 
 
-def _parse_ground_track(value: str) -> t.GroundTrackDeg:
-    return t.GroundTrackDeg(_matched_number(_GROUND_TRACK, value))
+def _parse_ground_track(value: str) -> q.GroundTrackDeg[float]:
+    return _matched_number(_GROUND_TRACK, value)
 
 
 @dataclass(frozen=True, slots=True)
@@ -1091,37 +1105,33 @@ discards runway-specific heading after resolution.
 """
 
 
-_VALUE_PARSERS: dict[Any, CmdParser[Any]] = {
-    bool: _ON_OFF_PARSER,
-    int: _INT_PARSER,
-    float: _FLOAT_PARSER,
-    t.CasMps: _converter_parser(
-        Converter(parse_cas_value),
+_RUNTIME_NEWTYPE_METADATA: dict[
+    type[t.RuntimeNewType[Any]], tuple[CommandField, Converter[Any]]
+] = {
+    t.CasMps: (
         CommandField(name="CAS", examples=("250KT[CAS]", "128MPS[CAS]")),
+        Converter(_parse_cas),
     ),
-    t.Mach: _converter_parser(
-        Converter(_parse_mach),
-        CommandField(name="Mach", examples=("M0.78", "M.78")),
-    ),
-    t.StdPressureAltM: _converter_parser(
-        Converter(parse_pressure_altitude_value),
+    t.Mach: (CommandField(name="Mach", examples=("M0.78", "M.78")), Converter(_parse_mach)),
+    t.StdPressureAltM: (
         CommandField(name="pressure altitude", examples=("FL100", "10000FT[STD]", "3048M[STD]")),
+        Converter(_parse_pressure_altitude),
     ),
-    t.MslAltM: _converter_parser(
-        Converter(_parse_msl_altitude),
+    t.MslAltM: (
         CommandField(name="MSL altitude", examples=("10000FT[MSL]", "3048M[MSL]")),
+        Converter(_parse_msl_altitude),
     ),
-    t.TrueHeadingDeg: _converter_parser(
-        Converter(_parse_true_heading),
+    t.TrueHeadingDeg: (
         CommandField(name="true heading", examples=("090", "090T")),
+        Converter(_parse_true_heading),
     ),
-    t.MagneticHeadingDeg: _converter_parser(
-        Converter(_parse_magnetic_heading),
+    t.MagneticHeadingDeg: (
         CommandField(name="magnetic heading", examples=("090M",)),
+        Converter(_parse_magnetic_heading),
     ),
-    t.GroundTrackDeg: _converter_parser(
-        Converter(_parse_ground_track),
+    t.GroundTrackDeg: (
         CommandField(name="ground track", examples=("090TRK",)),
+        Converter(_parse_ground_track),
     ),
 }
 
@@ -1153,23 +1163,21 @@ class _ArgumentContract:
 def _validate_constraints(
     value: Any, constraints: Iterable[_Constraint]
 ) -> Result[None, ArgumentIssue]:
-    raw: Any = value
-    operand: Any = value.value if isinstance(value, t.RuntimeNewType) else value
     for constraint in constraints:
         expected: str | None = None
-        if isinstance(constraint, Gt) and not operand > constraint.gt:
+        if isinstance(constraint, Gt) and not value > constraint.gt:
             expected = f"a value greater than {constraint.gt}"
-        elif isinstance(constraint, Ge) and not operand >= constraint.ge:
+        elif isinstance(constraint, Ge) and not value >= constraint.ge:
             expected = f"a value greater than or equal to {constraint.ge}"
-        elif isinstance(constraint, Lt) and not operand < constraint.lt:
+        elif isinstance(constraint, Lt) and not value < constraint.lt:
             expected = f"a value less than {constraint.lt}"
-        elif isinstance(constraint, Le) and not operand <= constraint.le:
+        elif isinstance(constraint, Le) and not value <= constraint.le:
             expected = f"a value less than or equal to {constraint.le}"
-        elif isinstance(constraint, MinLen) and len(raw) < constraint.min_length:
+        elif isinstance(constraint, MinLen) and len(value) < constraint.min_length:
             expected = f"a value with length at least {constraint.min_length}"
-        elif isinstance(constraint, MaxLen) and len(raw) > constraint.max_length:
+        elif isinstance(constraint, MaxLen) and len(value) > constraint.max_length:
             expected = f"a value with length at most {constraint.max_length}"
-        elif isinstance(constraint, Predicate) and not constraint.func(operand):
+        elif isinstance(constraint, Predicate) and not constraint.func(value):
             name = getattr(constraint.func, "__name__", "predicate")
             expected = f"a value satisfying {name}"
         if expected is not None:
@@ -1183,9 +1191,10 @@ def _contract(
     constraints: tuple[_Constraint, ...] = (),
     *,
     nullable: bool = False,
+    finalize: Callable[[Any], Any] | None = None,
 ) -> _ArgumentContract:
     input_spec = parser.input
-    if constraints:
+    if constraints or finalize is not None:
         inner = parser
 
         def parse(context: CommandParseContext, cursor: CommandCursor) -> ParseResult[Any]:
@@ -1195,7 +1204,7 @@ def _contract(
             value = result.ok()
             if isinstance(validation := _validate_constraints(value.value, constraints), Err):
                 return Err(validation.err().with_span(value.span))
-            return Ok(value)
+            return Ok(value.map(finalize(value.value) if finalize is not None else value.value))
 
         parser = CmdParser(parse, input_spec)
 
@@ -1404,10 +1413,42 @@ def _argument_contract(annotation: Any) -> _ArgumentContract:
             nullable=info.nullable,
         )
 
+    origin = get_origin(info.base)
+    runtime_type = origin if origin is not None else info.base
+    runtime_newtype = (
+        runtime_type
+        if isinstance(runtime_type, type) and issubclass(runtime_type, t.RuntimeNewType)
+        else None
+    )
+    if runtime_newtype is not None and info.constraints:
+        raise TypeError(
+            "RuntimeNewType constraints belong on the inner type parameter, "
+            f"for example {runtime_newtype.__name__}[IsFinite[t.Gt0[float]]]"
+        )
+
     if info.parser is not None:
         if info.field is not None:
             raise TypeError("CommandField cannot override an explicit CmdParser input")
         return _contract(info.parser, info.annotation, info.constraints, nullable=info.nullable)
+
+    if runtime_newtype is not None:
+        arguments = get_args(info.base)
+        inner = arguments[0] if arguments else Any
+        if info.converter is None:
+            metadata = _RUNTIME_NEWTYPE_METADATA.get(runtime_newtype)
+            if metadata is None:
+                raise TypeError(f"no command converter registered for {runtime_newtype.__name__}")
+            input_spec, converter = metadata
+        else:
+            input_spec, converter = CommandField(), info.converter
+        parser = _converter_parser(converter, _merge_field(input_spec, info.field))
+        return _contract(
+            parser,
+            info.annotation,
+            _annotation(inner).constraints,
+            nullable=info.nullable,
+            finalize=runtime_newtype,
+        )
 
     if info.converter is not None:
         parser = _converter_parser(info.converter, _merge_field(CommandField(), info.field))
@@ -1436,13 +1477,7 @@ def _argument_contract(annotation: Any) -> _ArgumentContract:
     elif base is float:
         parser = _converter_parser(Converter(float), _merge_field(CommandField(), info.field))
     else:
-        parser = _VALUE_PARSERS.get(base)
-        if parser is None:
-            raise TypeError(f"unsupported stack annotation: {info.annotation!r}")
-        if info.field is not None:
-            if not isinstance(parser.input, CommandField):
-                raise TypeError("CommandField metadata can only annotate a single command field")
-            parser = CmdParser(parser.func, _merge_field(parser.input, info.field))
+        raise TypeError(f"unsupported stack annotation: {info.annotation!r}")
 
     return _contract(parser, info.annotation, info.constraints, nullable=info.nullable)
 

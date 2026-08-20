@@ -485,7 +485,9 @@ class Wind(TrafficArrays, Windfield):
         return Ok("")
 
     @command(name="GETWIND")
-    def report(self, position: LatLonDeg, alt: StdPressureAltM | None = None) -> Result[str, str]:
+    def report(
+        self, position: LatLonDeg, alt: StdPressureAltM[IsFinite[float]] | None = None
+    ) -> Result[str, str]:
         """Report wind at an aviation position and optional altitude."""
         north, east = self.getdata(position.lat, position.lon, None if alt is None else alt.value)
         direction = (np.degrees(np.arctan2(east, north)) + 180.0) % 360.0

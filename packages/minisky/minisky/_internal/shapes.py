@@ -8,6 +8,7 @@ from typing import NamedTuple, Protocol
 
 import numpy as np
 import shapely
+from annotated_types import IsFinite
 
 from minisky import quantities as q
 from minisky._internal.command import (
@@ -19,8 +20,6 @@ from minisky._internal.command import (
 from minisky._internal.result import Err, Ok, Result
 from minisky.geo import kwikdist
 from minisky.types import Ge0, LatLonDegrees, StdPressureAltM
-
-CircleRadiusM = Ge0[DistanceM]
 
 
 class Shapes:
@@ -48,8 +47,8 @@ class Shapes:
         name: Keyword,
         first: LatLonDeg,
         second: LatLonDeg,
-        top: StdPressureAltM | None = None,
-        bottom: StdPressureAltM | None = None,
+        top: StdPressureAltM[IsFinite[float]] | None = None,
+        bottom: StdPressureAltM[IsFinite[float]] | None = None,
     ) -> Result[str, str]:
         """Define a box-shaped area from two opposite corners."""
         self._store_area(
@@ -68,9 +67,9 @@ class Shapes:
         self,
         name: Keyword,
         center: LatLonDeg,
-        radius: CircleRadiusM,
-        top: StdPressureAltM | None = None,
-        bottom: StdPressureAltM | None = None,
+        radius: Ge0[DistanceM],
+        top: StdPressureAltM[IsFinite[float]] | None = None,
+        bottom: StdPressureAltM[IsFinite[float]] | None = None,
     ) -> Result[str, str]:
         """Define a circular area."""
         self._store_area(
@@ -104,8 +103,8 @@ class Shapes:
     def define_polyalt(
         self,
         name: Keyword,
-        top: StdPressureAltM,
-        bottom: StdPressureAltM,
+        top: StdPressureAltM[IsFinite[float]],
+        bottom: StdPressureAltM[IsFinite[float]],
         first: LatLonDeg,
         *additional: LatLonDeg,
     ) -> Result[str, str]:

@@ -6,6 +6,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, TypeAlias
 
+from annotated_types import IsFinite
+
 from minisky import quantities as q
 from minisky._internal.command import (
     AcId,
@@ -20,6 +22,7 @@ from minisky.types import (
     AircraftIndex,
     CasMps,
     Ge0,
+    Gt0,
     LatLonDegrees,
     Mach,
     StdPressureAltM,
@@ -121,7 +124,9 @@ class Condition:
         self.conditions = remaining
 
     @command(name="ATALT")
-    def ataltcmd(self, acidx: AcId, targalt: StdPressureAltM, cmdtxt: Text) -> bool:
+    def ataltcmd(
+        self, acidx: AcId, targalt: StdPressureAltM[IsFinite[float]], cmdtxt: Text
+    ) -> bool:
         """Schedule a command for when an aircraft crosses an altitude."""
         callsign = self.traffic.callsign[acidx]
         actual = float(self.traffic.alt[acidx])
@@ -131,7 +136,12 @@ class Condition:
         return True
 
     @command(name="ATSPD")
-    def atspdcmd(self, acidx: AcId, target: CasMps | Mach, cmdtxt: Text) -> bool:
+    def atspdcmd(
+        self,
+        acidx: AcId,
+        target: CasMps[IsFinite[Ge0[float]]] | Mach[IsFinite[Gt0[float]]],
+        cmdtxt: Text,
+    ) -> bool:
         """Schedule a command for crossing an explicit [`CAS` in m/s][minisky.types.CasMps] or [`Mach`][minisky.types.Mach] target."""
         callsign = self.traffic.callsign[acidx]
         actual = (
@@ -144,11 +154,7 @@ class Condition:
 
     @command(name="ATDIST")
     def atdistcmd(
-        self,
-        acidx: AcId,
-        position: LatLonDeg,
-        targdist: Ge0[DistanceM],
-        cmdtxt: Text,
+        self, acidx: AcId, position: LatLonDeg, targdist: Ge0[DistanceM], cmdtxt: Text
     ) -> bool:
         """Schedule a command for crossing a distance."""
         target = targdist
