@@ -81,6 +81,7 @@ search = {}
 
 [project.plugins.mkdocstrings]
 enable_inventory = true
+custom_templates = "docs/templates"
 
 [project.plugins.mkdocstrings.handlers.python]
 # tangram_minisky lives in its own workspace and is not installed in the docs
@@ -94,8 +95,7 @@ inventories = [
 ]
 
 [project.plugins.mkdocstrings.handlers.python.options]
-# Labels @command-decorated methods; mkdocstrings does not render decorators.
-extensions = ["docs/griffe_stack_commands.py:StackCommands"]
+extensions = ["docs/command_reference.py:StackCommands"]
 docstring_style = "google"
 docstring_section_style = "table"
 show_source = true

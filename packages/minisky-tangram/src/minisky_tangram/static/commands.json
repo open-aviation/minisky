@@ -1,1 +1,1 @@
-{"definitions":{},"commands":{"TANGRAM":{"forms":[{"parameters":[],"doc":"Show the status of the tangram Redis bridge."}]}}}
+{"definitions":{},"commands":{"TANGRAM":{"forms":[{"path":"minisky_tangram.TangramBridge.status","parameters":[],"doc":"Show the status of the tangram Redis bridge."}]}}}
