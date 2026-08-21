@@ -1,0 +1,156 @@
+:root,
+[data-md-color-scheme="default"] {
+  --stack-chip-command-fg: oklch(43% 0.15 255);
+  --stack-chip-command-bg: oklch(72% 0.14 255 / 0.14);
+  --stack-chip-command-border: oklch(58% 0.15 255 / 0.35);
+  --stack-chip-literal-fg: oklch(44% 0.17 305);
+  --stack-chip-literal-bg: oklch(72% 0.15 305 / 0.14);
+  --stack-chip-literal-border: oklch(58% 0.16 305 / 0.35);
+  --stack-chip-optional-fg: oklch(43% 0.12 75);
+  --stack-chip-optional-bg: oklch(78% 0.13 75 / 0.16);
+  --stack-chip-optional-border: oklch(62% 0.13 75 / 0.36);
+  --stack-chip-argument-bg: oklch(72% 0.02 255 / 0.12);
+  --stack-chip-argument-border: oklch(58% 0.025 255 / 0.24);
+  --stack-table-border: oklch(87% 0.012 255);
+}
+
+[data-md-color-scheme="slate"] {
+  --stack-chip-command-fg: oklch(83% 0.1 255);
+  --stack-chip-command-bg: oklch(65% 0.15 255 / 0.18);
+  --stack-chip-command-border: oklch(72% 0.13 255 / 0.35);
+  --stack-chip-literal-fg: oklch(84% 0.1 305);
+  --stack-chip-literal-bg: oklch(65% 0.15 305 / 0.18);
+  --stack-chip-literal-border: oklch(72% 0.13 305 / 0.35);
+  --stack-chip-optional-fg: oklch(87% 0.1 75);
+  --stack-chip-optional-bg: oklch(68% 0.13 75 / 0.18);
+  --stack-chip-optional-border: oklch(75% 0.11 75 / 0.34);
+  --stack-chip-argument-bg: oklch(68% 0.02 255 / 0.1);
+  --stack-chip-argument-border: oklch(72% 0.025 255 / 0.2);
+  --stack-table-border: oklch(34% 0.018 255);
+}
+
+.stack-command-aliases {
+  margin: -0.2rem 0 0.55rem;
+  color: var(--md-default-fg-color--light);
+  font-size: 0.78rem;
+}
+
+.stack-command-form {
+  margin: 0.7rem 0 1.2rem;
+}
+
+.stack-command-form-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+}
+
+.stack-command-signature {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.22rem;
+}
+
+.stack-command-python-api {
+  flex: 0 0 auto;
+  margin-left: auto;
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+
+.stack-command-token {
+  display: inline-flex;
+  align-items: center;
+}
+
+.stack-command-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.1rem 0.35rem;
+  border: 0.05rem solid var(--stack-chip-argument-border);
+  border-radius: 0.4rem;
+  background: var(--stack-chip-argument-bg);
+  font-family: var(--md-code-font-family);
+  font-size: 0.7rem;
+  font-weight: 650;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+
+.stack-command-chip--command {
+  border-color: var(--stack-chip-command-border);
+  background: var(--stack-chip-command-bg);
+  color: var(--stack-chip-command-fg);
+}
+
+.stack-command-chip--literal {
+  border-color: var(--stack-chip-literal-border);
+  background: var(--stack-chip-literal-bg);
+  color: var(--stack-chip-literal-fg);
+}
+
+.stack-command-chip--optional {
+  border-color: var(--stack-chip-optional-border);
+  background: var(--stack-chip-optional-bg);
+  color: var(--stack-chip-optional-fg);
+}
+
+.stack-command-separator {
+  color: var(--md-default-fg-color--lighter);
+  font-family: var(--md-code-font-family);
+  font-size: 0.72rem;
+}
+
+.stack-command-form-doc {
+  margin: 0.3rem 0 0.4rem;
+  color: var(--md-default-fg-color--light);
+  font-size: 0.8rem;
+}
+
+.stack-command-form-doc > :first-child {
+  margin-top: 0;
+}
+
+.stack-command-form-doc > :last-child {
+  margin-bottom: 0;
+}
+
+.stack-command-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.stack-command-parameters {
+  width: 100%;
+  margin: 0 !important;
+  border: 0 !important;
+  border-top: 0.05rem solid var(--stack-table-border) !important;
+  border-bottom: 0.05rem solid var(--stack-table-border) !important;
+  border-collapse: collapse;
+  background: transparent !important;
+  font-size: 0.8rem;
+}
+
+.stack-command-parameters td {
+  padding: 0.38rem 0.45rem;
+  border: 0 !important;
+  border-top: 0.05rem solid var(--stack-table-border) !important;
+  vertical-align: top;
+}
+
+.stack-command-parameters tr:first-child td {
+  border-top: 0 !important;
+}
+
+.stack-command-parameters td:first-child {
+  width: 4rem;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.stack-command-parameters a code {
+  color: inherit;
+}

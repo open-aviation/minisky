@@ -41,6 +41,7 @@ extra_javascript = [
   "https://cdn.jsdelivr.net/npm/katex@0.17.0/dist/contrib/copy-tex.min.js",
 ]
 extra_css = [
+  "assets/stylesheets/commands.css",
   "https://cdn.jsdelivr.net/npm/katex@0.17.0/dist/katex.min.css",
 ]
 

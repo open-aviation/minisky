@@ -1,16 +1,108 @@
-{% macro input_syntax(input, parameter_name) -%}
-  {%- if input.kind == "field" -%}
-    {{- input.name or parameter_name -}}
-  {%- elif input.kind == "record" -%}
-    {%- for field in input.fields -%}{{ field.name or parameter_name }}{% if not loop.last %},{% endif %}{%- endfor -%}
-  {%- elif input.kind == "literal" -%}
-    {{- input.values | join("|") -}}
-  {%- elif input.kind == "omitted" -%}
-  {%- elif input.kind == "choice" -%}
-    {%- for alternative in input.alternatives -%}{{ input_syntax(alternative, parameter_name) }}{% if not loop.last %}|{% endif %}{%- endfor -%}
-  {%- else -%}
-    {{- parameter_name -}}
+{# See: https://github.com/mkdocstrings/python/tree/main/src/mkdocstrings_handlers/python/templates/material/_base #}
+
+{% macro code_list(values) -%}
+  {%- for value in values -%}<code>{{ value }}</code>{% if not loop.last %}, {% endif %}{%- endfor -%}
+{%- endmacro %}
+
+{% macro constraint_text(constraint) -%}
+  {%- if constraint.kind == "gt" -%}> {{ constraint.value }}
+  {%- elif constraint.kind == "ge" -%}>= {{ constraint.value }}
+  {%- elif constraint.kind == "lt" -%}< {{ constraint.value }}
+  {%- elif constraint.kind == "le" -%}<= {{ constraint.value }}
+  {%- elif constraint.kind == "min_length" -%}length >= {{ constraint.value }}
+  {%- elif constraint.kind == "max_length" -%}length <= {{ constraint.value }}
+  {%- elif constraint.kind == "finite" -%}finite
+  {%- elif constraint.kind == "predicate" -%}{{ constraint.name }}
   {%- endif -%}
+{%- endmacro %}
+
+{% macro constraint_list(constraints) -%}
+  {%- for constraint in constraints -%}<code>{{ constraint_text(constraint) }}</code>{% if not loop.last %}, {% endif %}{%- endfor -%}
+{%- endmacro %}
+
+{% macro value_name(value) -%}
+  {%- set definition = command_definitions.get(value.ref) -%}
+  {{- definition.name if definition else value.ref.split(".")[-1] -}}
+{%- endmacro %}
+
+{% macro internal_type(value) -%}
+  <code><autoref identifier="{{ value.ref }}" optional hover>{{ value_name(value) }}</autoref></code>
+{%- endmacro %}
+
+{% macro docs(items) -%}
+  {%- for doc in items | reverse %}
+    {{ doc | markdown_html | replace("<p>", "") | replace("</p>", "") }}{% if not loop.last %} {% endif %}
+  {%- endfor %}
+{%- endmacro %}
+
+{% macro value_docs(values) -%}
+  {%- for value in values %}
+    {%- if value.docs %}{{ docs(value.docs) }}{% if not loop.last %} {% endif %}{% endif -%}
+  {%- endfor %}
+{%- endmacro %}
+
+{% macro semantic_docs(values, item_docs) -%}
+  {{- docs(item_docs) -}}
+  {%- if item_docs %} {% endif -%}
+  {{- value_docs(values) -}}
+{%- endmacro %}
+
+{% macro semantic_tail(values) -%}
+  {%- for value in values if value.constraints %} Constraints{% if values | length > 1 %} for {{ value_name(value) }}{% endif %}: {{ constraint_list(value.constraints) }}.{% endfor %}
+  Internal Type{% if values | length > 1 %}s{% endif %}:
+  {%- for value in values %} {{ internal_type(value) }}{% if not loop.last %} or{% endif %}{% endfor %}.
+  {%- for value in values if value.unit %} Internal Unit: <code>{{ value.unit }}</code>.{% endfor %}
+{%- endmacro %}
+
+{% macro input_detail(input) -%}
+  {%- if input.kind == "field" -%}
+    {%- if input.examples %} (e.g. {{ code_list(input.examples) }}){% elif input.name %}<code>{{ input.name }}</code>{% endif -%}
+  {%- elif input.kind == "literal" -%}
+    Accepted: {{ code_list(input.values) }}.
+  {%- elif input.kind == "boolean" -%}
+    True: {{ code_list(input.true) }}. False: {{ code_list(input.false) }}.
+  {%- elif input.kind == "omitted" -%}
+    Requires an omitted comma field.
+  {%- elif input.kind == "text" -%}
+    Consumes the remaining command text.{% if input.examples %} Examples: {{ code_list(input.examples) }}.{% endif %}
+  {%- elif input.kind == "record" -%}
+    All of:
+    <ul>
+    {%- for field in input.fields %}
+      <li><code>{{ field.name or "value" }}</code>{% if field.examples %} (e.g. {{ code_list(field.examples) }}){% endif %}</li>
+    {%- endfor %}
+    </ul>
+  {%- elif input.kind == "choice" -%}
+    One of:
+    <ul>
+    {%- for alternative in input.alternatives %}
+      <li>{{ input_detail(alternative) }}</li>
+    {%- endfor %}
+    </ul>
+  {%- endif -%}
+{%- endmacro %}
+
+{% macro variant_description(variant) -%}
+  {{- semantic_docs(variant.values, variant.docs) -}}
+  {%- set detail = input_detail(variant.input) %}
+  {%- if detail %} {{ detail }}{% endif %}
+  {{- semantic_tail(variant.values) -}}
+{%- endmacro %}
+
+{% macro parameter_description(parameter) -%}
+  {{- docs(parameter.docs) -}}
+  {%- if parameter.docs %} {% endif %}
+  {%- if parameter.variants | length > 1 or parameter.nullable %}
+    One of:
+    <ul>
+    {%- for variant in parameter.variants %}<li>{{ variant_description(variant) }}</li>{% endfor %}
+    {%- if parameter.nullable %}<li><i>None</i></li>{% endif %}
+    </ul>
+  {%- else %}
+    {{ variant_description(parameter.variants[0]) }}
+  {%- endif %}
+  {%- if parameter.optional %} Optional; omission uses the callback default.{% endif %}
+  {%- if parameter.repeat %} Repeatable.{% endif %}
 {%- endmacro %}
 
 {% for plugin in command_reference %}
@@ -19,11 +111,45 @@
 {% for command_name, command in plugin.commands.items() %}
 ### `{{ command_name }}`
 
-{% if command.aliases %}Aliases: {% for alias in command.aliases %}`{{ alias }}`{% if not loop.last %}, {% endif %}{% endfor %}
+<div class="doc doc-contents stack-command-contents">
+{% if command.aliases %}<p class="stack-command-aliases">Aliases: {% for alias in command.aliases %}<code>{{ alias }}</code>{% if not loop.last %}, {% endif %}{% endfor %}</p>{% endif %}
 
-{% endif %}{% for form in command.forms %}- `{{ command_name }}{% if form.parameters %} {% endif %}{% for parameter in form.parameters %}{% if parameter.optional or parameter.nullable %}[{% endif %}{{ input_syntax(parameter.input, parameter.name) }}{% if parameter.repeat %}...{% endif %}{% if parameter.optional or parameter.nullable %}]{% endif %}{% if not loop.last %},{% endif %}{% endfor %}`{% if form.doc %} — {{ form.doc }}{% endif %}
-{% for parameter in form.parameters %}  - `{{ parameter.name }}`{% if parameter.docs %} — {{ parameter.docs | join(" ") }}{% endif %}: {% if parameter.variants | length > 1 or parameter.nullable %}One of {% endif %}{% for variant in parameter.variants %}{% for value in variant.values %}{% set definition = command_definitions.get(value.ref) %}<code><autoref identifier="{{ value.ref }}" optional>{{ definition.name if definition else value.ref.split(".")[-1] }}</autoref></code>{% if value.docs %} — {{ value.docs | join(" ") }}{% endif %}{% if value.unit %} ({{ value.unit }}){% endif %}{% for constraint in value.constraints %}{% if constraint.kind == "finite" %}, finite{% elif constraint.kind == "predicate" %}, {{ constraint.name }}{% else %}, {{ constraint.kind }} {{ constraint.value }}{% endif %}{% endfor %}{% if not loop.last %} / {% endif %}{% endfor %}{% if not loop.last or parameter.nullable %}; {% endif %}{% endfor %}{% if parameter.nullable %}`None`{% endif %}
-{% endfor %}{% endfor %}
+{% for form in command.forms %}
+<div class="stack-command-form">
+  <div class="stack-command-form-header">
+    <div class="stack-command-signature">
+      <span class="stack-command-token"><span class="stack-command-chip stack-command-chip--command">{{ command_name }}</span></span>
+      {% for parameter in form.parameters %}
+        {% set kind = "literal" if parameter.input.kind == "literal" else "optional" if parameter.input.kind == "omitted" or parameter.optional else "argument" %}
+        {% set label = parameter.input.values | join("|") if parameter.input.kind == "literal" else parameter.name %}
+        <span class="stack-command-token"><span class="stack-command-chip stack-command-chip--{{ kind }}">{{ label }}</span>{% if not loop.last %}<span class="stack-command-separator">,</span>{% endif %}</span>
+      {% endfor %}
+    </div>
+  </div>
 
+  {% set visible = form.parameters | visible_parameters %}
+  {% if form.doc or visible %}
+  <div class="doc doc-contents stack-command-form-contents">
+    {% if form.doc %}<div class="stack-command-form-doc">{{ form.doc | markdown_html }}</div>{% endif %}
+
+    {% if visible %}
+    <div class="stack-command-table-wrap">
+      <table class="stack-command-parameters">
+        <tbody>
+        {% for parameter in visible %}
+          <tr>
+            <td><code>{{ parameter.name }}</code></td>
+            <td>{{ parameter_description(parameter) }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+</div>
+{% endfor %}
+</div>
 {% endfor %}
 {% endfor %}
