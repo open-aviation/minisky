@@ -341,12 +341,6 @@ def test_command_overloads_use_left_to_right_choice(runtime: MiniSky) -> None:
 
     (prepared,) = runtime.commands.mount_component(Component())
     try:
-        help_result = runtime.commands.show_help("TESTOVER")
-        assert isinstance(help_result, Ok)
-        help_text = help_result.ok()
-        assert "Query the current value.\nUsage:\nTESTOVER" in help_text
-        assert "Set an integer value.\nUsage:\nTESTOVER SET,value" in help_text
-        assert "Select a named value.\nUsage:\nTESTOVER name" in help_text
         assert isinstance(prepared(""), Ok)
         assert isinstance(prepared("other"), Ok)
         assert isinstance(prepared("set 7"), Ok)

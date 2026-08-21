@@ -109,7 +109,7 @@
 ## `{{ plugin.name }}`
 
 {% for command_name, command in plugin.commands.items() %}
-### `{{ command_name }}`
+### `{{ command_name }}` { #{{ plugin.name | command_anchor(command_name) }} }
 
 <div class="doc doc-contents stack-command-contents">
 {% if command.aliases %}<p class="stack-command-aliases">Aliases: {% for alias in command.aliases %}<code>{{ alias }}</code>{% if not loop.last %}, {% endif %}{% endfor %}</p>{% endif %}
@@ -125,6 +125,7 @@
         <span class="stack-command-token"><span class="stack-command-chip stack-command-chip--{{ kind }}">{{ label }}</span>{% if not loop.last %}<span class="stack-command-separator">,</span>{% endif %}</span>
       {% endfor %}
     </div>
+    <span class="stack-command-python-api"><autoref identifier="{{ form.path }}" optional hover>Python API</autoref></span>
   </div>
 
   {% set visible = form.parameters | visible_parameters %}

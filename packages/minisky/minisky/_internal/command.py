@@ -117,7 +117,7 @@ from minisky._internal.result import Err, Ok, Result
 
 if TYPE_CHECKING:
     from minisky._internal.navigation import Navdatabase
-    from minisky._internal.stack import Command
+    from minisky._internal.stack import Command, CommandForm
     from minisky._internal.traffic import Traffic
 
 CommandCallback = Callable[..., Any]
@@ -1658,45 +1658,6 @@ def _underlying_function(value: Any) -> Any:
 
 
 #
-# fmt
-#
-
-
-def _format_input(input_spec: CommandInput, parameter_name: str) -> str:
-    match input_spec:
-        case CommandField(name=name):
-            return name or parameter_name
-        case _RecordInput(_, fields):
-            return ",".join(field.name or parameter_name for field in fields)
-        case _LiteralInput(values):
-            return "|".join(values)
-        case _BooleanInput():
-            return parameter_name
-        case _OmittedInput():
-            return ""
-        case _TextInput():
-            return parameter_name
-        case _ChoiceInput(alternatives):
-            return "|".join(
-                _format_input(alternative, parameter_name) for alternative in alternatives
-            )
-
-
-def _format_parameter(parameter: Parameter) -> str:
-    text = _format_input(parameter.parser.input, parameter.name)
-    if parameter.repeat:
-        text += "..."
-    if parameter.optional or parameter.nullable:
-        text = f"[{text}]"
-    return text
-
-
-def format_command_form(name: str, parameters: Iterable[Parameter]) -> str:
-    rendered = ",".join(_format_parameter(parameter) for parameter in parameters)
-    return f"{name} {rendered}" if rendered else name
-
-
-#
 # schema
 #
 
@@ -1864,6 +1825,7 @@ class ParameterSchema:
 
 @dataclass(frozen=True, slots=True)
 class CommandFormSchema:
+    path: str
     parameters: tuple[ParameterSchema, ...]
     doc: str = ""
 
@@ -1884,37 +1846,38 @@ def build_command_schema(commands: Iterable[Command]) -> CommandSchema:
     definitions: dict[str, CommandDefinition] = {}
     entries = {
         command.name: CommandEntry(
-            forms=tuple(
-                CommandFormSchema(
-                    parameters=tuple(
-                        ParameterSchema(
-                            name=parameter.name,
-                            variants=tuple(
-                                CommandVariant(
-                                    input=variant.input,
-                                    values=_command_values(
-                                        variant.annotation, variant.constraints, definitions
-                                    ),
-                                    docs=variant.docs,
-                                )
-                                for variant in parameter.variants
-                            ),
-                            docs=parameter.contract.docs,
-                            optional=parameter.optional,
-                            nullable=parameter.nullable,
-                            repeat=parameter.repeat,
-                        )
-                        for parameter in form.parameters
-                    ),
-                    doc=form.help.strip(),
-                )
-                for form in command.forms
-            ),
+            forms=tuple(_schema_form(form, definitions) for form in command.forms),
             aliases=tuple(sorted(command.aliases)),
         )
         for command in sorted(commands, key=lambda item: item.name)
     }
     return CommandSchema(dict(sorted(definitions.items())), entries)
+
+
+def _schema_form(form: CommandForm, definitions: dict[str, CommandDefinition]) -> CommandFormSchema:
+    parameters = tuple(
+        ParameterSchema(
+            name=parameter.name,
+            variants=tuple(
+                CommandVariant(
+                    input=variant.input,
+                    values=_command_values(variant.annotation, variant.constraints, definitions),
+                    docs=variant.docs,
+                )
+                for variant in parameter.variants
+            ),
+            docs=parameter.contract.docs,
+            optional=parameter.optional,
+            nullable=parameter.nullable,
+            repeat=parameter.repeat,
+        )
+        for parameter in form.parameters
+    )
+    return CommandFormSchema(
+        path=f"{form.source.__module__}.{form.source.__qualname__}",
+        parameters=parameters,
+        doc=form.help.strip(),
+    )
 
 
 def load_command_schema(data: str | bytes) -> CommandSchema:

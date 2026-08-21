@@ -1,0 +1,16 @@
+{% extends "_base/function.html.jinja" %}
+
+{% block contents scoped %}
+  {% set stack_command = function.extra.get("stack_command") %}
+  {% if stack_command %}
+    <p class="doc-stack-command">
+      See stack command:
+      <code><autoref identifier="{{ stack_command.anchor }}" optional hover>{{ stack_command.name }}</autoref></code>
+      {% if stack_command.aliases %}
+        (aliases:
+        {% for alias in stack_command.aliases %}<code><autoref identifier="{{ stack_command.anchor }}" optional hover>{{ alias }}</autoref></code>{% if not loop.last %}, {% endif %}{% endfor %})
+      {% endif %}
+    </p>
+  {% endif %}
+  {{ super() }}
+{% endblock contents %}

@@ -54,7 +54,6 @@ from minisky._internal.command import (
     command,
     compile_parameter,
     declared_commands,
-    format_command_form,
 )
 from minisky._internal.identifiers import normalize_command_name
 from minisky._internal.result import Err, Ok, Result
@@ -76,6 +75,7 @@ class CommandForm:
     """An independently typed callback form of a public stack command."""
 
     callback: Callable[..., object]
+    source: Callable[..., object]
     parameters: tuple[Parameter, ...]
     help: str
 
@@ -163,21 +163,6 @@ class Command:
     @property
     def names(self) -> tuple[str, ...]:
         return (self.name, *self.aliases)
-
-
-def _format_command_usage(command: Command) -> str:
-    return "\n".join(format_command_form(command.name, form.parameters) for form in command.forms)
-
-
-def _format_command_help(command: Command) -> str:
-    sections = []
-    for form in command.forms:
-        usage = f"Usage:\n{format_command_form(command.name, form.parameters)}"
-        sections.append(f"{form.help}\n{usage}" if form.help else usage)
-    message = "\n\n".join(sections)
-    if command.aliases:
-        message += f"\nCommand aliases: {','.join(command.aliases)}"
-    return message
 
 
 def _parse_form(
@@ -342,6 +327,7 @@ class CommandStack:
         parameters = tuple(compile_parameter(parameter) for parameter in command_parameters)
         form = CommandForm(
             callback=callback,
+            source=source_func,
             parameters=parameters,
             help=inspect.cleandoc(help_text or inspect.getdoc(source_func) or ""),
         )
@@ -615,7 +601,7 @@ class CommandStack:
                 self._prepend_commands(pending[index + 1 :])
                 return False
 
-            self._echo_command_result(cmdobj, argstring, result)
+            self._echo_command_result(result)
         return True
 
     def _finish_pending_command(self) -> bool:
@@ -632,7 +618,7 @@ class CommandStack:
         except Exception as exc:  # ruff: ignore[BLE001] commands are arbitrary callbacks
             self._echo_command_exception(pending.name, pending.argstring, exc)
         else:
-            self._echo_command_result(pending.command, pending.argstring, result)
+            self._echo_command_result(result)
         return True
 
     def _prepend_commands(self, commands: list[QueuedCommand]) -> None:
@@ -641,18 +627,12 @@ class CommandStack:
         with self._queue_lock:
             self.cmdstack[0:0] = commands
 
-    def _echo_command_result(
-        self, command_obj: Command, argstring: str, result: Result[str, str | ArgumentIssue]
-    ) -> None:
+    def _echo_command_result(self, result: Result[str, str | ArgumentIssue]) -> None:
         if isinstance(result, Ok):
             text = result.ok()
         else:
-            if isinstance(error := result.err(), ArgumentIssue):
-                text = f"Error: {error}\nUsage:\n{_format_command_usage(command_obj)}"
-            elif not argstring:
-                text = error or _format_command_usage(command_obj)
-            else:
-                text = f"Error: {error or _format_command_usage(command_obj)}"
+            error = result.err()
+            text = f"Error: {error}" if error else ""
         if text:
             self.console.echo(text)
 
@@ -806,21 +786,6 @@ class CommandStack:
         simulation time.
         """
         return self.schedule(self.simulation.simt + time, cmdline)
-
-    @command(name="HELP", aliases=("?",))
-    def help_overview(self) -> Result[str, str]:
-        """Show help for the HELP command."""
-        return Ok(_format_command_help(self.cmddict["HELP"]))
-
-    @command(name="HELP")
-    def show_help(self, cmd: Keyword) -> Result[str, str]:
-        """Show help for a command."""
-        cmdobj = self.cmddict.get(cmd)
-        if cmdobj is None:
-            return Err(f"HELP: Unknown command: {cmd}")
-        return Ok(_format_command_help(cmdobj))
-
-    # NOTE: we do not support writing the command reference to a file
 
     def checkscen(self) -> None:
         """Check if commands from the scenario buffer need to be stacked.
