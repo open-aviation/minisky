@@ -1734,10 +1734,22 @@ CommandConstraint: TypeAlias = (
 
 @dataclass(frozen=True, slots=True)
 class CommandValue:
-    name: str
+    ref: str
     docs: tuple[str, ...] = ()
     unit: str | None = None
     constraints: tuple[CommandConstraint, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class CommandDefinition:
+    name: str
+
+
+def _define_value(value: Any, definitions: dict[str, CommandDefinition]) -> str:
+    identity = _definition_identity(value)
+    if identity.ref not in definitions:
+        definitions[identity.ref] = CommandDefinition(identity.name)
+    return identity.ref
 
 
 def _constraint_schema(constraint: _Constraint) -> CommandConstraint:
@@ -1759,19 +1771,33 @@ def _constraint_schema(constraint: _Constraint) -> CommandConstraint:
     return CommandPredicateConstraint(name)
 
 
-def _value_name(value: Any) -> str:
+class _DefinitionIdentity(NamedTuple):
+    ref: str
+    name: str
+
+
+def _definition_identity(value: Any) -> _DefinitionIdentity:
     if get_origin(value) is Literal:
-        return "str"
+        return _DefinitionIdentity("str", "str")
     origin = get_origin(value)
     semantic = origin if isinstance(origin, type) else value
     if semantic is inspect._empty or semantic is Any:
-        return "Any"
+        return _DefinitionIdentity("typing.Any", "Any")
     if isinstance(semantic, type):
-        return semantic.__name__
-    return str(value).replace("typing.", "").rsplit(".", maxsplit=1)[-1]
+        name = semantic.__name__
+        ref = (
+            name
+            if semantic.__module__ == "builtins"
+            else f"{semantic.__module__}.{semantic.__qualname__}"
+        )
+        return _DefinitionIdentity(ref, name)
+    ref = str(value).replace("typing.", "")
+    return _DefinitionIdentity(ref, ref.rsplit(".", maxsplit=1)[-1])
 
 
-def _value_info(annotation: Any, constraints: tuple[_Constraint, ...]) -> CommandValue:
+def _value_info(
+    annotation: Any, constraints: tuple[_Constraint, ...], definitions: dict[str, CommandDefinition]
+) -> CommandValue:
     import isqx
 
     info = _annotation(annotation)
@@ -1791,7 +1817,7 @@ def _value_info(annotation: Any, constraints: tuple[_Constraint, ...]) -> Comman
         None,
     )
     return CommandValue(
-        name=_value_name(value),
+        ref=_define_value(value, definitions),
         docs=info.docs,
         unit=unit,
         constraints=tuple(_constraint_schema(item) for item in constraints),
@@ -1799,16 +1825,18 @@ def _value_info(annotation: Any, constraints: tuple[_Constraint, ...]) -> Comman
 
 
 def _command_values(
-    annotation: Any, constraints: tuple[_Constraint, ...]
+    annotation: Any,
+    constraints: tuple[_Constraint, ...],
+    definitions: dict[str, CommandDefinition],
 ) -> tuple[CommandValue, ...]:
     info = _annotation(annotation)
     if info.members:
         return tuple(
             value
             for member in info.members
-            for value in _command_values(member, _annotation(member).constraints)
+            for value in _command_values(member, _annotation(member).constraints, definitions)
         )
-    return (_value_info(annotation, constraints),)
+    return (_value_info(annotation, constraints, definitions),)
 
 
 @dataclass(frozen=True, slots=True)
@@ -1848,10 +1876,12 @@ class CommandEntry:
 
 @dataclass(frozen=True, slots=True)
 class CommandSchema:
+    definitions: dict[str, CommandDefinition]
     commands: dict[str, CommandEntry]
 
 
 def build_command_schema(commands: Iterable[Command]) -> CommandSchema:
+    definitions: dict[str, CommandDefinition] = {}
     entries = {
         command.name: CommandEntry(
             forms=tuple(
@@ -1862,7 +1892,9 @@ def build_command_schema(commands: Iterable[Command]) -> CommandSchema:
                             variants=tuple(
                                 CommandVariant(
                                     input=variant.input,
-                                    values=_command_values(variant.annotation, variant.constraints),
+                                    values=_command_values(
+                                        variant.annotation, variant.constraints, definitions
+                                    ),
                                     docs=variant.docs,
                                 )
                                 for variant in parameter.variants
@@ -1882,7 +1914,7 @@ def build_command_schema(commands: Iterable[Command]) -> CommandSchema:
         )
         for command in sorted(commands, key=lambda item: item.name)
     }
-    return CommandSchema(entries)
+    return CommandSchema(dict(sorted(definitions.items())), entries)
 
 
 def load_command_schema(data: str | bytes) -> CommandSchema:

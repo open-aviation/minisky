@@ -486,10 +486,12 @@ def test_command_schema_preserves_union_branch_metadata(runtime: MiniSky) -> Non
         pass
 
     command = runtime.commands.prepare_command(record, name="TESTSCHEMA")
-    parameter = build_command_schema((command,)).commands["TESTSCHEMA"].forms[0].parameters[0]
+    schema = build_command_schema((command,))
+    parameter = schema.commands["TESTSCHEMA"].forms[0].parameters[0]
 
     assert tuple(
-        (variant.values[0].name, variant.values[0].constraints) for variant in parameter.variants
+        (schema.definitions[variant.values[0].ref].name, variant.values[0].constraints)
+        for variant in parameter.variants
     ) == (
         ("CasMps", (CommandBoundConstraint("ge", 0), CommandFiniteConstraint())),
         ("Mach", (CommandBoundConstraint("gt", 0), CommandFiniteConstraint())),
