@@ -4,7 +4,7 @@ The FastAPI application wraps an explicit [`MiniSky`][minisky.MiniSky]
 runtime and steps it continuously with its async runner while the server is
 active. Endpoints expose aircraft state, conflict information, simulation-time
 control, plugin management, a passthrough for stack commands, a per-tick push
-stream (`GET /stream`, WebSocket), and the command dictionary (`GET /commands`).
+stream (`GET /stream`, WebSocket), and active command schemas (`GET /commands`).
 
 [`create_app`][.create_app] constructs the application and stores its runtime on
 `app.state.runtime`. The supported CLI entry point is `minisky server`.
@@ -22,6 +22,7 @@ Interactive OpenAPI docs are served at `/docs`.
 from __future__ import annotations
 
 import asyncio
+import importlib.resources
 from contextlib import asynccontextmanager, suppress
 from io import StringIO
 from pathlib import Path
@@ -43,7 +44,7 @@ from fastapi.staticfiles import StaticFiles
 
 from minisky import MiniSky
 from minisky import quantities as q
-from minisky._internal.command import format_command_form
+from minisky._internal.command import CommandSchema, build_command_schema, load_command_schema
 from minisky._internal.result import Err, Ok, Result
 from minisky.types import AircraftTypeCode, AirspeedKind
 
@@ -287,20 +288,13 @@ async def stack(cmd: str, runtime: Runtime) -> StackResponse:
     return {"command to minisky": cmd, "message": msg}
 
 
-def commands(runtime: Runtime) -> dict[str, str]:
-    """Return canonical command names and their textual forms."""
-    unique = dict.fromkeys(runtime.commands.cmddict.values())
-    return dict(
-        sorted(
-            (
-                command.name,
-                "\n".join(
-                    format_command_form(command.name, form.parameters) for form in command.forms
-                ),
-            )
-            for command in unique
-        )
-    )
+def commands(runtime: Runtime) -> dict[str, CommandSchema]:
+    """Return command schemas for core and currently loaded plugins."""
+    resource = importlib.resources.files("minisky").joinpath("static", "commands.json")
+    schemas = {"minisky": load_command_schema(resource.read_bytes())}
+    for plugin_name, record in sorted(runtime.plugins.loaded_plugins.items()):
+        schemas[plugin_name.lower()] = build_command_schema(record.commands)
+    return schemas
 
 
 async def stream(websocket: WebSocket) -> None:
