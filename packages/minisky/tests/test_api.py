@@ -58,6 +58,16 @@ def test_all_empty_traffic(client: TestClient) -> None:
     assert isinstance(resp.json(), list)
 
 
+def test_commands_returns_structured_schema(client: TestClient) -> None:
+    resp = client.get("/commands")
+
+    assert resp.status_code == 200
+    schema = resp.json()["minisky"]
+    assert "commands" in schema
+    assert "definitions" in schema
+    assert "CRE" in schema["commands"]
+
+
 def test_all_reflects_created_aircraft(client: TestClient, runtime: MiniSky) -> None:
     runtime.traffic.cre(
         "KL001",

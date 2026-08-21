@@ -26,7 +26,9 @@ nav = [
       { "aero" = "api/aero.md" },
       { "geo" = "api/geo.md" },
       { "Plugins" = [
-        { "tangram_multicopter" = "api/multicopter.md" },
+        { "minisky_example" = "api/example.md" },
+        { "minisky_multicopter" = "api/multicopter.md" },
+        { "minisky_tangram" = "api/minisky-tangram.md" },
         { "tangram_minisky" = "api/tangram-minisky.md" },
       ] },
     ] },
@@ -82,7 +84,7 @@ enable_inventory = true
 [project.plugins.mkdocstrings.handlers.python]
 # tangram_minisky lives in its own workspace and is not installed in the docs
 # environment; point griffe at its source so it can analyse it statically.
-paths = ["packages/minisky", "packages/minisky-multicopter/src", "packages/tangram-minisky/src"]
+paths = ["packages/minisky", "packages/minisky-example/src", "packages/minisky-multicopter/src", "packages/minisky-tangram/src", "packages/tangram-minisky/src"]
 inventories = [
   "https://docs.python.org/3/objects.inv",
   "https://numpy.org/doc/stable/objects.inv",
