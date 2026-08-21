@@ -18,6 +18,7 @@ dependencies = [
     "scipy>=1.15.1",
     "shapely>=2.0",
     "isqx>=0.1.2",
+    "annotated-doc>=0.0.4",
 ]
 
 [project.scripts]

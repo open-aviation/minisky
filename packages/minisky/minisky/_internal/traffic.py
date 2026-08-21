@@ -18,6 +18,7 @@ from random import Random
 from typing import TYPE_CHECKING, Annotated, Literal, overload
 
 import numpy as np
+from annotated_doc import Doc
 from annotated_types import Ge, IsFinite, Le, Lt
 
 import minisky.geo as geo  # noqa: PLR0402
@@ -523,15 +524,22 @@ class Traffic(TrafficArrays):
     @command(name="CRECONFS")
     def creconfs(
         self,
-        callsign: Keyword,
-        actype: Keyword,
-        targetidx: AcId,
-        dpsi: ConflictAngleDeg,
-        dcpa: DistanceM,
-        tlosh: TimeS,
-        dH: DistanceM | None = None,
-        tlosv: TimeS | None = None,
-        airspeed: CasMps[IsFinite[Ge0[float]]] | Mach[IsFinite[Gt0[float]]] | None = None,
+        callsign: Annotated[Keyword, Doc("Callsign of the new intruder.")],
+        actype: Annotated[Keyword, Doc("Aircraft type of the new intruder.")],
+        targetidx: Annotated[AcId, Doc("Ownship aircraft index.")],
+        dpsi: Annotated[ConflictAngleDeg, Doc("Angle between ownship and intruder tracks.")],
+        dcpa: Annotated[DistanceM, Doc("Requested horizontal separation at CPA.")],
+        tlosh: Annotated[TimeS, Doc("Time until horizontal loss of separation.")],
+        dH: Annotated[
+            DistanceM | None, Doc("Initial vertical offset; `None` creates a level conflict.")
+        ] = None,
+        tlosv: Annotated[
+            TimeS | None, Doc("Time until vertical loss of separation; defaults to `tlosh`.")
+        ] = None,
+        airspeed: Annotated[
+            CasMps[IsFinite[Ge0[float]]] | Mach[IsFinite[Gt0[float]]] | None,
+            Doc("Explicit intruder CAS/Mach; omitted uses ownship ground speed."),
+        ] = None,
     ) -> None:
         """Create an aircraft in conflict with a target aircraft.
 
@@ -545,15 +553,6 @@ class Traffic(TrafficArrays):
         ownship ground speed.
 
         Args:
-            callsign: Callsign of the new intruder.
-            actype: Aircraft type of the new intruder.
-            targetidx: Ownship aircraft index.
-            dpsi: Angle between ownship and intruder tracks.
-            dcpa: Requested horizontal separation at CPA.
-            tlosh: Time until horizontal loss of separation.
-            dH: Initial vertical offset; `None` creates a level conflict.
-            tlosv: Time until vertical loss of separation; defaults to `tlosh`.
-            airspeed: Explicit intruder CAS/Mach; omitted uses ownship ground speed.
         """
         latref = self.lat[targetidx]
         lonref = self.lon[targetidx]
@@ -732,10 +731,18 @@ class Traffic(TrafficArrays):
         self,
         idx: AcId,
         position: LatLonDeg,
-        alt: StdPressureAltM[IsFinite[float]] | None = None,
-        hdg: TrueHeadingDeg[IsFinite[float]] | MagneticHeadingDeg[IsFinite[float]] | None = None,
+        alt: Annotated[
+            StdPressureAltM[IsFinite[float]] | None,
+            Doc("New altitude; also becomes the selected altitude."),
+        ] = None,
+        hdg: Annotated[
+            TrueHeadingDeg[IsFinite[float]] | MagneticHeadingDeg[IsFinite[float]] | None,
+            Doc("New heading; also becomes the autopilot track command."),
+        ] = None,
         airspeed: CasMps[IsFinite[Ge0[float]]] | Mach[IsFinite[Gt0[float]]] | None = None,
-        vspd: VspdMps | None = None,
+        vspd: Annotated[
+            VspdMps | None, Doc("New vertical speed; setting it disengages VNAV.")
+        ] = None,
     ) -> None:
         """Instantaneously move an aircraft to a new position/state.
 
@@ -745,10 +752,6 @@ class Traffic(TrafficArrays):
         Args:
             idx: Aircraft to move.
             position: New aircraft position.
-            alt: New altitude; also becomes the selected altitude.
-            hdg: New heading; also becomes the autopilot track command.
-            airspeed: New CAS or Mach command.
-            vspd: New vertical speed; setting it disengages VNAV.
         """
         self.lat[idx] = position.lat
         self.lon[idx] = position.lon

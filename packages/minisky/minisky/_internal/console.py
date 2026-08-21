@@ -7,8 +7,9 @@ import io
 import sys
 import traceback
 from collections.abc import Callable
-from typing import Self
+from typing import Annotated, Self
 
+from annotated_doc import Doc
 from colorama import Fore, Style
 
 from minisky._internal.command import Text, command
@@ -86,16 +87,17 @@ class ConsoleIO:
         self.prevtime = 0.0
 
     @command(name="ECHO", aliases=("PRINT",))
-    def echo(self, text: Text, *, flag: int = 0) -> None:
+    def echo(
+        self,
+        text: Annotated[Text, Doc("Message to echo; each line is printed separately.")],
+        *,
+        flag: Annotated[int, Doc("Compatibility argument accepted and ignored.")] = 0,
+    ) -> None:
         """Print a console message.
 
         The message goes to stdout with `prefix`, and to every callback
         registered with `subscribe`. It also overwrites `output_buffer`, so an
         earlier message `read_output_buffer` has not drained yet is lost.
-
-        Args:
-            text: Message to echo; each line is printed separately.
-            flag: Compatibility argument accepted and ignored.
         """
         del flag
         self.output_buffer.truncate(0)

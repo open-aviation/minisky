@@ -1265,6 +1265,7 @@ name = "minisky"
 version = "0.1.0"
 source = { editable = "packages/minisky" }
 dependencies = [
+    { name = "annotated-doc" },
     { name = "colorama" },
     { name = "fastapi", extra = ["standard"] },
     { name = "isqx" },
@@ -1284,6 +1285,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "annotated-doc", specifier = ">=0.0.4" },
     { name = "colorama", specifier = ">=0.4.6" },
     { name = "fastapi", extras = ["standard"], specifier = ">=0.115.7" },
     { name = "isqx", specifier = ">=0.1.2" },

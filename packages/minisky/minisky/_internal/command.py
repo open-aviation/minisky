@@ -90,6 +90,7 @@ from typing import (
 )
 
 import numpy as np
+from annotated_doc import Doc
 from annotated_types import (
     BaseMetadata,
     Ge,
@@ -580,8 +581,14 @@ def _token_parser(input_spec: CommandField) -> CmdParser[str]:
 
 
 _TOKEN_PARSER = _token_parser(CommandField())
-Token = Annotated[str, _TOKEN_PARSER]
-"""A non-empty BlueSky command field parsed as text."""
+Token = Annotated[
+    str,
+    _TOKEN_PARSER,
+    Doc(
+        "A non-empty command field. Spaces or commas terminate bare fields, surrounding "
+        "quotes are removed."
+    ),
+]
 
 
 def parse_keyword(context: CommandParseContext, cursor: CommandCursor) -> ParseResult[str]:
@@ -592,8 +599,11 @@ def parse_keyword(context: CommandParseContext, cursor: CommandCursor) -> ParseR
 
 
 _KEYWORD_PARSER = CmdParser(parse_keyword, CommandField())
-Keyword = Annotated[str, _KEYWORD_PARSER]
-"""A command token normalized to upper case."""
+Keyword = Annotated[
+    str,
+    _KEYWORD_PARSER,
+    Doc("A command token (internally upper-cased)."),
+]
 
 
 @dataclass(frozen=True, slots=True)
@@ -847,12 +857,8 @@ _RUNWAY_HEADING = RunwayHeadingRequest()
 UseRunwayHeading = Annotated[
     RunwayHeadingRequest,
     CmdParser.choices({"*": _RUNWAY_HEADING}),
+    Doc("The `*` literal, meaning derive the heading from another command argument."),
 ]
-"""The `*` heading form, preserved as an explicit callback value.
-
-Only commands that can derive a heading from another argument should include this
-in their annotation, for example `HeadingDeg | UseRunwayHeading`.
-"""
 
 
 def _aircraft_index(
@@ -884,8 +890,11 @@ def parse_aircraft(
     return Ok(token.map(index.ok()))
 
 
-AcId = Annotated[t.AircraftIndex, CmdParser(parse_aircraft, _AIRCRAFT_INPUT)]
-"""An existing aircraft callsign resolved to its traffic-array index."""
+AcId = Annotated[
+    t.AircraftIndex,
+    CmdParser(parse_aircraft, _AIRCRAFT_INPUT),
+    Doc("An existing aircraft callsign."),
+]
 
 
 _AIRCRAFT_SELECTION_INPUT = CommandField(name="aircraft or group", examples=("*", "ALL"))
@@ -913,9 +922,10 @@ def parse_aircraft_selection(
 
 
 AcIdSelection = Annotated[
-    np.ndarray[Any, Any], CmdParser(parse_aircraft_selection, _AIRCRAFT_SELECTION_INPUT)
+    np.ndarray[Any, Any],
+    CmdParser(parse_aircraft_selection, _AIRCRAFT_SELECTION_INPUT),
+    Doc("An aircraft, traffic group, or `*`/`ALL`, resolved to traffic indices."),
 ]
-"""An aircraft, a traffic group, or `*`/`ALL`, resolved to traffic indices."""
 
 
 def aircraft_indices(
@@ -1093,6 +1103,7 @@ class _ArgumentVariant:
     input: CommandInput
     annotation: Any
     constraints: tuple[_Constraint, ...] = ()
+    docs: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -1102,6 +1113,7 @@ class _ArgumentContract:
     parser: CmdParser[Any]
     variants: tuple[_ArgumentVariant, ...]
     nullable: bool = False
+    docs: tuple[str, ...] = ()
 
 
 def _validate_constraints(
@@ -1131,13 +1143,13 @@ def _validate_constraints(
 
 def _contract(
     parser: CmdParser[Any],
-    annotation: Any,
-    constraints: tuple[_Constraint, ...] = (),
+    info: _Annotation,
+    constraints: tuple[_Constraint, ...] | None = None,
     *,
-    nullable: bool = False,
     finalize: Callable[[Any], Any] | None = None,
 ) -> _ArgumentContract:
     input_spec = parser.input
+    constraints = info.constraints if constraints is None else constraints
     if constraints or finalize is not None:
         inner = parser
 
@@ -1154,8 +1166,15 @@ def _contract(
 
     return _ArgumentContract(
         parser=parser,
-        variants=(_ArgumentVariant(input_spec, annotation, constraints),),
-        nullable=nullable,
+        variants=(
+            _ArgumentVariant(
+                input_spec,
+                info.annotation,
+                constraints,
+                info.docs if info.members else (),
+            ),
+        ),
+        nullable=info.nullable,
     )
 
 
@@ -1252,6 +1271,7 @@ class _Annotation:
     converter: Converter[Any] | None
     field: CommandField | None
     constraints: tuple[_Constraint, ...]
+    docs: tuple[str, ...]
 
 
 def _constraints(metadata: Iterable[object]) -> Iterator[_Constraint]:
@@ -1310,6 +1330,7 @@ def _annotation(annotation: Any) -> _Annotation:
         converter=converter,
         field=field_marker,
         constraints=tuple(_constraints(metadata_tuple)),
+        docs=tuple(item.documentation for item in metadata_tuple if isinstance(item, Doc)),
     )
 
 
@@ -1334,7 +1355,11 @@ def _argument_contract(annotation: Any) -> _ArgumentContract:
             raise TypeError("constraints on a command union must annotate its individual branches")
         alternatives = tuple(_argument_contract(member) for member in info.members)
         if len(alternatives) == 1:
-            return replace(alternatives[0], nullable=info.nullable)
+            return replace(
+                alternatives[0],
+                nullable=info.nullable,
+                docs=(*alternatives[0].docs, *info.docs),
+            )
 
         def parse_choice(context: CommandParseContext, cursor: CommandCursor) -> ParseResult[Any]:
             failure: ArgumentIssue | None = None
@@ -1355,6 +1380,7 @@ def _argument_contract(annotation: Any) -> _ArgumentContract:
                 variant for alternative in alternatives for variant in alternative.variants
             ),
             nullable=info.nullable,
+            docs=info.docs,
         )
 
     origin = get_origin(info.base)
@@ -1373,7 +1399,7 @@ def _argument_contract(annotation: Any) -> _ArgumentContract:
     if info.parser is not None:
         if info.field is not None:
             raise TypeError("CommandField cannot override an explicit CmdParser input")
-        return _contract(info.parser, info.annotation, info.constraints, nullable=info.nullable)
+        return _contract(info.parser, info)
 
     if runtime_newtype is not None:
         arguments = get_args(info.base)
@@ -1388,15 +1414,14 @@ def _argument_contract(annotation: Any) -> _ArgumentContract:
         parser = _converter_parser(converter, _merge_field(input_spec, info.field))
         return _contract(
             parser,
-            info.annotation,
+            info,
             _annotation(inner).constraints,
-            nullable=info.nullable,
             finalize=runtime_newtype,
         )
 
     if info.converter is not None:
         parser = _converter_parser(info.converter, _merge_field(CommandField(), info.field))
-        return _contract(parser, info.annotation, info.constraints, nullable=info.nullable)
+        return _contract(parser, info)
 
     if (
         isinstance(info.base, type)
@@ -1433,7 +1458,7 @@ def _argument_contract(annotation: Any) -> _ArgumentContract:
     else:
         raise TypeError(f"unsupported stack annotation: {info.annotation!r}")
 
-    return _contract(parser, info.annotation, info.constraints, nullable=info.nullable)
+    return _contract(parser, info)
 
 
 def _namedtuple_contract(info: _Annotation) -> _ArgumentContract:
@@ -1482,7 +1507,7 @@ def _namedtuple_contract(info: _Annotation) -> _ArgumentContract:
         return Ok(Spanned(namedtuple_type(*values), SourceSpan(start, end)))
 
     parser = CmdParser(parse, _RecordInput(namedtuple_type.__name__, tuple(inputs)))
-    return _contract(parser, info.annotation, info.constraints, nullable=info.nullable)
+    return _contract(parser, info)
 
 
 def compile_parameter(parameter: inspect.Parameter) -> Parameter:
@@ -1513,6 +1538,10 @@ _RESOLVED_POSITION_PARSER = CmdParser(parse_resolved_position, _WAYPOINT_CONTRAC
 ResolvedPositionArg = Annotated[
     t.LatLonDegrees | RunwayPosition,
     _RESOLVED_POSITION_PARSER,
+    Doc(
+        "A waypoint, airport, runway, aircraft, or coordinate expression resolved against "
+        "navigation data and traffic."
+    ),
 ]
 LatLonDeg = Annotated[
     t.LatLonDegrees,
@@ -1706,6 +1735,7 @@ CommandConstraint: TypeAlias = (
 @dataclass(frozen=True, slots=True)
 class CommandValue:
     name: str
+    docs: tuple[str, ...] = ()
     unit: str | None = None
     constraints: tuple[CommandConstraint, ...] = ()
 
@@ -1762,6 +1792,7 @@ def _value_info(annotation: Any, constraints: tuple[_Constraint, ...]) -> Comman
     )
     return CommandValue(
         name=_value_name(value),
+        docs=info.docs,
         unit=unit,
         constraints=tuple(_constraint_schema(item) for item in constraints),
     )
@@ -1784,12 +1815,14 @@ def _command_values(
 class CommandVariant:
     input: CommandInput
     values: tuple[CommandValue, ...]
+    docs: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
 class ParameterSchema:
     name: str
     variants: tuple[CommandVariant, ...]
+    docs: tuple[str, ...] = ()
     optional: bool = False
     nullable: bool = False
     repeat: bool = False
@@ -1830,9 +1863,11 @@ def build_command_schema(commands: Iterable[Command]) -> CommandSchema:
                                 CommandVariant(
                                     input=variant.input,
                                     values=_command_values(variant.annotation, variant.constraints),
+                                    docs=variant.docs,
                                 )
                                 for variant in parameter.variants
                             ),
+                            docs=parameter.contract.docs,
                             optional=parameter.optional,
                             nullable=parameter.nullable,
                             repeat=parameter.repeat,

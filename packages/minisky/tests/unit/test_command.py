@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Annotated, Any, Literal, NamedTuple
 
 import pytest
+from annotated_doc import Doc
 from annotated_types import Gt, IsFinite
 from minisky import MiniSky
 from minisky import quantities as q
@@ -493,6 +494,18 @@ def test_command_schema_preserves_union_branch_metadata(runtime: MiniSky) -> Non
         ("CasMps", (CommandBoundConstraint("ge", 0), CommandFiniteConstraint())),
         ("Mach", (CommandBoundConstraint("gt", 0), CommandFiniteConstraint())),
     )
+
+
+def test_command_schema_keeps_union_docs_on_parameter(runtime: MiniSky) -> None:
+    def record(value: Annotated[int | str, Doc("Command union.")]) -> None:
+        pass
+
+    command = runtime.commands.prepare_command(record, name="TESTSCHEMA")
+    parameter = build_command_schema((command,)).commands["TESTSCHEMA"].forms[0].parameters[0]
+
+    assert parameter.docs == ("Command union.",)
+    assert all(not variant.docs for variant in parameter.variants)
+    assert all(not variant.values[0].docs for variant in parameter.variants)
 
 
 def test_command_schema_keeps_union_inputs(runtime: MiniSky) -> None:
