@@ -43,14 +43,22 @@ import numpy as np
 from minisky import quantities as q
 from minisky._internal.command import (
     ArgumentIssue,
+    CommandBoundConstraint,
     CommandCursor,
+    CommandDefinition,
+    CommandFiniteConstraint,
+    CommandInput,
+    CommandLengthConstraint,
     CommandParseContext,
+    CommandPredicateConstraint,
     Keyword,
     Parameter,
+    ParameterSchema,
     SimTimeS,
     SourceSpan,
     Text,
     TimeS,
+    build_command_schema,
     command,
     compile_parameter,
     declared_commands,
@@ -163,6 +171,117 @@ class Command:
     @property
     def names(self) -> tuple[str, ...]:
         return (self.name, *self.aliases)
+
+
+def _format_constraint(constraint: object) -> str:
+    match constraint:
+        case CommandBoundConstraint(kind=kind, value=value):
+            operator = {"gt": ">", "ge": ">=", "lt": "<", "le": "<="}[kind]
+            return f"{operator} {value}"
+        case CommandLengthConstraint(kind="min_length", value=value):
+            return f"length >= {value}"
+        case CommandLengthConstraint(kind="max_length", value=value):
+            return f"length <= {value}"
+        case CommandFiniteConstraint():
+            return "finite"
+        case CommandPredicateConstraint(name=name):
+            return name
+        case _:
+            raise AssertionError(f"unknown command constraint: {constraint!r}")
+
+
+def _format_parameter_type(
+    parameter: ParameterSchema, definitions: dict[str, CommandDefinition]
+) -> str:
+    variants = []
+    for variant in parameter.variants:
+        values = []
+        for value in variant.values:
+            definition = definitions[value.ref]
+            suffixes = ([value.unit] if value.unit is not None else []) + [
+                _format_constraint(item) for item in value.constraints
+            ]
+            values.append(
+                f"{definition.name}[{', '.join(suffixes)}]" if suffixes else definition.name
+            )
+        variants.append(" | ".join(values) or "value")
+    if parameter.nullable:
+        variants.append("None")
+    return " | ".join(variants)
+
+
+def _format_input(input_spec: CommandInput, *, named: bool = False) -> str:
+    if input_spec.kind == "field":
+        return (
+            f"(e.g. {', '.join(input_spec.examples)})"
+            if input_spec.examples
+            else input_spec.name or ""
+        )
+    if input_spec.kind == "literal":
+        return ", ".join(input_spec.values)
+    if input_spec.kind == "boolean":
+        return f"True: {', '.join(input_spec.true)}; False: {', '.join(input_spec.false)}"
+    if input_spec.kind == "omitted":
+        return "Requires an omitted comma field."
+    if input_spec.kind == "text":
+        examples = f" Examples: {', '.join(input_spec.examples)}" if input_spec.examples else ""
+        return f"Consumes the remaining command text.{examples}"
+    if input_spec.kind == "record":
+        fields = ", ".join(
+            (field.name or "value")
+            + (f" (e.g. {', '.join(field.examples)})" if field.examples else "")
+            for field in input_spec.fields
+        )
+        detail = f"All of: {fields}"
+        return f"{input_spec.name}: {detail}" if named else detail
+    return "One of: " + "; ".join(
+        _format_input(alternative, named=True) for alternative in input_spec.alternatives
+    )
+
+
+def _format_usage_parameter(parameter: ParameterSchema) -> str:
+    input_spec = parameter.input
+    if input_spec.kind == "literal" and parameter.name.startswith("_"):
+        value = "|".join(input_spec.values)
+    elif input_spec.kind == "omitted":
+        value = "<empty-comma-field>"
+    else:
+        value = f"<{parameter.name}>"
+    if parameter.repeat:
+        value += "..."
+    return f"[{value}]" if parameter.optional else value
+
+
+def _format_help_parameter(
+    parameter: ParameterSchema, definitions: dict[str, CommandDefinition]
+) -> list[str]:
+    line = f"    {parameter.name}({_format_parameter_type(parameter, definitions)})"
+    if parameter_docs := " ".join(reversed(parameter.docs)):
+        line += f": {parameter_docs}"
+
+    variants = []
+    for variant in parameter.variants:
+        name = " | ".join(definitions[value.ref].name for value in variant.values) or "value"
+        docs = list(reversed(variant.docs))
+        for value in variant.values:
+            docs.extend(reversed(value.docs))
+            if definition_doc := definitions[value.ref].doc:
+                docs.append(definition_doc)
+        detail = _format_input(variant.input)
+        variants.append((name, " ".join((*docs, detail) if detail else docs)))
+
+    if (len(variants) > 1 or parameter.nullable) and any(detail for _, detail in variants):
+        lines = [line, "        One of:"]
+        lines.extend(
+            f"            {name}" + (f": {detail}" if detail else "") for name, detail in variants
+        )
+        if parameter.nullable:
+            lines.append("            None")
+        return lines
+
+    if len(variants) == 1 and (detail := variants[0][1]):
+        line += (" " if parameter_docs or detail.startswith("(") else ": ") + detail
+    return [line]
 
 
 def _parse_form(
@@ -632,7 +751,7 @@ class CommandStack:
             text = result.ok()
         else:
             error = result.err()
-            text = f"Error: {error}" if error else ""
+            text = f"error: {error}" if error else ""
         if text:
             self.console.echo(text)
 
@@ -786,6 +905,45 @@ class CommandStack:
         simulation time.
         """
         return self.schedule(self.simulation.simt + time, cmdline)
+
+    @command(name="HELP", aliases=("?",))
+    def show_help(self, cmd: Keyword) -> Result[str, str]:
+        """Show help for a command."""
+        command = self.cmddict.get(cmd)
+        if command is None:
+            return Err(f"HELP: Unknown command: {cmd}")
+
+        schema = build_command_schema((command,))
+        entry = schema.commands[command.name]
+        sections = []
+        for form in entry.forms:
+            usage = " ".join(
+                (
+                    command.name,
+                    *(_format_usage_parameter(parameter) for parameter in form.parameters),
+                )
+            )
+            lines = [form.doc, "", usage] if form.doc else [usage]
+            visible = [
+                parameter for parameter in form.parameters if not parameter.name.startswith("_")
+            ]
+            if visible:
+                lines.extend(("", "Args:"))
+                for parameter in visible:
+                    lines.extend(_format_help_parameter(parameter, schema.definitions))
+            sections.append("\n".join(lines))
+
+        if len(sections) > 1:
+            sections = [
+                "\n".join((f"{index}. {first}", *(f"   {line}" if line else "" for line in rest)))
+                for index, section in enumerate(sections, start=1)
+                for first, *rest in (section.splitlines(),)
+            ]
+
+        message = "\n\n".join(sections)
+        if command.aliases:
+            message += f"\n\nAliases: {', '.join(command.aliases)}"
+        return Ok(message)
 
     def checkscen(self) -> None:
         """Check if commands from the scenario buffer need to be stacked.
