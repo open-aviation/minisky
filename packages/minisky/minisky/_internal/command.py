@@ -566,6 +566,7 @@ Keyword = Annotated[
     Doc("A command token (internally upper-cased)."),
 ]
 
+
 # TODO(abraham): we should remove omitted since it is confusing
 # (only WIND and a few bluesky-era commands need it)
 @dataclass(frozen=True, slots=True)
