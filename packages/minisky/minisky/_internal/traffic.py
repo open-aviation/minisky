@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING, Annotated, Literal, overload
 
 import numpy as np
 from annotated_doc import Doc
-from annotated_types import Ge, IsFinite, Le, Lt
+from annotated_types import IsFinite, Le, Lt
 
 import minisky.geo as geo  # noqa: PLR0402
 from minisky import quantities as q
@@ -32,7 +32,9 @@ from minisky._internal.command import (
     Converter,
     DistanceM,
     Keyword,
+    LatitudeArg,
     LatLonDeg,
+    LongitudeArg,
     OnOff,
     ResolvedPositionArg,
     RunwayHeadingRequest,
@@ -95,19 +97,6 @@ def _parse_throttle(value: str) -> float:
     if "%" in number:
         raise ValueError
     return factor * float(number)
-
-
-Throttle = Annotated[
-    IsFinite[Ge0[float]],
-    CommandField(name="throttle", examples=("0.8", "80%")),
-    Converter(_parse_throttle),
-    Le(1),
-]
-
-LatitudeArg = Annotated[q.LatitudeDeg[float], Ge(-90), Le(90)]
-LongitudeArg = Annotated[q.LongitudeDeg[float], Ge(-180), Le(180)]
-ConflictAngleDeg = q.AngleDeg[IsFinite[float]]
-BankLimitDeg = Annotated[q.BankAngleDeg[IsFinite[Gt0[float]]], Lt(90)]
 
 
 _DEFAULT_ALTITUDE = StdPressureAltM(q.ft_to_m(25000.0))
@@ -284,10 +273,12 @@ class Traffic(TrafficArrays):
         callsign: Keyword,
         actype: Keyword,
         position: ResolvedPositionArg,
-        hdg: TrueHeadingDeg[IsFinite[float]]
-        | MagneticHeadingDeg[IsFinite[float]]
-        | UseRunwayHeading
-        | None = None,
+        hdg: (
+            TrueHeadingDeg[IsFinite[float]]
+            | MagneticHeadingDeg[IsFinite[float]]
+            | UseRunwayHeading
+            | None
+        ) = None,
         alt: StdPressureAltM[IsFinite[float]] = _DEFAULT_ALTITUDE,
         airspeed: CasMps[IsFinite[Ge0[float]]] | Mach[IsFinite[Gt0[float]]] = _DEFAULT_AIRSPEED,
     ) -> Result[str, str]:
@@ -365,7 +356,7 @@ class Traffic(TrafficArrays):
     @command(name="MCRE")
     def mcre(
         self,
-        n: int,
+        n: Gt0[int],
         lat_min: LatitudeArg = 53.0,
         lon_min: LongitudeArg = 0.0,
         lat_max: LatitudeArg = 60.0,
@@ -376,8 +367,8 @@ class Traffic(TrafficArrays):
     ) -> Result[str, str]:
         """Create multiple aircraft at random positions in a lat/lon box.
 
-        Implements the `MCRE` stack command. Callsigns are generated randomly
-        (two letters plus a sequence number). Heading is drawn uniformly from
+        Callsigns are generated randomly (two letters plus a sequence number).
+        Heading is drawn uniformly from
         1-360 deg; when not given, altitude is drawn from 2000-39000 ft and
         calibrated airspeed from 250-450 kts. The default area is the North Sea region.
         """
@@ -527,8 +518,10 @@ class Traffic(TrafficArrays):
         callsign: Annotated[Keyword, Doc("Callsign of the new intruder.")],
         actype: Annotated[Keyword, Doc("Aircraft type of the new intruder.")],
         targetidx: Annotated[AcId, Doc("Ownship aircraft index.")],
-        dpsi: Annotated[ConflictAngleDeg, Doc("Angle between ownship and intruder tracks.")],
-        dcpa: Annotated[DistanceM, Doc("Requested horizontal separation at CPA.")],
+        dpsi: Annotated[
+            q.AngleDeg[IsFinite[float]], Doc("Angle between ownship and intruder tracks.")
+        ],
+        dcpa: Annotated[Ge0[DistanceM], Doc("Requested horizontal separation at CPA.")],
         tlosh: Annotated[TimeS, Doc("Time until horizontal loss of separation.")],
         dH: Annotated[
             DistanceM | None, Doc("Initial vertical offset; `None` creates a level conflict.")
@@ -543,16 +536,13 @@ class Traffic(TrafficArrays):
     ) -> None:
         """Create an aircraft in conflict with a target aircraft.
 
-        Implements the `CRECONFS` stack command. The intruder position, track
-        and airspeed are computed such that, relative to the target aircraft,
+        The intruder position, track and airspeed are computed such that, relative to the target aircraft,
         separation is lost after the given time with the given distance at
         the closest point of approach. The protected-zone radius and height
         from the config (`asas_pzr`, `asas_pzh`) are taken into account. Omitting
         the vertical offset creates a level conflict; omitted vertical LoS time
         defaults to the horizontal LoS time, and omitted airspeed uses the
         ownship ground speed.
-
-        Args:
         """
         latref = self.lat[targetidx]
         lonref = self.lon[targetidx]
@@ -748,10 +738,6 @@ class Traffic(TrafficArrays):
 
         Optional state values are left unchanged when omitted.
         Setting a vertical speed disengages VNAV.
-
-        Args:
-            idx: Aircraft to move.
-            position: New aircraft position.
         """
         self.lat[idx] = position.lat
         self.lon[idx] = position.lon
@@ -986,7 +972,11 @@ class Traffic(TrafficArrays):
         )
 
     @command(name="BANK")
-    def set_bank_limit(self, idx: AcIdSelection, bankangle: BankLimitDeg) -> Result[str, str]:
+    def set_bank_limit(
+        self,
+        idx: AcIdSelection,
+        bankangle: Annotated[q.BankAngleDeg[IsFinite[Gt0[float]]], Lt(90)],
+    ) -> Result[str, str]:
         """Set the bank-angle limit for an aircraft or selection."""
         self.ap.bankdef[idx] = np.radians(bankangle)
         return Ok("")
@@ -1012,7 +1002,16 @@ class Traffic(TrafficArrays):
         return Ok("")
 
     @command(name="THR")
-    def set_throttle(self, idx: AcId, throttle: Throttle) -> Result[str, str]:
+    def set_throttle(
+        self,
+        idx: AcId,
+        throttle: Annotated[
+            IsFinite[Ge0[float]],
+            CommandField(name="throttle", examples=("0.8", "80%")),
+            Converter(_parse_throttle),
+            Le(1),
+        ],
+    ) -> Result[str, str]:
         """Disable autothrottle and set a fixed throttle fraction."""
         self.swats[idx] = False
         self.thr[idx] = throttle
@@ -1044,8 +1043,7 @@ class Traffic(TrafficArrays):
     def clrcrecmd(self) -> Result[str, str]:
         """Clear the list of commands issued for newly created aircraft.
 
-        Implements the `CLRCRECMD` stack command, removing all command lines
-        previously added with `CRECMD`.
+        Remove all command lines previously added with `CRECMD`.
         """
         ncrecmd = len(self.crecmdlist)
         if ncrecmd == 0:

@@ -33,5 +33,5 @@ docs-serve:
 docs-build:
     uv run --group docs zensical build
 
-command-schema:
+gen-command-schema:
     uv run scripts/command_schema.py export minisky minisky_example minisky_example_customautopilot minisky_multicopter minisky_tangram

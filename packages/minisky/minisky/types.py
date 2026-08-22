@@ -109,7 +109,7 @@ class CasMps(RuntimeNewType[_T]):
 
 @dataclass(frozen=True, slots=True)
 class Mach(RuntimeNewType[_T]):
-    """Mach number preserved as a dimensionless value."""
+    """Mach number."""
 
     value: q.MachNumber[_T]
 

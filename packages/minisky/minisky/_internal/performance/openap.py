@@ -491,9 +491,8 @@ class OpenAP(TrafficArrays):
     def show_performance(self, acidx: AcId) -> Result[str, str]:
         """Report the current performance state of an aircraft.
 
-        Implements the PERFSTATS stack command output: flight phase, thrust,
-        drag, fuel flow, speed and vertical-speed envelopes, and ceiling in
-        aviation units (kN, kg/s, kts, fpm, ft).
+        Includes flight phase, thrust, drag, fuel flow, speed and vertical-speed
+        envelopes, and ceiling in aviation units (kN, kg/s, kts, fpm, ft).
         """
         return Ok(
             f"Flight phase: {ph.readable_phase(FlightPhase(int(self.phase[acidx])))}\n"

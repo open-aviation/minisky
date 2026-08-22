@@ -102,7 +102,7 @@ def test_unclosed_quote_has_source_span() -> None:
     result = cursor.next_command()
     assert isinstance(result, Err)
     issue = result.err()
-    assert issue.message == 'expected a closing " quote, but got end of input'
+    assert issue.message == "expected a closing \" quote, but got 'end of input'"
     assert issue.span == SourceSpan(8, len(text))
 
 
@@ -435,7 +435,7 @@ def test_heading_wildcard_is_not_global_heading_syntax(
     result = heading.parse_arguments("HDGREF *")
 
     assert isinstance(result, Err)
-    assert "got *" in result.err().message
+    assert "got '*'" in result.err().message
 
 
 def test_cre_runway_heading_marker_requires_runway(runtime: MiniSky) -> None:
