@@ -37,7 +37,11 @@
 
 {% macro value_docs(values) -%}
   {%- for value in values %}
-    {%- if value.docs %}{{ docs(value.docs) }}{% if not loop.last %} {% endif %}{% endif -%}
+    {%- set definition = command_definitions.get(value.ref) -%}
+    {%- if value.docs %}{{ docs(value.docs) }}
+    {%- elif definition and definition.doc %}{{ definition.doc }}
+    {%- endif -%}
+    {%- if not loop.last %} {% endif -%}
   {%- endfor %}
 {%- endmacro %}
 
@@ -51,7 +55,7 @@
   {%- for value in values if value.constraints %} Constraints{% if values | length > 1 %} for {{ value_name(value) }}{% endif %}: {{ constraint_list(value.constraints) }}.{% endfor %}
   Internal Type{% if values | length > 1 %}s{% endif %}:
   {%- for value in values %} {{ internal_type(value) }}{% if not loop.last %} or{% endif %}{% endfor %}.
-  {%- for value in values if value.unit %} Internal Unit: <code>{{ value.unit }}</code>.{% endfor %}
+  {%- for value in values if value.unit %} Internal Unit: {{ value.unit }}.{% endfor %}
 {%- endmacro %}
 
 {% macro input_detail(input) -%}

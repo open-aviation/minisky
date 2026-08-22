@@ -51,9 +51,6 @@ class PriorityCode(Enum):
     LAY2 = "LAY2"
 
 
-PriorityCodeArg = Literal["FF1", "FF2", "FF3", "LAY1", "LAY2"]
-ResolutionRadiusM = Ge0[DistanceM]
-ResolutionHeightM = Ge0[DistanceM]
 HorizontalResolutionMethod = Literal["BOTH", "SPD", "HDG", "NONE", "ON", "OFF", "OF"]
 VerticalResolutionMethod = Literal["NONE", "ON", "OFF", "OF", "V/S"]
 
@@ -331,7 +328,11 @@ class ConflictResolution(TrafficArrays):
         return self.priority_status()
 
     @command(name="PRIORULES")
-    def set_priority_rules(self, flag: OnOff, priority_code: PriorityCodeArg) -> Result[str, str]:
+    def set_priority_rules(
+        self,
+        flag: OnOff,
+        priority_code: Literal["FF1", "FF2", "FF3", "LAY1", "LAY2"],
+    ) -> Result[str, str]:
         """Enable or disable priority rules using a selected rule code."""
         return self.configure_priority(flag, PriorityCode(priority_code))
 
@@ -411,7 +412,7 @@ class ConflictResolution(TrafficArrays):
         )
 
     @command(name="RSZONER")
-    def set_horizontal_resolution_zone(self, zoner: ResolutionRadiusM) -> Result[str, str]:
+    def set_horizontal_resolution_zone(self, zoner: Ge0[DistanceM]) -> Result[str, str]:
         """Set the absolute horizontal resolution-zone radius."""
         if isinstance(available := self._horizontal_absolute_zone_available(), Err):
             return available
@@ -440,7 +441,7 @@ class ConflictResolution(TrafficArrays):
         )
 
     @command(name="RSZONEDH")
-    def set_vertical_resolution_zone(self, zonedh: ResolutionHeightM) -> Result[str, str]:
+    def set_vertical_resolution_zone(self, zonedh: Ge0[DistanceM]) -> Result[str, str]:
         """Set the absolute vertical resolution-zone height."""
         if isinstance(available := self._vertical_absolute_zone_available(), Err):
             return available

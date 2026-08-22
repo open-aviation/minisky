@@ -820,13 +820,6 @@ def _resolve_runway_reference(
     return Ok(RunwayPosition(LatLonDegrees(float(lat), float(lon)), float(heading)))
 
 
-RunwayArg = Annotated[
-    RunwayReference,
-    CommandField(name="runway", examples=("EHAM/RW06", "LFPG/RWY23")),
-    Converter(_parse_runway_reference),
-]
-
-
 def _waypoint_mode_status(traffic: Traffic, acidx: AircraftIndex) -> Result[str, str]:
     acrte = traffic.ap.route[acidx]
     if acrte.swflyturn:
@@ -1092,9 +1085,6 @@ def _parse_at_constraints(
             return Err(ArgumentIssue.expected("CAS or Mach", speed_text, token.span))
 
     return Ok(Spanned(AtConstraints(altitude, airspeed), token.span))
-
-
-AtConstraintsArg = Annotated[AtConstraints, CmdParser(_parse_at_constraints, _AT_CONSTRAINTS_INPUT)]
 
 
 @dataclass(frozen=True, slots=True)
@@ -1553,7 +1543,14 @@ class RouteCommands:
 
     @command(name="ADDWPT")
     def add_takeoff_waypoint_from_runway(
-        self, acidx: AcId, _takeoff: Literal["TAKEOFF"], runway: RunwayArg
+        self,
+        acidx: AcId,
+        _takeoff: Literal["TAKEOFF"],
+        runway: Annotated[
+            RunwayReference,
+            CommandField(name="runway", examples=("EHAM/RW06", "LFPG/RWY23")),
+            Converter(_parse_runway_reference),
+        ],
     ) -> Result[str, str]:
         """Add a takeoff waypoint from an explicit runway."""
         if isinstance(resolved := _resolve_runway_reference(self.traffic, runway), Err):
@@ -1717,7 +1714,12 @@ class RouteCommands:
 
     @command(name="AT")
     def set_at_constraints(
-        self, acidx: AcId, atwp: Keyword, constraints: AtConstraintsArg
+        self,
+        acidx: AcId,
+        atwp: Keyword,
+        constraints: Annotated[
+            AtConstraints, CmdParser(_parse_at_constraints, _AT_CONSTRAINTS_INPUT)
+        ],
     ) -> Result[str, str]:
         """Set or clear the altitude/airspeed constraint pair at a route waypoint."""
         if isinstance(target_result := _at_waypoint(self.traffic, acidx, atwp), Err):

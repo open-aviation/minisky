@@ -111,7 +111,7 @@ class ArgumentIssue:
     def expected(
         cls, expected: str, actual: object, span: SourceSpan | None = None
     ) -> ArgumentIssue:
-        return cls(f"expected {expected}, but got {actual}", span)
+        return cls(f"expected {expected}, but got '{actual}'", span)
 
     def with_span(self, span: SourceSpan) -> ArgumentIssue:
         return replace(self, span=span)
@@ -549,6 +549,8 @@ Token = Annotated[
     ),
 ]
 
+# TODO(abraham): in the future we should remove Keyword and just use Converter(lambda s: s.upper())
+
 
 def parse_keyword(context: CommandParseContext, cursor: CommandCursor) -> ParseResult[str]:
     if isinstance(result := _TOKEN_PARSER(context, cursor), Err):
@@ -564,7 +566,8 @@ Keyword = Annotated[
     Doc("A command token (internally upper-cased)."),
 ]
 
-
+# TODO(abraham): we should remove omitted since it is confusing
+# (only WIND and a few bluesky-era commands need it)
 @dataclass(frozen=True, slots=True)
 class OmittedField:
     """Sentinel indicating a required empty comma field was present."""
@@ -880,14 +883,14 @@ def _parse_waypoint_reference(value: str) -> t.WaypointReference:
     return name
 
 
-_LatitudeArg = Annotated[
+LatitudeArg = Annotated[
     q.LatitudeDeg[IsFinite[float]],
     CommandField(name="latitude", examples=("52.5", "N52'30'")),
     Converter(txt2lat),
     Ge(-90),
     Le(90),
 ]
-_LongitudeArg = Annotated[
+LongitudeArg = Annotated[
     q.LongitudeDeg[IsFinite[float]],
     CommandField(name="longitude", examples=("4.5", "E004'30'")),
     Converter(txt2lon),
@@ -904,8 +907,8 @@ _WaypointReferenceArg = Annotated[
 class CoordinateWaypoint(NamedTuple):
     """A waypoint expressed directly as latitude and longitude."""
 
-    latitude: _LatitudeArg
-    longitude: _LongitudeArg
+    latitude: LatitudeArg
+    longitude: LongitudeArg
 
     @property
     def coordinates(self) -> t.LatLonDegrees:
@@ -1678,12 +1681,16 @@ class CommandValue:
 @dataclass(frozen=True, slots=True)
 class CommandDefinition:
     name: str
+    doc: str = ""
 
 
 def _define_value(value: Any, definitions: dict[str, CommandDefinition]) -> str:
     identity = _definition_identity(value)
     if identity.ref not in definitions:
-        definitions[identity.ref] = CommandDefinition(name=identity.name)
+        doc = ""
+        if identity.semantic is not None and issubclass(identity.semantic, t.RuntimeNewType):
+            doc = (inspect.getdoc(identity.semantic) or "").split("\n\n", maxsplit=1)[0]
+        definitions[identity.ref] = CommandDefinition(name=identity.name, doc=doc)
     return identity.ref
 
 
