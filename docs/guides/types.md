@@ -50,7 +50,7 @@ For performance-critical internal logic, we strongly recommend using [`typing.An
 
 #### Commands
 
-When defining your own [plugin command](./commands.md), simply annotate the arguments of your method:
+When defining your own [plugin command](./commands.md#custom-parsers), simply annotate the arguments of your method:
 
 ```py
 from minisky import command
