@@ -15,6 +15,7 @@ from minisky._internal.command import (
     CommandCursor,
     CommandField,
     CommandFiniteConstraint,
+    Converter,
     CoordinateWaypoint,
     LatLonDeg,
     NamedWaypoint,
@@ -209,6 +210,18 @@ class _Pair(NamedTuple):
     right: int
 
 
+def _parse_pair(value: str) -> _Pair:
+    left, right = value.split("/", maxsplit=1)
+    return _Pair(int(left), int(right))
+
+
+_PackedPair = Annotated[
+    _Pair,
+    CommandField(name="pair", examples=("1/2",)),
+    Converter(_parse_pair),
+]
+
+
 def test_variadic_namedtuple_parses_repeated_records(runtime: MiniSky) -> None:
     received: list[tuple[_Pair, ...]] = []
 
@@ -216,6 +229,7 @@ def test_variadic_namedtuple_parses_repeated_records(runtime: MiniSky) -> None:
         received.append(pairs)
 
     prepared = runtime.commands.prepare_command(record, name="TESTRECORD")
+
     assert isinstance(prepared("1,2,3,4"), Ok)
     assert received == [(_Pair(1, 2), _Pair(3, 4))]
 
@@ -397,7 +411,7 @@ def test_cre_omitted_heading_field(run_cmd: RunCommand, runtime: MiniSky) -> Non
 
     assert "created" in output.lower()
     index = runtime.traffic.idx("COMPAT1")
-    assert index >= 0
+    assert index is not None
     assert runtime.traffic.hdg[index] == pytest.approx(45.0)
 
 
@@ -456,25 +470,6 @@ def test_route_waypoint_membership_is_validated_by_route_command(
     assert "Waypoint MISSING not found in the route of ROUTE1" in error
 
 
-def test_command_schema_describes_existing_forms(runtime: MiniSky) -> None:
-    def record(value: int) -> None:
-        """Record one integer."""
-
-    command = runtime.commands.prepare_command(record, name="TESTSCHEMA", aliases=("TS",))
-    schema = build_command_schema((command,))
-
-    assert tuple(schema.commands) == ("TESTSCHEMA",)
-    entry = schema.commands["TESTSCHEMA"]
-    assert entry.aliases == ("TS",)
-    form = entry.forms[0]
-    assert form.doc == "Record one integer."
-    assert len(form.parameters) == 1
-    parameter = form.parameters[0]
-    assert parameter.name == "value"
-    assert parameter.input == CommandField()
-    assert len(parameter.variants) == 1
-
-
 def test_command_schema_preserves_union_branch_metadata(runtime: MiniSky) -> None:
     def record(value: CasMps[IsFinite[Ge0[float]]] | Mach[IsFinite[Gt0[float]]]) -> None:
         pass
@@ -490,6 +485,10 @@ def test_command_schema_preserves_union_branch_metadata(runtime: MiniSky) -> Non
         ("CasMps", (CommandBoundConstraint("ge", 0), CommandFiniteConstraint())),
         ("Mach", (CommandBoundConstraint("gt", 0), CommandFiniteConstraint())),
     )
+    assert tuple(
+        variant.input.name if isinstance(variant.input, CommandField) else None
+        for variant in parameter.variants
+    ) == ("CAS", "Mach")
 
 
 def test_command_schema_keeps_union_docs_on_parameter(runtime: MiniSky) -> None:
@@ -504,13 +503,13 @@ def test_command_schema_keeps_union_docs_on_parameter(runtime: MiniSky) -> None:
     assert all(not variant.values[0].docs for variant in parameter.variants)
 
 
-def test_command_schema_keeps_union_inputs(runtime: MiniSky) -> None:
-    def record(value: int | str | None = None) -> None:
+def test_command_schema_converter_keeps_namedtuple_atomic(runtime: MiniSky) -> None:
+    def record(value: _PackedPair) -> None:
         pass
 
-    command = runtime.commands.prepare_command(record, name="TESTUNION")
-    parameter = build_command_schema((command,)).commands["TESTUNION"].forms[0].parameters[0]
+    command = runtime.commands.prepare_command(record, name="TESTSCHEMA")
+    schema = build_command_schema((command,))
+    parameter = schema.commands["TESTSCHEMA"].forms[0].parameters[0]
 
-    assert len(parameter.variants) == 2
-    assert parameter.nullable
-    assert all(variant.input == CommandField() for variant in parameter.variants)
+    assert parameter.input == CommandField(name="pair", examples=("1/2",))
+    assert schema.definitions[parameter.variants[0].values[0].ref].name == "_Pair"

@@ -1,68 +1,20 @@
 """Typed stack-command declarations and parsers.
 
-Command grammar. Alphabetic terminals are case-insensitive; semantic names such
-as `aircraft` are resolved against runtime state after syntax parsing.
+Grammar:
 
 ```text
-batch              = [ command ], { optional-space, ";", optional-space, [ command ] } ;
-command            = field, { separator, field } ;
-field              = argument | omitted-field ;
-separator          = spaces | optional-space, ",", optional-space ;
-omitted-field      = /* empty field created by a comma, e.g. A,,B */ ;
-argument           = bare | single-quoted | double-quoted ;
-bare               = bare-char, { bare-char } ;
-single-quoted      = "'", { any-char-except-single-quote }, "'" ;
-double-quoted      = '"', { any-char-except-double-quote }, '"' ;
-bare-char          = any-char-except-space-comma-semicolon ;
-spaces             = space, { space } ;
-optional-space     = { space } ;
-
-digit              = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" ;
-digits             = digit, { digit } ;
-sign               = "+" | "-" ;
-unsigned-number    = digits, [ ".", { digit } ] | ".", digits ;
-number             = [ sign ], unsigned-number ;
-
-boolean            = "TRUE" | "YES" | "Y" | "1" | "ON"
-                   | "FALSE" | "NO" | "N" | "0" | "OFF" ;
-time               = number | [ digits ], ":", number
-                   | [ digits ], ":", [ digits ], ":", number ;
-altitude           = pressure-altitude | msl-altitude ;
-pressure-altitude  = flight-level | standard-altitude ;
-standard-altitude  = altitude-value, "[STD]" ;
-msl-altitude       = altitude-value, "[MSL]" ;
-flight-level       = "FL", digits ;                  # hundreds of feet, standard pressure
-altitude-value     = number, altitude-unit ;
-altitude-unit      = "FT" | "M" ;
-distance           = number, distance-unit ;
-distance-unit      = "M" | "KM" | "NM" | "FT" ;
-
-speed              = mach | speed-value ;
-selected-airspeed  = mach | cas ;
-unit-speed         = number, speed-unit ;
-cas                = unsigned-number, speed-unit, "[CAS]" ;
-tas                = unsigned-number, speed-unit, "[TAS]" ;
-gs                 = unsigned-number, speed-unit, "[GS]" ;
-speed-value        = cas | tas | gs ;
-speed-unit         = "MPS" | "FT/MIN" | "KT" | "KMH" ;
-mach               = "M", (digits, ".", digits | ".", digits) ;
-
-heading            = true-heading | magnetic-heading ;
-true-heading       = number, [ "T" ] ;
-magnetic-heading   = number, "M" ;
-ground-track       = number, "TRK" ;
-runway-heading     = "*" ;
-
-coordinate         = latitude, separator, longitude ;
-latitude           = number | [ "N" | "S" ], dms-angle ;
-longitude          = number | [ "E" | "W" ], dms-angle ;
-dms-angle          = unsigned-number, { dms-mark, unsigned-number }, [ dms-mark ] ;
-dms-mark           = "'" | '"' | "°" ;
-waypoint           = coordinate | name | name, separator, runway ;
-runway             = "RW", [ "Y" ], name ;
-aircraft           = name ;                 # must resolve to an aircraft
-aircraft-selection = "*" | "ALL" | name ;   # name may resolve to aircraft/group
-name               = bare ;
+batch          = [ command ], { optional-space, ";", optional-space, [ command ] } ;
+command        = field, { separator, field } ;
+field          = argument | omitted-field ;
+separator      = spaces | optional-space, ",", optional-space ;
+omitted-field  = /* empty field created by a comma, e.g. A,,B */ ;
+argument       = bare | single-quoted | double-quoted ;
+bare           = bare-char, { bare-char } ;
+single-quoted  = "'", { any-char-except-single-quote }, "'" ;
+double-quoted  = '"', { any-char-except-double-quote }, '"' ;
+bare-char      = any-char-except-space-comma-semicolon ;
+spaces         = space, { space } ;
+optional-space = { space } ;
 ```
 """
 
@@ -120,11 +72,8 @@ if TYPE_CHECKING:
     from minisky._internal.stack import Command, CommandForm
     from minisky._internal.traffic import Traffic
 
-CommandCallback = Callable[..., Any]
-CommandTarget = TypeVar("CommandTarget", bound=CommandCallback)
 ValueT_co = TypeVar("ValueT_co", covariant=True)
 MappedT = TypeVar("MappedT")
-_COMMAND = "__minisky_command__"
 
 
 #
@@ -183,7 +132,7 @@ ParseResult: TypeAlias = Result[Spanned[ValueT_co], ArgumentIssue]
 
 @dataclass(frozen=True, slots=True)
 class _LexicalField:
-    """One lexical field; `None` is the grammar's omitted-field variant."""
+    """A lexical field; `None` is the grammar's omitted-field variant."""
 
     value: str | None
     span: SourceSpan
@@ -377,7 +326,11 @@ class CommandCursor:
 
 @dataclass(frozen=True, slots=True)
 class CommandParseContext:
-    """Read-only runtime services available while parsing a command value."""
+    """Read-only runtime services available while parsing a command value.
+
+    BlueSky uses mutable `bs.ref` fields as cross-argument registers. We
+    intentionally expose only runtime lookup services here.
+    """
 
     traffic: Traffic
     navigation: Navdatabase
@@ -394,6 +347,8 @@ class CommandField:
 
 @dataclass(frozen=True, slots=True)
 class _RecordInput:
+    """NamedTuple fields consumed in declaration order."""
+
     kind: Literal["record"] = field(init=False, default="record", repr=False)
     name: str
     fields: tuple[CommandField, ...]
@@ -401,12 +356,16 @@ class _RecordInput:
 
 @dataclass(frozen=True, slots=True)
 class _LiteralInput:
+    """A finite set of case-insensitive command spellings."""
+
     kind: Literal["literal"] = field(init=False, default="literal", repr=False)
     values: tuple[str, ...]
 
 
 @dataclass(frozen=True, slots=True)
 class _BooleanInput:
+    """Case-insensitive spellings mapped to true and false."""
+
     kind: Literal["boolean"] = field(init=False, default="boolean", repr=False)
     true: tuple[str, ...]
     false: tuple[str, ...]
@@ -414,17 +373,23 @@ class _BooleanInput:
 
 @dataclass(frozen=True, slots=True)
 class _OmittedInput:
+    """A required empty comma field, for example the middle field in `A,,B`."""
+
     kind: Literal["omitted"] = field(init=False, default="omitted", repr=False)
 
 
 @dataclass(frozen=True, slots=True)
 class _TextInput:
+    """The remaining command text through the current batch boundary."""
+
     kind: Literal["text"] = field(init=False, default="text", repr=False)
     examples: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
 class _ChoiceInput:
+    """Alternative command-input forms tried from left to right."""
+
     kind: Literal["choice"] = field(init=False, default="choice", repr=False)
     alternatives: tuple[CommandInput, ...]
 
@@ -484,15 +449,15 @@ ParseFunction: TypeAlias = Callable[[CommandParseContext, CommandCursor], ParseR
 
 @dataclass(frozen=True, slots=True)
 class CmdParser(Generic[ValueT_co]):
-    """Executable parser paired with its inspectable command-input contract."""
+    """Executable parser paired with its inspectable command-input contract.
+
+    Custom parsers may advance only the supplied cursor. `CmdParser` restores the
+    cursor automatically when they return `Err`. The `input` object is also used
+    by runtime parse errors, the tracked command schema, and documentation rendering.
+    """
 
     func: ParseFunction[ValueT_co]
     input: CommandInput
-
-    @classmethod
-    def fields(cls, func: ParseFunction[ValueT_co], names: tuple[str, ...]) -> CmdParser[ValueT_co]:
-        """Temporary compatibility for bespoke multi-field parsers."""
-        return cls(func, _RecordInput("record", tuple(CommandField(name) for name in names)))
 
     @staticmethod
     def choices(mapping: Mapping[str, MappedT]) -> CmdParser[MappedT]:
@@ -531,9 +496,9 @@ class Converter(Generic[MappedT]):
     func: Callable[[str], MappedT]
 
 
-def _converter_parser(
-    converter: Converter[MappedT], input_spec: CommandField
-) -> CmdParser[MappedT]:
+def _converter_parser(converter: Converter[MappedT], field: CommandField) -> CmdParser[MappedT]:
+    input_spec = CommandField(field.name, field.examples)
+
     def parse(_context: CommandParseContext, cursor: CommandCursor) -> ParseResult[MappedT]:
         return _parse_field(cursor, converter.func, input_spec)
 
@@ -548,6 +513,7 @@ def _converter_parser(
 def _parse_field(
     cursor: CommandCursor, converter: Callable[[str], MappedT], input_spec: CommandField
 ) -> ParseResult[MappedT]:
+    """Consume a field and convert it; e.g. `"42"` through `int` becomes `42`."""
     expected = _input_expected(input_spec)
     result = cursor.next_value(expected)
     if isinstance(result, Err):
@@ -558,13 +524,6 @@ def _parse_field(
     except ValueError:
         return Err(ArgumentIssue.expected(expected, token.value, token.span))
     return Ok(token.map(value))
-
-
-def parse_field(
-    cursor: CommandCursor, converter: Callable[[str], MappedT], expected: str
-) -> ParseResult[MappedT]:
-    """Compatibility helper for remaining bespoke field parsers."""
-    return _parse_field(cursor, converter, CommandField(expected))
 
 
 def _token_parser(input_spec: CommandField) -> CmdParser[str]:
@@ -659,8 +618,6 @@ def _parse_boolean(_context: CommandParseContext, cursor: CommandCursor) -> Pars
     return Err(ArgumentIssue.expected(_input_expected(_BOOLEAN_INPUT), token.value, token.span))
 
 
-_INT_PARSER = _converter_parser(Converter(int), CommandField())
-_FLOAT_PARSER = _converter_parser(Converter(float), CommandField())
 _ON_OFF_PARSER = CmdParser(_parse_boolean, _BOOLEAN_INPUT)
 OnOff = Annotated[bool, _ON_OFF_PARSER]
 
@@ -690,11 +647,6 @@ def _parse_pressure_altitude(value: str) -> q.PressureAltitudeM[float]:
     if (match := _STD_ALTITUDE.fullmatch(value)) is None:
         raise ValueError
     return _vertical_metres(match.group("value"), match.group("unit"))
-
-
-def parse_pressure_altitude_value(value: str) -> t.StdPressureAltM[float]:
-    """Compatibility wrapper for bespoke parsers not yet migrated."""
-    return t.StdPressureAltM(_parse_pressure_altitude(value))
 
 
 def _parse_msl_altitude(value: str) -> q.MslAltitudeM[float]:
@@ -731,11 +683,6 @@ DistanceM = Annotated[
     CommandField(name="distance", examples=("5NM", "9.26KM", "9260M", "3000FT")),
     Converter(parse_distance_value),
 ]
-"""Quantity-kind-free distance normalized to metres.
-
-An explicit unit is required. Use forms such as `5NM`, `9.26KM`, `9260M`,
-or `3000FT`.
-"""
 
 
 def parse_speed_value(value: str) -> q.SpeedMps[float]:
@@ -761,11 +708,6 @@ SpeedMps = Annotated[
     CommandField(name="speed", examples=("10MPS", "600FT/MIN", "20KT", "90KMH")),
     Converter(parse_speed_value),
 ]
-"""Quantity-kind-free speed normalized to metres per second.
-
-An explicit unit is required. Use forms such as `10MPS`, `600FT/MIN`, `20KT`,
-or `90KMH`.
-"""
 
 
 def _parse_cas(value: str) -> q.CalibratedAirspeedMps[float]:
@@ -773,11 +715,6 @@ def _parse_cas(value: str) -> q.CalibratedAirspeedMps[float]:
         raise ValueError
     unit_value = f"{match.group('value')}{match.group('unit')}"
     return parse_speed_value(unit_value)
-
-
-def parse_cas_value(value: str) -> t.CasMps[float]:
-    """Compatibility wrapper for bespoke callers not yet migrated."""
-    return t.CasMps(_parse_cas(value))
 
 
 def _parse_mach(value: str) -> q.MachNumber[float]:
@@ -870,7 +807,7 @@ def _aircraft_index(
     return Ok(index)
 
 
-_AIRCRAFT_INPUT = CommandField(name="aircraft")
+_AIRCRAFT_INPUT = CommandField()
 
 
 def parse_aircraft(
@@ -897,7 +834,7 @@ AcId = Annotated[
 ]
 
 
-_AIRCRAFT_SELECTION_INPUT = CommandField(name="aircraft or group", examples=("*", "ALL"))
+_AIRCRAFT_SELECTION_INPUT = CommandField(examples=("*", "ALL"))
 
 
 def parse_aircraft_selection(
@@ -1066,9 +1003,15 @@ _RUNTIME_NEWTYPE_METADATA: dict[
         CommandField(name="CAS", examples=("250KT[CAS]", "128MPS[CAS]")),
         Converter(_parse_cas),
     ),
-    t.Mach: (CommandField(name="Mach", examples=("M0.78", "M.78")), Converter(_parse_mach)),
+    t.Mach: (
+        CommandField(name="Mach", examples=("M0.78", "M.78")),
+        Converter(_parse_mach),
+    ),
     t.StdPressureAltM: (
-        CommandField(name="pressure altitude", examples=("FL100", "10000FT[STD]", "3048M[STD]")),
+        CommandField(
+            name="pressure altitude",
+            examples=("FL100", "10000FT[STD]", "3048M[STD]"),
+        ),
         Converter(_parse_pressure_altitude),
     ),
     t.MslAltM: (
@@ -1141,43 +1084,6 @@ def _validate_constraints(
     return Ok(None)
 
 
-def _contract(
-    parser: CmdParser[Any],
-    info: _Annotation,
-    constraints: tuple[_Constraint, ...] | None = None,
-    *,
-    finalize: Callable[[Any], Any] | None = None,
-) -> _ArgumentContract:
-    input_spec = parser.input
-    constraints = info.constraints if constraints is None else constraints
-    if constraints or finalize is not None:
-        inner = parser
-
-        def parse(context: CommandParseContext, cursor: CommandCursor) -> ParseResult[Any]:
-            result = inner(context, cursor)
-            if isinstance(result, Err):
-                return result
-            value = result.ok()
-            if isinstance(validation := _validate_constraints(value.value, constraints), Err):
-                return Err(validation.err().with_span(value.span))
-            return Ok(value.map(finalize(value.value) if finalize is not None else value.value))
-
-        parser = CmdParser(parse, input_spec)
-
-    return _ArgumentContract(
-        parser=parser,
-        variants=(
-            _ArgumentVariant(
-                input_spec,
-                info.annotation,
-                constraints,
-                info.docs if info.members else (),
-            ),
-        ),
-        nullable=info.nullable,
-    )
-
-
 @dataclass(frozen=True, slots=True)
 class Parameter:
     """Executable command contract compiled from a callback parameter."""
@@ -1241,10 +1147,6 @@ class Parameter:
         return self.repeat or self.default is not inspect.Parameter.empty
 
     @property
-    def parser(self) -> CmdParser[Any]:
-        return self.contract.parser
-
-    @property
     def variants(self) -> tuple[_ArgumentVariant, ...]:
         return self.contract.variants
 
@@ -1285,15 +1187,16 @@ def _constraints(metadata: Iterable[object]) -> Iterator[_Constraint]:
 
 
 def _annotation(annotation: Any) -> _Annotation:
+    """Normalize `Annotated`, union, parser, field, docs, and constraint metadata."""
     if get_origin(annotation) is Annotated:
         base, *metadata = get_args(annotation)
     else:
         base, metadata = annotation, []
 
     parsers = tuple(item for item in metadata if isinstance(item, CmdParser))
-    converters = tuple(item for item in metadata if isinstance(item, Converter))
     if len(parsers) > 1:
         raise TypeError("stack annotation contains multiple CmdParser markers")
+    converters = tuple(item for item in metadata if isinstance(item, Converter))
     if len(converters) > 1:
         raise TypeError("stack annotation contains multiple Converter markers")
     parser = parsers[0] if parsers else None
@@ -1334,20 +1237,49 @@ def _annotation(annotation: Any) -> _Annotation:
     )
 
 
-def _merge_field(input_spec: CommandField, marker: CommandField | None) -> CommandField:
-    if marker is None:
-        return input_spec
-    return CommandField(
-        marker.name if marker.name is not None else input_spec.name,
-        marker.examples or input_spec.examples,
+def _contract(
+    parser: CmdParser[Any],
+    info: _Annotation,
+    constraints: tuple[_Constraint, ...] | None = None,
+    *,
+    finalize: Callable[[Any], Any] | None = None,
+) -> _ArgumentContract:
+    input_spec = parser.input
+    constraints = info.constraints if constraints is None else constraints
+    if constraints or finalize is not None:
+        inner = parser
+
+        def parse(context: CommandParseContext, cursor: CommandCursor) -> ParseResult[Any]:
+            result = inner(context, cursor)
+            if isinstance(result, Err):
+                return result
+            value = result.ok()
+            if isinstance(validation := _validate_constraints(value.value, constraints), Err):
+                return Err(validation.err().with_span(value.span))
+            return Ok(value.map(finalize(value.value) if finalize is not None else value.value))
+
+        parser = CmdParser(parse, input_spec)
+
+    return _ArgumentContract(
+        parser=parser,
+        variants=(
+            _ArgumentVariant(
+                input_spec,
+                info.annotation,
+                constraints,
+                info.docs if info.members else (),
+            ),
+        ),
+        nullable=info.nullable,
     )
 
 
 def _argument_contract(annotation: Any) -> _ArgumentContract:
+    """Compile an annotation into one executable runtime contract."""
     info = _annotation(annotation)
 
-    # Explicit parser/converter metadata owns the whole semantic annotation.
-    # Otherwise a Python union is a command-level left-to-right choice.
+    # explicit parser/converter metadata owns the whole annotation, including a
+    # union result type. otherwise a python union is a command-level choice
     if info.members and info.parser is None and info.converter is None:
         if info.field is not None:
             raise TypeError("CommandField cannot annotate a structural union")
@@ -1355,10 +1287,11 @@ def _argument_contract(annotation: Any) -> _ArgumentContract:
             raise TypeError("constraints on a command union must annotate its individual branches")
         alternatives = tuple(_argument_contract(member) for member in info.members)
         if len(alternatives) == 1:
+            alternative = alternatives[0]
             return replace(
-                alternatives[0],
+                alternative,
                 nullable=info.nullable,
-                docs=(*alternatives[0].docs, *info.docs),
+                docs=(*alternative.docs, *info.docs),
             )
 
         def parse_choice(context: CommandParseContext, cursor: CommandCursor) -> ParseResult[Any]:
@@ -1416,7 +1349,7 @@ def _argument_contract(annotation: Any) -> _ArgumentContract:
             parser,
             info,
             _annotation(inner).constraints,
-            finalize=runtime_newtype,
+            finalize=runtime_newtype,  # type: ignore[arg-type]
         )
 
     if info.converter is not None:
@@ -1449,16 +1382,27 @@ def _argument_contract(annotation: Any) -> _ArgumentContract:
         if info.field is not None:
             raise TypeError("CommandField metadata can only annotate a single command field")
         parser = _ON_OFF_PARSER
-    elif base is inspect._empty or base is str or base is Any:
-        parser = _token_parser(_merge_field(CommandField(), info.field))
-    elif base is int:
-        parser = _converter_parser(Converter(int), _merge_field(CommandField(), info.field))
-    elif base is float:
-        parser = _converter_parser(Converter(float), _merge_field(CommandField(), info.field))
     else:
-        raise TypeError(f"unsupported stack annotation: {info.annotation!r}")
+        input_spec = _merge_field(CommandField(), info.field)
+        if base is inspect._empty or base is str or base is Any:
+            parser = _token_parser(input_spec)
+        elif base is int:
+            parser = _converter_parser(Converter(int), input_spec)
+        elif base is float:
+            parser = _converter_parser(Converter(float), input_spec)
+        else:
+            raise TypeError(f"unsupported stack annotation: {info.annotation!r}")
 
     return _contract(parser, info)
+
+
+def _merge_field(input_spec: CommandField, marker: CommandField | None) -> CommandField:
+    if marker is None:
+        return input_spec
+    return CommandField(
+        marker.name if marker.name is not None else input_spec.name,
+        marker.examples or input_spec.examples,
+    )
 
 
 def _namedtuple_contract(info: _Annotation) -> _ArgumentContract:
@@ -1552,6 +1496,11 @@ LatLonDeg = Annotated[
 #
 # command declarations
 #
+
+
+CommandCallback = Callable[..., Any]
+CommandTarget = TypeVar("CommandTarget", bound=CommandCallback)
+_COMMAND = "__minisky_command__"
 
 
 @dataclass(frozen=True, slots=True)
@@ -1658,8 +1607,33 @@ def _underlying_function(value: Any) -> Any:
 
 
 #
-# schema
+# schema: definition
 #
+
+
+class _DefinitionIdentity(NamedTuple):
+    ref: str
+    name: str
+    semantic: type[Any] | None
+
+
+def _definition_identity(value: Any) -> _DefinitionIdentity:
+    if get_origin(value) is Literal:
+        return _DefinitionIdentity("str", "str", str)
+    origin = get_origin(value)
+    semantic = origin if isinstance(origin, type) else value
+    if semantic is inspect._empty or semantic is Any:
+        return _DefinitionIdentity("typing.Any", "Any", None)
+    if isinstance(semantic, type):
+        name = semantic.__name__
+        ref = (
+            name
+            if semantic.__module__ == "builtins"
+            else f"{semantic.__module__}.{semantic.__qualname__}"
+        )
+        return _DefinitionIdentity(ref, name, semantic)
+    ref = str(value).replace("typing.", "")
+    return _DefinitionIdentity(ref, ref.rsplit(".", maxsplit=1)[-1], None)
 
 
 @dataclass(frozen=True, slots=True)
@@ -1709,11 +1683,17 @@ class CommandDefinition:
 def _define_value(value: Any, definitions: dict[str, CommandDefinition]) -> str:
     identity = _definition_identity(value)
     if identity.ref not in definitions:
-        definitions[identity.ref] = CommandDefinition(identity.name)
+        definitions[identity.ref] = CommandDefinition(name=identity.name)
     return identity.ref
 
 
+#
+# schema: build
+#
+
+
 def _constraint_schema(constraint: _Constraint) -> CommandConstraint:
+    """Convert `Gt(0)` into the schema `{"kind":"gt","value":0}`."""
     if isinstance(constraint, Gt):
         return CommandBoundConstraint("gt", constraint.gt)  # type: ignore[arg-type]
     if isinstance(constraint, Ge):
@@ -1732,32 +1712,10 @@ def _constraint_schema(constraint: _Constraint) -> CommandConstraint:
     return CommandPredicateConstraint(name)
 
 
-class _DefinitionIdentity(NamedTuple):
-    ref: str
-    name: str
-
-
-def _definition_identity(value: Any) -> _DefinitionIdentity:
-    if get_origin(value) is Literal:
-        return _DefinitionIdentity("str", "str")
-    origin = get_origin(value)
-    semantic = origin if isinstance(origin, type) else value
-    if semantic is inspect._empty or semantic is Any:
-        return _DefinitionIdentity("typing.Any", "Any")
-    if isinstance(semantic, type):
-        name = semantic.__name__
-        ref = (
-            name
-            if semantic.__module__ == "builtins"
-            else f"{semantic.__module__}.{semantic.__qualname__}"
-        )
-        return _DefinitionIdentity(ref, name)
-    ref = str(value).replace("typing.", "")
-    return _DefinitionIdentity(ref, ref.rsplit(".", maxsplit=1)[-1])
-
-
 def _value_info(
-    annotation: Any, constraints: tuple[_Constraint, ...], definitions: dict[str, CommandDefinition]
+    annotation: Any,
+    constraints: tuple[_Constraint, ...],
+    definitions: dict[str, CommandDefinition],
 ) -> CommandValue:
     import isqx
 
@@ -1795,7 +1753,11 @@ def _command_values(
         return tuple(
             value
             for member in info.members
-            for value in _command_values(member, _annotation(member).constraints, definitions)
+            for value in _command_values(
+                member,
+                _annotation(member).constraints,
+                definitions,
+            )
         )
     return (_value_info(annotation, constraints, definitions),)
 
@@ -1809,6 +1771,8 @@ class CommandVariant:
 
 @dataclass(frozen=True, slots=True)
 class ParameterSchema:
+    """Serializable description of a compiled callback parameter."""
+
     name: str
     variants: tuple[CommandVariant, ...]
     docs: tuple[str, ...] = ()
@@ -1838,6 +1802,7 @@ class CommandEntry:
 
 @dataclass(frozen=True, slots=True)
 class CommandSchema:
+    # intentionally unversioned.
     definitions: dict[str, CommandDefinition]
     commands: dict[str, CommandEntry]
 
@@ -1861,7 +1826,11 @@ def _schema_form(form: CommandForm, definitions: dict[str, CommandDefinition]) -
             variants=tuple(
                 CommandVariant(
                     input=variant.input,
-                    values=_command_values(variant.annotation, variant.constraints, definitions),
+                    values=_command_values(
+                        variant.annotation,
+                        variant.constraints,
+                        definitions,
+                    ),
                     docs=variant.docs,
                 )
                 for variant in parameter.variants
