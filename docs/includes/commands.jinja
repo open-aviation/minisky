@@ -133,9 +133,18 @@
   </div>
 
   {% set visible = form.parameters | visible_parameters %}
-  {% if form.doc or visible %}
+  {% if form.doc or form.examples or visible %}
   <div class="doc doc-contents stack-command-form-contents">
     {% if form.doc %}<div class="stack-command-form-doc">{{ form.doc | markdown_html }}</div>{% endif %}
+
+    {% if form.examples %}
+    <div class="stack-command-examples">
+      <p class="stack-command-examples-label">Examples:</p>
+      {% for example in form.examples %}
+      <pre><code>{{ example }}</code></pre>
+      {% endfor %}
+    </div>
+    {% endif %}
 
     {% if visible %}
     <div class="stack-command-table-wrap">

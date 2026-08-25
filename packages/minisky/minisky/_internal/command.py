@@ -1513,6 +1513,7 @@ class CommandDeclaration:
 
     name: str = ""
     aliases: tuple[str, ...] = ()
+    examples: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "name", normalize_command_name(self.name) if self.name else "")
@@ -1521,6 +1522,7 @@ class CommandDeclaration:
             "aliases",
             tuple(normalize_command_name(alias) for alias in self.aliases),
         )
+        object.__setattr__(self, "examples", tuple(self.examples))
 
 
 @dataclass(frozen=True, slots=True)
@@ -1540,6 +1542,10 @@ class BoundCommand:
         return self.declaration.aliases
 
     @property
+    def examples(self) -> tuple[str, ...]:
+        return self.declaration.examples
+
+    @property
     def help(self) -> str:
         return inspect.cleandoc(inspect.getdoc(self.source) or "")
 
@@ -1553,6 +1559,7 @@ def command(
     *,
     name: str = "",
     aliases: tuple[str, ...] = (),
+    examples: tuple[str, ...] = (),
 ) -> Callable[[CommandTarget], CommandTarget]: ...
 
 
@@ -1562,14 +1569,19 @@ def command(
     *,
     name: str = "",
     aliases: tuple[str, ...] = (),
+    examples: tuple[str, ...] = (),
 ) -> CommandTarget | Callable[[CommandTarget], CommandTarget]:
-    """Declare a callable as a stack command."""
+    """Declare a callable as a stack command.
+
+    Prefer argument-level [`CommandField`][minisky.CommandField] examples where
+    possible; `examples` documents complete command lines for this form.
+    """
 
     def decorate(target: CommandTarget) -> CommandTarget:
         actual = _underlying_function(target)
         if _COMMAND in vars(actual):
             raise TypeError("a stack command may be declared only once")
-        setattr(actual, _COMMAND, CommandDeclaration(name, aliases))
+        setattr(actual, _COMMAND, CommandDeclaration(name, aliases, examples))
         return target
 
     return decorate(func) if func is not None else decorate
@@ -1800,6 +1812,7 @@ class CommandFormSchema:
     path: str
     parameters: tuple[ParameterSchema, ...]
     doc: str = ""
+    examples: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -1854,6 +1867,7 @@ def _schema_form(form: CommandForm, definitions: dict[str, CommandDefinition]) -
         path=f"{form.source.__module__}.{form.source.__qualname__}",
         parameters=parameters,
         doc=form.help.strip(),
+        examples=form.examples,
     )
 
 
