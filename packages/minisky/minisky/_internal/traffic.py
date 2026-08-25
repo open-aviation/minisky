@@ -267,7 +267,15 @@ class Traffic(TrafficArrays):
 
         self.translvl = q.ft_to_m(5000.0)
 
-    @command(name="CRE", aliases=("CREATE",))
+    @command(
+        name="CRE",
+        aliases=("CREATE",),
+        examples=(
+            "CRE KL204 B744 52.0 4.0 90 FL100 250KT[CAS]",
+            "CRE AF007 A359 SUGOL 180 FL360 M0.85",
+            "CRE KLM10 A320 EHAM/RW06 * 0FT[STD] 150KT[CAS]",
+        ),
+    )
     def command_cre(
         self,
         callsign: Keyword,

@@ -86,6 +86,7 @@ class CommandForm:
     source: Callable[..., object]
     parameters: tuple[Parameter, ...]
     help: str
+    examples: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -398,6 +399,7 @@ class CommandStack:
         name: str = "",
         aliases: tuple[str, ...] = (),
         help_text: str = "",
+        examples: tuple[str, ...] = (),
         source: Callable[..., Any] | None = None,
     ) -> Command:
         """Compile a command from its callback signature without registering it."""
@@ -449,6 +451,7 @@ class CommandStack:
             source=source_func,
             parameters=parameters,
             help=inspect.cleandoc(help_text or inspect.getdoc(source_func) or ""),
+            examples=examples,
         )
         command = Command(
             name=command_name,
@@ -468,6 +471,7 @@ class CommandStack:
                 name=bound.name,
                 aliases=bound.aliases,
                 help_text=bound.help,
+                examples=bound.examples,
                 source=bound.source,
             )
             for bound in declared_commands(component)
@@ -924,6 +928,9 @@ class CommandStack:
                 )
             )
             lines = [form.doc, "", usage] if form.doc else [usage]
+            if form.examples:
+                lines.extend(("", "Examples:"))
+                lines.extend(f"    {example}" for example in form.examples)
             visible = [
                 parameter for parameter in form.parameters if not parameter.name.startswith("_")
             ]

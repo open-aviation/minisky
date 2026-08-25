@@ -118,6 +118,24 @@
   margin-bottom: 0;
 }
 
+.stack-command-examples {
+  margin: 0.3rem 0 0.4rem;
+  font-size: 0.8rem;
+}
+
+.stack-command-examples-label {
+  margin: 0 0 0.2rem;
+  color: var(--md-default-fg-color--light);
+}
+
+.stack-command-examples > pre {
+  margin: 0 0 0.3rem;
+}
+
+.stack-command-examples > pre:last-child {
+  margin-bottom: 0;
+}
+
 .stack-command-table-wrap {
   width: 100%;
   overflow-x: auto;
