@@ -47,7 +47,7 @@ The [`int`][] annotation instructs minisky to reject any input that cannot be co
 
 ??? question "How does it work internally?"
 
-    The [`command` decorator][minisky.command] extracts the method name (`set_speed`), argument (`speed`), type annotation ([`int`][]) and the docstrings into an intermediate representation (IR). This IR is then used to create a parser, build the [command reference](../reference/commands.md) and the `HELP` command.
+    The [`command` decorator][minisky.command] extracts the method name (`set_speed`), argument (`speed`), type annotation ([`int`][]) and the docstrings into an intermediate representation (IR). This IR is then used to create a parser, build the [command reference](../reference/commands.md) and the [`HELP` command][command.HELP].
 
     You can inspect the IR through the REST API:
 
@@ -131,7 +131,7 @@ Args:
     speed(int[> 0, <= 600])
 ```
 
-Notice that the `HELP` command here also displays the constraints nicely!
+Notice that the [`HELP` command][command.HELP] here also displays the constraints nicely!
 
 For custom constraints, use [`annotated_types.Predicate()`](https://github.com/annotated-types/annotated-types#predicate).
 
@@ -371,7 +371,7 @@ def divert(self, airport: AirportIcao) -> Result[str, str]:
     return Ok(f"diverting to {airport!r}")
 ```
 
-The advantage with this approach is the reusability of `AirportIcao` across multiple methods, without the need to duplicate docstrings everywhere. It also makes the documentation available in the `HELP` command:
+The advantage with this approach is the reusability of `AirportIcao` across multiple methods, without the need to duplicate docstrings everywhere. It also makes the documentation available in the [`HELP` command][command.HELP]:
 
 ```command title="uv run minisky console"
 > DIVERT EHAM

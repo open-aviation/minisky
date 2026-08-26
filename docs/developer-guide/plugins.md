@@ -41,7 +41,7 @@ Now that the plugin is defined, we need to *advertise* its location to minisky. 
 ```
 <!-- fmt:on -->
 
-The left-hand side, `example`, is the **plugin ID**, used in the `PLUGIN LOAD <plugin_id>` stack command and the user configuration TOML.
+The left-hand side, `example`, is the **plugin ID**, used in the [`PLUGIN LOAD <plugin_id>` stack command][command.PLUGIN] and the user configuration TOML.
 
 The right-hand side should point to the Python object we defined above.
 
@@ -236,7 +236,7 @@ def build(context: PluginContext) -> PluginSpec:
 1. [`@replacement`][minisky.replacement] declares `CustomAutoPilot` as an alternative implementation of its supported base component.
 2. Pass the class to `replacements=` to advertise it to the core.
 
-Users can then select an implementation with:
+Users can then select an implementation with the [`SELECTIMPL` stack command][command.SELECTIMPL]:
 
 ```text
 SELECTIMPL AUTOPILOT CUSTOMAUTOPILOT

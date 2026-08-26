@@ -27,7 +27,7 @@ Plugins are **not auto-loaded** by default on startup. To see installed plugins 
 
 === "CLI"
 
-    Use the [`PLUGINS` stack command](../reference/commands.md):
+    Use the [`PLUGINS` stack command][command.PLUGINS]:
 
     ```text title="uv run minisky console"
     > PLUGINS

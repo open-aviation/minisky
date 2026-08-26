@@ -113,6 +113,12 @@
 ## `{{ plugin.name }}`
 
 {% for command_name, command in plugin.commands.items() %}
+[](){ #command.{{ plugin.name }}.{{ command_name }} }
+{% for alias in command.aliases %}[](){ #command.{{ plugin.name }}.{{ alias }} }{% endfor %}
+{% if plugin.name == "minisky" %}
+[](){ #command.{{ command_name }} }
+{% for alias in command.aliases %}[](){ #command.{{ alias }} }{% endfor %}
+{% endif %}
 ### `{{ command_name }}` { #{{ plugin.name | command_anchor(command_name) }} }
 
 <div class="doc doc-contents stack-command-contents">
