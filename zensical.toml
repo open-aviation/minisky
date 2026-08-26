@@ -1,21 +1,25 @@
 [project]
 site_name = "MiniSky"
-site_description = "A minimal command line air traffic simulator with REST API (a BlueSky fork)"
+site_description = "A small, hackable air traffic control simulator and BlueSky fork"
 repo_url = "https://github.com/open-aviation/minisky"
 repo_name = "open-aviation/minisky"
-watch = ["packages/minisky/minisky"]
 nav = [
   { "Home" = "index.md" },
-  { "Getting started" = "getting-started.md" },
-  { "Guides" = [
-    { "Configuration" = "guides/configuration.md" },
-    { "Command-line interface" = "guides/cli.md" },
-    { "Running scenarios" = "guides/running-scenarios.md" },
-    { "Control console" = "guides/console.md" },
-    { "Types, Quantities and Units" = "guides/types.md" },
-    { "Writing plugins" = "guides/plugins.md" },
-    { "Adding Commands" = "guides/commands.md" },
-    { "Flying multicopters" = "guides/multicopters.md" },
+  { "Concepts" = [
+    { "Basics" = "concepts/basics.md" },
+    { "Commands" = "concepts/commands.md" },
+    { "Types, quantities and units" = "concepts/types.md" },
+  ] },
+  { "User Guide" = [
+    { "Server" = "user-guide/server.md" },
+    { "Configuration" = "user-guide/configuration.md" },
+    { "Using plugins" = "user-guide/plugins.md" },
+    { "Multicopter Plugin" = "user-guide/multicopters.md" },
+  ] },
+  { "Developer Guide" = [
+    { "Writing plugins" = "developer-guide/plugins.md" },
+    { "Adding commands" = "developer-guide/commands.md" },
+    { "Contributing" = "developer-guide/contributing.md" },
   ] },
   { "Reference" = [
     { "Stack commands" = "reference/commands.md" },
@@ -50,7 +54,7 @@ features = [
   "navigation.sections",
   "navigation.top",
   "content.code.copy",
-  "search.suggest",
+  "content.code.annotate"
 ]
 
 [project.theme.icon]
@@ -76,11 +80,7 @@ accent = "indigo"
 icon = "material/weather-sunny"
 name = "Switch to light mode"
 
-[project.plugins]
-search = {}
-
 [project.plugins.mkdocstrings]
-enable_inventory = true
 custom_templates = "docs/templates"
 
 [project.plugins.mkdocstrings.handlers.python]
@@ -133,11 +133,10 @@ footnotes = {}
 "pymdownx.arithmatex" = { generic = true }
 "pymdownx.details" = {}
 "pymdownx.superfences" = {}
-"pymdownx.highlight" = {}
+"pymdownx.highlight" = { pygments_lang_class = true }
 "pymdownx.inlinehilite" = {}
 
 [project.markdown_extensions."pymdownx.snippets"]
-base_path = ["."]
 check_paths = true
 dedent_subsections = true
 

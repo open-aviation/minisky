@@ -377,7 +377,7 @@ class WindLevel(NamedTuple):
 class Wind(TrafficArrays, Windfield):
     """Wind field with the stack-command interface of the simulation.
 
-    Combines the [`Windfield`][..Windfield] data and interpolation with the
+    Combines the windfield data and interpolation with the
     TrafficArrays machinery so the field is cleared on simulation reset.
     """
 

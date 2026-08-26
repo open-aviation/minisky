@@ -1107,7 +1107,7 @@ class Autopilot(TrafficArrays):
         """Compute and set the [`CAS` in m/s][minisky.types.CasMps] required to meet an RTA constraint.
 
         Calculates the ground speed needed to cover the remaining distance
-        to the RTA waypoint exactly at the required time (see [`calcvrta`][...calcvrta]),
+        to the RTA waypoint exactly at the required time (see `calcvrta`),
         corrects for the tailwind component and converts to CAS. When no
         explicit airspeed constraint is active and VNAV airspeed guidance is on,
 

@@ -225,7 +225,7 @@ class TestTypedGrammar:
         assert isinstance(result, Err)
         issue = result.err()
         assert isinstance(issue, ArgumentIssue)
-        assert issue.message == "argument `acidx`: expected an aircraft, but got group TEAM"
+        assert issue.message == "argument `acidx`: expected an aircraft, but got 'group TEAM'"
 
 
 class TestReadscn:
