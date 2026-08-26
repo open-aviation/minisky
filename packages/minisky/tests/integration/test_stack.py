@@ -266,13 +266,18 @@ class TestSynonyms:
 class TestErrors:
     def test_unknown_command_echoes_error(self, runtime: MiniSky, run_cmd: RunCommand) -> None:
         output = run_cmd("BOGUSCMD 42")
-        assert "unknown command" in output.lower()
 
-    def test_command_on_missing_aircraft_reports_error(
-        self, runtime: MiniSky, run_cmd: RunCommand
-    ) -> None:
-        output = run_cmd("ALT NOSUCH FL100")
-        assert output  # some error text is echoed
+        assert "error: unknown command: BOGUSCMD" in output
+        assert " --> <command>:1:1" in output
+        assert "1 | BOGUSCMD 42" in output
+        assert output.endswith("^^^^^^^^")
+
+    def test_argument_error_points_to_source(self, runtime: MiniSky, run_cmd: RunCommand) -> None:
+        output = run_cmd("ALT   NOSUCH FL100")
+
+        assert " --> <command>:1:7" in output
+        assert "1 | ALT   NOSUCH FL100" in output
+        assert output.endswith("      ^^^^^^")
         assert runtime.traffic.ntraf == 0
 
     def test_sim_survives_bad_command(self, runtime: MiniSky, run_cmd: RunCommand) -> None:

@@ -1,8 +1,8 @@
 # Commands
 
-In bluesky, **stack commands** is a custom [domain-specific language (DSL)](https://en.wikipedia.org/wiki/Domain-specific_language). The idea is to be able to easily replay commands.
+In bluesky, a **stack command** is a text that uses a custom [domain-specific language (DSL)](https://en.wikipedia.org/wiki/Domain-specific_language). The idea is to be able to easily replay commands.
 
-minisky largely supports the same DSL, but makes some critical tweaks, most notably the requirement of [specifying explicit units](./types.md).
+minisky largely supports the same DSL, but makes some tweaks, most notably the requirement of [specifying explicit units](./types.md).
 
 This DSL is used by scenario files (`.scn`) and the [interactive console](../user-guide/server.md#interactive-console), for example:
 

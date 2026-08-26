@@ -41,6 +41,10 @@ Args:
     speed(int)
 > SET_SPEED garbage
 error: argument `speed`: expected a value, but got 'garbage'
+ --> <command>:1:11
+  |
+1 | SET_SPEED garbage
+  |           ^^^^^^^
 ```
 
 The [`int`][] annotation instructs minisky to reject any input that cannot be converted into a valid integer.
@@ -72,9 +76,11 @@ The [`int`][] annotation instructs minisky to reject any input that cannot be co
 
 ??? note "Comparison against Bluesky"
 
-    Bluesky defines commands with a separate parser-spec DSL, such as `"txt,int"` or `"txt,[int]"`, which "teaches" the command interpreter how to parse the command. Minisky instead reads the Python signature directly: there is no second language to learn, nothing to keep in sync with the Python side, and the signature stays visible to static analysers like Ruff.
+    Bluesky defines commands with a separate parser-spec DSL, such as `"txt,int"` or `"txt,[int]"`, which "teaches" the command interpreter how to parse the command. Minisky instead reads the Python signature directly, eliminating the need for plugin authors to learn and maintain a separate DSL.
 
-You can also override the name of the command or provide aliases. Use [`Ok`][minisky.Ok] for successful output and [`Err`][minisky.Err] for a command error.
+You can also override the name of the command, provide aliases and command-level examples. When returning values, use [`Ok`][minisky.Ok] for a successful output and [`Err`][minisky.Err] for a command error[^result_types].
+
+<!-- NOTE(abraham): we should really use structured error messages and Ok(value) where value implements __str__. not creating a dedicated page for now. -->
 
 ## Custom constraints
 
@@ -120,8 +126,16 @@ Here, [`Annotated`][typing.Annotated] attaches metadata objects ([`Gt`, `Le`](ht
 speed set to 250 (int)
 > SET_SPEED -10
 error: argument `speed`: expected a value greater than 0, but got '-10'
+ --> <command>:1:11
+  |
+1 | SET_SPEED -10
+  |           ^^^
 > SET_SPEED 601
 error: argument `speed`: expected a value less than or equal to 600, but got '601'
+ --> <command>:1:11
+  |
+1 | SET_SPEED 601
+  |           ^^^
 > HELP SET_SPEED
 Set the current speed.
 
@@ -153,6 +167,10 @@ def set_mode(self, mode: Literal["AUTO", "MANUAL"]) -> Result[str, str]:
 mode set to 'AUTO'
 > MODE CRUISE
 error: argument `mode`: expected AUTO or MANUAL, but got 'CRUISE'
+ --> <command>:1:6
+  |
+1 | MODE CRUISE
+  |      ^^^^^^
 > HELP MODE
 MODE <mode>
 
@@ -410,6 +428,10 @@ Aircraft KL204 created
 aircraft index is 0 (int)
 > AIRCRAFTINDEX NOSUCH
 error: argument `idx`: expected an existing aircraft, but got 'NOSUCH'
+ --> <command>:1:15
+  |
+1 | AIRCRAFTINDEX NOSUCH
+  |               ^^^^^^
 > HELP AIRCRAFTINDEX
 Show the resolved aircraft index.
 
@@ -454,6 +476,10 @@ CAS set to 128.61111111111111 m/s
 Mach set to 0.78
 > TARGETSPD M0.0
 error: argument `speed`: expected a value greater than 0, but got '0.0'
+ --> <command>:1:11
+  |
+1 | TARGETSPD M0.0
+  |           ^^^^
 > HELP TARGETSPD
 TARGETSPD <speed>
 
@@ -497,6 +523,10 @@ MSL altitude set to 3048.0 m
 MSL altitude set to -30.48 m
 > ALTITUDE inf
 error: argument `altitude`: expected MSL altitude such as 10000FT[MSL] or 3048M[MSL], but got 'inf'
+ --> <command>:1:10
+  |
+1 | ALTITUDE inf
+  |          ^^^
 > HELP ALTITUDE
 ALTITUDE <altitude>
 
@@ -506,3 +536,5 @@ Args:
             StdPressureAltM: Barometric pressure altitude on the standard-pressure reference. (e.g. FL100, 10000FT[STD], 3048M[STD])
             MslAltM: Altitude above mean sea level. (e.g. 10000FT[MSL], 3048M[MSL])
 ```
+
+[^result_types]: This follows the same idea as [Rust's `Result`](https://jellis18.github.io/post/2021-12-13-python-exceptions-rust-go/) type.
