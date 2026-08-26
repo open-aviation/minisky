@@ -389,7 +389,7 @@ class Wind(TrafficArrays, Windfield):
         self.clear()
         return Ok("")
 
-    @command(name="WIND")
+    @command(name="WIND", examples=("WIND 52 4 270 20KT",))
     def set_constant_wind(
         self,
         position: LatLonDeg,
@@ -401,7 +401,7 @@ class Wind(TrafficArrays, Windfield):
         self.addpoint(position.lat, position.lon, direction % 360.0, speed)
         return Ok("")
 
-    @command(name="WIND")
+    @command(name="WIND", examples=("WIND 52 4,,270 20KT",))
     def set_constant_wind_with_omitted_field(
         self,
         position: LatLonDeg,
@@ -413,7 +413,10 @@ class Wind(TrafficArrays, Windfield):
         self.addpoint(position.lat, position.lon, direction % 360.0, speed)
         return Ok("")
 
-    @command(name="WIND")
+    @command(
+        name="WIND",
+        examples=("WIND 52 4 FL050 270 20KT FL100 300 30KT",),
+    )
     def set_wind_profile(
         self, position: LatLonDeg, first: WindLevel, *additional: WindLevel
     ) -> Result[str, str]:

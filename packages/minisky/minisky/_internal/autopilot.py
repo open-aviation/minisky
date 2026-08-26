@@ -1151,7 +1151,7 @@ class Autopilot(TrafficArrays):
             self.traffic.actwp.airspeed.kind[idx] = OptionalAirspeedKind.NONE
         return None
 
-    @command(name="ALT")
+    @command(name="ALT", examples=("ALT KL204 FL200 1500FT/MIN",))
     def selaltcmd(
         self, idx: AcIdSelection, alt: StdPressureAltM[IsFinite[float]], vspd: VspdMps | None = None
     ) -> Result[str, str]:
@@ -1233,7 +1233,11 @@ class Autopilot(TrafficArrays):
         self.traffic.swlnav[idx] = False
         return Ok(f"heading set to {resolved_hdg} deg")
 
-    @command(name="SPD", aliases=("SPEED",))
+    @command(
+        name="SPD",
+        aliases=("SPEED",),
+        examples=("SPD KL204 250KT[CAS]", "SPD KL204 M0.78"),
+    )
     def select_airspeed(
         self,
         idx: AcIdSelection,

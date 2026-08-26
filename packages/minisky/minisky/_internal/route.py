@@ -1541,7 +1541,7 @@ class RouteCommands:
         """Set a fly-turn heading rate through ADDWPT, in degrees per second."""
         return _set_turn_heading_rate(self.traffic, acidx, value)
 
-    @command(name="ADDWPT")
+    @command(name="ADDWPT", examples=("ADDWPT KL204 TAKEOFF EHAM/RW06",))
     def add_takeoff_waypoint_from_runway(
         self,
         acidx: AcId,
@@ -1601,7 +1601,14 @@ class RouteCommands:
             InsertAfter(after),
         )
 
-    @command(name="ADDWPT", aliases=("WPTYPE",))
+    @command(
+        name="ADDWPT",
+        aliases=("WPTYPE",),
+        examples=(
+            "ADDWPT KL204 SPL FL250 250KT[CAS]",
+            "ADDWPT KL204 RTM,,250KT[CAS]",
+        ),
+    )
     def append_waypoint(
         self,
         acidx: AcId,

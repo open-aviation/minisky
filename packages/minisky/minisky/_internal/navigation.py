@@ -203,7 +203,7 @@ class Navdatabase:
         """Delete a scenario-specific waypoint."""
         return self.delwpt(name)
 
-    @command(name="DEFWPT")
+    @command(name="DEFWPT", examples=("DEFWPT MYWPT 52.3 4.7",))
     def define_from_scenario(self, name: Keyword, position: LatLonDeg) -> Result[str, str]:
         """Define a scenario-specific waypoint from a position."""
         return self.defwpt(name, position.lat, position.lon)
