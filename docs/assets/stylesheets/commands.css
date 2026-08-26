@@ -75,7 +75,7 @@
   background: var(--stack-chip-argument-bg);
   font-family: var(--md-code-font-family);
   font-size: 0.7rem;
-  font-weight: 650;
+  font-weight: 600;
   line-height: 1.35;
   white-space: nowrap;
 }
@@ -143,29 +143,29 @@
 
 .stack-command-parameters {
   width: 100%;
-  margin: 0 !important;
-  border: 0 !important;
-  border-top: 0.05rem solid var(--stack-table-border) !important;
-  border-bottom: 0.05rem solid var(--stack-table-border) !important;
+  margin: 0;
+  border: 0;
+  border-top: 0.05rem solid var(--stack-table-border);
+  border-bottom: 0.05rem solid var(--stack-table-border);
   border-collapse: collapse;
-  background: transparent !important;
+  background: transparent;
   font-size: 0.8rem;
 }
 
 .stack-command-parameters td {
   padding: 0.38rem 0.45rem;
-  border: 0 !important;
-  border-top: 0.05rem solid var(--stack-table-border) !important;
+  border: 0;
+  border-top: 0.05rem solid var(--stack-table-border);
   vertical-align: top;
 }
 
 .stack-command-parameters tr:first-child td {
-  border-top: 0 !important;
+  border-top: 0;
 }
 
 .stack-command-parameters td:first-child {
   width: 4rem;
-  font-weight: 650;
+  font-weight: 600;
   white-space: nowrap;
 }
 

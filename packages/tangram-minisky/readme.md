@@ -61,8 +61,8 @@ uv sync
 uv run tangram serve --config tangram.toml
 ```
 
-The complete setup and temporary local-checkout overrides are documented in
-[Streaming to a tangram map](../../docs/guides/tangram.md). MiniSky config locations and optional file creation are covered in [Configuration](../../docs/guides/configuration.md).
+MiniSky config locations and optional file creation are covered in the
+[configuration guide](../../docs/user-guide/configuration.md).
 
 ## Run the simulator side
 

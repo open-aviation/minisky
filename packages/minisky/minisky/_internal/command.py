@@ -63,7 +63,6 @@ from minisky._internal.convert import (
     txt2lon,
     txt2tim,
 )
-from minisky._internal.identifiers import normalize_command_name
 from minisky._internal.position import islat
 from minisky._internal.result import Err, Ok, Result
 
@@ -1515,15 +1514,6 @@ class CommandDeclaration:
     aliases: tuple[str, ...] = ()
     examples: tuple[str, ...] = ()
 
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "name", normalize_command_name(self.name) if self.name else "")
-        object.__setattr__(
-            self,
-            "aliases",
-            tuple(normalize_command_name(alias) for alias in self.aliases),
-        )
-        object.__setattr__(self, "examples", tuple(self.examples))
-
 
 @dataclass(frozen=True, slots=True)
 class BoundCommand:
@@ -1535,7 +1525,7 @@ class BoundCommand:
 
     @property
     def name(self) -> str:
-        return self.declaration.name or normalize_command_name(self.source.__name__)
+        return self.declaration.name or self.source.__name__
 
     @property
     def aliases(self) -> tuple[str, ...]:
