@@ -146,7 +146,7 @@ class Example:
 
 !!! warning
 
-    This feature is inherited from bluesky, which may be confusing to use. A new API is currently being designed.
+    This API may be confusing to use; a new one is currently being designed.
 
 minisky stores aircraft state with the [structure-of-arrays model](../concepts/basics.md#state). The $i$th row of each numpy array refers to an aircraft.
 
@@ -217,7 +217,7 @@ Here, code before `yield` runs during plugin startup, and cleans up after `yield
 
 !!! warning
 
-    This feature is inherited from bluesky. It does not permit multiple performance models to coexist, making multi-plugin coordination difficult. This feature is currently being redesigned and may change without notice.
+    This is a legacy API: it does not permit multiple performance models to coexist, making multi-plugin coordination difficult. It is currently being redesigned and may change without notice.
 
 Most plugins add behavior alongside minisky. However, in some cases you may want to replace an entire core implementation. For example, to override the internal autopilot implementation:
 
