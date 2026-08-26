@@ -72,7 +72,7 @@ The [`int`][] annotation instructs minisky to reject any input that cannot be co
 
 ??? note "Comparison against Bluesky"
 
-    To define a new command in Bluesky, you had to use a separate parser-spec DSL, such as `"txt,int"` or `"txt,[int]"`. This is then used to "teach" the command interpreter how to parse the command. The problems with this are 1) plugin authors have to learn this small language, 2) it is easy to forget to keep the DSL in sync with the Python side, and 3) it is opaque to modern static analysers like Ruff. Minisky removes this completely and instead relies on the Python signature to understand your command.
+    Bluesky defines commands with a separate parser-spec DSL, such as `"txt,int"` or `"txt,[int]"`, which "teaches" the command interpreter how to parse the command. Minisky instead reads the Python signature directly: there is no second language to learn, nothing to keep in sync with the Python side, and the signature stays visible to static analysers like Ruff.
 
 You can also override the name of the command or provide aliases. Use [`Ok`][minisky.Ok] for successful output and [`Err`][minisky.Err] for a command error.
 

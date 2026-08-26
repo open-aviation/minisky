@@ -1,6 +1,6 @@
 # Types, Quantities and Units
 
-Aerospace uses both imperial and metric units, which are easy to mix up. In 1983, [Air Canada Flight 143 ("Gimli Glider")](https://en.wikipedia.org/wiki/Gimli_Glider) ran out of fuel midflight. It was later determined to be caused by a confusion between pounds and kilograms when refuelling. Unit confusion continues to be a problem, such as a Bluesky bug where the [time allocated to an RTA leg was miscalculated due to a confusion between nautical miles and meters](https://github.com/open-aviation/minisky/commit/b0fedb5). Minisky mitigates this risk by:
+Aerospace uses both imperial and metric units, which are easy to mix up. In 1983, [Air Canada Flight 143 ("Gimli Glider")](https://en.wikipedia.org/wiki/Gimli_Glider) ran out of fuel midflight. It was later determined to be caused by a confusion between pounds and kilograms when refuelling. Minisky mitigates this risk by:
 
 1. internally using SI units everywhere
 2. providing developers with explicit conversion functions to convert between imperial and metric units (e.g. [`q.ft_to_m`][minisky.quantities.ft_to_m])
@@ -8,7 +8,7 @@ Aerospace uses both imperial and metric units, which are easy to mix up. In 1983
 4. requiring developers to *always* use newtype wrappers at method callback boundaries (for example, [`minisky.types.MslAltM`][] instead of a bare float)
 5. encouraging developers to use unit/quantity type annotations in [`minisky.quantities`][]
 
-Minisky also directly addresses several shortcomings in BlueSky. minisky removes an implicit CAS/Mach threshold hack needed to distinguish between the two[^casmach_threshold] and internally represents various forms of altitude (QNH, QNE, QFE) distinctly[^altitudes].
+Minisky also never guesses what kind of value you mean: there is no implicit CAS/Mach threshold[^casmach_threshold], and QNH, QNE and QFE altitudes are distinct types[^altitudes].
 
 ## Quantity Kinds
 
@@ -124,7 +124,7 @@ If you wish, you can further constrain the type, for example using `q.StaticTemp
 
 #### Unit conversions
 
-Bluesky makes heavy use of manual conversion factors[^bluesky_manual_conversion], which are prone to mistakes. Instead, minisky provides conversion functions like [`minisky.quantities.ft_to_m`][]:
+Manual conversion factors (e.g. `alt * 0.3048`) are prone to mistakes. Instead, minisky provides conversion functions like [`minisky.quantities.ft_to_m`][]:
 
 ```pycon
 >>> from minisky import quantities as q
@@ -138,4 +138,3 @@ To learn how to define your own units and conversions, visit the [`isqx` documen
 [^altitudes]: See: <https://github.com/open-aviation/minisky/issues/22>
 [^isqx_annotated]: See <https://abc8747.github.io/isqx/design/#problem-1-the-friction-of-newtypes> for a detailed explanation of why we discourage using newtypes for performance-critical code.
 [^jax_duck_typing]: See <https://docs.jax.dev/en/latest/jep/12049-type-annotations.html#challenge-2-array-duck-typing> for why we don't recommend excessively annotating `np.ndarray` or `float` unless absolutely necessary.
-[^bluesky_manual_conversion]: See <https://github.com/TUDelft-CNS-ATM/bluesky/blob/22fdf9e/bluesky/tools/aero.py#L15-L19>
