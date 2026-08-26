@@ -117,7 +117,14 @@ class Command:
     def __call__(
         self, argstring: str
     ) -> Result[str, str | ArgumentIssue] | Awaitable[Result[str, str]]:
-        if isinstance(resolved := self._resolve(argstring), Err):
+        text = self.name + (f" {argstring}" if argstring else "")
+        argument_start = len(self.name) + (1 if argstring else 0)
+        return self._invoke(text, argument_start)
+
+    def _invoke(
+        self, text: str, argument_start: int
+    ) -> Result[str, str | ArgumentIssue] | Awaitable[Result[str, str]]:
+        if isinstance(resolved := self._resolve(text, argument_start), Err):
             return resolved
         call = resolved.ok()
         result = call.form.callback(*call.arguments)
@@ -127,13 +134,13 @@ class Command:
 
     def parse_arguments(self, argstring: str) -> Result[tuple[object, ...], ArgumentIssue]:
         """Parse arguments using the first command form that accepts them."""
-        if isinstance(resolved := self._resolve(argstring), Err):
+        text = self.name + (f" {argstring}" if argstring else "")
+        argument_start = len(self.name) + (1 if argstring else 0)
+        if isinstance(resolved := self._resolve(text, argument_start), Err):
             return resolved
         return Ok(resolved.ok().arguments)
 
-    def _resolve(self, argstring: str) -> Result[_CommandCall, ArgumentIssue]:
-        text = self.name + (f" {argstring}" if argstring else "")
-        argument_start = len(self.name) + (1 if argstring else 0)
+    def _resolve(self, text: str, argument_start: int) -> Result[_CommandCall, ArgumentIssue]:
         failure: ArgumentIssue | None = None
 
         # match Pydantic's left-to-right union rule: first complete parse wins.
@@ -172,6 +179,34 @@ class Command:
     @property
     def names(self) -> tuple[str, ...]:
         return (self.name, *self.aliases)
+
+
+def _format_argument_issue(source: str, issue: ArgumentIssue) -> str:
+    if issue.span is None:
+        return f"error: {issue.message}"
+
+    start = issue.span.start
+    end = issue.span.end
+    line_start = source.rfind("\n", 0, start) + 1
+    line_end = source.find("\n", start)
+    if line_end < 0:
+        line_end = len(source)
+
+    line_number = source.count("\n", 0, start) + 1
+    column = start - line_start + 1
+    line = source[line_start:line_end]
+    width = max(1, min(end, line_end) - start)
+    gutter = len(str(line_number))
+
+    return "\n".join(
+        (
+            f"error: {issue.message}",
+            f" --> <command>:{line_number}:{column}",
+            f"{' ' * (gutter + 1)}|",
+            f"{line_number:>{gutter}} | {line}",
+            f"{' ' * gutter} | {' ' * (start - line_start)}{'^' * width}",
+        )
+    )
 
 
 def _format_constraint(constraint: object) -> str:
@@ -667,12 +702,14 @@ class CommandStack:
             cursor = CommandCursor(cmdline)
             parsed_result = cursor.next_value("a command")
             if isinstance(parsed_result, Err):
-                self.console.echo(f"error: {parsed_result.err()}")
+                self.console.echo(_format_argument_issue(cmdline, parsed_result.err()))
                 continue
             cmd = parsed_result.ok().value
+            argument_start = cursor.pos
             argstring = cursor.remaining
             cmdu = cmd.upper()
             cmdobj = self.cmddict.get(cmdu)
+            direct_source = cmdobj is not None
 
             # bluesky shorthand permits `CALLSIGN COMMAND ...`
             # a bare callsign is the POS query form.
@@ -685,24 +722,28 @@ class CommandStack:
                 else:
                     parsed_result = cursor.next_value("a command")
                     if isinstance(parsed_result, Err):
-                        self.console.echo(f"error: {parsed_result.err()}")
+                        self.console.echo(_format_argument_issue(cmdline, parsed_result.err()))
                         continue
                     cmd = parsed_result.ok().value
                     argstring = f"{acid} {cursor.remaining}"
                     cmdu = cmd.upper()
                 cmdobj = self.cmddict.get(cmdu)
+                direct_source = False
 
             if cmdobj is None:
                 message = (
-                    f"error: unknown command or aircraft: {cmd}"
+                    f"unknown command or aircraft: {cmd}"
                     if not argstring
-                    else f"error: unknown command: {cmd}"
+                    else f"unknown command: {cmd}"
                 )
-                self.console.echo(message)
+                issue = ArgumentIssue(message, parsed_result.ok().span)
+                self.console.echo(_format_argument_issue(cmdline, issue))
                 continue
 
             try:
-                result = cmdobj(argstring)
+                result = (
+                    cmdobj._invoke(cmdline, argument_start) if direct_source else cmdobj(argstring)
+                )
             except Exception as exc:  # ruff: ignore[BLE001] commands are arbitrary callbacks
                 self._echo_command_exception(cmdu, argstring, exc)
                 continue
@@ -724,7 +765,8 @@ class CommandStack:
                 self._prepend_commands(pending[index + 1 :])
                 return False
 
-            self._echo_command_result(result)
+            # NOTE: `KL204 ALT BAD` can produce a bad diagnostic `ALT KL204 BAD`
+            self._echo_command_result(result, cmdline if direct_source else None)
         return True
 
     def _finish_pending_command(self) -> bool:
@@ -750,12 +792,17 @@ class CommandStack:
         with self._queue_lock:
             self.cmdstack[0:0] = commands
 
-    def _echo_command_result(self, result: Result[str, str | ArgumentIssue]) -> None:
+    def _echo_command_result(
+        self, result: Result[str, str | ArgumentIssue], source: str | None = None
+    ) -> None:
         if isinstance(result, Ok):
             text = result.ok()
         else:
             error = result.err()
-            text = f"error: {error}" if error else ""
+            if isinstance(error, ArgumentIssue) and source is not None:
+                text = _format_argument_issue(source, error)
+            else:
+                text = f"error: {error}" if error else ""
         if text:
             self.console.echo(text)
 
@@ -989,7 +1036,7 @@ class CommandStack:
             while True:
                 result = cursor.next_command()
                 if isinstance(result, Err):
-                    self.console.echo(f"error: {result.err()}")
+                    self.console.echo(_format_argument_issue(cmdline, result.err()))
                     break
                 line = result.ok()
                 if line is None:
