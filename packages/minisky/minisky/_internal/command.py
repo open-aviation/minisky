@@ -592,6 +592,7 @@ def parse_omitted_field(
 
 _OMITTED_INPUT = _OmittedInput()
 Omitted = Annotated[OmittedField, CmdParser(parse_omitted_field, _OMITTED_INPUT)]
+# TODO(abraham): remove Omitted altogether (it's confusing)
 
 
 def parse_text(_context: CommandParseContext, cursor: CommandCursor) -> ParseResult[str]:
