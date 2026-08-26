@@ -45,7 +45,7 @@ httpx "http://localhost:8000/conflicts"
 
 In summary:
 
-- `stack/CMD` is the endpoint for any bluesky stack commands
+- `stack/CMD` is the endpoint for any minisky stack commands
 - `all` is the endpoint to show all aircraft
 - `conflicts` is the endpoint to show all conflicts
 - `commands` returns `{name: usage}` for every stack command (autocomplete/help)
@@ -67,7 +67,7 @@ with connect("ws://localhost:8000/stream") as ws:
         print(tick["siminfo"]["simt"], tick["acdata"]["callsign"])
 ```
 
-The stream is deliberately consumer-agnostic — raw SI on the wire, so any unit
+Data from the stream is deliberately in SI units, so any unit
 conversion or field mapping is left to the client. You can change the simulation
 speed from the stack with the `DTMULT` command (e.g. `DTMULT 10`) in addition to
 the `/speed/10` REST endpoint.
@@ -79,7 +79,7 @@ You can also use the control console to interact with the API server:
 ```bash
 uv run minisky console
 
-# bluesky stack commands, without prefix "/"
+# minisky stack commands, without prefix "/"
 > POS EHAM                     # show all aircraft in EHAM
 > mcre 3                       # create 3 aircraft
 
