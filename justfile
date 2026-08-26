@@ -4,13 +4,13 @@ sync:
     uv sync --all-packages
 
 fmt:
-    uv run ruff check packages scripts --fix
-    uv run ruff format packages scripts
+    uv run ruff check packages scripts docs --fix
+    uv run ruff format packages scripts docs
     pnpm lint:fix
 
 check:
-    uv run ruff check packages scripts
-    uv run ruff format packages scripts --check
+    uv run ruff check packages scripts docs
+    uv run ruff format packages scripts docs --check
     uv run pyright
     uv run scripts/command_schema.py check minisky minisky_example minisky_example_customautopilot minisky_multicopter minisky_tangram
     pnpm check

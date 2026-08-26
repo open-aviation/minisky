@@ -905,7 +905,7 @@ class CommandStack:
     def delay(self, time: TimeS, cmdline: Text) -> bool:
         """Delay a stack command by a time interval.
 
-        Like [`schedule`][..schedule], but the given time is relative to the current
+        Like schedule, but the given time is relative to the current
         simulation time.
         """
         return self.schedule(self.simulation.simt + time, cmdline)

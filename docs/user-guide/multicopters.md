@@ -26,7 +26,7 @@ See the [`MulticopterConfig`][minisky_multicopter.config.MulticopterConfig] API 
 
 !!! note
 
-    Minisky currently hardcodes OpenAP as the sole aircraft performance model does not support multiple performance backends. As a workaround, the multicopter plugin has to add custom logic on top of OpenAP and implicitly executes `SELECTIMPL` on import. In the future, minisky will support multiple performance backends and fully decouple the multicopter path from OpenAP.
+    Minisky currently hardcodes OpenAP as the sole aircraft performance model and does not support multiple performance backends. As a workaround, the multicopter plugin has to add custom logic on top of OpenAP and implicitly executes `SELECTIMPL` on import. In the future, minisky will support multiple performance backends and fully decouple the multicopter path from OpenAP.
 
 Custom multicopter types can provide their own airframe and electric-performance data; see [`MulticopterTypeTable`][minisky_multicopter.config.MulticopterTypeTable] and [`RotorAirframeSpec`][minisky_multicopter.config.RotorAirframeSpec].
 

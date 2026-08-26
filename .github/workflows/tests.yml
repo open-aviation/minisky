@@ -50,8 +50,8 @@ jobs:
 
       - name: Check code quality
         run: |
-          uv run ruff check packages scripts
-          uv run ruff format packages scripts --check
+          uv run ruff check packages scripts docs
+          uv run ruff format packages scripts docs --check
           uv run pyright
           uv run scripts/command_schema.py check minisky minisky_example minisky_example_customautopilot minisky_multicopter minisky_tangram
 

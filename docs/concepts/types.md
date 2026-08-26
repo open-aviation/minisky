@@ -1,14 +1,14 @@
 # Types, Quantities and Units
 
-Aerospace uses both imperial and metric units, which are easy to mix-up. In 1983, [Air Canada Flight 143 ("Gimli Glider")](https://en.wikipedia.org/wiki/Gimli_Glider) ran out of fuel midflight. It was later determined to be caused by a confusion between pounds and kilograms when refuelling. Unit confusion continues to be a problem, such as a Bluesky bug where the [time allocated to an RTA leg was miscalculated due to a confusion between nautical miles and meters](https://github.com/open-aviation/minisky/commit/b0fedb5). Minisky mitigates this risk by:
+Aerospace uses both imperial and metric units, which are easy to mix up. In 1983, [Air Canada Flight 143 ("Gimli Glider")](https://en.wikipedia.org/wiki/Gimli_Glider) ran out of fuel midflight. It was later determined to be caused by a confusion between pounds and kilograms when refuelling. Unit confusion continues to be a problem, such as a Bluesky bug where the [time allocated to an RTA leg was miscalculated due to a confusion between nautical miles and meters](https://github.com/open-aviation/minisky/commit/b0fedb5). Minisky mitigates this risk by:
 
 1. internally using SI units everywhere
 2. providing developers with explicit conversion functions to convert between imperial and metric units (e.g. [`q.ft_to_m`][minisky.quantities.ft_to_m])
-3. requiring users to *always* specify the unit when issuing a command (for example, `30000FT[MSL]` instead of `30000`)
+3. requiring users to *always* specify the unit when issuing a [command](./commands.md) (for example, `30000FT[MSL]` instead of `30000`)
 4. requiring developers to *always* use newtype wrappers at method callback boundaries (for example, [`minisky.types.MslAltM`][] instead of a bare float)
 5. encouraging developers to use unit/quantity type annotations in [`minisky.quantities`][]
 
-Minisky also directly addresses several shortcomings in the bluesky. minisky removes an implicit CAS/Mach threshold hack needed to distinguish between the two[^casmach_threshold] and internally represents various forms of altitude (QNH, QNE, QFE) distinctly[^altitudes].
+Minisky also directly addresses several shortcomings in BlueSky. minisky removes an implicit CAS/Mach threshold hack needed to distinguish between the two[^casmach_threshold] and internally represents various forms of altitude (QNH, QNE, QFE) distinctly[^altitudes].
 
 ## Quantity Kinds
 
@@ -16,13 +16,13 @@ In addition to units, minisky also distinguishes between various **quantity kind
 
 Calibrated airspeed, true airspeed and ground airspeed can all be expressed in `m/s`, but are not interchangeable.
 
-Likewise, standard pressure altitude, altitude above MSL, height above ground level all has the canonical SI unit of `m` but refer to different references/geoids.
+Likewise, standard pressure altitude, altitude above MSL, height above ground level all have the canonical SI unit of `m` but refer to different references/geoids.
 
 Minisky provides developers with the [`minisky.quantities`][] and [`minisky.types`][] modules to help distinguish them.
 
 ### Guide for Users
 
-Always the specify the value, unit and quantity kind instead of just the value. For example, to express a height of 13000 feet [above mean sea level](https://en.wikipedia.org/wiki/Height_above_mean_sea_level):
+Always specify the value, unit and quantity kind instead of just the value. For example, to express a height of 13000 feet [above mean sea level](https://en.wikipedia.org/wiki/Height_above_mean_sea_level):
 
 ```
 13000FT[MSL]
@@ -38,7 +38,7 @@ Here are some commonly used quantity kinds:
     - [`q.AglHeightM`][minisky.quantities.AglHeightM] is the height above the terrain. minisky does not properly support parsing from a string.
 - Speed
     - [Calibrated airspeed (CAS)][minisky.types.CasMps] is the indicated airspeed (IAS) corrected for instrument and position errors, for example, `130KT[CAS]`, `67M/S[CAS]`.
-    - [Mach][minisky.types.Mach] is the [true airspeed (TAS)][minisky.quantities.TrueAirspeedMps] divided by the local [speed of sound][minisky.quantities.SpeedOfSoundMps]. for example, `M.78`, `M0.78`.
+    - [Mach][minisky.types.Mach] is the [true airspeed (TAS)][minisky.quantities.TrueAirspeedMps] divided by the local [speed of sound][minisky.quantities.SpeedOfSoundMps]. For example, `M.78`, `M0.78`.
 
 See the [API reference](../api/types.md) for the full list.
 
@@ -50,7 +50,7 @@ For performance-critical internal logic, we strongly recommend using [`typing.An
 
 #### Commands
 
-When defining your own [plugin command](./commands.md#custom-parsers), simply annotate the arguments of your method:
+When defining your own [plugin command](../developer-guide/commands.md), simply annotate the arguments of your method:
 
 ```py
 from minisky import command
@@ -87,7 +87,7 @@ so they can be [pattern matched](https://peps.python.org/pep-0636/) easily.
 
 #### Internal functions
 
-In many cases though, we do not recommend using newtypes defined in [`minisky.types`][] because they incur a runtime cost and creates friction for downstream consumers[^isqx_annotated].
+In many cases though, we do not recommend using newtypes defined in [`minisky.types`][] because they incur a runtime cost and create friction for downstream consumers[^isqx_annotated].
 
 Instead, minisky follows the [FastAPI convention of embedding metadata into types](https://fastapi.tiangolo.com/python-types/). Use type aliases under [`minisky.quantities`][], for example:
 
@@ -105,7 +105,7 @@ class GasState:
 
 
 # use in functions:
-def mach(tas: q.TrueAirspeedMps, a: SpeedOfSoundMps):
+def mach(tas: q.TrueAirspeedMps, a: q.SpeedOfSoundMps):
     return tas / a
 ```
 

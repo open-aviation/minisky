@@ -2,7 +2,7 @@
 
 !!! note "TLDR"
 
-    Use the [`@command` decorator][minisky.command] to register a new minisky command. You should feel right at home if you have experience in [creating a new route in `fastapi`](https://fastapi.tiangolo.com/python-types/), [creating a new command in `typer`](https://typer.tiangolo.com/tutorial/), or [using `discord.py`](https://discordpy.readthedocs.io/en/stable/ext/commands/commands.html)!
+    Use the [`@command` decorator][minisky.command] to register a new minisky [stack command](../concepts/commands.md). You should feel right at home if you have experience in [creating a new route in `fastapi`](https://fastapi.tiangolo.com/python-types/), [creating a new command in `typer`](https://typer.tiangolo.com/tutorial/), or [using `discord.py`](https://discordpy.readthedocs.io/en/stable/ext/commands/commands.html)!
 
     minisky also extracts Python annotations for runtime validation, much like [`pydantic`](https://pydantic.dev/docs/validation/latest/concepts/types/). It natively understands [custom constraints](#custom-constraints) (via [`annotated-types`](https://github.com/annotated-types/annotated-types)), [literals](#literals), [optional values](#optional-values) (`T | None`), [sum types](#sum-types) (`A | B`), [product types](#product-types) (`NamedTuple(a, b)`), [variadics](#variadic-parameters) (`*args`), [overloads](#overloads) and [custom parsers](#custom-parsers). [Document arguments](#documentation) with [`annotated_doc.Doc`](https://github.com/fastapi/annotated-doc/).
 
@@ -27,7 +27,7 @@ class Example:
         return Ok(f"speed set to {speed}")
 ```
 
-Users can then run your command in the [console](./console.md):
+Users can then run your command in the console:
 
 ```command title="uv run minisky console"
 > SET_SPEED 250
@@ -43,7 +43,7 @@ Args:
 error: argument `speed`: expected a value, but got 'garbage'
 ```
 
-The [`int`][] annotation instructs minisky to reject any input that cannot be casted converted into a valid integer.
+The [`int`][] annotation instructs minisky to reject any input that cannot be converted into a valid integer.
 
 ??? question "How does it work internally?"
 
@@ -72,9 +72,9 @@ The [`int`][] annotation instructs minisky to reject any input that cannot be ca
 
 ??? note "Comparison against Bluesky"
 
-    To define a new command in Bluesky, you had to use a separate parser-spec DSL, such as `"txt,int"` or `"txt,[int]"`. This is then used to "teach" the command interpreter how to parse the command. The problems with this are 1) plugin authors have learn this small language, 2) it is easy to forget to keep the DSL in sync with the Python side, and 3) it is opaque to modern static analysers like Ruff. Minisky removes this completely and instead relies on the Python signature to understand your command.
+    To define a new command in Bluesky, you had to use a separate parser-spec DSL, such as `"txt,int"` or `"txt,[int]"`. This is then used to "teach" the command interpreter how to parse the command. The problems with this are 1) plugin authors have to learn this small language, 2) it is easy to forget to keep the DSL in sync with the Python side, and 3) it is opaque to modern static analysers like Ruff. Minisky removes this completely and instead relies on the Python signature to understand your command.
 
-You can also override the name of the command or provided aliases. Use [`Ok`][minisky.Ok] for successful output and [`Err`][minisky.Err] for a command error.
+You can also override the name of the command or provide aliases. Use [`Ok`][minisky.Ok] for successful output and [`Err`][minisky.Err] for a command error.
 
 ## Custom constraints
 
@@ -113,7 +113,7 @@ def set_speed(self, speed: MySpeed) -> Result[str, str]:
     return Ok(f"speed set to {speed!r} ({type(speed).__name__})")
 ```
 
-Here, [`Annotated`][typing.Annotated] attaches metadata objects ([`Gt`, `Le`](https://github.com/annotated-types/annotated-types#gt-ge-lt-le)) to the runtime type (`int`). These metadata objects are used by minisky to *validate* the user input before the calling the method:
+Here, [`Annotated`][typing.Annotated] attaches metadata objects ([`Gt`, `Le`](https://github.com/annotated-types/annotated-types#gt-ge-lt-le)) to the runtime type (`int`). These metadata objects are used by minisky to *validate* the user input before calling the method:
 
 ```command title="uv run minisky console"
 > SET_SPEED 250
@@ -137,7 +137,7 @@ For custom constraints, use [`annotated_types.Predicate()`](https://github.com/a
 
 ## Literals
 
-For a fixed set of set of values, use [`Literal`][typing.Literal]:
+For a fixed set of values, use [`Literal`][typing.Literal]:
 
 ```python
 from typing import Literal
@@ -307,7 +307,7 @@ mass is 42000.0
 
 We have now covered many ordinary Python types, which should be sufficient for expressing 90% of commands you need.
 
-But for cases where you need extra control, minisky has [`Converter`][minisky.Converter]. It is analagous to Pydantic's [`BeforeValidator`](https://pydantic.dev/docs/validation/dev/concepts/validators/#field-after-validator), allowing you to provide a custom function that converts [`str`][] to your type:
+But for cases where you need extra control, minisky has [`Converter`][minisky.Converter]. It is analogous to Pydantic's [`BeforeValidator`](https://pydantic.dev/docs/validation/dev/concepts/validators/#field-after-validator), allowing you to provide a custom function that converts [`str`][] to your type:
 
 ```python
 from typing import Annotated
@@ -365,12 +365,13 @@ from annotated_doc import Doc
 
 AirportIcao: TypeAlias = Annotated[str, Doc("Destination airport ICAO identifier.")]
 
+
 @command(name="DIVERT")
 def divert(self, airport: AirportIcao) -> Result[str, str]:
     return Ok(f"diverting to {airport!r}")
 ```
 
-The advantage with this approach is the reusability of `AirportIcao` across multiple methods, without the need to duplicate docstrings everywhere. It also makes the documentation available in the `HELP` comamnd:
+The advantage with this approach is the reusability of `AirportIcao` across multiple methods, without the need to duplicate docstrings everywhere. It also makes the documentation available in the `HELP` command:
 
 ```command title="uv run minisky console"
 > DIVERT EHAM
@@ -388,7 +389,7 @@ For general usage, minisky provides many reusable aviation-specific command type
 
 ### Aircraft Index
 
-To refer to a particular aircraft callsign, use [`AcId`][minisky.AcId], which is the index to the internal aircraft traffic arrays.
+To refer to a particular aircraft callsign, use [`AcId`][minisky.AcId], which is the index to the internal [aircraft traffic arrays](../concepts/basics.md#state).
 
 ```python
 from minisky import AcId
@@ -422,7 +423,7 @@ If you need to accept a traffic group, or `*`/ALL, use [`AcIdSelection`][minisky
 
 ### Airspeed
 
-To distinguish between various units and quantity kinds, minisky provides several useful **runtime newtypes** in the [minisky.types][] module. Background information can be found in the [types, quantities and units guide](./types.md)
+To distinguish between various units and quantity kinds, minisky provides several useful **runtime newtypes** in the [minisky.types][] module. Background information can be found in the [types, quantities and units guide](../concepts/types.md)
 
 To distinguish between [calibrated airspeed][minisky.types.CasMps] and [Mach][minisky.types.Mach] commands for example:
 
