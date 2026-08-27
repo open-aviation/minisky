@@ -65,8 +65,6 @@
     Accepted: {{ code_list(input.values) }}.
   {%- elif input.kind == "boolean" -%}
     True: {{ code_list(input.true) }}. False: {{ code_list(input.false) }}.
-  {%- elif input.kind == "omitted" -%}
-    Requires an omitted comma field.
   {%- elif input.kind == "text" -%}
     Consumes the remaining command text.{% if input.examples %} Examples: {{ code_list(input.examples) }}.{% endif %}
   {%- elif input.kind == "record" -%}
@@ -130,7 +128,7 @@
     <div class="stack-command-signature">
       <span class="stack-command-token"><span class="stack-command-chip stack-command-chip--command">{{ command_name }}</span></span>
       {% for parameter in form.parameters %}
-        {% set kind = "literal" if parameter.input.kind == "literal" else "optional" if parameter.input.kind == "omitted" or parameter.optional else "argument" %}
+        {% set kind = "literal" if parameter.input.kind == "literal" else "optional" if parameter.optional else "argument" %}
         {% set label = parameter.input.values | join("|") if parameter.input.kind == "literal" else parameter.name %}
         <span class="stack-command-token"><span class="stack-command-chip stack-command-chip--{{ kind }}">{{ label }}</span>{% if not loop.last %}<span class="stack-command-separator">,</span>{% endif %}</span>
       {% endfor %}

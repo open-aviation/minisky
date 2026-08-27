@@ -257,8 +257,6 @@ def _format_input(input_spec: CommandInput, *, named: bool = False) -> str:
         return ", ".join(input_spec.values)
     if input_spec.kind == "boolean":
         return f"True: {', '.join(input_spec.true)}; False: {', '.join(input_spec.false)}"
-    if input_spec.kind == "omitted":
-        return "Requires an omitted comma field."
     if input_spec.kind == "text":
         examples = f" Examples: {', '.join(input_spec.examples)}" if input_spec.examples else ""
         return f"Consumes the remaining command text.{examples}"
@@ -279,8 +277,6 @@ def _format_usage_parameter(parameter: ParameterSchema) -> str:
     input_spec = parameter.input
     if input_spec.kind == "literal" and parameter.name.startswith("_"):
         value = "|".join(input_spec.values)
-    elif input_spec.kind == "omitted":
-        value = "<empty-comma-field>"
     else:
         value = f"<{parameter.name}>"
     if parameter.repeat:

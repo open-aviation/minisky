@@ -24,7 +24,6 @@ from minisky import quantities as q
 from minisky._internal.command import (
     CommandField,
     LatLonDeg,
-    Omitted,
     SpeedMps,
     command,
 )
@@ -401,37 +400,38 @@ class Wind(TrafficArrays, Windfield):
         self.addpoint(position.lat, position.lon, direction % 360.0, speed)
         return Ok("")
 
-    @command(name="WIND", examples=("WIND 52 4,,270 20KT",))
-    def set_constant_wind_with_omitted_field(
-        self,
-        position: LatLonDeg,
-        _omitted: Omitted,
-        direction: WindDirectionArg,
-        speed: NonNegativeSpeedMps,
-    ) -> Result[str, str]:
-        """Define constant wind with an omitted altitude."""
-        self.addpoint(position.lat, position.lon, direction % 360.0, speed)
-        return Ok("")
-
     @command(
         name="WIND",
-        examples=("WIND 52 4 FL050 270 20KT FL100 300 30KT",),
+        examples=(
+            "WIND 52 4,,270 20KT",
+            "WIND 52 4 FL050 270 20KT FL100 300 30KT",
+        ),
     )
     def set_wind_profile(
-        self, position: LatLonDeg, first: WindLevel, *additional: WindLevel
+        self,
+        position: LatLonDeg,
+        altitude: StdPressureAltM[IsFinite[float]] | None,
+        direction: Annotated[WindDirectionArg, CommandField(examples=("270",))],
+        speed: NonNegativeSpeedMps,
+        *additional: WindLevel,
     ) -> Result[str, str]:
-        """Define altitude-dependent wind vectors."""
-        # Several altitude levels are given: build a vertical wind profile.
-        levels = (first, *additional)
+        """Define wind with an optional first altitude and additional profile levels."""
+        if altitude is None:
+            if additional:
+                return Err("WIND cannot add profile levels after an omitted altitude")
+            self.addpoint(position.lat, position.lon, direction % 360.0, speed)
+            return Ok("")
+
+        levels = (WindLevel(altitude, direction, speed), *additional)
         if any(
             current.altitude.value <= previous.altitude.value
             for previous, current in pairwise(levels)
         ):
             return Err("WIND profile altitudes must be strictly increasing")
-        altitude = np.asarray([level.altitude.value for level in levels])
-        direction = np.asarray([level.direction % 360.0 for level in levels])
-        speed = np.asarray([level.speed for level in levels])
-        self.addpoint(position.lat, position.lon, direction, speed, altitude)
+        altitudes = np.asarray([level.altitude.value for level in levels])
+        directions = np.asarray([level.direction % 360.0 for level in levels])
+        speeds = np.asarray([level.speed for level in levels])
+        self.addpoint(position.lat, position.lon, directions, speeds, altitudes)
         return Ok("")
 
     @command(name="GETWIND")

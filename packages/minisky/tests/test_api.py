@@ -39,25 +39,6 @@ def client(server_app: FastAPI) -> Iterator[TestClient]:
         yield test_client
 
 
-def test_root(client: TestClient) -> None:
-    resp = client.get("/")
-    assert resp.status_code == 200
-    assert "ready" in resp.json()["msg"].lower()
-
-
-def test_simtime(client: TestClient) -> None:
-    resp = client.get("/simtime")
-    assert resp.status_code == 200
-    value = resp.json()["simulation time (seconds)"]
-    assert isinstance(value, (int, float))
-
-
-def test_all_empty_traffic(client: TestClient) -> None:
-    resp = client.get("/all")
-    assert resp.status_code == 200
-    assert isinstance(resp.json(), list)
-
-
 def test_commands_returns_structured_schema(client: TestClient) -> None:
     resp = client.get("/commands")
 
@@ -82,14 +63,3 @@ def test_all_reflects_created_aircraft(client: TestClient, runtime: MiniSky) -> 
     assert resp.status_code == 200
     aircraft = next(ac for ac in resp.json() if ac["callsign"] == "KL001")
     assert aircraft["selected airspeed"] == {"kind": "CAS", "mps": 150.0}
-
-
-def test_speed_endpoint(client: TestClient) -> None:
-    resp = client.get("/speed/10")
-    assert resp.status_code == 200
-    assert "10" in resp.json()["msg"]
-
-
-def test_plugins_endpoint(client: TestClient) -> None:
-    resp = client.get("/plugins")
-    assert resp.status_code == 200

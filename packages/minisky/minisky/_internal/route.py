@@ -37,7 +37,6 @@ from minisky._internal.command import (
     DistanceM,
     Keyword,
     NamedWaypoint,
-    Omitted,
     ParseResult,
     RunwayPosition,
     SimTimeS,
@@ -1563,42 +1562,31 @@ class RouteCommands:
         return _add_takeoff_waypoint(self.traffic, acidx, None)
 
     @command(name="ADDWPT")
-    def insert_waypoint_before(
+    def insert_waypoint_relative(
         self,
         acidx: AcId,
         waypoint: CoordinateWaypoint | NamedWaypoint,
         altitude: StdPressureAltM[IsFinite[float]] | None,
         airspeed: CasMps[IsFinite[Ge0[float]]] | Mach[IsFinite[Gt0[float]]] | None,
-        _after: Omitted,
-        before: Keyword,
+        after: Keyword | None,
+        before: Keyword | None = None,
     ) -> Result[str, str]:
-        """Insert a route waypoint before an existing waypoint."""
+        """Insert a route waypoint after or before an existing waypoint."""
+        if after is not None and before is not None:
+            return Err("ADDWPT accepts either an after or before waypoint, not both")
+        if after is not None:
+            insertion: WaypointInsertion = InsertAfter(after)
+        elif before is not None:
+            insertion = InsertBefore(before)
+        else:
+            return Err("ADDWPT requires an after or before waypoint")
         return _add_route_waypoint(
             self.traffic,
             acidx,
             waypoint,
             altitude,
             airspeed,
-            InsertBefore(before),
-        )
-
-    @command(name="ADDWPT")
-    def insert_waypoint_after(
-        self,
-        acidx: AcId,
-        waypoint: CoordinateWaypoint | NamedWaypoint,
-        altitude: StdPressureAltM[IsFinite[float]] | None,
-        airspeed: CasMps[IsFinite[Ge0[float]]] | Mach[IsFinite[Gt0[float]]] | None,
-        after: Keyword,
-    ) -> Result[str, str]:
-        """Insert a route waypoint after an existing waypoint."""
-        return _add_route_waypoint(
-            self.traffic,
-            acidx,
-            waypoint,
-            altitude,
-            airspeed,
-            InsertAfter(after),
+            insertion,
         )
 
     @command(

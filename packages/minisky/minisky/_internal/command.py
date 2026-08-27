@@ -371,13 +371,6 @@ class _BooleanInput:
 
 
 @dataclass(frozen=True, slots=True)
-class _OmittedInput:
-    """A required empty comma field, for example the middle field in `A,,B`."""
-
-    kind: Literal["omitted"] = field(init=False, default="omitted", repr=False)
-
-
-@dataclass(frozen=True, slots=True)
 class _TextInput:
     """The remaining command text through the current batch boundary."""
 
@@ -394,13 +387,7 @@ class _ChoiceInput:
 
 
 CommandInput: TypeAlias = (
-    CommandField
-    | _RecordInput
-    | _LiteralInput
-    | _BooleanInput
-    | _OmittedInput
-    | _TextInput
-    | _ChoiceInput
+    CommandField | _RecordInput | _LiteralInput | _BooleanInput | _TextInput | _ChoiceInput
 )
 """Inspectable command grammar shared by runtime parsing and static schemas."""
 
@@ -435,8 +422,6 @@ def _input_expected(value: CommandInput) -> str:
             return _join_examples(values)
         case _BooleanInput(true, false):
             return f"a boolean ({_join_examples((*true, *false))})"
-        case _OmittedInput():
-            return "an omitted comma field"
         case _TextInput(examples):
             return _input_expectation("text", examples)
         case _ChoiceInput(alternatives):
@@ -564,35 +549,6 @@ Keyword = Annotated[
     _KEYWORD_PARSER,
     Doc("A command token (internally upper-cased)."),
 ]
-
-
-# TODO(abraham): we should remove omitted since it is confusing
-# (only WIND and a few bluesky-era commands need it)
-@dataclass(frozen=True, slots=True)
-class OmittedField:
-    """Sentinel indicating a required empty comma field was present."""
-
-
-_OMITTED_FIELD = OmittedField()
-
-
-def parse_omitted_field(
-    _context: CommandParseContext, cursor: CommandCursor
-) -> ParseResult[OmittedField]:
-    result = cursor.next_field()
-    if isinstance(result, Err):
-        return result
-    token = result.ok()
-    if token is None or token.value is not None:
-        span = token.span if token is not None else SourceSpan(cursor.pos, cursor.pos)
-        actual = token.value if token is not None else "end of input"
-        return Err(ArgumentIssue.expected("an omitted comma field", actual, span))
-    return Ok(Spanned(_OMITTED_FIELD, token.span))
-
-
-_OMITTED_INPUT = _OmittedInput()
-Omitted = Annotated[OmittedField, CmdParser(parse_omitted_field, _OMITTED_INPUT)]
-# TODO(abraham): remove Omitted altogether (it's confusing)
 
 
 def parse_text(_context: CommandParseContext, cursor: CommandCursor) -> ParseResult[str]:
