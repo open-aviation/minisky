@@ -1,6 +1,6 @@
 # minisky
 
-minisky is an air traffic simulation library, a stripped-down and modernised fork of [BlueSky](https://github.com/TUDelft-CNS-ATM/bluesky) and a successor to [AirTrafficSim](https://github.com/HKUST-OCTAD-LAB/AirTrafficSim). It removes much of the legacy infrastructure tied to BlueSky's application, including the bundled GUI, distributed simulation nodes, and uncommon command. The goal of minisky is to create a compact library that is easy to understand and extend.
+minisky is an air traffic simulation library, a stripped-down and modernised fork of [BlueSky](https://github.com/TUDelft-CNS-ATM/bluesky) and a successor to [AirTrafficSim](https://github.com/HKUST-OCTAD-LAB/AirTrafficSim). It removes much of the infrastructure tied to BlueSky's application, including the bundled GUI, distributed simulation nodes, and uncommon command. The goal of minisky is to create a compact library that is easy to understand and extend.
 
 minisky:
 
