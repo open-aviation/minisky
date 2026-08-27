@@ -1,10 +1,10 @@
 # minisky
 
-minisky is an air traffic simulation library, a stripped-down and modernised fork of [bluesky](https://github.com/TUDelft-CNS-ATM/bluesky) and a successor to [AirTrafficSim](https://github.com/HKUST-OCTAD-LAB/AirTrafficSim). It removes much of the legacy infrastructure tied to bluesky's standalone application, including the bundled Pygame/Qt GUI, distributed simulation nodes, and rarely used commands, resulting in a much smaller library that is easy to understand and extend.
+minisky is an air traffic simulation library, a stripped-down and modernised fork of [BlueSky](https://github.com/TUDelft-CNS-ATM/bluesky) and a successor to [AirTrafficSim](https://github.com/HKUST-OCTAD-LAB/AirTrafficSim). It removes much of the legacy infrastructure tied to BlueSky's application, including the bundled GUI, distributed simulation nodes, and uncommon command. The goal of minisky is to create a compact library that is easy to understand and extend.
 
 minisky:
 
-- retains familiar and proven bluesky workflows: `.scn` scenario files, the core traffic/navigation model, OpenAP performance models, and conflict detection/resolution algorithms
+- retains familiar and proven BlueSky workflows: `.scn` scenario files, the core traffic/navigation model, OpenAP performance models, and conflict detection/resolution algorithms
 - provides independently distributable plugins with explicit lifecycle management
 - replaces process-wide mutable globals with explicit runtime ownership
 - uses declarative, typed command parsing with machine-readable command schemas
