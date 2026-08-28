@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Literal, NamedTuple, Protocol, TypeAlias, TypeVar
 
 import numpy as np
+import numpy.typing as npt
 import pandas as pd
 
 import minisky.geo as geo  # noqa: PLR0402
@@ -62,16 +63,6 @@ class LatLonReference(Protocol):
     def lon(self) -> q.LongitudeDeg[float]: ...
 
 
-def _tolist(column) -> list:
-    """Return a pandas column as a plain Python list.
-
-    Wrapper around `Series.to_list()` that gives a concrete `list`
-    return type (the pandas `__getitem__` overloads otherwise widen the
-    result to include `str`).
-    """
-    return column.to_list()
-
-
 def findall(lst: Sequence[_T], x: _T) -> list[NavigationIndex]:
     """Find every occurrence of `x` in `lst`."""
     idx = []
@@ -93,7 +84,7 @@ class Navdatabase:
     Navigation database: waypoint, airway, airport, FIR, and country data.
 
     All data are loaded from the package data directory on construction
-    and on [`reset`][.reset]. The database is stored as parallel lists, indexed per
+    and on [`reset`][.reset]. The database is stored as parallel arrays, indexed per
     waypoint, per airway leg, or per airport.
 
     Created by  : Jacco M. Hoekstra (TU Delft)
@@ -120,66 +111,64 @@ class Navdatabase:
         with (nav_data_path / "runway_thresholds.json").open() as f:
             rwythresholds = json.load(f)
 
-        self.wpid: list[WaypointIdentifier] = _tolist(wptdata["wpid"])
+        self.wpid: npt.NDArray[np.str_] = np.asarray(wptdata["wpid"], dtype=str)
         self.wplat: q.LatitudeDeg[np.ndarray] = np.asarray(wptdata["wplat"], dtype=float)  # pyright: ignore[reportGeneralTypeIssues]
         self.wplon: q.LongitudeDeg[np.ndarray] = np.asarray(wptdata["wplon"], dtype=float)  # pyright: ignore[reportGeneralTypeIssues]
         # TODO(abraham): rename this navigation-database category; Route.wptype is a
         # different WaypointType domain, and the shared name makes the two easy to confuse.
-        self.wptype: list[str] = _tolist(wptdata["wptype"])
+        self.wptype: npt.NDArray[np.str_] = np.asarray(wptdata["wptype"], dtype=str)
         """Navigation-database waypoint category; not to be confused with the route `WaypointType`."""
-        self.wpelev: list[q.MslAltitudeM[float]] = _tolist(wptdata["wpelev"])  # pyright: ignore[reportGeneralTypeIssues]
-        self.wpvar: list[float] = _tolist(wptdata["wpvar"])
+        self.wpelev: q.MslAltitudeM[np.ndarray] = np.asarray(wptdata["wpelev"], dtype=float)  # pyright: ignore[reportGeneralTypeIssues]
+        self.wpvar: np.ndarray = np.asarray(wptdata["wpvar"], dtype=float)
         """Magnetic variation at each waypoint, in degrees."""
-        self.wpfreq: list[float] = _tolist(wptdata["wpfreq"])
+        self.wpfreq: np.ndarray = np.asarray(wptdata["wpfreq"], dtype=float)
         """Navaid frequencies in the source dataset's kHz/MHz convention."""
-        self.wpdesc: list[str] = _tolist(wptdata["wpdesc"])
+        self.wpdesc: npt.NDArray[np.str_] = np.asarray(wptdata["wpdesc"], dtype=str)
 
-        self.awfromwpid: list[WaypointIdentifier] = _tolist(awydata["awfromwpid"])
+        self.awfromwpid: npt.NDArray[np.str_] = np.asarray(awydata["awfromwpid"], dtype=str)
         """Starting waypoint identifier for each airway leg."""
         self.awfromlat: q.LatitudeDeg[np.ndarray] = np.asarray(awydata["awfromlat"], dtype=float)  # pyright: ignore[reportGeneralTypeIssues]
         self.awfromlon: q.LongitudeDeg[np.ndarray] = np.asarray(awydata["awfromlon"], dtype=float)  # pyright: ignore[reportGeneralTypeIssues]
-        self.awtowpid: list[WaypointIdentifier] = _tolist(awydata["awtowpid"])
+        self.awtowpid: npt.NDArray[np.str_] = np.asarray(awydata["awtowpid"], dtype=str)
         """Ending waypoint identifier for each airway leg."""
         self.awtolat: q.LatitudeDeg[np.ndarray] = np.asarray(awydata["awtolat"], dtype=float)  # pyright: ignore[reportGeneralTypeIssues]
         self.awtolon: q.LongitudeDeg[np.ndarray] = np.asarray(awydata["awtolon"], dtype=float)  # pyright: ignore[reportGeneralTypeIssues]
-        self.awid: list[AirwayIdentifier] = _tolist(awydata["awid"])
+        self.awid: npt.NDArray[np.str_] = np.asarray(awydata["awid"], dtype=str)
         """Airway identifier for each leg, for example `UL620`."""
-        self.awndir: list[int] = _tolist(awydata["awndir"])
+        self.awndir: np.ndarray = np.asarray(awydata["awndir"], dtype=np.int64)
         """Number of permitted traversal directions for each airway leg: one or two."""
-        self.awlowfl: list[int] = _tolist(awydata["awlowfl"])
+        self.awlowfl: np.ndarray = np.asarray(awydata["awlowfl"], dtype=np.int64)
         """Lower published flight-level bound for each airway leg."""
-        self.awupfl: list[int] = _tolist(awydata["awupfl"])
+        self.awupfl: np.ndarray = np.asarray(awydata["awupfl"], dtype=np.int64)
         """Upper published flight-level bound for each airway leg."""
 
-        self.aptid: list[AirportIdentifier] = _tolist(aptdata["apid"])
-        self.aptname: list[str] = _tolist(aptdata["apname"])
+        self.aptid: npt.NDArray[np.str_] = np.asarray(aptdata["apid"], dtype=str)
+        self.aptname: npt.NDArray[np.str_] = np.asarray(aptdata["apname"], dtype=str)
         self.aptlat: q.LatitudeDeg[np.ndarray] = np.asarray(aptdata["aplat"], dtype=float)  # pyright: ignore[reportGeneralTypeIssues]
         self.aptlon: q.LongitudeDeg[np.ndarray] = np.asarray(aptdata["aplon"], dtype=float)  # pyright: ignore[reportGeneralTypeIssues]
         self.aptmaxrwy: q.LengthM[np.ndarray] = np.asarray(aptdata["apmaxrwy"], dtype=float)  # pyright: ignore[reportGeneralTypeIssues]
-        self.apsize: list[AirportSize] = [
-            AirportSize(int(value)) for value in _tolist(aptdata["aptype"])
-        ]
+        self.apsize: np.ndarray = np.asarray(aptdata["aptype"], dtype=np.int64)
         """Airport size category from the navigation dataset."""
-        self.aptco: list[str] = _tolist(aptdata["apco"])
-        self.aptelev: list[q.MslAltitudeM[float]] = _tolist(aptdata["apelev"])  # pyright: ignore[reportGeneralTypeIssues]
+        self.aptco: npt.NDArray[np.str_] = np.asarray(aptdata["apco"], dtype=str)
+        self.aptelev: q.MslAltitudeM[np.ndarray] = np.asarray(aptdata["apelev"], dtype=float)  # pyright: ignore[reportGeneralTypeIssues]
 
         self.fir: list[str] = firdata["fir"]
-        self.firlat0: list[float] = firdata["firlat0"]
+        self.firlat0: np.ndarray = np.asarray(firdata["firlat0"], dtype=float)
         """Latitude of the start point of each FIR border segment."""
-        self.firlon0: list[float] = firdata["firlon0"]
+        self.firlon0: np.ndarray = np.asarray(firdata["firlon0"], dtype=float)
         """Longitude of the start point of each FIR border segment."""
-        self.firlat1: list[float] = firdata["firlat1"]
+        self.firlat1: np.ndarray = np.asarray(firdata["firlat1"], dtype=float)
         """Latitude of the end point of each FIR border segment."""
-        self.firlon1: list[float] = firdata["firlon1"]
+        self.firlon1: np.ndarray = np.asarray(firdata["firlon1"], dtype=float)
         """Longitude of the end point of each FIR border segment."""
 
-        self.coname: list[str] = _tolist(codata["coname"])
+        self.coname: npt.NDArray[np.str_] = np.asarray(codata["coname"], dtype=str)
         """Country full names"""
-        self.cocode2: list[str] = _tolist(codata["cocode2"])
+        self.cocode2: npt.NDArray[np.str_] = np.asarray(codata["cocode2"], dtype=str)
         """2-character country codes"""
-        self.cocode3: list[str] = _tolist(codata["cocode3"])
+        self.cocode3: npt.NDArray[np.str_] = np.asarray(codata["cocode3"], dtype=str)
         """3-character country codes"""
-        self.conr: list[int] = _tolist(codata["conr"])
+        self.conr: np.ndarray = np.asarray(codata["conr"], dtype=np.int64)
         """Country ICAO numbers."""
 
         self.rwythresholds: dict[AirportIdentifier, dict[RunwayIdentifier, RunwayThreshold]] = {
@@ -227,7 +216,8 @@ class Navdatabase:
         normalized = name.upper()
         if normalized not in self.wpid:
             return Ok(f"Waypoint {normalized} does not yet exist.")
-        index = len(self.wpid) - self.wpid[::-1].index(normalized) - 1
+        wpids = self.wpid.tolist()
+        index = len(wpids) - wpids[::-1].index(normalized) - 1
         description = f"{self.wpid[index]} : {self.wplat[index]},{self.wplon[index]}"
         if self.wptype[index]:
             description += f"  {self.wptype[index]}"
@@ -247,14 +237,14 @@ class Navdatabase:
         if normalized.isdigit():
             return Err("Waypoint name must start with an alphabetical character")
 
-        self.wpid.append(normalized)
+        self.wpid = np.append(self.wpid, normalized)
         self.wplat = np.append(self.wplat, lat)
         self.wplon = np.append(self.wplon, lon)
-        self.wptype.append("" if waypoint_type is None else waypoint_type.upper())
-        self.wpelev.append(0.0)
-        self.wpvar.append(0.0)
-        self.wpfreq.append(0.0)
-        self.wpdesc.append("Custom waypoint")
+        self.wptype = np.append(self.wptype, "" if waypoint_type is None else waypoint_type.upper())
+        self.wpelev = np.append(self.wpelev, 0.0)
+        self.wpvar = np.append(self.wpvar, 0.0)
+        self.wpfreq = np.append(self.wpfreq, 0.0)
+        self.wpdesc = np.append(self.wpdesc, "Custom waypoint")
 
         return Ok(f"{normalized} added to navdb.")
 
@@ -263,21 +253,20 @@ class Navdatabase:
 
         The last-added occurrence of the name is removed.
         """
-        if self.wpid.count(name.upper()) <= 0:
+        wpids = self.wpid.tolist()
+        if wpids.count(name.upper()) <= 0:
             return Err(f"Waypoint {name.upper()} does not exist.")
 
-        idx = len(self.wpid) - self.wpid[::-1].index(name.upper()) - 1  # Search from back of list
+        idx = len(wpids) - wpids[::-1].index(name.upper()) - 1  # Search from back of list
 
-        del self.wpid[idx]
-
+        self.wpid = np.delete(self.wpid, idx)
         self.wplat = np.delete(self.wplat, idx)
         self.wplon = np.delete(self.wplon, idx)
-
-        del self.wptype[idx]
-        del self.wpelev[idx]
-        del self.wpvar[idx]
-        del self.wpfreq[idx]
-        del self.wpdesc[idx]
+        self.wptype = np.delete(self.wptype, idx)
+        self.wpelev = np.delete(self.wpelev, idx)
+        self.wpvar = np.delete(self.wpvar, idx)
+        self.wpfreq = np.delete(self.wpfreq, idx)
+        self.wpdesc = np.delete(self.wpdesc, idx)
 
         return Ok(name.upper() + " deleted from navdb.")
 
@@ -298,8 +287,9 @@ class Navdatabase:
             The selected waypoint index, or `None` when the identifier is absent.
         """
         name = txt.upper()
+        wpids = self.wpid.tolist()
         try:
-            i = self.wpid.index(name)
+            i = wpids.index(name)
         except ValueError:
             return None
 
@@ -312,7 +302,7 @@ class Navdatabase:
             found = True
             while i < len(self.wpid) - 1 and found:
                 try:
-                    i = self.wpid.index(name, i + 1)
+                    i = wpids.index(name, i + 1)
                     idx.append(i)
                 except ValueError:
                     found = False
@@ -350,8 +340,9 @@ class Navdatabase:
             or an empty list when the identifier is absent.
         """
         name = txt.upper()
+        wpids = self.wpid.tolist()
         try:
-            i = self.wpid.index(name)
+            i = wpids.index(name)
         except ValueError:
             return []
 
@@ -359,7 +350,7 @@ class Navdatabase:
             return [i]
 
         else:
-            idx = findall(self.wpid, name)
+            idx = findall(wpids, name)
 
             if len(idx) == 1:
                 return [idx[0]]
@@ -390,7 +381,7 @@ class Navdatabase:
     def getaptidx(self, txt: AirportIdentifier) -> AirportIndex | None:
         """Get the index of an airport by its navigation-dataset identifier."""
         try:
-            return self.aptid.index(txt.upper())
+            return self.aptid.tolist().index(txt.upper())
         except ValueError:
             return None
 
@@ -472,14 +463,15 @@ class Navdatabase:
 
         airway = []  # identifier of waypoint   0 .. N-1
 
-        if self.awid.count(awkey) > 0:
+        awids = self.awid.tolist()
+        if awids.count(awkey) > 0:
             i = 0
             found = True
             legs: list[str] = []  # Alle leg incl. duplicate legs
             left = []  # wps in left column in file
             right = []  # wps in right coumn in file
 
-            idx = findall(self.awid, awkey)
+            idx = findall(awids, awkey)
             for i in idx:
                 newleg = self.awfromwpid[i] + "-" + self.awtowpid[i]
                 if newleg not in legs:
@@ -560,7 +552,7 @@ class Navdatabase:
         connect: list[AirwayConnection] = []
 
         if wpid in self.awfromwpid:
-            idx = findall(self.awfromwpid, wpid)
+            idx = findall(self.awfromwpid.tolist(), wpid)
             for i in idx:
                 newitem = AirwayConnection(self.awid[i], self.awtowpid[i])
                 if (newitem not in connect) and geo.kwikdist(
@@ -569,7 +561,7 @@ class Navdatabase:
                     connect.append(newitem)
 
         if wpid in self.awtowpid:
-            idx = findall(self.awtowpid, wpid)
+            idx = findall(self.awtowpid.tolist(), wpid)
             for i in idx:
                 newitem = AirwayConnection(self.awid[i], self.awfromwpid[i])
                 if (newitem not in connect) and geo.kwikdist(

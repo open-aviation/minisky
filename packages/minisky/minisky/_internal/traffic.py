@@ -53,6 +53,7 @@ from minisky._internal.convert import latlon2txt
 from minisky._internal.groups import TrafficGroups
 from minisky._internal.guidance import APorASAS
 from minisky._internal.kinematics import Kinematics
+from minisky._internal.navigation import AirportSize
 from minisky._internal.performance.openap import OpenAP
 from minisky._internal.result import Err, Ok, Result
 from minisky._internal.shapes import Shapes
@@ -868,16 +869,16 @@ class Traffic(TrafficArrays):
 
         idx_airport = self.navigation.getaptidx(name)
         if idx_airport is not None:
-            airport_size = self.navigation.apsize[idx_airport].name.lower()
+            airport_size = AirportSize(int(self.navigation.apsize[idx_airport])).name.lower()
 
             aptname = self.navigation.aptname[idx_airport]
             aptlat = self.navigation.aptlat[idx_airport]
             aptlon = self.navigation.aptlon[idx_airport]
             aptelev = self.navigation.aptelev[idx_airport]
 
-            idx_cc = self.navigation.cocode2.index(self.navigation.aptco[idx_airport].upper())
-            country_name = self.navigation.coname[idx_cc].upper()
-            country_code = self.navigation.aptco[idx_airport]
+            country_code = str(self.navigation.aptco[idx_airport]).upper()
+            idx_cc = self.navigation.cocode2.tolist().index(country_code)
+            country_name = str(self.navigation.coname[idx_cc]).upper()
 
             lines += (
                 f"{aptname} is a {airport_size} airport in {country_name} ({country_code}):\n"
@@ -934,7 +935,7 @@ class Traffic(TrafficArrays):
                 if self.navigation.wptype[iwp] == "VOR":
                     lines += f"Variation: {self.navigation.wpvar[iwp]} deg\n"
 
-                n_other = self.navigation.wpid.count(name) - len(idx_waypoints)
+                n_other = self.navigation.wpid.tolist().count(name) - len(idx_waypoints)
                 if n_other > 0:
                     lines += f"Attention: {n_other} other waypoint(s) also has name {name}\n"
 

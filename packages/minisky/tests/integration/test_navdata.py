@@ -16,7 +16,7 @@ class TestDefwpt:
         assert len(navdb.wpid) == n + 1
         assert len(navdb.wplat) == n + 1
         assert len(navdb.wplon) == n + 1
-        idx = navdb.wpid.index("TSTWPT1")
+        idx = navdb.wpid.tolist().index("TSTWPT1")
         assert navdb.wplat[idx] == 52.0
         assert navdb.wplon[idx] == 4.0
 
@@ -35,7 +35,7 @@ class TestDefwpt:
         assert len(navdb.wplat) == n + 1
         assert len(navdb.wplon) == n + 1
         # Remaining waypoint's coordinates must still be index-aligned
-        idx = navdb.wpid.index("TSTWPTB")
+        idx = navdb.wpid.tolist().index("TSTWPTB")
         assert navdb.wplat[idx] == 10.0
         assert navdb.wplon[idx] == 20.0
 
