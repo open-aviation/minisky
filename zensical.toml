@@ -1,6 +1,6 @@
 [project]
 site_name = "MiniSky"
-site_description = "A small, hackable air traffic control simulator and BlueSky fork"
+site_description = "An air traffic simulation library derived from BlueSky"
 repo_url = "https://github.com/open-aviation/minisky"
 repo_name = "open-aviation/minisky"
 nav = [
@@ -54,11 +54,13 @@ features = [
   "navigation.sections",
   "navigation.top",
   "content.code.copy",
-  "content.code.annotate"
+  "content.code.annotate",
+  "content.tooltips"
 ]
 
 [project.theme.icon]
 logo = "material/airplane"
+repo = "fontawesome/brands/github"
 
 [[project.theme.palette]]
 media = "(prefers-color-scheme: light)"

@@ -1,8 +1,8 @@
 [project]
 name = "minisky"
 version = "0.1.0"
-description = "A minimal command line air traffic simulator with REST API (a BlueSky fork)"
-readme = { text = "MiniSky is a minimal command-line air traffic simulator with a REST API.", content-type = "text/markdown" }
+description = "An air traffic simulation library derived from BlueSky"
+readme = { text = "MiniSky is an air traffic simulation library derived from BlueSky.", content-type = "text/markdown" }
 requires-python = ">=3.11"
 dependencies = [
     "typer>=0.15.0",
