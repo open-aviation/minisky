@@ -902,17 +902,18 @@ def _resolve_named_position(
             )
         return Ok(RunwayPosition(t.LatLonDegrees(float(lat), float(lon)), float(heading)))
 
-    if name in navigation.aptid:
-        index = navigation.aptid.tolist().index(name)
+    airport_indices = np.flatnonzero(navigation.aptid == name)
+    if len(airport_indices):
+        index = int(airport_indices[0])
         return Ok(t.LatLonDegrees(float(navigation.aptlat[index]), float(navigation.aptlon[index])))
 
-    occurrences = navigation.wpid.tolist().count(name)
-    if occurrences > 1:
+    waypoint_indices = np.flatnonzero(navigation.wpid == name)
+    if len(waypoint_indices) > 1:
         return Err(
             ArgumentIssue.expected("an unambiguous waypoint id or explicit coordinates", name, span)
         )
-    if occurrences == 1:
-        index = navigation.wpid.tolist().index(name)
+    if len(waypoint_indices) == 1:
+        index = int(waypoint_indices[0])
         return Ok(t.LatLonDegrees(float(navigation.wplat[index]), float(navigation.wplon[index])))
 
     return Err(ArgumentIssue.expected("a waypoint, airport, runway, or aircraft id", name, span))
