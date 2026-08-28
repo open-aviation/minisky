@@ -129,6 +129,23 @@ class TestVerticalGuidance:
         run_cmd(f"ALT {aircraft} FL080")
         step_until(lambda: abs(runtime.traffic.alt[0] - target) < q.ft_to_m(50.0), max_steps=600)
 
+    def test_vnav_descent_holds_selected_cas(
+        self, runtime: MiniSky, run_cmd: RunCommand, step_until: StepUntil
+    ) -> None:
+        # Regression: speed envelope evaluated at intended altitude caused a CAS dip at ToD.
+        run_cmd("CRE AF265,A321,53.164,6.667,224,FL260,300KT[CAS]")
+        run_cmd("ADDWPT AF265 NOVEN")
+        run_cmd("ADDWPT AF265 ARTIP FL100 250KT[CAS]")
+        run_cmd("LNAV AF265 ON")
+        run_cmd("VNAV AF265 ON")
+
+        traffic = runtime.traffic
+        selected_cas = q.kt_to_mps(300.0)
+        step_until(lambda: traffic.alt[0] < q.ft_to_m(25000.0), max_steps=1200)
+        while traffic.alt[0] > q.ft_to_m(12000.0):
+            runtime.simulation.step()
+            assert traffic.cas[0] == pytest.approx(selected_cas, abs=q.kt_to_mps(1.0))
+
 
 class TestRouteEditing:
     """Regression tests for route-editing bugs from docs/known-issues.md."""
