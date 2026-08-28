@@ -1207,7 +1207,7 @@ class Autopilot(TrafficArrays):
         if isinstance(hdg, MagneticHeadingDeg):
             resolved_hdg = np.fromiter(
                 (
-                    (hdg.value + geo.magdec(float(lat), float(lon))) % 360.0
+                    (hdg.value + self.traffic.magnetic_declination(float(lat), float(lon))) % 360.0
                     for lat, lon in zip(self.traffic.lat[idx], self.traffic.lon[idx], strict=True)
                 ),
                 dtype=float,

@@ -149,6 +149,7 @@ class Traffic(TrafficArrays):
         numpy_random: np.random.RandomState,
         shapes: Shapes,
         navigation: Navdatabase,
+        magnetic_declination: geo.MagneticDeclination,
         console: ConsoleIO,
         get_simulation: Callable[[], Simulation],
         stack_command: Callable[..., None],
@@ -160,6 +161,7 @@ class Traffic(TrafficArrays):
         self.numpy_random = numpy_random
         self.shapes = shapes
         self.navigation = navigation
+        self.magnetic_declination = magnetic_declination
         self.console = console
         self._get_simulation = get_simulation
         self.stack_command = stack_command
@@ -305,7 +307,9 @@ class Traffic(TrafficArrays):
         elif hdg is None:
             heading = default_heading
         elif isinstance(hdg, MagneticHeadingDeg):
-            heading = (hdg.value + geo.magdec(coordinates.lat, coordinates.lon)) % 360.0
+            heading = (
+                hdg.value + self.magnetic_declination(coordinates.lat, coordinates.lon)
+            ) % 360.0
         else:
             heading = hdg.value
 
@@ -756,7 +760,7 @@ class Traffic(TrafficArrays):
 
         if hdg is not None:
             heading = (
-                (hdg.value + geo.magdec(position.lat, position.lon)) % 360.0
+                (hdg.value + self.magnetic_declination(position.lat, position.lon)) % 360.0
                 if isinstance(hdg, MagneticHeadingDeg)
                 else hdg.value
             )

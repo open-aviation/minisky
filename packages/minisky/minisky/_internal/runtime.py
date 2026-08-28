@@ -29,6 +29,7 @@ from minisky._internal.streaming import StreamHub, build_snapshot
 from minisky._internal.traffic import Traffic
 from minisky._internal.traffic_arrays import ReplaceableManager
 from minisky._internal.variables import VariableExplorer
+from minisky.geo import MagneticDeclination, MagneticDeclinationGrid
 
 
 class MiniSky:
@@ -36,13 +37,15 @@ class MiniSky:
 
     When `config` is omitted, MiniSky loads the optional default user
     config and otherwise falls back to [`MiniSkyConfig`][minisky.MiniSkyConfig]
-    defaults.
+    defaults. Magnetic declination defaults to the bundled grid.
     """
 
     def __init__(
         self,
         config: MiniSkyConfig | None = None,
         scenario: str | None = None,
+        *,
+        magnetic_declination: MagneticDeclination | None = None,
     ) -> None:
         if config is None:
             try:
@@ -55,6 +58,9 @@ class MiniSky:
         self.numpy_random = np.random.RandomState()
         self.console = ConsoleIO(lambda: self.simulation.state == SimulationState.OP)
         self.navigation = Navdatabase(data("navigation"))
+        if magnetic_declination is None:
+            magnetic_declination = MagneticDeclinationGrid.load_default()
+        self.magnetic_declination = magnetic_declination
         self.shapes = Shapes()
         self.variables = VariableExplorer()
         self.traffic = Traffic(
@@ -63,6 +69,7 @@ class MiniSky:
             numpy_random=self.numpy_random,
             shapes=self.shapes,
             navigation=self.navigation,
+            magnetic_declination=self.magnetic_declination,
             console=self.console,
             get_simulation=lambda: self.simulation,
             stack_command=lambda *args, **kwargs: self.commands.stack(*args, **kwargs),
@@ -118,7 +125,7 @@ class MiniSky:
         )
         self.runner = Runner(self.simulation, self.console)
         self.route_commands = RouteCommands(self.traffic)
-        self.geo_commands = GeoCommands()
+        self.geo_commands = GeoCommands(self.magnetic_declination)
         self.variables.init(self.simulation, self.traffic)
         self.commands.mount_components(
             (
