@@ -100,13 +100,10 @@ def txt2pos(
             return not_found
         return Ok(ResolvedRunwayPosition(float(lat), float(lon), float(heading)))
 
-    if normalized in navigation.aptid:
-        idx = navigation.aptid.tolist().index(normalized)
+    if (idx := navigation.getaptidx(normalized)) is not None:
         return Ok(AirportPosition(float(navigation.aptlat[idx]), float(navigation.aptlon[idx])))
 
-    if normalized in navigation.wpid:
-        idx = navigation.getwpidx(normalized, _ReferencePosition(reflat, reflon))
-        assert idx is not None
+    if (idx := navigation.getwpidx(normalized, _ReferencePosition(reflat, reflon))) is not None:
         return Ok(NavaidPosition(float(navigation.wplat[idx]), float(navigation.wplon[idx])))
 
     if normalized in traffic.callsign:

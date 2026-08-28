@@ -11,10 +11,9 @@ argument that references a navaid, airport, or runway.
 from __future__ import annotations
 
 import json
-from collections.abc import Sequence
 from enum import IntEnum
 from pathlib import Path
-from typing import Literal, NamedTuple, Protocol, TypeAlias, TypeVar
+from typing import Literal, NamedTuple, Protocol, TypeAlias
 
 import numpy as np
 import numpy.typing as npt
@@ -31,7 +30,6 @@ _COLOCATED_DISTANCE: q.DistanceM[float] = q.nmi_to_m(1.0)
 WaypointIndex: TypeAlias = int
 AirportIndex: TypeAlias = int
 NavigationIndex: TypeAlias = int
-_T = TypeVar("_T")
 
 
 class AirportSize(IntEnum):
@@ -61,22 +59,6 @@ class LatLonReference(Protocol):
 
     @property
     def lon(self) -> q.LongitudeDeg[float]: ...
-
-
-def findall(lst: Sequence[_T], x: _T) -> list[NavigationIndex]:
-    """Find every occurrence of `x` in `lst`."""
-    idx = []
-    i = 0
-    found = True
-    while i < len(lst) and found:
-        try:
-            i = lst[i:].index(x) + i
-            idx.append(i)
-            i = i + 1
-            found = True
-        except ValueError:
-            found = False
-    return idx
 
 
 class Navdatabase:
@@ -214,10 +196,10 @@ class Navdatabase:
     def describe_waypoint(self, name: WaypointIdentifier) -> Result[str, str]:
         """Describe a waypoint or report that its name is available."""
         normalized = name.upper()
-        if normalized not in self.wpid:
+        indices = np.flatnonzero(self.wpid == normalized)
+        if len(indices) == 0:
             return Ok(f"Waypoint {normalized} does not yet exist.")
-        wpids = self.wpid.tolist()
-        index = len(wpids) - wpids[::-1].index(normalized) - 1
+        index = int(indices[-1])
         description = f"{self.wpid[index]} : {self.wplat[index]},{self.wplon[index]}"
         if self.wptype[index]:
             description += f"  {self.wptype[index]}"
@@ -253,11 +235,12 @@ class Navdatabase:
 
         The last-added occurrence of the name is removed.
         """
-        wpids = self.wpid.tolist()
-        if wpids.count(name.upper()) <= 0:
-            return Err(f"Waypoint {name.upper()} does not exist.")
+        normalized = name.upper()
+        indices = np.flatnonzero(self.wpid == normalized)
+        if len(indices) == 0:
+            return Err(f"Waypoint {normalized} does not exist.")
 
-        idx = len(wpids) - wpids[::-1].index(name.upper()) - 1  # Search from back of list
+        idx = int(indices[-1])  # Search from back of list
 
         self.wpid = np.delete(self.wpid, idx)
         self.wplat = np.delete(self.wplat, idx)
@@ -286,39 +269,15 @@ class Navdatabase:
         Returns:
             The selected waypoint index, or `None` when the identifier is absent.
         """
-        name = txt.upper()
-        wpids = self.wpid.tolist()
-        try:
-            i = wpids.index(name)
-        except ValueError:
+        indices = np.flatnonzero(self.wpid == txt.upper())
+        if len(indices) == 0:
             return None
-
-        if reference is None:
-            return i
-
-        else:
-            idx = []
-            idx.append(i)
-            found = True
-            while i < len(self.wpid) - 1 and found:
-                try:
-                    i = wpids.index(name, i + 1)
-                    idx.append(i)
-                except ValueError:
-                    found = False
-            if len(idx) == 1:
-                return idx[0]
-            else:
-                imin = idx[0]
-                dmin = geo.kwikdist(
-                    reference.lat, reference.lon, self.wplat[imin], self.wplon[imin]
-                )
-                for i in idx[1:]:
-                    d = geo.kwikdist(reference.lat, reference.lon, self.wplat[i], self.wplon[i])
-                    if d < dmin:
-                        imin = i
-                        dmin = d
-                return imin
+        if reference is None or len(indices) == 1:
+            return int(indices[0])
+        distances = geo.kwikdist(
+            reference.lat, reference.lon, self.wplat[indices], self.wplon[indices]
+        )
+        return int(indices[int(np.argmin(distances))])
 
     def getwpindices(
         self,
@@ -339,51 +298,34 @@ class Navdatabase:
             The primary occurrence followed by co-located duplicates,
             or an empty list when the identifier is absent.
         """
-        name = txt.upper()
-        wpids = self.wpid.tolist()
-        try:
-            i = wpids.index(name)
-        except ValueError:
+        indices = np.flatnonzero(self.wpid == txt.upper())
+        if len(indices) == 0:
             return []
-
         if reference is None:
-            return [i]
-
-        else:
-            idx = findall(wpids, name)
-
-            if len(idx) == 1:
-                return [idx[0]]
-            else:
-                imin = idx[0]
-                dmin = geo.kwikdist(
-                    reference.lat, reference.lon, self.wplat[imin], self.wplon[imin]
-                )
-                for i in idx[1:]:
-                    d = geo.kwikdist(reference.lat, reference.lon, self.wplat[i], self.wplon[i])
-                    if d < dmin:
-                        imin = i
-                        dmin = d
-                indices = [imin]
-                for i in idx:
-                    if i != imin:
-                        dist = geo.kwikdist(
-                            self.wplat[i],
-                            self.wplon[i],
-                            self.wplat[imin],
-                            self.wplon[imin],
-                        )
-                        if dist <= crit:
-                            indices.append(i)
-
-                return indices
+            return [int(indices[0])]
+        distances = geo.kwikdist(
+            reference.lat, reference.lon, self.wplat[indices], self.wplon[indices]
+        )
+        primary = int(indices[int(np.argmin(distances))])
+        colocated = geo.kwikdist(
+            self.wplat[indices],
+            self.wplon[indices],
+            self.wplat[primary],
+            self.wplon[primary],
+        )
+        return [
+            primary,
+            *(
+                int(index)
+                for index, distance in zip(indices, colocated)
+                if index != primary and distance <= crit
+            ),
+        ]
 
     def getaptidx(self, txt: AirportIdentifier) -> AirportIndex | None:
         """Get the index of an airport by its navigation-dataset identifier."""
-        try:
-            return self.aptid.tolist().index(txt.upper())
-        except ValueError:
-            return None
+        indices = np.flatnonzero(self.aptid == txt.upper())
+        return None if len(indices) == 0 else int(indices[0])
 
     def getinear(
         self,
@@ -463,21 +405,20 @@ class Navdatabase:
 
         airway = []  # identifier of waypoint   0 .. N-1
 
-        awids = self.awid.tolist()
-        if awids.count(awkey) > 0:
+        idx = np.flatnonzero(self.awid == awkey)
+        if len(idx) > 0:
             i = 0
             found = True
             legs: list[str] = []  # Alle leg incl. duplicate legs
             left = []  # wps in left column in file
             right = []  # wps in right coumn in file
 
-            idx = findall(awids, awkey)
             for i in idx:
-                newleg = self.awfromwpid[i] + "-" + self.awtowpid[i]
+                newleg = str(self.awfromwpid[i]) + "-" + str(self.awtowpid[i])
                 if newleg not in legs:
                     legs.append(newleg)
-                    left.append(self.awfromwpid[i])
-                    right.append(self.awtowpid[i])
+                    left.append(str(self.awfromwpid[i]))
+                    right.append(str(self.awtowpid[i]))
 
             if len(legs) == 0:
                 return []
@@ -551,22 +492,18 @@ class Navdatabase:
         """
         connect: list[AirwayConnection] = []
 
-        if wpid in self.awfromwpid:
-            idx = findall(self.awfromwpid.tolist(), wpid)
-            for i in idx:
-                newitem = AirwayConnection(self.awid[i], self.awtowpid[i])
-                if (newitem not in connect) and geo.kwikdist(
-                    self.awfromlat[i], self.awfromlon[i], wplat, wplon
-                ) < q.nmi_to_m(10.0):
-                    connect.append(newitem)
+        for i in np.flatnonzero(self.awfromwpid == wpid):
+            newitem = AirwayConnection(str(self.awid[i]), str(self.awtowpid[i]))
+            if (newitem not in connect) and geo.kwikdist(
+                self.awfromlat[i], self.awfromlon[i], wplat, wplon
+            ) < q.nmi_to_m(10.0):
+                connect.append(newitem)
 
-        if wpid in self.awtowpid:
-            idx = findall(self.awtowpid.tolist(), wpid)
-            for i in idx:
-                newitem = AirwayConnection(self.awid[i], self.awfromwpid[i])
-                if (newitem not in connect) and geo.kwikdist(
-                    self.awtolat[i], self.awtolon[i], wplat, wplon
-                ) < q.nmi_to_m(10.0):
-                    connect.append(newitem)
+        for i in np.flatnonzero(self.awtowpid == wpid):
+            newitem = AirwayConnection(str(self.awid[i]), str(self.awfromwpid[i]))
+            if (newitem not in connect) and geo.kwikdist(
+                self.awtolat[i], self.awtolon[i], wplat, wplon
+            ) < q.nmi_to_m(10.0):
+                connect.append(newitem)
 
         return connect

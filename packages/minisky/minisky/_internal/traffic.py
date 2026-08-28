@@ -877,7 +877,8 @@ class Traffic(TrafficArrays):
             aptelev = self.navigation.aptelev[idx_airport]
 
             country_code = str(self.navigation.aptco[idx_airport]).upper()
-            idx_cc = self.navigation.cocode2.tolist().index(country_code)
+            country_indices = np.flatnonzero(self.navigation.cocode2 == country_code)
+            idx_cc = int(country_indices[0])
             country_name = str(self.navigation.coname[idx_cc]).upper()
 
             lines += (
@@ -935,7 +936,7 @@ class Traffic(TrafficArrays):
                 if self.navigation.wptype[iwp] == "VOR":
                     lines += f"Variation: {self.navigation.wpvar[iwp]} deg\n"
 
-                n_other = self.navigation.wpid.tolist().count(name) - len(idx_waypoints)
+                n_other = len(np.flatnonzero(self.navigation.wpid == name)) - len(idx_waypoints)
                 if n_other > 0:
                     lines += f"Attention: {n_other} other waypoint(s) also has name {name}\n"
 
