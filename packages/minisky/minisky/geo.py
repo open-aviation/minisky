@@ -11,13 +11,12 @@ Matrix variants (suffixed with `_matrix`) operate on vectors of positions
 and return results for every combination of the input positions.
 """
 
-from functools import cache
+from pathlib import Path
+from typing import Protocol, Self
 
 import numpy as np
-import pandas as pd
 
 from minisky import quantities as q
-from minisky._internal.config import data
 
 _WGS84_SEMI_MAJOR_AXIS: q.LengthM[float] = 6378137.0
 _WGS84_SEMI_MINOR_AXIS: q.LengthM[float] = 6356752.314245
@@ -472,37 +471,86 @@ def kwikpos(
     return latd2, lond2
 
 
-def magdec(latd: q.LatitudeDeg[float], lond: q.LongitudeDeg[float]) -> q.AngleDeg[float]:
-    """
-    Gives magnetic declination (also called magnetic variation) at a given
-    position, interpolated linearly from the bundled global data table.
-    In:
-         latd, lond  [deg]  Position at which the magnetic declination is
-                            evaluated (floats)
-    Out:
-         d_hdg       [deg]  Magnetic declination, the angle of difference
-                            between true North and magnetic North. For instance,
-                            if the declination at a certain point were 10 deg W
-                            (10 deg), then a compass at that location pointing
-                            north (magnetic) would actually align 10 deg W of
-                            true North. True North would be 10 deg E relative to
-                            the magnetic North direction given by the compass.
-                            Declination varies with location and slowly changes
-                            in time. Referenced from
-            https://www.ngdc.noaa.gov/geomag/calculators/help/igrfgridHelp.html
-                            In short, magnetic heading = true heading - d_hdg,
-                            (Reminder MTV : M = T - V)
-                            or,       true heading = magnetic heading + d_hdg.
+class MagneticDeclination(Protocol):
+    def __call__(
+        self, latd: q.LatitudeDeg[float], lond: q.LongitudeDeg[float], /
+    ) -> q.AngleDeg[float]: ...
+
+
+class MagneticDeclinationGrid(MagneticDeclination):
+    def __init__(self, declinations: q.AngleDeg[np.ndarray]) -> None:
+        values = np.asarray(declinations, dtype=float)
+        self.declinations = values.copy()
+        self.declinations.setflags(write=False)
+
+    @classmethod
+    def load_default(cls) -> Self:
+        """Load the magnetic-declination grid bundled with MiniSky core.
+
+        Based on the data table calculated from:
+        <https://www.ngdc.noaa.gov/geomag/calculators/magcalc.shtml#igrfgrid>
+        with the following input:
+            Southern most lat:  90 S
+            Northern most lat:  90 N
+            Lat Step Size:      1.0
+            Western most long:  180 W
+            Eastern most long:  179 E
+            Lon Step Size:      1.0
+            Elevation:          Mean sea level 0 Feet
+            Magnetic component: Declination
+            Model:              WMM (2019-2024)
+            Start Date:         2020 09 20
+            End Date:           2020 09 20
+            Step size:          1.0
+        The grid size can be adjusted but the (1 deg by 1 deg) size should suffice
+        for practical purpose, as long as the the grids cover the entire Earth
+        surface. The interpolation is performed at sea-level, but no significant
+        difference would be noticed up to FL600 or beyond.
+        Based on original version created by  : Yaofu Zhou
+        Modified to read at init and use linear interpolation by J.M. Hoekstra
+        """
+        from minisky._internal.config import data
+
+        return cls.from_csv(data("geo") / "geo_declination_data.csv")
+
+    @classmethod
+    def from_csv(cls, path: Path) -> Self:
+        """Read a NOAA/WMM CSV (a 181x361 lookup grid).
+
+        The source table is expected to contain one row per whole-degree point
+        for latitude +89 through -90 and longitude -180 through +179, with
+        declination in the fifth column. The +90 latitude row and +180 longitude
+        column are derived from the adjacent/wrapped source values.
+        """
+        # NOTE(abraham): shape hardcoding is inherited from bluesky, reconsider
+        source = np.genfromtxt(
+            path, delimiter=",", comments="#", usecols=(4,), dtype=float
+        ).reshape((180, 360))
+        source = np.vstack((source[0:1, :], source))
+        source = np.hstack((source, source[:, 0:1]))
+        return cls(source)
+
+    def __call__(
+        self, latd: q.LatitudeDeg[float], lond: q.LongitudeDeg[float], /
+    ) -> q.AngleDeg[float]:
+        return _interpolate_magnetic_declination(latd, lond, self.declinations)
+
+
+def _interpolate_magnetic_declination(
+    latd: q.LatitudeDeg[float],
+    lond: q.LongitudeDeg[float],
+    decl_lat_lon: q.AngleDeg[np.ndarray],
+) -> q.AngleDeg[float]:
+    """Return magnetic declination at a position from a lookup grid.
+
     Created by  : Yaofu Zhou
     Modified by J.M. Hoekstra
     Reason: Segmentation fault caused by Scipy's BiVariateSpline interpolation
     for some data on some machines, so it was changed to linear interpolation.
     Difference in methods has been inspected: it is way less than the inaccuracy
-    of the actual data. Axes were regularly spaced at one degree. The direct
-    manual linear interpolation is also about 6 times faster.
+    of the actual data.
+    The direct manual linear interpolation is also about 6 times faster.
     """
-    decl_lat_lon = load_magnetic_declination()
-
     # Use fact that whole degrees are used as ticks on both lat & lon axis
     i_lat = min(max(0, int(90.0 - latd)), 180)
     f_lat = (90.0 - latd) - int(90.0 - latd)
@@ -522,63 +570,3 @@ def magdec(latd: q.LatitudeDeg[float], lond: q.LongitudeDeg[float]) -> q.AngleDe
     d_hdg = declon0 * (1.0 - f_lon) + f_lon * declon1
 
     return d_hdg
-
-
-@cache
-def load_magnetic_declination() -> q.AngleDeg[np.ndarray]:
-    """
-    Called by Init
-    Read magnetic declination (also called magnetic variation) datafile
-    based on the data table calculated from the NOAA webpage
-    https://www.ngdc.noaa.gov/geomag/calculators/magcalc.shtml#igrfgrid
-    with the following input:
-        Southern most lat:  90 S
-        Northern most lat:  90 N
-        Lat Step Size:      1.0
-        Western most long:  180 W
-        Eastern most long:  179 E
-        Lon Step Size:      1.0
-        Elevation:          Mean sea level 0 Feet
-        Magnetic component: Declination
-        Model:              WMM (2019-2024)
-        Start Date:         2020 09 20
-        End Date:           2020 09 20
-        Step size:          1.0
-        Result format:      CSV
-    The grid size can be adjusted but the (1 deg by 1 deg) size should suffice
-    for practical purpose, as long as the the grids cover the entire Earth
-    surface. The interpolation is performed at sea-level, but no significant
-    difference would be noticed up to FL600 or beyond.
-    See docstring of geo.magdec() for more information.
-    Based on original version created by  : Yaofu Zhou
-    Modified to read at init and use linear interpolation by J.M. Hoekstra"""
-
-    #    Columns:
-    #     (1) Date in decimal years
-    #     (2) Latitude in decimal Degrees
-    #     (3) Longitude in decimal Degrees
-    #     (4) Elevation in km Mean Sea Level
-    #     (5) Declination in Degree
-    #     (6) Declination_sv in Degree
-    #     (7) Declination_uncertainty in Degree
-    #
-    # lat : 89 ... -90
-    # Lon: -180 ... 179
-    file_path = data("navigation") / "geo_declination_data.csv"
-    df = pd.read_csv(file_path, comment="#", header=None)
-
-    decl = np.asarray(df[4], dtype=float)
-
-    decl_lat_lon = decl.reshape((180, 360))
-
-    # Source data stops at +89°; extend the grid to +90° by reusing that row.
-    decl_lat_lon = np.vstack((decl_lat_lon[0:1, :], decl_lat_lon))
-
-    # Add a column for longitude = 180 degrees (same as longitude = -180 degrees)
-    decl_lat_lon = np.hstack((decl_lat_lon, decl_lat_lon[:, 0:1]))
-
-    # Result is a 181x361 table for
-    # lat = 90 ... -90 (rows)
-    # lon = -180 ... 180 (columns)
-    decl_lat_lon.setflags(write=False)
-    return decl_lat_lon

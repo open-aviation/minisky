@@ -29,7 +29,6 @@ from minisky import (
     Result,
     TimeS,
     command,
-    geo,
     hook,
 )
 from minisky import quantities as q
@@ -192,7 +191,9 @@ class Multicopter(Entity):
 
         resolved_hdg = hdg.value
         if isinstance(hdg, MagneticHeadingDeg):
-            resolved_hdg += geo.magdec(float(self.traffic.lat[idx]), float(self.traffic.lon[idx]))
+            resolved_hdg += self.traffic.magnetic_declination(
+                float(self.traffic.lat[idx]), float(self.traffic.lon[idx])
+            )
         resolved_hdg %= 360.0
         self.selhdg[idx] = resolved_hdg
         self.swselhdg[idx] = True

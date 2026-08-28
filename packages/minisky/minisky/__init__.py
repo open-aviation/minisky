@@ -85,6 +85,7 @@ from minisky._internal.traffic_arrays import (
 )
 from minisky._internal.variables import VariableExplorer
 from minisky._internal.wind import Wind, WindLevel
+from minisky.geo import MagneticDeclination, MagneticDeclinationGrid
 
 __all__ = (  # noqa: RUF022 - public API and docs use this semantic order
     # runtime
@@ -104,6 +105,8 @@ __all__ = (  # noqa: RUF022 - public API and docs use this semantic order
     "AcData",
     "default_user_config_dir",
     "default_user_config_toml_path",
+    "MagneticDeclination",
+    "MagneticDeclinationGrid",
     # plugin authoring
     "Plugin",
     "PluginContext",
