@@ -903,16 +903,16 @@ def _resolve_named_position(
         return Ok(RunwayPosition(t.LatLonDegrees(float(lat), float(lon)), float(heading)))
 
     if name in navigation.aptid:
-        index = navigation.aptid.index(name)
+        index = navigation.aptid.tolist().index(name)
         return Ok(t.LatLonDegrees(float(navigation.aptlat[index]), float(navigation.aptlon[index])))
 
-    occurrences = navigation.wpid.count(name)
+    occurrences = navigation.wpid.tolist().count(name)
     if occurrences > 1:
         return Err(
             ArgumentIssue.expected("an unambiguous waypoint id or explicit coordinates", name, span)
         )
     if occurrences == 1:
-        index = navigation.wpid.index(name)
+        index = navigation.wpid.tolist().index(name)
         return Ok(t.LatLonDegrees(float(navigation.wplat[index]), float(navigation.wplon[index])))
 
     return Err(ArgumentIssue.expected("a waypoint, airport, runway, or aircraft id", name, span))

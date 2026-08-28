@@ -101,7 +101,7 @@ def txt2pos(
         return Ok(ResolvedRunwayPosition(float(lat), float(lon), float(heading)))
 
     if normalized in navigation.aptid:
-        idx = navigation.aptid.index(normalized)
+        idx = navigation.aptid.tolist().index(normalized)
         return Ok(AirportPosition(float(navigation.aptlat[idx]), float(navigation.aptlon[idx])))
 
     if normalized in navigation.wpid:
