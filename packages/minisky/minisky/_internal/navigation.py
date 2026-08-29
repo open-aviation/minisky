@@ -65,8 +65,12 @@ class WaypointData:
     elevations: q.MslAltitudeM[np.ndarray] = field(
         default_factory=lambda: np.array([], dtype=float)
     )
-    magnetic_variations: np.ndarray = field(default_factory=lambda: np.array([], dtype=float))
-    frequencies: np.ndarray = field(default_factory=lambda: np.array([], dtype=float))
+    magnetic_variations: q.MagneticDeclinationDeg[np.ndarray] = field(
+        default_factory=lambda: np.array([], dtype=float)
+    )
+    frequencies: q.FrequencyHz[np.ndarray] = field(
+        default_factory=lambda: np.array([], dtype=float)
+    )
     descriptions: npt.NDArray[np.str_] = field(default_factory=lambda: np.array([], dtype=str))
 
 
@@ -77,8 +81,8 @@ class Waypoints:
     longitudes: q.LongitudeDeg[np.ndarray]
     categories: npt.NDArray[np.str_]
     elevations: q.MslAltitudeM[np.ndarray]
-    magnetic_variations: np.ndarray
-    frequencies: np.ndarray
+    magnetic_variations: q.MagneticDeclinationDeg[np.ndarray]
+    frequencies: q.FrequencyHz[np.ndarray]
     descriptions: npt.NDArray[np.str_]
     _source: WaypointData
 
@@ -297,8 +301,12 @@ class AirwayData:
     )
     directions: np.ndarray = field(default_factory=lambda: np.array([], dtype=np.int64))
     """Number of permitted traversal directions for each airway leg: one or two."""
-    lower_altitudes: np.ndarray = field(default_factory=lambda: np.array([], dtype=np.int64))
-    upper_altitudes: np.ndarray = field(default_factory=lambda: np.array([], dtype=np.int64))
+    lower_altitudes: q.PressureAltitudeM[np.ndarray] = field(
+        default_factory=lambda: np.array([], dtype=float)
+    )
+    upper_altitudes: q.PressureAltitudeM[np.ndarray] = field(
+        default_factory=lambda: np.array([], dtype=float)
+    )
 
     def listairway(self, airwayid: AirwayIdentifier) -> list[list[WaypointIdentifier]]:
         """Return the waypoint sequence(s) of an airway.
@@ -477,15 +485,23 @@ def load_navdata(data_path: Path) -> NavData:
     with (data_path / "runway_thresholds.json").open() as file:
         runway_threshold_data = json.load(file)
 
+    waypoint_categories = np.asarray(wptdata["wptype"], dtype=str)
+    waypoint_frequencies = np.asarray(wptdata["wpfreq"], dtype=float)
+    frequencies = np.where(
+        np.isin(waypoint_categories, ("VOR", "DME", "TACAN")),
+        q.mhz_to_hz(waypoint_frequencies),
+        q.khz_to_hz(waypoint_frequencies),
+    )
+
     return NavData(
         waypoints=WaypointData(
             identifiers=np.asarray(wptdata["wpid"], dtype=str),
             latitudes=np.asarray(wptdata["wplat"], dtype=float),
             longitudes=np.asarray(wptdata["wplon"], dtype=float),
-            categories=np.asarray(wptdata["wptype"], dtype=str),
+            categories=waypoint_categories,
             elevations=np.asarray(wptdata["wpelev"], dtype=float),
             magnetic_variations=np.asarray(wptdata["wpvar"], dtype=float),
-            frequencies=np.asarray(wptdata["wpfreq"], dtype=float),
+            frequencies=frequencies,
             descriptions=np.asarray(wptdata["wpdesc"], dtype=str),
         ),
         airports=AirportData(
@@ -507,8 +523,8 @@ def load_navdata(data_path: Path) -> NavData:
             to_latitudes=np.asarray(awydata["awtolat"], dtype=float),
             to_longitudes=np.asarray(awydata["awtolon"], dtype=float),
             directions=np.asarray(awydata["awndir"], dtype=np.int64),
-            lower_altitudes=np.asarray(awydata["awlowfl"], dtype=np.int64),
-            upper_altitudes=np.asarray(awydata["awupfl"], dtype=np.int64),
+            lower_altitudes=q.ft_to_m(np.asarray(awydata["awlowfl"], dtype=float) * 100.0),
+            upper_altitudes=q.ft_to_m(np.asarray(awydata["awupfl"], dtype=float) * 100.0),
         ),
         firs=FirData(
             boundaries=tuple(
