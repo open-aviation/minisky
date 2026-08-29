@@ -936,9 +936,11 @@ class Traffic(TrafficArrays):
                         lastdesc = self.waypoints.descriptions[i]
 
                     if self.waypoints.categories[i] in ["VOR", "DME", "TACAN"] and not samedesc:
-                        desctxt = desctxt + " " + str(self.waypoints.frequencies[i]) + " MHz"
+                        frequency = round(float(q.hz_to_mhz(self.waypoints.frequencies[i])), 3)
+                        desctxt = desctxt + f" {frequency} MHz"
                     elif self.waypoints.categories[i] == "NDB" and not samedesc:
-                        desctxt = desctxt + " " + str(self.waypoints.frequencies[i]) + " kHz"
+                        frequency = round(float(q.hz_to_khz(self.waypoints.frequencies[i])), 3)
+                        desctxt = desctxt + f" {frequency} kHz"
 
                 iwp = idx_waypoints[0]
 

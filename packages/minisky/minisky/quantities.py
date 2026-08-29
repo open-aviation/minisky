@@ -44,6 +44,13 @@ _T = TypeVar("_T")
 
 AngleDeg = Annotated[_T, isqx.ANGLE(isqx.DEG)]
 AngleRad = Annotated[_T, isqx.ANGLE(isqx.RAD)]
+MagneticDeclinationDeg = Annotated[_T, isqx.ANGLE["magnetic_declination"](isqx.DEG)]
+"""Magnetic declination (also called magnetic variation) in degrees.
+
+It is the angular difference between true north and magnetic north. For
+example, with 10 degrees west declination, magnetic north lies 10 degrees west
+of true north, i.e. `magnetic heading = true heading - magnetic declination`.
+"""
 LatitudeDeg = Annotated[_T, isqx.LATITUDE(isqx.DEG)]
 LongitudeDeg = Annotated[_T, isqx.LONGITUDE(isqx.DEG)]
 BearingDeg = Annotated[_T, isqx.ANGLE["bearing", "true"](isqx.DEG)]
@@ -151,6 +158,10 @@ deg_to_arcmin = isqx.convert(isqx.DEG, _ARCMINUTE)
 arcmin_to_arcsec = isqx.convert(_ARCMINUTE, _ARCSECOND)
 ft_to_m = isqx.convert(isqx.usc.FT, isqx.M)
 km_to_m = isqx.convert(isqx.KILO * isqx.M, isqx.M)
+khz_to_hz = isqx.convert(isqx.KILO * isqx.HZ, isqx.HZ)
+mhz_to_hz = isqx.convert(isqx.MEGA * isqx.HZ, isqx.HZ)
+hz_to_khz = isqx.convert(isqx.HZ, isqx.KILO * isqx.HZ)
+hz_to_mhz = isqx.convert(isqx.HZ, isqx.MEGA * isqx.HZ)
 m_to_ft = isqx.convert(isqx.M, isqx.usc.FT)
 nmi_to_m = isqx.convert(isqx.usc.NMI, isqx.M)
 m_to_nmi = isqx.convert(isqx.M, isqx.usc.NMI)

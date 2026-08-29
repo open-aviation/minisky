@@ -474,11 +474,11 @@ def kwikpos(
 class MagneticDeclination(Protocol):
     def __call__(
         self, latd: q.LatitudeDeg[float], lond: q.LongitudeDeg[float], /
-    ) -> q.AngleDeg[float]: ...
+    ) -> q.MagneticDeclinationDeg[float]: ...
 
 
 class MagneticDeclinationGrid(MagneticDeclination):
-    def __init__(self, declinations: q.AngleDeg[np.ndarray]) -> None:
+    def __init__(self, declinations: q.MagneticDeclinationDeg[np.ndarray]) -> None:
         values = np.asarray(declinations, dtype=float)
         self.declinations = values.copy()
         self.declinations.setflags(write=False)
@@ -532,15 +532,15 @@ class MagneticDeclinationGrid(MagneticDeclination):
 
     def __call__(
         self, latd: q.LatitudeDeg[float], lond: q.LongitudeDeg[float], /
-    ) -> q.AngleDeg[float]:
+    ) -> q.MagneticDeclinationDeg[float]:
         return _interpolate_magnetic_declination(latd, lond, self.declinations)
 
 
 def _interpolate_magnetic_declination(
     latd: q.LatitudeDeg[float],
     lond: q.LongitudeDeg[float],
-    decl_lat_lon: q.AngleDeg[np.ndarray],
-) -> q.AngleDeg[float]:
+    decl_lat_lon: q.MagneticDeclinationDeg[np.ndarray],
+) -> q.MagneticDeclinationDeg[float]:
     """Return magnetic declination at a position from a lookup grid.
 
     Created by  : Yaofu Zhou
