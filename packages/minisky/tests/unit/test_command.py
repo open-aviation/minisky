@@ -277,8 +277,8 @@ def test_resolved_position_rejects_ambiguous_waypoint_without_ui_reference(
     def record(position: LatLonDeg) -> None:
         received.append(position)
 
-    runtime.navigation.defwpt("ZZDUPPOS", 52.0, 4.0)
-    runtime.navigation.defwpt("ZZDUPPOS", 53.0, 5.0)
+    runtime.waypoints.defwpt("ZZDUPPOS", 52.0, 4.0)
+    runtime.waypoints.defwpt("ZZDUPPOS", 53.0, 5.0)
     try:
         prepared = runtime.commands.prepare_command(record, name="TESTPOS")
         result = prepared("ZZDUPPOS")
@@ -289,8 +289,8 @@ def test_resolved_position_rejects_ambiguous_waypoint_without_ui_reference(
         assert "unambiguous waypoint id" in issue.message
         assert received == []
     finally:
-        runtime.navigation.delwpt("ZZDUPPOS")
-        runtime.navigation.delwpt("ZZDUPPOS")
+        runtime.waypoints.delwpt("ZZDUPPOS")
+        runtime.waypoints.delwpt("ZZDUPPOS")
 
 
 def test_union_uses_left_to_right_choice(runtime: MiniSky) -> None:
@@ -422,7 +422,7 @@ def test_cre_explicit_runway_heading_marker_is_resolved_by_command(
 
     assert "created" in output.lower()
     index = runtime.traffic.idx("RWYREF")
-    runway_heading = runtime.navigation.rwythresholds["EHAM"]["18L"][2]
+    runway_heading = runtime.runway_thresholds["EHAM"]["18L"].heading
     assert runtime.traffic.hdg[index] == pytest.approx(runway_heading)
 
 

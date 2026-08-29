@@ -88,7 +88,13 @@ from minisky.types import (
 
 if TYPE_CHECKING:
     from minisky._internal.console import ConsoleIO
-    from minisky._internal.navigation import Navdatabase
+    from minisky._internal.navigation import (
+        AirportData,
+        AirwayData,
+        CountryData,
+        RunwayThresholdData,
+        Waypoints,
+    )
     from minisky._internal.simulation import Simulation
 
 
@@ -149,7 +155,11 @@ class Traffic(TrafficArrays):
         python_random: Random,
         numpy_random: np.random.RandomState,
         shapes: Shapes,
-        navigation: Navdatabase,
+        waypoints: Waypoints,
+        airports: AirportData,
+        airways: AirwayData,
+        countries: CountryData,
+        runway_thresholds: RunwayThresholdData,
         magnetic_declination: geo.MagneticDeclination,
         console: ConsoleIO,
         get_simulation: Callable[[], Simulation],
@@ -161,7 +171,11 @@ class Traffic(TrafficArrays):
         self.python_random = python_random
         self.numpy_random = numpy_random
         self.shapes = shapes
-        self.navigation = navigation
+        self.waypoints = waypoints
+        self.airports = airports
+        self.airways = airways
+        self.countries = countries
+        self.runway_thresholds = runway_thresholds
         self.magnetic_declination = magnetic_declination
         self.console = console
         self._get_simulation = get_simulation
@@ -856,7 +870,7 @@ class Traffic(TrafficArrays):
         """Look up a name and generate an information report for it.
 
         Searches, in order: airports, aircraft callsigns, waypoints/navaids,
-        and airways in the navigation database. Airport reports include
+        and published airways. Airport reports include
         position, elevation [ft] and runways; navaid reports include type,
         frequency and airway connections.
 
@@ -867,19 +881,22 @@ class Traffic(TrafficArrays):
 
         lines = "Information on " + name + ":\n"
 
-        idx_airport = self.navigation.getaptidx(name)
+        idx_airport = self.airports.getidx(name)
         if idx_airport is not None:
-            airport_size = AirportSize(int(self.navigation.apsize[idx_airport])).name.lower()
+            airport_size = AirportSize(int(self.airports.sizes[idx_airport])).name.lower()
 
-            aptname = self.navigation.aptname[idx_airport]
-            aptlat = self.navigation.aptlat[idx_airport]
-            aptlon = self.navigation.aptlon[idx_airport]
-            aptelev = self.navigation.aptelev[idx_airport]
+            aptname = self.airports.names[idx_airport]
+            aptlat = self.airports.latitudes[idx_airport]
+            aptlon = self.airports.longitudes[idx_airport]
+            aptelev = self.airports.elevations[idx_airport]
 
-            country_code = str(self.navigation.aptco[idx_airport]).upper()
-            country_indices = np.flatnonzero(self.navigation.cocode2 == country_code)
-            idx_cc = int(country_indices[0])
-            country_name = str(self.navigation.coname[idx_cc]).upper()
+            country_code = str(self.airports.countries[idx_airport]).upper()
+            country_indices = np.flatnonzero(self.countries.codes2 == country_code)
+            country_name = (
+                str(self.countries.names[country_indices[0]]).upper()
+                if len(country_indices)
+                else country_code
+            )
 
             lines += (
                 f"{aptname} is a {airport_size} airport in {country_name} ({country_code}):\n"
@@ -887,8 +904,8 @@ class Traffic(TrafficArrays):
                 f"Elevation: {round(q.m_to_ft(aptelev))} ft \n"
             )
 
-            if self.navigation.aptid[idx_airport] in self.navigation.rwythresholds:
-                runways = self.navigation.rwythresholds[self.navigation.aptid[idx_airport]].keys()
+            if self.airports.identifiers[idx_airport] in self.runway_thresholds:
+                runways = self.runway_thresholds[self.airports.identifiers[idx_airport]].keys()
                 if runways:
                     lines += f"Runways: {', '.join(runways)}\n"
 
@@ -899,49 +916,51 @@ class Traffic(TrafficArrays):
             return self.position_aircraft(idx_ac)
 
         else:
-            idx_waypoints = self.navigation.getwpindices(name)
+            idx_waypoints = self.waypoints.getindices(name)
             if idx_waypoints:
                 typetxt = ""
                 desctxt = ""
                 lastdesc = "XXXXXXXX"
                 for i in idx_waypoints:
                     if typetxt == "":
-                        typetxt = typetxt + self.navigation.wptype[i]
+                        typetxt = typetxt + self.waypoints.categories[i]
                     else:
-                        typetxt = typetxt + " and " + self.navigation.wptype[i]
+                        typetxt = typetxt + " and " + self.waypoints.categories[i]
 
-                    samedesc = self.navigation.wpdesc[i] == lastdesc
+                    samedesc = self.waypoints.descriptions[i] == lastdesc
                     if desctxt == "":
-                        desctxt = desctxt + self.navigation.wpdesc[i]
-                        lastdesc = self.navigation.wpdesc[i]
+                        desctxt = desctxt + self.waypoints.descriptions[i]
+                        lastdesc = self.waypoints.descriptions[i]
                     elif not samedesc:
-                        desctxt = desctxt + "\n" + self.navigation.wpdesc[i]
-                        lastdesc = self.navigation.wpdesc[i]
+                        desctxt = desctxt + "\n" + self.waypoints.descriptions[i]
+                        lastdesc = self.waypoints.descriptions[i]
 
-                    if self.navigation.wptype[i] in ["VOR", "DME", "TACAN"] and not samedesc:
-                        desctxt = desctxt + " " + str(self.navigation.wpfreq[i]) + " MHz"
-                    elif self.navigation.wptype[i] == "NDB" and not samedesc:
-                        desctxt = desctxt + " " + str(self.navigation.wpfreq[i]) + " kHz"
+                    if self.waypoints.categories[i] in ["VOR", "DME", "TACAN"] and not samedesc:
+                        desctxt = desctxt + " " + str(self.waypoints.frequencies[i]) + " MHz"
+                    elif self.waypoints.categories[i] == "NDB" and not samedesc:
+                        desctxt = desctxt + " " + str(self.waypoints.frequencies[i]) + " kHz"
 
                 iwp = idx_waypoints[0]
 
                 lines += (
                     f"{name} is a {typetxt} with \n"
-                    f"Position: {latlon2txt(self.navigation.wplat[iwp], self.navigation.wplon[iwp])}\n"
+                    f"Position: {latlon2txt(self.waypoints.latitudes[iwp], self.waypoints.longitudes[iwp])}\n"
                 )
 
                 if len(desctxt) > 0:
                     lines += f"{desctxt}\n"
 
-                if self.navigation.wptype[iwp] == "VOR":
-                    lines += f"Variation: {self.navigation.wpvar[iwp]} deg\n"
+                if self.waypoints.categories[iwp] == "VOR":
+                    lines += f"Variation: {self.waypoints.magnetic_variations[iwp]} deg\n"
 
-                n_other = len(np.flatnonzero(self.navigation.wpid == name)) - len(idx_waypoints)
+                n_other = len(np.flatnonzero(self.waypoints.identifiers == name)) - len(
+                    idx_waypoints
+                )
                 if n_other > 0:
                     lines += f"Attention: {n_other} other waypoint(s) also has name {name}\n"
 
-                connect = self.navigation.listconnections(
-                    name, self.navigation.wplat[iwp], self.navigation.wplon[iwp]
+                connect = self.airways.listconnections(
+                    name, self.waypoints.latitudes[iwp], self.waypoints.longitudes[iwp]
                 )
                 if len(connect) > 0:
                     awset = set()
@@ -954,7 +973,7 @@ class Traffic(TrafficArrays):
 
             else:  # airway
                 awid: AirwayIdentifier = name
-                airway = self.navigation.listairway(awid)
+                airway = self.airways.listairway(awid)
                 if len(airway) > 0:
                     lines = ""
                     for segment in airway:

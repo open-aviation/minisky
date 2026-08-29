@@ -68,7 +68,7 @@ from minisky._internal.result import Err, Ok, Result
 
 if TYPE_CHECKING:
     from minisky._internal.console import ConsoleIO
-    from minisky._internal.navigation import Navdatabase
+    from minisky._internal.navigation import AirportData, RunwayThresholdData, Waypoints
     from minisky._internal.plugin import PluginManager
     from minisky._internal.runner import Runner
     from minisky._internal.shapes import Shapes
@@ -386,7 +386,9 @@ class CommandStack:
     def __init__(
         self,
         traffic: Traffic,
-        navigation: Navdatabase,
+        waypoints: Waypoints,
+        airports: AirportData,
+        runway_thresholds: RunwayThresholdData,
         console: ConsoleIO,
         shapes: Shapes,
         variables: VariableExplorer,
@@ -397,13 +399,12 @@ class CommandStack:
         scenario_root: Path | None = None,
     ) -> None:
         self.traffic = traffic
-        self.navigation = navigation
         self.console = console
         self.shapes = shapes
         self.variables = variables
         self.plugins = plugins
         self.replaceables = replaceables
-        self.parse_context = CommandParseContext(traffic, navigation)
+        self.parse_context = CommandParseContext(traffic, waypoints, airports, runway_thresholds)
         self._get_simulation = get_simulation
         self._get_runner = get_runner
         # TODO(abraham): package bundled scenarios inside minisky and resolve

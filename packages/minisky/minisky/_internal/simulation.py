@@ -30,7 +30,7 @@ from minisky._internal.stack import ScenarioData
 
 if TYPE_CHECKING:
     from minisky._internal.console import ConsoleIO
-    from minisky._internal.navigation import Navdatabase
+    from minisky._internal.navigation import Waypoints
     from minisky._internal.plugin import PluginManager
     from minisky._internal.shapes import Shapes
     from minisky._internal.stack import CommandStack
@@ -99,7 +99,7 @@ class Simulation:
     def __init__(
         self,
         traffic: Traffic,
-        navigation: Navdatabase,
+        waypoints: Waypoints,
         python_random: Random,
         numpy_random: np.random.RandomState,
         console: ConsoleIO,
@@ -111,7 +111,7 @@ class Simulation:
         publish_tick: Callable[[], None],
     ) -> None:
         self.traffic = traffic
-        self.navigation = navigation
+        self.waypoints = waypoints
         self.python_random = python_random
         self.numpy_random = numpy_random
         self.console = console
@@ -228,7 +228,7 @@ class Simulation:
 
         Returns the simulation to its initial state: simulation time back to
         0 s, timestep back to 1 s, the simulated UTC clock to today at
-        00:00:00, and all traffic, stack, navigation database, area filters,
+        00:00:00, and all traffic, stack, scenario waypoints, area filters,
         console output, replaceable entities (autopilot, performance models,
         etc.) and plugin timers/hooks reset to their defaults.
         """
@@ -239,7 +239,7 @@ class Simulation:
         self.utc = datetime.datetime.now(datetime.UTC).replace(
             hour=0, minute=0, second=0, microsecond=0
         )
-        self.navigation.reset()
+        self.waypoints.reset()
         self.traffic.reset()
         self.commands.reset()
         self.shapes.reset()

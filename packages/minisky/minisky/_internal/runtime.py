@@ -17,7 +17,7 @@ from minisky._internal.console import ConsoleIO
 from minisky._internal.geo_commands import GeoCommands
 from minisky._internal.guidance import APorASAS
 from minisky._internal.kinematics import Kinematics
-from minisky._internal.navigation import Navdatabase
+from minisky._internal.navigation import NavData, Waypoints, load_navdata
 from minisky._internal.performance.openap import OpenAP
 from minisky._internal.plugin import PluginManager
 from minisky._internal.route import RouteCommands
@@ -37,7 +37,8 @@ class MiniSky:
 
     When `config` is omitted, MiniSky loads the optional default user
     config and otherwise falls back to [`MiniSkyConfig`][minisky.MiniSkyConfig]
-    defaults. Magnetic declination defaults to the bundled grid.
+    defaults. Navigation data defaults to the bundled core dataset.
+    Magnetic declination defaults to the bundled grid.
     """
 
     def __init__(
@@ -45,6 +46,7 @@ class MiniSky:
         config: MiniSkyConfig | None = None,
         scenario: str | None = None,
         *,
+        navdata: NavData | None = None,
         magnetic_declination: MagneticDeclination | None = None,
     ) -> None:
         if config is None:
@@ -57,10 +59,17 @@ class MiniSky:
         self.python_random = Random()
         self.numpy_random = np.random.RandomState()
         self.console = ConsoleIO(lambda: self.simulation.state == SimulationState.OP)
-        self.navigation = Navdatabase(data("navigation"))
+        if navdata is None:
+            navdata = load_navdata(data("navigation"))
         if magnetic_declination is None:
             magnetic_declination = MagneticDeclinationGrid.load_default()
         self.magnetic_declination = magnetic_declination
+        self.waypoints = Waypoints(navdata.waypoints)
+        self.airports = navdata.airports
+        self.airways = navdata.airways
+        self.firs = navdata.firs
+        self.countries = navdata.countries
+        self.runway_thresholds = navdata.runway_thresholds
         self.shapes = Shapes()
         self.variables = VariableExplorer()
         self.traffic = Traffic(
@@ -68,7 +77,11 @@ class MiniSky:
             python_random=self.python_random,
             numpy_random=self.numpy_random,
             shapes=self.shapes,
-            navigation=self.navigation,
+            waypoints=self.waypoints,
+            airports=self.airports,
+            airways=self.airways,
+            countries=self.countries,
+            runway_thresholds=self.runway_thresholds,
             magnetic_declination=self.magnetic_declination,
             console=self.console,
             get_simulation=lambda: self.simulation,
@@ -98,7 +111,9 @@ class MiniSky:
         )
         self.commands = CommandStack(
             traffic=self.traffic,
-            navigation=self.navigation,
+            waypoints=self.waypoints,
+            airports=self.airports,
+            runway_thresholds=self.runway_thresholds,
             console=self.console,
             shapes=self.shapes,
             variables=self.variables,
@@ -112,7 +127,7 @@ class MiniSky:
         )
         self.simulation = Simulation(
             traffic=self.traffic,
-            navigation=self.navigation,
+            waypoints=self.waypoints,
             python_random=self.python_random,
             numpy_random=self.numpy_random,
             console=self.console,
@@ -130,7 +145,7 @@ class MiniSky:
         self.commands.mount_components(
             (
                 self.console,
-                self.navigation,
+                self.waypoints,
                 self.shapes,
                 self.variables,
                 self.traffic,
