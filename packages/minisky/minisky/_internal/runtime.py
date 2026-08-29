@@ -9,7 +9,7 @@ import numpy as np
 
 from minisky._internal.active_waypoint import ActiveWaypoint
 from minisky._internal.autopilot import Autopilot
-from minisky._internal.config import MiniSkyConfig, data, default_user_config_toml_path
+from minisky._internal.config import MiniSkyConfig, default_user_config_toml_path
 from minisky._internal.conflict.detection import ConflictDetection
 from minisky._internal.conflict.mvp import MVP
 from minisky._internal.conflict.resolution import ConflictResolution
@@ -17,7 +17,7 @@ from minisky._internal.console import ConsoleIO
 from minisky._internal.geo_commands import GeoCommands
 from minisky._internal.guidance import APorASAS
 from minisky._internal.kinematics import Kinematics
-from minisky._internal.navigation import NavData, Waypoints, load_navdata
+from minisky._internal.navigation import NavData, Waypoints
 from minisky._internal.performance.openap import OpenAP
 from minisky._internal.plugin import PluginManager
 from minisky._internal.route import RouteCommands
@@ -32,12 +32,16 @@ from minisky._internal.variables import VariableExplorer
 from minisky.geo import MagneticDeclination, MagneticDeclinationGrid
 
 
+# TODO: we should reconsider whether we really want implicit defaults.
 class MiniSky:
     """Own the primary objects that make up a simulator runtime.
 
     When `config` is omitted, MiniSky loads the optional default user
     config and otherwise falls back to [`MiniSkyConfig`][minisky.MiniSkyConfig]
-    defaults. Navigation data defaults to the bundled core dataset.
+    defaults.
+    When navigation data is omitted, MiniSky loads the optional
+    `minisky-xplane-navdata` provider when installed and otherwise starts with
+    empty aviation data.
     Magnetic declination defaults to the bundled grid.
     """
 
@@ -60,7 +64,14 @@ class MiniSky:
         self.numpy_random = np.random.RandomState()
         self.console = ConsoleIO(lambda: self.simulation.state == SimulationState.OP)
         if navdata is None:
-            navdata = load_navdata(data("navigation"))
+            try:
+                from minisky_xplane_navdata import load
+            except ModuleNotFoundError as exc:
+                if exc.name != "minisky_xplane_navdata":
+                    raise
+                navdata = NavData()
+            else:
+                navdata = load()
         if magnetic_declination is None:
             magnetic_declination = MagneticDeclinationGrid.load_default()
         self.magnetic_declination = magnetic_declination

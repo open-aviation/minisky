@@ -14,6 +14,7 @@ docs = ["zensical>=0.0.47", "mkdocstrings-python>=2.0.5"]
 [tool.pytest.ini_options]
 testpaths = [
     "packages/minisky/tests",
+    "packages/minisky-xplane-navdata/tests",
     "packages/minisky-example/tests",
     "packages/minisky-example-customautopilot/tests",
     "packages/minisky-multicopter/tests",
@@ -43,6 +44,7 @@ include = [
     "packages/minisky/minisky",
     "packages/minisky-example*/src",
     "packages/minisky-multicopter/src",
+    "packages/minisky-xplane-navdata/src",
     "packages/minisky-tangram/src",
     "packages/tangram-minisky/src",
     "packages/*/tests",
@@ -63,6 +65,7 @@ extraPaths = [
     "packages/minisky-example/src",
     "packages/minisky-example-customautopilot/src",
     "packages/minisky-multicopter/src",
+    "packages/minisky-xplane-navdata/src",
     "packages/minisky-tangram/src",
     "packages/tangram-minisky/src",
 ]

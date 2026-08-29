@@ -955,14 +955,16 @@ class Traffic(TrafficArrays):
                 if self.waypoints.categories[iwp] == "VOR":
                     lines += f"Variation: {self.waypoints.magnetic_variations[iwp]} deg\n"
 
-                n_other = len(np.flatnonzero(self.waypoints.identifiers == name)) - len(
+                n_other = int(np.count_nonzero(self.waypoints.identifiers == name)) - len(
                     idx_waypoints
                 )
                 if n_other > 0:
                     lines += f"Attention: {n_other} other waypoint(s) also has name {name}\n"
 
                 connect = self.airways.listconnections(
-                    name, self.waypoints.latitudes[iwp], self.waypoints.longitudes[iwp]
+                    name,
+                    self.waypoints.latitudes[iwp],
+                    self.waypoints.longitudes[iwp],
                 )
                 if len(connect) > 0:
                     awset = set()

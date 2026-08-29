@@ -1,0 +1,18 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "minisky-xplane-navdata"
+version = "0.1.0"
+description = "X-Plane navigation data for MiniSky"
+readme = "README.md"
+license = "GPL-3.0-only"
+requires-python = ">=3.11"
+dependencies = ["minisky>=0.1.0", "numpy>=2.2.2", "polars>=1.0"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/minisky_xplane_navdata"]
+
+[tool.uv.sources]
+minisky = { workspace = true }
