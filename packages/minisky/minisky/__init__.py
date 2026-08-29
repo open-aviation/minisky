@@ -54,7 +54,18 @@ from minisky._internal.geo_commands import GeoCommands
 from minisky._internal.groups import TrafficGroups
 from minisky._internal.guidance import APorASAS
 from minisky._internal.kinematics import Kinematics
-from minisky._internal.navigation import Navdatabase
+from minisky._internal.navigation import (
+    AirportData,
+    AirportSize,
+    AirwayData,
+    CountryData,
+    FirBoundary,
+    FirData,
+    NavData,
+    RunwayThreshold,
+    RunwayThresholdData,
+    WaypointData,
+)
 from minisky._internal.performance.openap import OpenAP
 from minisky._internal.plugin import (
     Plugin,
@@ -99,7 +110,16 @@ __all__ = (  # noqa: RUF022 - public API and docs use this semantic order
     "ConsoleIO",
     "ConsoleSubscription",
     "Traffic",
-    "Navdatabase",
+    "NavData",
+    "WaypointData",
+    "AirportData",
+    "AirportSize",
+    "AirwayData",
+    "FirBoundary",
+    "FirData",
+    "CountryData",
+    "RunwayThreshold",
+    "RunwayThresholdData",
     "Snapshot",
     "SimInfo",
     "AcData",

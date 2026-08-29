@@ -15,7 +15,7 @@ from minisky._internal.convert import txt2lat, txt2lon
 from minisky._internal.result import Err, Ok, Result
 
 if TYPE_CHECKING:
-    from minisky._internal.navigation import Navdatabase
+    from minisky._internal.navigation import AirportData, RunwayThresholdData, Waypoints
     from minisky._internal.traffic import Traffic
 
 
@@ -75,7 +75,9 @@ def txt2pos(
     name: str,
     reflat: q.LatitudeDeg[float],
     reflon: q.LongitudeDeg[float],
-    navigation: Navdatabase,
+    waypoints: Waypoints,
+    airports: AirportData,
+    runway_thresholds: RunwayThresholdData,
     traffic: Traffic,
 ) -> Result[Position, str]:
     """Resolve position text relative to a reference position."""
@@ -95,16 +97,32 @@ def txt2pos(
         aptname, rwytxt = normalized.split("/RW", 1)
         rwyname = rwytxt.lstrip("Y").upper()
         try:
-            lat, lon, heading = navigation.rwythresholds[aptname][rwyname]
+            threshold = runway_thresholds[aptname][rwyname]
         except KeyError:
             return not_found
-        return Ok(ResolvedRunwayPosition(float(lat), float(lon), float(heading)))
+        return Ok(
+            ResolvedRunwayPosition(
+                float(threshold.latitude),
+                float(threshold.longitude),
+                float(threshold.heading),
+            )
+        )
 
-    if (idx := navigation.getaptidx(normalized)) is not None:
-        return Ok(AirportPosition(float(navigation.aptlat[idx]), float(navigation.aptlon[idx])))
+    if (idx := airports.getidx(normalized)) is not None:
+        return Ok(
+            AirportPosition(
+                float(airports.latitudes[idx]),
+                float(airports.longitudes[idx]),
+            )
+        )
 
-    if (idx := navigation.getwpidx(normalized, _ReferencePosition(reflat, reflon))) is not None:
-        return Ok(NavaidPosition(float(navigation.wplat[idx]), float(navigation.wplon[idx])))
+    if (idx := waypoints.getidx(normalized, _ReferencePosition(reflat, reflon))) is not None:
+        return Ok(
+            NavaidPosition(
+                float(waypoints.latitudes[idx]),
+                float(waypoints.longitudes[idx]),
+            )
+        )
 
     if normalized in traffic.callsign:
         idx = traffic.idx(normalized)

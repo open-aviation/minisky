@@ -143,9 +143,9 @@ class Route:
     specification (fly-by/fly-over/fly-turn with radius, [`CAS` in m/s][minisky.types.CasMps]
     or heading rate) and stack commands to execute when the waypoint is passed.
 
-    Waypoints from the navigation database are resolved to the entry
-    closest to the given lat/lon. For plain lat/lon waypoints the aircraft
-    callsign is used as waypoint name, with a number appended.
+    Waypoints are resolved to the entry closest to the given lat/lon.
+    For plain lat/lon waypoints the aircraft callsign is used as waypoint name,
+    with a number appended.
 
     Created by: Jacco M. Hoekstra
     """
@@ -153,7 +153,9 @@ class Route:
     def __init__(self, traffic: Traffic, callsign: AircraftCallsign) -> None:
         # NOTE(abraham): does Route really need the entire Traffic object?
         self.traffic = traffic
-        self.navigation = traffic.navigation
+        self.waypoints = traffic.waypoints
+        self.airports = traffic.airports
+        self.runway_thresholds = traffic.runway_thresholds
         self.callsign = callsign
 
         # TODO(abraham): instead of forcefully adopting SoA maybe we should just use Waypoint record
@@ -243,8 +245,8 @@ class Route:
 
         Handles all waypoint types: origin/destination airports (placed at
         the start/end of the route, overwriting an existing orig/dest),
-        navigation-database waypoints (resolved closest to the given
-        position), runways and plain lat/lon waypoints. The insertion point
+        waypoints (resolved closest to the given position),
+        runways and plain lat/lon waypoints. The insertion point
         can be steered with afterwp/beforewp; by default waypoints are
         appended just before the destination. Afterwards the flight-plan
         tables are recalculated ([`calcfp`][..calcfp]) and, when a waypoint is active,
@@ -269,10 +271,10 @@ class Route:
 
             if (
                 name != self.traffic.callsign[iac] + suffix
-                and (i := self.navigation.getaptidx(name)) is not None
+                and (i := self.airports.getidx(name)) is not None
             ):  # published identifier
-                wplat = self.navigation.aptlat[i]
-                wplon = self.navigation.aptlon[i]
+                wplat = self.airports.latitudes[i]
+                wplon = self.airports.longitudes[i]
 
             if not orig and alt is None:
                 # TODO(abraham): #22 replace this zero pressure-altitude endpoint
@@ -315,12 +317,12 @@ class Route:
                 newname = wprtename
 
                 if wptype != WaypointType.RUNWAY:
-                    if (i := self.navigation.getwpidx(name, LatLonDegrees(lat, lon))) is not None:
-                        wplat = self.navigation.wplat[i]
-                        wplon = self.navigation.wplon[i]
-                    elif (i := self.navigation.getaptidx(name)) is not None:
-                        wplat = self.navigation.aptlat[i]
-                        wplon = self.navigation.aptlon[i]
+                    if (i := self.waypoints.getidx(name, LatLonDegrees(lat, lon))) is not None:
+                        wplat = self.waypoints.latitudes[i]
+                        wplon = self.waypoints.longitudes[i]
+                    elif (i := self.airports.getidx(name)) is not None:
+                        wplat = self.airports.latitudes[i]
+                        wplon = self.airports.longitudes[i]
                     else:
                         wpok = False
 
@@ -437,7 +439,7 @@ class Route:
                 if len(name) > 9 and not name[9].isdigit():
                     rwykey = name[7:10]
 
-            wphdg = self.navigation.rwythresholds[name[:4]][rwykey][2]
+            wphdg = self.runway_thresholds[name[:4]][rwykey].heading
 
             self.traffic.stack_command("HDG " + str(self.callsign) + " " + str(wphdg))
 
@@ -813,10 +815,15 @@ def _resolve_runway_reference(
     traffic: Traffic, reference: RunwayReference
 ) -> Result[RunwayPosition, str]:
     try:
-        lat, lon, heading = traffic.navigation.rwythresholds[reference.airport][reference.runway]
+        threshold = traffic.runway_thresholds[reference.airport][reference.runway]
     except KeyError:
         return Err(f"Runway {reference.airport}/RW{reference.runway} not found")
-    return Ok(RunwayPosition(LatLonDegrees(float(lat), float(lon)), float(heading)))
+    return Ok(
+        RunwayPosition(
+            LatLonDegrees(float(threshold.latitude), float(threshold.longitude)),
+            float(threshold.heading),
+        )
+    )
 
 
 def _waypoint_mode_status(traffic: Traffic, acidx: AircraftIndex) -> Result[str, str]:
@@ -902,11 +909,11 @@ def _add_takeoff_waypoint(
     elif rwyrteidx is not None and rwyrteidx > 0:
         rwylat = acrte.wplat[rwyrteidx]
         rwylon = acrte.wplon[rwyrteidx]
-        aptidx = traffic.navigation.getapinear(rwylat, rwylon)
-        aptid = traffic.navigation.aptid[aptidx]
+        aptidx = traffic.airports.getnearest(rwylat, rwylon)
+        aptid = traffic.airports.identifiers[aptidx]
         rwyname = acrte.wpname[rwyrteidx].split("/")[1]
         rwyid = rwyname.replace("RWY", "").replace("RW", "")
-        rwyhdg = traffic.navigation.rwythresholds[aptid][rwyid][2]
+        rwyhdg = traffic.runway_thresholds[aptid][rwyid].heading
     else:
         rwylat = traffic.lat[acidx]
         rwylon = traffic.lon[acidx]
@@ -985,7 +992,15 @@ def _add_route_waypoint(
                     return Err("TAKEOFF does not accept waypoint constraints")
                 return _add_takeoff_waypoint(traffic, acidx)
 
-            match txt2pos(name, reflat, reflon, traffic.navigation, traffic):
+            match txt2pos(
+                name,
+                reflat,
+                reflon,
+                traffic.waypoints,
+                traffic.airports,
+                traffic.runway_thresholds,
+                traffic,
+            ):
                 case Ok(posobj):
                     lat = posobj.lat
                     lon = posobj.lon

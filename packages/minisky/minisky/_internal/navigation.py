@@ -1,16 +1,7 @@
-"""Navigation database of MiniSky.
-
-Loads waypoint, airport, airway, FIR, and country data from the package
-data directory and provides lookup functions to find navaids and airports
-by identifier or position. Each `MiniSky` runtime owns a Navdatabase at
-[`runtime.navigation`][.Navdatabase].
-The database backs the DEFWPT stack command and every position
-argument that references a navaid, airport, or runway.
-"""
-
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass, field
 from enum import IntEnum
 from pathlib import Path
 from typing import Literal, NamedTuple, Protocol, TypeAlias
@@ -43,7 +34,8 @@ class AirwayConnection(NamedTuple):
     waypoint: WaypointIdentifier
 
 
-class RunwayThreshold(NamedTuple):
+@dataclass(frozen=True, slots=True)
+class RunwayThreshold:
     """Runway threshold position and true runway heading."""
 
     latitude: q.LatitudeDeg[float]
@@ -61,106 +53,58 @@ class LatLonReference(Protocol):
     def lon(self) -> q.LongitudeDeg[float]: ...
 
 
-class Navdatabase:
-    """
-    Navigation database: waypoint, airway, airport, FIR, and country data.
+@dataclass(slots=True, eq=False)
+class WaypointData:
+    identifiers: npt.NDArray[np.str_] = field(default_factory=lambda: np.array([], dtype=str))
+    latitudes: q.LatitudeDeg[np.ndarray] = field(default_factory=lambda: np.array([], dtype=float))
+    longitudes: q.LongitudeDeg[np.ndarray] = field(
+        default_factory=lambda: np.array([], dtype=float)
+    )
+    categories: npt.NDArray[np.str_] = field(default_factory=lambda: np.array([], dtype=str))
+    """Navigation-dataset waypoint category. Not to be confused with route `WaypointType`."""
+    elevations: q.MslAltitudeM[np.ndarray] = field(
+        default_factory=lambda: np.array([], dtype=float)
+    )
+    magnetic_variations: np.ndarray = field(default_factory=lambda: np.array([], dtype=float))
+    frequencies: np.ndarray = field(default_factory=lambda: np.array([], dtype=float))
+    descriptions: npt.NDArray[np.str_] = field(default_factory=lambda: np.array([], dtype=str))
 
-    All data are loaded from the package data directory on construction
-    and on [`reset`][.reset]. The database is stored as parallel arrays, indexed per
-    waypoint, per airway leg, or per airport.
 
-    Created by  : Jacco M. Hoekstra (TU Delft)
-    """
+@dataclass(slots=True, init=False, eq=False)
+class Waypoints:
+    identifiers: npt.NDArray[np.str_]
+    latitudes: q.LatitudeDeg[np.ndarray]
+    longitudes: q.LongitudeDeg[np.ndarray]
+    categories: npt.NDArray[np.str_]
+    elevations: q.MslAltitudeM[np.ndarray]
+    magnetic_variations: np.ndarray
+    frequencies: np.ndarray
+    descriptions: npt.NDArray[np.str_]
+    _source: WaypointData
 
-    def __init__(self, data_path: Path) -> None:
-        """The navigation database: Contains waypoint, airport, airway, and sector data, but also
-        geographical graphics data."""
-        self.data_path = data_path
+    def __init__(self, source: WaypointData) -> None:
+        self._source = WaypointData(
+            identifiers=source.identifiers.copy(),
+            latitudes=source.latitudes.copy(),
+            longitudes=source.longitudes.copy(),
+            categories=source.categories.copy(),
+            elevations=source.elevations.copy(),
+            magnetic_variations=source.magnetic_variations.copy(),
+            frequencies=source.frequencies.copy(),
+            descriptions=source.descriptions.copy(),
+        )
         self.reset()
 
     def reset(self) -> None:
-        """(Re)load all navigation data from the package data directory."""
-
-        nav_data_path = self.data_path
-
-        wptdata = pd.read_parquet(nav_data_path / "waypoint.parquet")
-        aptdata = pd.read_parquet(nav_data_path / "airport.parquet")
-        awydata = pd.read_parquet(nav_data_path / "airway.parquet")
-        codata = pd.read_parquet(nav_data_path / "country.parquet")
-
-        with (nav_data_path / "fir.json").open() as f:
-            firdata = json.load(f)
-        with (nav_data_path / "runway_thresholds.json").open() as f:
-            rwythresholds = json.load(f)
-
-        self.wpid: npt.NDArray[np.str_] = np.asarray(wptdata["wpid"], dtype=str)
-        self.wplat: q.LatitudeDeg[np.ndarray] = np.asarray(wptdata["wplat"], dtype=float)  # pyright: ignore[reportGeneralTypeIssues]
-        self.wplon: q.LongitudeDeg[np.ndarray] = np.asarray(wptdata["wplon"], dtype=float)  # pyright: ignore[reportGeneralTypeIssues]
-        # TODO(abraham): rename this navigation-database category; Route.wptype is a
-        # different WaypointType domain, and the shared name makes the two easy to confuse.
-        self.wptype: npt.NDArray[np.str_] = np.asarray(wptdata["wptype"], dtype=str)
-        """Navigation-database waypoint category; not to be confused with the route `WaypointType`."""
-        self.wpelev: q.MslAltitudeM[np.ndarray] = np.asarray(wptdata["wpelev"], dtype=float)  # pyright: ignore[reportGeneralTypeIssues]
-        self.wpvar: np.ndarray = np.asarray(wptdata["wpvar"], dtype=float)
-        """Magnetic variation at each waypoint, in degrees."""
-        self.wpfreq: np.ndarray = np.asarray(wptdata["wpfreq"], dtype=float)
-        """Navaid frequencies in the source dataset's kHz/MHz convention."""
-        self.wpdesc: npt.NDArray[np.str_] = np.asarray(wptdata["wpdesc"], dtype=str)
-
-        self.awfromwpid: npt.NDArray[np.str_] = np.asarray(awydata["awfromwpid"], dtype=str)
-        """Starting waypoint identifier for each airway leg."""
-        self.awfromlat: q.LatitudeDeg[np.ndarray] = np.asarray(awydata["awfromlat"], dtype=float)  # pyright: ignore[reportGeneralTypeIssues]
-        self.awfromlon: q.LongitudeDeg[np.ndarray] = np.asarray(awydata["awfromlon"], dtype=float)  # pyright: ignore[reportGeneralTypeIssues]
-        self.awtowpid: npt.NDArray[np.str_] = np.asarray(awydata["awtowpid"], dtype=str)
-        """Ending waypoint identifier for each airway leg."""
-        self.awtolat: q.LatitudeDeg[np.ndarray] = np.asarray(awydata["awtolat"], dtype=float)  # pyright: ignore[reportGeneralTypeIssues]
-        self.awtolon: q.LongitudeDeg[np.ndarray] = np.asarray(awydata["awtolon"], dtype=float)  # pyright: ignore[reportGeneralTypeIssues]
-        self.awid: npt.NDArray[np.str_] = np.asarray(awydata["awid"], dtype=str)
-        """Airway identifier for each leg, for example `UL620`."""
-        self.awndir: np.ndarray = np.asarray(awydata["awndir"], dtype=np.int64)
-        """Number of permitted traversal directions for each airway leg: one or two."""
-        self.awlowfl: np.ndarray = np.asarray(awydata["awlowfl"], dtype=np.int64)
-        """Lower published flight-level bound for each airway leg."""
-        self.awupfl: np.ndarray = np.asarray(awydata["awupfl"], dtype=np.int64)
-        """Upper published flight-level bound for each airway leg."""
-
-        self.aptid: npt.NDArray[np.str_] = np.asarray(aptdata["apid"], dtype=str)
-        self.aptname: npt.NDArray[np.str_] = np.asarray(aptdata["apname"], dtype=str)
-        self.aptlat: q.LatitudeDeg[np.ndarray] = np.asarray(aptdata["aplat"], dtype=float)  # pyright: ignore[reportGeneralTypeIssues]
-        self.aptlon: q.LongitudeDeg[np.ndarray] = np.asarray(aptdata["aplon"], dtype=float)  # pyright: ignore[reportGeneralTypeIssues]
-        self.aptmaxrwy: q.LengthM[np.ndarray] = np.asarray(aptdata["apmaxrwy"], dtype=float)  # pyright: ignore[reportGeneralTypeIssues]
-        self.apsize: np.ndarray = np.asarray(aptdata["aptype"], dtype=np.int64)
-        """Airport size category from the navigation dataset."""
-        self.aptco: npt.NDArray[np.str_] = np.asarray(aptdata["apco"], dtype=str)
-        self.aptelev: q.MslAltitudeM[np.ndarray] = np.asarray(aptdata["apelev"], dtype=float)  # pyright: ignore[reportGeneralTypeIssues]
-
-        self.fir: list[str] = firdata["fir"]
-        self.firlat0: np.ndarray = np.asarray(firdata["firlat0"], dtype=float)
-        """Latitude of the start point of each FIR border segment."""
-        self.firlon0: np.ndarray = np.asarray(firdata["firlon0"], dtype=float)
-        """Longitude of the start point of each FIR border segment."""
-        self.firlat1: np.ndarray = np.asarray(firdata["firlat1"], dtype=float)
-        """Latitude of the end point of each FIR border segment."""
-        self.firlon1: np.ndarray = np.asarray(firdata["firlon1"], dtype=float)
-        """Longitude of the end point of each FIR border segment."""
-
-        self.coname: npt.NDArray[np.str_] = np.asarray(codata["coname"], dtype=str)
-        """Country full names"""
-        self.cocode2: npt.NDArray[np.str_] = np.asarray(codata["cocode2"], dtype=str)
-        """2-character country codes"""
-        self.cocode3: npt.NDArray[np.str_] = np.asarray(codata["cocode3"], dtype=str)
-        """3-character country codes"""
-        self.conr: np.ndarray = np.asarray(codata["conr"], dtype=np.int64)
-        """Country ICAO numbers."""
-
-        self.rwythresholds: dict[AirportIdentifier, dict[RunwayIdentifier, RunwayThreshold]] = {
-            airport: {
-                runway: RunwayThreshold(float(values[0]), float(values[1]), float(values[2]))
-                for runway, values in runways.items()
-            }
-            for airport, runways in rwythresholds.items()
-        }
-        """Runway thresholds keyed by airport and runway identifier."""
+        """Restore scenario-mutated waypoints from the loaded source data."""
+        self.identifiers = self._source.identifiers.copy()
+        self.latitudes = self._source.latitudes.copy()
+        self.longitudes = self._source.longitudes.copy()
+        self.categories = self._source.categories.copy()
+        self.elevations = self._source.elevations.copy()
+        self.magnetic_variations = self._source.magnetic_variations.copy()
+        self.frequencies = self._source.frequencies.copy()
+        self.descriptions = self._source.descriptions.copy()
 
     @command(name="DEFWPT")
     def describe_from_scenario(self, name: Keyword) -> Result[str, str]:
@@ -196,13 +140,15 @@ class Navdatabase:
     def describe_waypoint(self, name: WaypointIdentifier) -> Result[str, str]:
         """Describe a waypoint or report that its name is available."""
         normalized = name.upper()
-        indices = np.flatnonzero(self.wpid == normalized)
+        indices = np.flatnonzero(self.identifiers == normalized)
         if len(indices) == 0:
             return Ok(f"Waypoint {normalized} does not yet exist.")
         index = int(indices[-1])
-        description = f"{self.wpid[index]} : {self.wplat[index]},{self.wplon[index]}"
-        if self.wptype[index]:
-            description += f"  {self.wptype[index]}"
+        description = (
+            f"{self.identifiers[index]} : {self.latitudes[index]},{self.longitudes[index]}"
+        )
+        if self.categories[index]:
+            description += f"  {self.categories[index]}"
         return Ok(description)
 
     def defwpt(
@@ -212,106 +158,81 @@ class Navdatabase:
         lon: q.LongitudeDeg[float],
         waypoint_type: str | None = None,
     ) -> Result[str, str]:
-        """Add a scenario-specific waypoint to the navigation database."""
+        """Add a scenario-specific waypoint."""
         normalized = name.upper()
         if not normalized:
             return Err("Waypoint name is required")
         if normalized.isdigit():
             return Err("Waypoint name must start with an alphabetical character")
-
-        self.wpid = np.append(self.wpid, normalized)
-        self.wplat = np.append(self.wplat, lat)
-        self.wplon = np.append(self.wplon, lon)
-        self.wptype = np.append(self.wptype, "" if waypoint_type is None else waypoint_type.upper())
-        self.wpelev = np.append(self.wpelev, 0.0)
-        self.wpvar = np.append(self.wpvar, 0.0)
-        self.wpfreq = np.append(self.wpfreq, 0.0)
-        self.wpdesc = np.append(self.wpdesc, "Custom waypoint")
-
-        return Ok(f"{normalized} added to navdb.")
+        self.identifiers = np.append(self.identifiers, normalized)
+        self.latitudes = np.append(self.latitudes, lat)
+        self.longitudes = np.append(self.longitudes, lon)
+        self.categories = np.append(
+            self.categories, "" if waypoint_type is None else waypoint_type.upper()
+        )
+        self.elevations = np.append(self.elevations, 0.0)
+        self.magnetic_variations = np.append(self.magnetic_variations, 0.0)
+        self.frequencies = np.append(self.frequencies, 0.0)
+        self.descriptions = np.append(self.descriptions, "Custom waypoint")
+        return Ok(f"{normalized} added to navigation data.")
 
     def delwpt(self, name: WaypointIdentifier) -> Result[str, str]:
-        """Delete a waypoint from the database.
-
-        The last-added occurrence of the name is removed.
-        """
+        """Delete the last-added occurrence of a waypoint."""
         normalized = name.upper()
-        indices = np.flatnonzero(self.wpid == normalized)
+        indices = np.flatnonzero(self.identifiers == normalized)
         if len(indices) == 0:
             return Err(f"Waypoint {normalized} does not exist.")
+        index = int(indices[-1])  # Search from back of list
+        self.identifiers = np.delete(self.identifiers, index)
+        self.latitudes = np.delete(self.latitudes, index)
+        self.longitudes = np.delete(self.longitudes, index)
+        self.categories = np.delete(self.categories, index)
+        self.elevations = np.delete(self.elevations, index)
+        self.magnetic_variations = np.delete(self.magnetic_variations, index)
+        self.frequencies = np.delete(self.frequencies, index)
+        self.descriptions = np.delete(self.descriptions, index)
+        return Ok(f"{normalized} deleted from navigation data.")
 
-        idx = int(indices[-1])  # Search from back of list
-
-        self.wpid = np.delete(self.wpid, idx)
-        self.wplat = np.delete(self.wplat, idx)
-        self.wplon = np.delete(self.wplon, idx)
-        self.wptype = np.delete(self.wptype, idx)
-        self.wpelev = np.delete(self.wpelev, idx)
-        self.wpvar = np.delete(self.wpvar, idx)
-        self.wpfreq = np.delete(self.wpfreq, idx)
-        self.wpdesc = np.delete(self.wpdesc, idx)
-
-        return Ok(name.upper() + " deleted from navdb.")
-
-    def getwpidx(
-        self, txt: WaypointIdentifier, reference: LatLonReference | None = None
+    def getidx(
+        self, identifier: WaypointIdentifier, reference: LatLonReference | None = None
     ) -> WaypointIndex | None:
-        """Get a waypoint index by identifier.
-
-        When duplicate identifiers exist, `reference` selects the geographically
-        closest occurrence; without a reference, the first occurrence wins.
-
-        Args:
-            txt: Navigation-dataset waypoint identifier.
-            reference: When supplied and the identifier occurs more than once,
-                choose the occurrence nearest this position.
-
-        Returns:
-            The selected waypoint index, or `None` when the identifier is absent.
-        """
-        indices = np.flatnonzero(self.wpid == txt.upper())
+        """Return the first matching waypoint, or the closest duplicate to `reference`."""
+        indices = np.flatnonzero(self.identifiers == identifier.upper())
         if len(indices) == 0:
             return None
         if reference is None or len(indices) == 1:
             return int(indices[0])
         distances = geo.kwikdist(
-            reference.lat, reference.lon, self.wplat[indices], self.wplon[indices]
+            reference.lat, reference.lon, self.latitudes[indices], self.longitudes[indices]
         )
         return int(indices[int(np.argmin(distances))])
 
-    def getwpindices(
+    def getindices(
         self,
-        txt: WaypointIdentifier,
+        identifier: WaypointIdentifier,
         reference: LatLonReference | None = None,
         crit: q.DistanceM[float] = _COLOCATED_DISTANCE,
     ) -> list[WaypointIndex]:
-        """Get indices of a waypoint and its co-located duplicates.
+        """Return matching waypoint indices.
 
-        Finds the occurrence of the identifier closest to the reference
-        position, plus all other occurrences within a distance criterion.
-        Args:
-            txt: Navigation-dataset waypoint identifier.
-            reference: Reference used to select the primary occurrence when duplicates exist.
-            crit: Maximum distance from that occurrence for additional co-located matches; defaults to 1 NM.
-
-        Returns:
-            The primary occurrence followed by co-located duplicates,
-            or an empty list when the identifier is absent.
+        Without a reference, only the first occurrence is returned. With a
+        reference, the closest occurrence is followed by duplicates within
+        `crit` of it.
         """
-        indices = np.flatnonzero(self.wpid == txt.upper())
+        indices = np.flatnonzero(self.identifiers == identifier.upper())
         if len(indices) == 0:
             return []
         if reference is None:
             return [int(indices[0])]
         distances = geo.kwikdist(
-            reference.lat, reference.lon, self.wplat[indices], self.wplon[indices]
+            reference.lat, reference.lon, self.latitudes[indices], self.longitudes[indices]
         )
         primary = int(indices[int(np.argmin(distances))])
         colocated = geo.kwikdist(
-            self.wplat[indices],
-            self.wplon[indices],
-            self.wplat[primary],
-            self.wplon[primary],
+            self.latitudes[indices],
+            self.longitudes[indices],
+            self.latitudes[primary],
+            self.longitudes[primary],
         )
         return [
             primary,
@@ -322,77 +243,62 @@ class Navdatabase:
             ),
         ]
 
-    def getaptidx(self, txt: AirportIdentifier) -> AirportIndex | None:
+
+@dataclass(slots=True, eq=False)
+class AirportData:
+    identifiers: npt.NDArray[np.str_] = field(default_factory=lambda: np.array([], dtype=str))
+    names: npt.NDArray[np.str_] = field(default_factory=lambda: np.array([], dtype=str))
+    latitudes: q.LatitudeDeg[np.ndarray] = field(default_factory=lambda: np.array([], dtype=float))
+    longitudes: q.LongitudeDeg[np.ndarray] = field(
+        default_factory=lambda: np.array([], dtype=float)
+    )
+    max_runway_lengths: q.LengthM[np.ndarray] = field(
+        default_factory=lambda: np.array([], dtype=float)
+    )
+    sizes: np.ndarray = field(default_factory=lambda: np.array([], dtype=np.int64))
+    """Integer airport-size category codes from the navigation dataset."""
+    countries: npt.NDArray[np.str_] = field(default_factory=lambda: np.array([], dtype=str))
+    elevations: q.MslAltitudeM[np.ndarray] = field(
+        default_factory=lambda: np.array([], dtype=float)
+    )
+
+    def getidx(self, identifier: AirportIdentifier) -> AirportIndex | None:
         """Get the index of an airport by its navigation-dataset identifier."""
-        indices = np.flatnonzero(self.aptid == txt.upper())
+        indices = np.flatnonzero(self.identifiers == identifier.upper())
         return None if len(indices) == 0 else int(indices[0])
 
-    def getinear(
-        self,
-        wlat: q.LatitudeDeg,
-        wlon: q.LongitudeDeg,
-        lat: q.LatitudeDeg[float],
-        lon: q.LongitudeDeg[float],
-    ) -> NavigationIndex:
-        """Get the index of the entry nearest to a given position.
-
-        Uses a fast flat-earth squared-distance comparison.
-        """
-        wlat = np.asarray(wlat)
-        wlon = np.asarray(wlon)
-        f = np.cos(np.radians(lat))
-        dlat = (wlat - lat + 180.0) % 360.0 - 180.0
-        dlon = f * ((wlon - lon + 180.0) % 360.0 - 180.0)
-        d2 = dlat * dlat + dlon * dlon
-        idx = np.argmin(d2)
-        return int(idx)
-
-    def getwpinear(self, lat: q.LatitudeDeg[float], lon: q.LongitudeDeg[float]) -> WaypointIndex:
-        """Get the waypoint index nearest to the given position."""
-        return self.getinear(self.wplat, self.wplon, lat, lon)
-
-    def getapinear(self, lat: q.LatitudeDeg[float], lon: q.LongitudeDeg[float]) -> AirportIndex:
+    def getnearest(
+        self, latitude: q.LatitudeDeg[float], longitude: q.LongitudeDeg[float]
+    ) -> AirportIndex:
         """Get the airport index nearest to the given position."""
-        return self.getinear(self.aptlat, self.aptlon, lat, lon)
+        f = np.cos(np.radians(latitude))
+        dlat = (self.latitudes - latitude + 180.0) % 360.0 - 180.0
+        dlon = f * ((self.longitudes - longitude + 180.0) % 360.0 - 180.0)
+        return int(np.argmin(dlat * dlat + dlon * dlon))
 
-    def getinside(
-        self,
-        wlat: q.LatitudeDeg,
-        wlon: q.LongitudeDeg,
-        lat0: q.LatitudeDeg[float],
-        lat1: q.LatitudeDeg[float],
-        lon0: q.LongitudeDeg[float],
-        lon1: q.LongitudeDeg[float],
-    ) -> list[NavigationIndex]:
-        """Get indices of positions inside the given lat/lon box."""
-        wlat = np.asarray(wlat)
-        wlon = np.asarray(wlon)
-        if lat0 < lat1:
-            arr = np.where((wlat > lat0) * (wlat < lat1) * (wlon > lon0) * (wlon < lon1))
-        else:
-            arr = np.where((wlat > lat1) + (wlat < lat0) * (wlon > lon0) * (wlon < lon1))
 
-        return [int(i) for i in arr[0]]
-
-    def getwpinside(
-        self,
-        lat0: q.LatitudeDeg[float],
-        lat1: q.LatitudeDeg[float],
-        lon0: q.LongitudeDeg[float],
-        lon1: q.LongitudeDeg[float],
-    ) -> list[WaypointIndex]:
-        """Get waypoint indices inside the given lat/lon box."""
-        return self.getinside(self.wplat, self.wplon, lat0, lat1, lon0, lon1)
-
-    def getapinside(
-        self,
-        lat0: q.LatitudeDeg[float],
-        lat1: q.LatitudeDeg[float],
-        lon0: q.LongitudeDeg[float],
-        lon1: q.LongitudeDeg[float],
-    ) -> list[AirportIndex]:
-        """Get airport indices inside the given lat/lon box."""
-        return self.getinside(self.aptlat, self.aptlon, lat0, lat1, lon0, lon1)
+@dataclass(slots=True, eq=False)
+class AirwayData:
+    identifiers: npt.NDArray[np.str_] = field(default_factory=lambda: np.array([], dtype=str))
+    """Airway identifier for each leg, for example `UL620`."""
+    from_waypoints: npt.NDArray[np.str_] = field(default_factory=lambda: np.array([], dtype=str))
+    from_latitudes: q.LatitudeDeg[np.ndarray] = field(
+        default_factory=lambda: np.array([], dtype=float)
+    )
+    from_longitudes: q.LongitudeDeg[np.ndarray] = field(
+        default_factory=lambda: np.array([], dtype=float)
+    )
+    to_waypoints: npt.NDArray[np.str_] = field(default_factory=lambda: np.array([], dtype=str))
+    to_latitudes: q.LatitudeDeg[np.ndarray] = field(
+        default_factory=lambda: np.array([], dtype=float)
+    )
+    to_longitudes: q.LongitudeDeg[np.ndarray] = field(
+        default_factory=lambda: np.array([], dtype=float)
+    )
+    directions: np.ndarray = field(default_factory=lambda: np.array([], dtype=np.int64))
+    """Number of permitted traversal directions for each airway leg: one or two."""
+    lower_altitudes: np.ndarray = field(default_factory=lambda: np.array([], dtype=np.int64))
+    upper_altitudes: np.ndarray = field(default_factory=lambda: np.array([], dtype=np.int64))
 
     def listairway(self, airwayid: AirwayIdentifier) -> list[list[WaypointIdentifier]]:
         """Return the waypoint sequence(s) of an airway.
@@ -401,86 +307,76 @@ class Navdatabase:
         segments of waypoint identifiers; an airway may consist of
         multiple separate segments. Missing airways return an empty list.
         """
-        awkey = airwayid.upper()
+        indices = np.flatnonzero(self.identifiers == airwayid.upper())
+        if len(indices) == 0:
+            return []
 
-        airway = []  # identifier of waypoint   0 .. N-1
+        legs: set[str] = set()
+        left: list[str] = []
+        right: list[str] = []
+        for index in indices:
+            source = str(self.from_waypoints[index])
+            destination = str(self.to_waypoints[index])
+            leg = f"{source}-{destination}"
+            if leg not in legs:
+                legs.add(leg)
+                left.append(source)
+                right.append(destination)
 
-        idx = np.flatnonzero(self.awid == awkey)
-        if len(idx) > 0:
-            i = 0
-            found = True
-            legs: list[str] = []  # Alle leg incl. duplicate legs
-            left = []  # wps in left column in file
-            right = []  # wps in right coumn in file
+        airways: list[list[WaypointIdentifier]] = []
+        unused = len(left) + len(right)
+        while unused > 0 and left != len(left) * [""]:
+            # Find start of a segment
+            waypoints = left + right
+            waypoint_index = 0
+            while (
+                waypoint_index < len(waypoints) and waypoints.count(waypoints[waypoint_index]) > 1
+            ):
+                waypoint_index += 1
 
-            for i in idx:
-                newleg = str(self.awfromwpid[i]) + "-" + str(self.awtowpid[i])
-                if newleg not in legs:
-                    legs.append(newleg)
-                    left.append(str(self.awfromwpid[i]))
-                    right.append(str(self.awtowpid[i]))
+            index = waypoint_index % len(left)
+            side = int(waypoint_index / len(left))
 
-            if len(legs) == 0:
-                return []
+            # Catch single lost wps
+            if side > 1 or waypoint_index > len(waypoints):
+                break
 
-            unused = len(left) + len(right)
+            columns = [left, right]
+            segment: list[WaypointIdentifier] = []
+            next_waypoint = ""
+            ready = False
+            while not ready:
+                # Get leg
+                current = columns[side][index]
+                next_waypoint = columns[1 - side][index]
 
-            while unused > 0 and left != len(left) * [""]:
-                # Find start of a segment
-                wps = left + right
-                iwps = 0
-                while iwps < len(wps) and wps.count(wps[iwps]) > 1:
-                    iwps = iwps + 1
+                # Update admin of to do wplist
+                unused -= 2
+                columns[side][index] = ""
+                columns[1 - side][index] = ""
+                segment.append(current)
 
-                i = iwps % len(left)
-                j = int(iwps / len(left))
+                # Find next lef with nextwp
+                if next_waypoint in columns[0]:
+                    side = 0
+                    index = columns[0].index(next_waypoint)
+                    found = True
+                elif next_waypoint in columns[1]:
+                    side = 1
+                    index = columns[1].index(next_waypoint)
+                    found = True
+                else:
+                    found = False
+                ready = not found or current == "" or next_waypoint == ""
 
-                # Catch single lost wps
-                if j > 1 or iwps > len(wps):
-                    break
+            # Also add final nextwp of this segment
+            segment.append(next_waypoint)
 
-                wps = [left, right]
-                segment = []
-                nextwp = ""
+            # Airway cab have multiple separate segments
+            airways.append(segment)
+            left, right = columns
 
-                segready = False
-                while not segready:
-                    # Get leg
-                    curwp = wps[j][i]
-                    nextwp = wps[1 - j][i]
-
-                    # Update admin of to do wplist
-                    unused = unused - 2
-                    wps[j][i] = ""
-                    wps[1 - j][i] = ""
-
-                    segment.append(curwp)
-
-                    # Find next lef with nextwp
-                    if wps[0].count(nextwp) > 0:
-                        j = 0
-                        i = wps[0].index(nextwp)
-                        found = True
-
-                    elif wps[1].count(nextwp) > 0:
-                        i = wps[1].index(nextwp)
-                        j = 1
-                        found = True
-                    else:
-                        found = False
-
-                    segready = (not found) or curwp == "" or nextwp == ""
-
-                # Also add final nextwp of this segment
-                segment.append(nextwp)
-
-                # Airway cab have multiple separate segments
-                airway.append(segment)
-
-                left = wps[0]
-                right = wps[1]
-
-        return airway
+        return airways
 
     def listconnections(
         self, wpid: WaypointIdentifier, wplat: q.LatitudeDeg[float], wplon: q.LongitudeDeg[float]
@@ -490,20 +386,155 @@ class Navdatabase:
         Only legs whose stored endpoint lies within 10 nm of the given
         position are returned.
         """
-        connect: list[AirwayConnection] = []
-
-        for i in np.flatnonzero(self.awfromwpid == wpid):
-            newitem = AirwayConnection(str(self.awid[i]), str(self.awtowpid[i]))
-            if (newitem not in connect) and geo.kwikdist(
-                self.awfromlat[i], self.awfromlon[i], wplat, wplon
+        connections: list[AirwayConnection] = []
+        for index in np.flatnonzero(self.from_waypoints == wpid):
+            connection = AirwayConnection(
+                str(self.identifiers[index]), str(self.to_waypoints[index])
+            )
+            if connection not in connections and geo.kwikdist(
+                self.from_latitudes[index],
+                self.from_longitudes[index],
+                wplat,
+                wplon,
             ) < q.nmi_to_m(10.0):
-                connect.append(newitem)
+                connections.append(connection)
 
-        for i in np.flatnonzero(self.awtowpid == wpid):
-            newitem = AirwayConnection(str(self.awid[i]), str(self.awfromwpid[i]))
-            if (newitem not in connect) and geo.kwikdist(
-                self.awtolat[i], self.awtolon[i], wplat, wplon
+        for index in np.flatnonzero(self.to_waypoints == wpid):
+            connection = AirwayConnection(
+                str(self.identifiers[index]), str(self.from_waypoints[index])
+            )
+            if connection not in connections and geo.kwikdist(
+                self.to_latitudes[index],
+                self.to_longitudes[index],
+                wplat,
+                wplon,
             ) < q.nmi_to_m(10.0):
-                connect.append(newitem)
+                connections.append(connection)
 
-        return connect
+        return connections
+
+
+@dataclass(slots=True, eq=False)
+class FirBoundary:
+    identifier: str
+    latitudes: q.LatitudeDeg[np.ndarray] = field(default_factory=lambda: np.array([], dtype=float))
+    longitudes: q.LongitudeDeg[np.ndarray] = field(
+        default_factory=lambda: np.array([], dtype=float)
+    )
+
+
+@dataclass(slots=True, eq=False)
+class FirData:
+    boundaries: tuple[FirBoundary, ...] = field(default_factory=tuple)
+    segment_start_latitudes: q.LatitudeDeg[np.ndarray] = field(
+        default_factory=lambda: np.array([], dtype=float)
+    )
+    segment_start_longitudes: q.LongitudeDeg[np.ndarray] = field(
+        default_factory=lambda: np.array([], dtype=float)
+    )
+    segment_end_latitudes: q.LatitudeDeg[np.ndarray] = field(
+        default_factory=lambda: np.array([], dtype=float)
+    )
+    segment_end_longitudes: q.LongitudeDeg[np.ndarray] = field(
+        default_factory=lambda: np.array([], dtype=float)
+    )
+
+
+@dataclass(slots=True, eq=False)
+class CountryData:
+    names: npt.NDArray[np.str_] = field(default_factory=lambda: np.array([], dtype=str))
+    """Country full names."""
+    codes2: npt.NDArray[np.str_] = field(default_factory=lambda: np.array([], dtype=str))
+    """Two-character country codes."""
+    codes3: npt.NDArray[np.str_] = field(default_factory=lambda: np.array([], dtype=str))
+    """Three-character country codes."""
+    numbers: np.ndarray = field(default_factory=lambda: np.array([], dtype=np.int64))
+    """Country ICAO numbers."""
+
+
+RunwayThresholdData: TypeAlias = dict[AirportIdentifier, dict[RunwayIdentifier, RunwayThreshold]]
+
+
+@dataclass(frozen=True, slots=True, eq=False)
+class NavData:
+    waypoints: WaypointData = field(default_factory=WaypointData)
+    airports: AirportData = field(default_factory=AirportData)
+    airways: AirwayData = field(default_factory=AirwayData)
+    firs: FirData = field(default_factory=FirData)
+    countries: CountryData = field(default_factory=CountryData)
+    runway_thresholds: RunwayThresholdData = field(default_factory=dict)
+
+
+def load_navdata(data_path: Path) -> NavData:
+    """Load the navigation data bundled with MiniSky core."""
+    wptdata = pd.read_parquet(data_path / "waypoint.parquet")
+    aptdata = pd.read_parquet(data_path / "airport.parquet")
+    awydata = pd.read_parquet(data_path / "airway.parquet")
+    codata = pd.read_parquet(data_path / "country.parquet")
+
+    with (data_path / "fir.json").open() as file:
+        firdata = json.load(file)
+    with (data_path / "runway_thresholds.json").open() as file:
+        runway_threshold_data = json.load(file)
+
+    return NavData(
+        waypoints=WaypointData(
+            identifiers=np.asarray(wptdata["wpid"], dtype=str),
+            latitudes=np.asarray(wptdata["wplat"], dtype=float),
+            longitudes=np.asarray(wptdata["wplon"], dtype=float),
+            categories=np.asarray(wptdata["wptype"], dtype=str),
+            elevations=np.asarray(wptdata["wpelev"], dtype=float),
+            magnetic_variations=np.asarray(wptdata["wpvar"], dtype=float),
+            frequencies=np.asarray(wptdata["wpfreq"], dtype=float),
+            descriptions=np.asarray(wptdata["wpdesc"], dtype=str),
+        ),
+        airports=AirportData(
+            identifiers=np.asarray(aptdata["apid"], dtype=str),
+            names=np.asarray(aptdata["apname"], dtype=str),
+            latitudes=np.asarray(aptdata["aplat"], dtype=float),
+            longitudes=np.asarray(aptdata["aplon"], dtype=float),
+            max_runway_lengths=np.asarray(aptdata["apmaxrwy"], dtype=float),
+            sizes=np.asarray(aptdata["aptype"], dtype=np.int64),
+            countries=np.asarray(aptdata["apco"], dtype=str),
+            elevations=np.asarray(aptdata["apelev"], dtype=float),
+        ),
+        airways=AirwayData(
+            identifiers=np.asarray(awydata["awid"], dtype=str),
+            from_waypoints=np.asarray(awydata["awfromwpid"], dtype=str),
+            from_latitudes=np.asarray(awydata["awfromlat"], dtype=float),
+            from_longitudes=np.asarray(awydata["awfromlon"], dtype=float),
+            to_waypoints=np.asarray(awydata["awtowpid"], dtype=str),
+            to_latitudes=np.asarray(awydata["awtolat"], dtype=float),
+            to_longitudes=np.asarray(awydata["awtolon"], dtype=float),
+            directions=np.asarray(awydata["awndir"], dtype=np.int64),
+            lower_altitudes=np.asarray(awydata["awlowfl"], dtype=np.int64),
+            upper_altitudes=np.asarray(awydata["awupfl"], dtype=np.int64),
+        ),
+        firs=FirData(
+            boundaries=tuple(
+                FirBoundary(
+                    identifier,
+                    np.asarray(latitudes, dtype=float),
+                    np.asarray(longitudes, dtype=float),
+                )
+                for identifier, latitudes, longitudes in firdata["fir"]
+            ),
+            segment_start_latitudes=np.asarray(firdata["firlat0"], dtype=float),
+            segment_start_longitudes=np.asarray(firdata["firlon0"], dtype=float),
+            segment_end_latitudes=np.asarray(firdata["firlat1"], dtype=float),
+            segment_end_longitudes=np.asarray(firdata["firlon1"], dtype=float),
+        ),
+        countries=CountryData(
+            names=np.asarray(codata["coname"], dtype=str),
+            codes2=np.asarray(codata["cocode2"], dtype=str),
+            codes3=np.asarray(codata["cocode3"], dtype=str),
+            numbers=np.asarray(codata["conr"], dtype=np.int64),
+        ),
+        runway_thresholds={
+            airport: {
+                runway: RunwayThreshold(float(values[0]), float(values[1]), float(values[2]))
+                for runway, values in runways.items()
+            }
+            for airport, runways in runway_threshold_data.items()
+        },
+    )

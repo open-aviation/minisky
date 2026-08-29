@@ -87,12 +87,12 @@ def _resolve_waypoint(
         return Ok(waypoint.coordinates)
 
     name = waypoint.name
-    apidx = traffic.navigation.getaptidx(name)
+    apidx = traffic.airports.getidx(name)
     if apidx is not None:
         return Ok(
             LatLonDegrees(
-                float(traffic.navigation.aptlat[apidx]),
-                float(traffic.navigation.aptlon[apidx]),
+                float(traffic.airports.latitudes[apidx]),
+                float(traffic.airports.longitudes[apidx]),
             )
         )
 
@@ -103,7 +103,15 @@ def _resolve_waypoint(
         reflat = float(traffic.lat[acidx])
         reflon = float(traffic.lon[acidx])
 
-    match txt2pos(name, reflat, reflon, traffic.navigation, traffic):
+    match txt2pos(
+        name,
+        reflat,
+        reflon,
+        traffic.waypoints,
+        traffic.airports,
+        traffic.runway_thresholds,
+        traffic,
+    ):
         case Ok(position):
             return Ok(LatLonDegrees(float(position.lat), float(position.lon)))
         case Err():
@@ -124,7 +132,6 @@ class Autopilot(TrafficArrays):
     def __init__(self, traffic: Traffic, get_simulation: Callable[[], Simulation]) -> None:
         super().__init__()
         self.traffic = traffic
-        self.navigation = traffic.navigation
         self._get_simulation = get_simulation
 
         self.steepness: float = q.ft_to_m(3000.0) / q.nmi_to_m(10.0)

@@ -67,7 +67,7 @@ from minisky._internal.position import islat
 from minisky._internal.result import Err, Ok, Result
 
 if TYPE_CHECKING:
-    from minisky._internal.navigation import Navdatabase
+    from minisky._internal.navigation import AirportData, RunwayThresholdData, Waypoints
     from minisky._internal.stack import Command, CommandForm
     from minisky._internal.traffic import Traffic
 
@@ -323,7 +323,7 @@ class CommandCursor:
 #
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, eq=False)
 class CommandParseContext:
     """Read-only runtime services available while parsing a command value.
 
@@ -332,7 +332,9 @@ class CommandParseContext:
     """
 
     traffic: Traffic
-    navigation: Navdatabase
+    waypoints: Waypoints
+    airports: AirportData
+    runway_thresholds: RunwayThresholdData
 
 
 @dataclass(frozen=True, slots=True)
@@ -889,32 +891,43 @@ class RunwayPosition:
 def _resolve_named_position(
     context: CommandParseContext, name: str, span: SourceSpan
 ) -> Result[t.LatLonDegrees | RunwayPosition, ArgumentIssue]:
-    navigation = context.navigation
-
     if "/RW" in name:
         airport, runway_text = name.split("/RW", maxsplit=1)
         runway = runway_text.lstrip("Y")
         try:
-            lat, lon, heading = navigation.rwythresholds[airport][runway]
+            threshold = context.runway_thresholds[airport][runway]
         except KeyError:
             return Err(
                 ArgumentIssue.expected("a waypoint, airport, runway, or aircraft id", name, span)
             )
-        return Ok(RunwayPosition(t.LatLonDegrees(float(lat), float(lon)), float(heading)))
+        return Ok(
+            RunwayPosition(
+                t.LatLonDegrees(float(threshold.latitude), float(threshold.longitude)),
+                float(threshold.heading),
+            )
+        )
 
-    airport_indices = np.flatnonzero(navigation.aptid == name)
-    if len(airport_indices):
-        index = int(airport_indices[0])
-        return Ok(t.LatLonDegrees(float(navigation.aptlat[index]), float(navigation.aptlon[index])))
+    if (index := context.airports.getidx(name)) is not None:
+        return Ok(
+            t.LatLonDegrees(
+                float(context.airports.latitudes[index]),
+                float(context.airports.longitudes[index]),
+            )
+        )
 
-    waypoint_indices = np.flatnonzero(navigation.wpid == name)
+    waypoint_indices = np.flatnonzero(context.waypoints.identifiers == name)
     if len(waypoint_indices) > 1:
         return Err(
             ArgumentIssue.expected("an unambiguous waypoint id or explicit coordinates", name, span)
         )
     if len(waypoint_indices) == 1:
         index = int(waypoint_indices[0])
-        return Ok(t.LatLonDegrees(float(navigation.wplat[index]), float(navigation.wplon[index])))
+        return Ok(
+            t.LatLonDegrees(
+                float(context.waypoints.latitudes[index]),
+                float(context.waypoints.longitudes[index]),
+            )
+        )
 
     return Err(ArgumentIssue.expected("a waypoint, airport, runway, or aircraft id", name, span))
 
