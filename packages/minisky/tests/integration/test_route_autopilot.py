@@ -133,6 +133,7 @@ class TestVerticalGuidance:
         self, runtime: MiniSky, run_cmd: RunCommand, step_until: StepUntil
     ) -> None:
         # Regression: speed envelope evaluated at intended altitude caused a CAS dip at ToD.
+        # See: issue #33, PR #52, bluesky issue #659
         run_cmd("CRE AF265,A321,53.164,6.667,224,FL260,300KT[CAS]")
         run_cmd("ADDWPT AF265 NOVEN")
         run_cmd("ADDWPT AF265 ARTIP FL100 250KT[CAS]")
