@@ -13,6 +13,7 @@ nav = [
   { "User Guide" = [
     { "Server" = "user-guide/server.md" },
     { "Configuration" = "user-guide/configuration.md" },
+    { "Navigation data" = "user-guide/navdata.md" },
     { "Using plugins" = "user-guide/plugins.md" },
     { "Multicopter Plugin" = "user-guide/multicopters.md" },
   ] },

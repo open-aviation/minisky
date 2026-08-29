@@ -25,8 +25,10 @@ cd minisky
 # with uv
 uv sync --all-packages --all-extras
 # with pip
-cd packages/minisky && pip install .
+pip install ./packages/minisky ./packages/minisky-xplane-navdata
 ```
+
+Note that the `minisky` core alone does not come bundled with navigation data. The `minisky-xplane-navdata` package (licensed under GPL), when installed, will be automatically discovered by the core.
 
 ### CLI Usage
 
@@ -43,7 +45,7 @@ uvx httpx "http://localhost:8000/conflicts"
 uvx httpx "http://localhost:8000/commands"
 # with the REST API running, attach an interactive console
 uv run minisky console
-> POS EHAM  # show all aircraft at Schiphol
+> POS EHAM  # show information about Schiphol
 > MCRE 3    # create random aircraft
 > /all
 > /conflicts

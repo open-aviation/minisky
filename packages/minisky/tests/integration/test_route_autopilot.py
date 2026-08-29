@@ -73,9 +73,10 @@ class TestAddwpt:
         route = runtime.traffic.ap.route[0]
         assert "error:" not in out.lower()
         assert route.wpname == [f"T/O-{aircraft}"]
-        threshold = runtime.runway_thresholds["EHAM"]["06"]
-        rwylat, rwylon = threshold.latitude, threshold.longitude
-        _, distance = geo.qdrdist(rwylat, rwylon, route.wplat[0], route.wplon[0])
+        threshold = runtime.traffic.runway_thresholds["EHAM"]["06"]
+        _, distance = geo.qdrdist(
+            threshold.latitude, threshold.longitude, route.wplat[0], route.wplon[0]
+        )
         assert distance == pytest.approx(q.nmi_to_m(2.0), rel=1e-3)
 
     def test_dest_resolves_airport(

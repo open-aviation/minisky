@@ -1,14 +1,18 @@
+"""Navigation data for MiniSky, including waypoint, airport, airway, FIR,
+fountry and runway data.
+
+Note that the exact storage format (e.g. parquet, CSV, JSON) or file I/O do not
+belong here. External providers should handle it.
+"""
+
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass, field
 from enum import IntEnum
-from pathlib import Path
 from typing import Literal, NamedTuple, Protocol, TypeAlias
 
 import numpy as np
 import numpy.typing as npt
-import pandas as pd
 
 import minisky.geo as geo  # noqa: PLR0402
 from minisky import quantities as q
@@ -471,86 +475,3 @@ class NavData:
     firs: FirData = field(default_factory=FirData)
     countries: CountryData = field(default_factory=CountryData)
     runway_thresholds: RunwayThresholdData = field(default_factory=dict)
-
-
-def load_navdata(data_path: Path) -> NavData:
-    """Load the navigation data bundled with MiniSky core."""
-    wptdata = pd.read_parquet(data_path / "waypoint.parquet")
-    aptdata = pd.read_parquet(data_path / "airport.parquet")
-    awydata = pd.read_parquet(data_path / "airway.parquet")
-    codata = pd.read_parquet(data_path / "country.parquet")
-
-    with (data_path / "fir.json").open() as file:
-        firdata = json.load(file)
-    with (data_path / "runway_thresholds.json").open() as file:
-        runway_threshold_data = json.load(file)
-
-    waypoint_categories = np.asarray(wptdata["wptype"], dtype=str)
-    waypoint_frequencies = np.asarray(wptdata["wpfreq"], dtype=float)
-    frequencies = np.where(
-        np.isin(waypoint_categories, ("VOR", "DME", "TACAN")),
-        q.mhz_to_hz(waypoint_frequencies),
-        q.khz_to_hz(waypoint_frequencies),
-    )
-
-    return NavData(
-        waypoints=WaypointData(
-            identifiers=np.asarray(wptdata["wpid"], dtype=str),
-            latitudes=np.asarray(wptdata["wplat"], dtype=float),
-            longitudes=np.asarray(wptdata["wplon"], dtype=float),
-            categories=waypoint_categories,
-            elevations=np.asarray(wptdata["wpelev"], dtype=float),
-            magnetic_variations=np.asarray(wptdata["wpvar"], dtype=float),
-            frequencies=frequencies,
-            descriptions=np.asarray(wptdata["wpdesc"], dtype=str),
-        ),
-        airports=AirportData(
-            identifiers=np.asarray(aptdata["apid"], dtype=str),
-            names=np.asarray(aptdata["apname"], dtype=str),
-            latitudes=np.asarray(aptdata["aplat"], dtype=float),
-            longitudes=np.asarray(aptdata["aplon"], dtype=float),
-            max_runway_lengths=np.asarray(aptdata["apmaxrwy"], dtype=float),
-            sizes=np.asarray(aptdata["aptype"], dtype=np.int64),
-            countries=np.asarray(aptdata["apco"], dtype=str),
-            elevations=np.asarray(aptdata["apelev"], dtype=float),
-        ),
-        airways=AirwayData(
-            identifiers=np.asarray(awydata["awid"], dtype=str),
-            from_waypoints=np.asarray(awydata["awfromwpid"], dtype=str),
-            from_latitudes=np.asarray(awydata["awfromlat"], dtype=float),
-            from_longitudes=np.asarray(awydata["awfromlon"], dtype=float),
-            to_waypoints=np.asarray(awydata["awtowpid"], dtype=str),
-            to_latitudes=np.asarray(awydata["awtolat"], dtype=float),
-            to_longitudes=np.asarray(awydata["awtolon"], dtype=float),
-            directions=np.asarray(awydata["awndir"], dtype=np.int64),
-            lower_altitudes=q.ft_to_m(np.asarray(awydata["awlowfl"], dtype=float) * 100.0),
-            upper_altitudes=q.ft_to_m(np.asarray(awydata["awupfl"], dtype=float) * 100.0),
-        ),
-        firs=FirData(
-            boundaries=tuple(
-                FirBoundary(
-                    identifier,
-                    np.asarray(latitudes, dtype=float),
-                    np.asarray(longitudes, dtype=float),
-                )
-                for identifier, latitudes, longitudes in firdata["fir"]
-            ),
-            segment_start_latitudes=np.asarray(firdata["firlat0"], dtype=float),
-            segment_start_longitudes=np.asarray(firdata["firlon0"], dtype=float),
-            segment_end_latitudes=np.asarray(firdata["firlat1"], dtype=float),
-            segment_end_longitudes=np.asarray(firdata["firlon1"], dtype=float),
-        ),
-        countries=CountryData(
-            names=np.asarray(codata["coname"], dtype=str),
-            codes2=np.asarray(codata["cocode2"], dtype=str),
-            codes3=np.asarray(codata["cocode3"], dtype=str),
-            numbers=np.asarray(codata["conr"], dtype=np.int64),
-        ),
-        runway_thresholds={
-            airport: {
-                runway: RunwayThreshold(float(values[0]), float(values[1]), float(values[2]))
-                for runway, values in runways.items()
-            }
-            for airport, runways in runway_threshold_data.items()
-        },
-    )

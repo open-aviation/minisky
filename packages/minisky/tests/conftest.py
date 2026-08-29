@@ -24,8 +24,9 @@ def config() -> MiniSkyConfig:
 
 @pytest.fixture(scope="session")
 def runtime(config: MiniSkyConfig) -> Iterator[MiniSky]:
-    """Session-wide explicit MiniSky runtime."""
-    instance = MiniSky(config)
+    from minisky_xplane_navdata import load
+
+    instance = MiniSky(config, navdata=load())
     yield instance
     instance.close()
 
