@@ -154,7 +154,7 @@ class TestMvpVerticalResolutionDirection:
     directed evaluations of a pair must resolve in opposite directions, not
     push both aircraft the same way.
 
-    See: issue PR #57, bluesky PR #661
+    See: PR #57, bluesky PR #661
     """
 
     def test_coaltitude_level_pair_resolves_in_opposite_directions(
