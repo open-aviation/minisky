@@ -22,7 +22,6 @@ from minisky import quantities as q
 from minisky._internal.command import (
     CommandField,
     Converter,
-    OnOff,
     command,
 )
 from minisky._internal.result import Err, Ok, Result
@@ -50,9 +49,6 @@ class SimulationState(IntEnum):
     END = 3
     """Stopped for good: the run is over and time never advances again."""
 
-
-MINSLEEP: q.DurationS[float] = 1e-3
-"""Minimum sleep interval"""
 
 
 Day = Annotated[int, Ge(1), Le(31)]
@@ -132,9 +128,6 @@ class Simulation:
 
         self.utc = datetime.datetime.now(datetime.UTC)
         """Simulated UTC clock, advanced by `simdt` and settable with `TIME` and `DATE`."""
-
-        self.rtmode: bool = False
-        """Realtime request flag; currently does not alter the timestep."""
 
     def step(self) -> bool:
         """Perform one simulation timestep.
@@ -248,16 +241,6 @@ class Simulation:
         self.plugins.reset()
         self.console.echo("Simulation reset")
 
-    @command(name="REALTIME", aliases=("RT",))
-    def realtime_status(self) -> Result[str, str]:
-        """Report realtime mode."""
-        return Ok(f"Realtime mode is {'on' if self.rtmode else 'off'}")
-
-    @command(name="REALTIME")
-    def set_realtime(self, flag: OnOff) -> Result[str, str]:
-        """Enable or disable realtime mode."""
-        self.rtmode = flag
-        return Ok(f"Realtime mode is {'on' if self.rtmode else 'off'}")
 
     def event(
         self,

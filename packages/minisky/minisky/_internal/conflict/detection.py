@@ -235,7 +235,7 @@ class ConflictDetection(TrafficArrays):
         self.activate = True
         return Ok("Conflict Detection is on.")
 
-    @command(name="ASAS", aliases=("CD", "CDMETHOD"))
+    @command(name="ASAS", aliases=("CDMETHOD",))
     def enable_detection(self) -> Result[str, str]:
         """Enable conflict detection."""
         return self._set_detection(True)
