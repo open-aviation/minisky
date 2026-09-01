@@ -149,6 +149,65 @@ class TestDetectionCommands:
         assert runtime.traffic.cr.noresoac[0]
 
 
+class TestMvpVerticalResolutionDirection:
+    """Regression test for BlueSky PR #661: at equal vertical rate, the two
+    directed evaluations of a pair must resolve in opposite directions, not
+    push both aircraft the same way.
+    """
+
+    def test_coaltitude_level_pair_resolves_in_opposite_directions(
+        self, runtime: MiniSky, run_cmd: RunCommand, step_until: StepUntil
+    ) -> None:
+        run_cmd("ASAS ON")
+        run_cmd("RESO MVP")
+        # Head-on, same altitude, both level (vs == 0) so vrel[2] == drel[2] == 0.
+        run_cmd("CRE AC1,A320,0.05,0.0,180,FL200,250KT[CAS]")
+        run_cmd("CRE AC2,A320,-0.05,0.0,000,FL200,250KT[CAS]")
+        step_until(lambda: len(runtime.traffic.cd.confpairs) > 0, max_steps=200)
+
+        cd = runtime.traffic.cd
+        cr = runtime.traffic.cr
+        assert isinstance(cr, MVP)
+
+        idx1 = runtime.traffic.callsign.index("AC1")
+        idx2 = runtime.traffic.callsign.index("AC2")
+        assert runtime.traffic.vs[idx1] == pytest.approx(0.0, abs=1e-6)
+        assert runtime.traffic.vs[idx2] == pytest.approx(0.0, abs=1e-6)
+        assert runtime.traffic.alt[idx1] == pytest.approx(runtime.traffic.alt[idx2])
+
+        pairs = list(zip(cd.confpairs, cd.qdr, cd.dist, cd.tcpa, cd.tLOS, strict=False))
+        forward = next(p for p in pairs if p[0] == ("AC1", "AC2"))
+        backward = next(p for p in pairs if p[0] == ("AC2", "AC1"))
+
+        res_forward = cr.MVP(
+            runtime.traffic,
+            runtime.traffic,
+            cd,
+            forward[1],
+            forward[2],
+            forward[3],
+            forward[4],
+            idx1,
+            idx2,
+        )
+        res_backward = cr.MVP(
+            runtime.traffic,
+            runtime.traffic,
+            cd,
+            backward[1],
+            backward[2],
+            backward[3],
+            backward[4],
+            idx2,
+            idx1,
+        )
+
+        # Antisymmetric: the two directed evaluations must resolve vertically
+        # in opposite directions, not the same one.
+        assert res_forward.velocity_delta[2] == pytest.approx(-res_backward.velocity_delta[2])
+        assert res_forward.velocity_delta[2] != 0.0
+
+
 class TestNoConflict:
     def test_single_aircraft_no_conflicts(self, runtime: MiniSky, run_cmd: RunCommand) -> None:
         run_cmd("ASAS ON")

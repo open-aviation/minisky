@@ -437,9 +437,12 @@ class MVP(ConflictResolution):
             tsolV = tLOS
             iV = hpz_m
 
-        # The direction of the vertical resolution is such that the aircraft with
-        # higher climb/decent rate reduces their climb/decent rate
-        dv3 = np.where(abs(vrel[2]) > 0.0, (iV / tsolV) * (-vrel[2] / abs(vrel[2])), (iV / tsolV))
+        # At equal vertical rate, fall back to relative altitude, then aircraft
+        # index, so the direction stays antisymmetric between the pair.
+        dirv = drel[2] / abs(drel[2]) if abs(drel[2]) > 0.0 else np.sign(idx1 - idx2)
+        dv3 = np.where(
+            abs(vrel[2]) > 0.0, (iV / tsolV) * (-vrel[2] / abs(vrel[2])), (iV / tsolV) * dirv
+        )
 
         # It is necessary to cap dv3 to prevent that a vertical conflict
         # is solved in 1 timestep, leading to a vertical separation that is too

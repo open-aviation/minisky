@@ -65,3 +65,28 @@ unclassifiable phase is the deliberate, more permissive choice.
 
 The Qt console and the compiled C geo extension were removed from MiniSky;
 there is nothing to apply these fixes to.
+
+### PR [#659](https://github.com/TUDelft-CNS-ATM/bluesky/pull/659) — OpenAP speed limits evaluated at intended altitude (2026-09-01)
+
+Upstream evaluated the CAS/Mach speed envelope at the *intended* altitude
+(`allow_h`) instead of the current one, letting a descent-with-altitude-change
+command apply the wrong phase's speed limit. MiniSky's `OpenAP.limits()`
+already evaluates the envelope at `self.traffic.alt` (current altitude).
+
+### PR [#658](https://github.com/TUDelft-CNS-ATM/bluesky/pull/658) — missing nm conversion in RTA leg time (2026-09-01)
+
+Upstream divided a distance in nautical miles (`wpdistto`) by a speed in m/s
+(`legtas`) when computing `legtime` for an RTA-constrained leg with an
+airspeed constraint. Not applicable: MiniSky's `route.py` stores `wpdistto`
+in metres throughout (SI units), so the same division is already correct.
+
+### PR [#661](https://github.com/TUDelft-CNS-ATM/bluesky/pull/661) — MVP vertical resolution direction (2026-09-01)
+
+Ported directly rather than recorded here: `MVP.MVP()`'s vertical resolution
+direction was symmetric (not dependent on `drel`/`vrel`) when both aircraft
+of a pair shared the same vertical rate, so a co-altitude conflict pair could
+be pushed the same way instead of apart. Fixed in `mvp.py` to fall back to
+relative altitude, then aircraft index, as an antisymmetric tiebreaker,
+matching upstream's fix. (Upstream's other fix in the same PR — an
+`asasalttemp` sentinel blowing up for non-conflicting aircraft — was already
+avoided here via the `has_resolution_time` mask in `MVP.resolve()`.)
