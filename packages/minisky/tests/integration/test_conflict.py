@@ -177,37 +177,12 @@ class TestMvpVerticalResolutionDirection:
         assert runtime.traffic.vs[idx2] == pytest.approx(0.0, abs=1e-6)
         assert runtime.traffic.alt[idx1] == pytest.approx(runtime.traffic.alt[idx2])
 
-        pairs = list(zip(cd.confpairs, cd.qdr, cd.dist, cd.tcpa, cd.tLOS, strict=False))
-        forward = next(p for p in pairs if p[0] == ("AC1", "AC2"))
-        backward = next(p for p in pairs if p[0] == ("AC2", "AC1"))
+        run_cmd("RMETHV ON")
+        advisories = cr.resolve(cd, runtime.traffic, runtime.traffic)
 
-        res_forward = cr.MVP(
-            runtime.traffic,
-            runtime.traffic,
-            cd,
-            forward[1],
-            forward[2],
-            forward[3],
-            forward[4],
-            idx1,
-            idx2,
-        )
-        res_backward = cr.MVP(
-            runtime.traffic,
-            runtime.traffic,
-            cd,
-            backward[1],
-            backward[2],
-            backward[3],
-            backward[4],
-            idx2,
-            idx1,
-        )
-
-        # Antisymmetric: the two directed evaluations must resolve vertically
-        # in opposite directions, not the same one.
-        assert res_forward.velocity_delta[2] == pytest.approx(-res_backward.velocity_delta[2])
-        assert res_forward.velocity_delta[2] != 0.0
+        assert advisories.vertical_speed[idx1] != 0.0
+        assert advisories.vertical_speed[idx2] != 0.0
+        assert advisories.vertical_speed[idx1] * advisories.vertical_speed[idx2] < 0.0
 
 
 class TestNoConflict:
