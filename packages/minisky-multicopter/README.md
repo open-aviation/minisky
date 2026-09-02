@@ -8,4 +8,4 @@ Enable the plugin in MiniSky configuration TOML:
 [plugins.multicopter]
 ```
 
-For more information, visit our the multicopter guide in our documentation: <https://mode-s.org/minisky/user-guide/multicopters/>!  
+For more information, visit the [multicopter guide](https://mode-s.org/minisky/user-guide/multicopters/).

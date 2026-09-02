@@ -26,7 +26,7 @@ classifiers = [
     "Topic :: Scientific/Engineering",
     "Typing :: Typed",
 ]
-dependencies = ["minisky>=0.0.1"]
+dependencies = ["minisky>=0.0.2"]
 
 [project.urls]
 Documentation = "https://mode-s.org/minisky/user-guide/multicopters/"

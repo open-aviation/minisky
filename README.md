@@ -28,7 +28,7 @@ uv sync --all-packages --all-extras
 pip install './packages/minisky[cli]' ./packages/minisky-xplane-navdata
 ```
 
-Note that the `minisky` core alone does not come bundled with navigation data. The `minisky-xplane-navdata` package (licensed under GPL), when installed, will be automatically discovered by the core.
+Note that the `minisky` core alone does not come bundled with navigation data. The `minisky-xplane-navdata` package (data licensed under GPL-2.0-or-later), when installed, will be automatically discovered by the core.
 
 ### CLI Usage
 
@@ -112,4 +112,4 @@ asyncio.run(main())
 
 Visit the [documentation](https://mode-s.org/minisky/) for more details on the commands, scenarios, TOML configuration and plugins!
 
-License: MIT. Note that the `minisky-xplane-navdata` package is licensed under GPL-2.0-or-later.
+License: MIT. Note that the data in the `minisky-xplane-navdata` package is licensed under GPL-2.0-or-later.

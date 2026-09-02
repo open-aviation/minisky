@@ -56,8 +56,8 @@ Minisky follows semantic versioning. The core is currently in alpha (v0.0.x). Pl
 3. On the `main` branch, push a `<package>/<version>` tag, for example:
 
    ```sh
-   git tag minisky/0.0.1
-   git push origin minisky/0.0.1
+   git tag minisky/0.0.2
+   git push origin minisky/0.0.2
    ```
 
 4. GitHub Actions should then parse the changelog, publish to PyPI and create the GitHub release.

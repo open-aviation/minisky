@@ -2,7 +2,7 @@
 
 <!-- markdownlint-disable MD024 MD033 -->
 
-## `minisky` v0.0.1
+## `minisky` v0.0.2
 
 This first release of minisky focuses on *internal structural changes* and comes with lots of breaking changes. Highlights:
 
