@@ -9,7 +9,7 @@ minisky:
 - replaces process-wide mutable globals with explicit runtime ownership
 - uses declarative, typed command parsing with machine-readable command schemas
 - uses strong static typing and explicit units
-- is headless-first, with interactive visualisation provided separately by [tangram](https://github.com/open-aviation/tangram) as a plugin
+- is headless-first, with interactive visualisation provided separately by [tangram](https://github.com/open-aviation/tangram) as a plugin (WIP)
 - is being extended towards first-class support for heterogeneous traffic and performance models, spanning fixed-wing aircraft, advanced air mobility, and airport surface operations
 
 ## Quickstart
@@ -109,4 +109,4 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
-Visit the documentation for more details on the commands, scenarios, TOML configuration and plugins!
+Visit the [documentation](https://mode-s.org/minisky/) for more details on the commands, scenarios, TOML configuration and plugins!

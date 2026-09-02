@@ -19,11 +19,7 @@ import numpy as np
 from annotated_types import Ge, Le
 
 from minisky import quantities as q
-from minisky._internal.command import (
-    CommandField,
-    Converter,
-    command,
-)
+from minisky._internal.command import CommandField, Converter, command
 from minisky._internal.result import Err, Ok, Result
 from minisky._internal.stack import ScenarioData
 
@@ -48,7 +44,6 @@ class SimulationState(IntEnum):
     """Running: simulated time advances and traffic is updated each step."""
     END = 3
     """Stopped for good: the run is over and time never advances again."""
-
 
 
 Day = Annotated[int, Ge(1), Le(31)]
@@ -240,7 +235,6 @@ class Simulation:
         self.replaceables.reset()
         self.plugins.reset()
         self.console.echo("Simulation reset")
-
 
     def event(
         self,

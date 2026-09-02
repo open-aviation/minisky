@@ -37,6 +37,7 @@ nav = [
         { "tangram_minisky" = "api/tangram-minisky.md" },
       ] },
     ] },
+    { "Changelog" = "reference/changelog.md" },
   ] },
 ]
 extra_javascript = [
@@ -56,7 +57,7 @@ features = [
   "navigation.top",
   "content.code.copy",
   "content.code.annotate",
-  "content.tooltips"
+  "content.tooltips",
 ]
 
 [project.theme.icon]
@@ -89,7 +90,13 @@ custom_templates = "docs/templates"
 [project.plugins.mkdocstrings.handlers.python]
 # tangram_minisky lives in its own workspace and is not installed in the docs
 # environment; point griffe at its source so it can analyse it statically.
-paths = ["packages/minisky", "packages/minisky-example/src", "packages/minisky-multicopter/src", "packages/minisky-tangram/src", "packages/tangram-minisky/src"]
+paths = [
+  "packages/minisky",
+  "packages/minisky-example/src",
+  "packages/minisky-multicopter/src",
+  "packages/minisky-tangram/src",
+  "packages/tangram-minisky/src",
+]
 inventories = [
   "https://docs.python.org/3/objects.inv",
   "https://numpy.org/doc/stable/objects.inv",
@@ -130,6 +137,7 @@ on_error_fail = true
 on_undefined = "strict"
 
 [project.markdown_extensions]
+md_in_html = {}
 admonition = {}
 attr_list = {}
 footnotes = {}
