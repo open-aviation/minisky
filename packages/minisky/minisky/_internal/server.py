@@ -22,7 +22,6 @@ Interactive OpenAPI docs are served at `/docs`.
 from __future__ import annotations
 
 import asyncio
-import importlib.resources
 from contextlib import asynccontextmanager, suppress
 from io import StringIO
 from typing import Annotated, Literal, TypeAlias, TypedDict
@@ -41,7 +40,7 @@ from fastapi import (
 
 from minisky import MiniSky
 from minisky import quantities as q
-from minisky._internal.command import CommandSchema, build_command_schema, load_command_schema
+from minisky._internal.command import CommandSchema
 from minisky._internal.result import Err, Ok, Result
 from minisky.types import AircraftTypeCode, AirspeedKind
 
@@ -282,11 +281,7 @@ async def stack(cmd: str, runtime: Runtime) -> StackResponse:
 
 def commands(runtime: Runtime) -> dict[str, CommandSchema]:
     """Return command schemas for core and currently loaded plugins."""
-    resource = importlib.resources.files("minisky").joinpath("static", "commands.json")
-    schemas = {"minisky": load_command_schema(resource.read_bytes())}
-    for plugin_name, record in sorted(runtime.plugins.loaded_plugins.items()):
-        schemas[plugin_name.lower()] = build_command_schema(record.commands)
-    return schemas
+    return runtime.commands.command_schemas()
 
 
 async def stream(websocket: WebSocket) -> None:

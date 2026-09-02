@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 
 _PLUGIN_ID = re.compile(r"^[a-z0-9]+(?:_[a-z0-9]+)*$")
-_RESERVED_PLUGIN_IDS = frozenset({"sim", "traf"})
+_RESERVED_PLUGIN_IDS = frozenset({"minisky", "sim", "traf"})
 
 
 def validate_plugin_id(value: object) -> str:

@@ -174,7 +174,8 @@ class MiniSky:
                 self.geo_commands,
                 self.simulation,
                 self.runner,
-            )
+            ),
+            owner="minisky",
         )
 
         self.plugins.discover()

@@ -353,7 +353,7 @@ def test_command_overloads_use_left_to_right_choice(runtime: MiniSky) -> None:
             """Select a named value."""
             received.append(("name", name))
 
-    (prepared,) = runtime.commands.mount_component(Component())
+    (prepared,) = runtime.commands.mount_component(Component(), owner="minisky")
     try:
         assert isinstance(prepared(""), Ok)
         assert isinstance(prepared("other"), Ok)

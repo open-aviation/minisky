@@ -36,7 +36,7 @@ from functools import partial
 from io import StringIO
 from pathlib import Path
 from threading import Lock
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 
@@ -51,6 +51,7 @@ from minisky._internal.command import (
     CommandLengthConstraint,
     CommandParseContext,
     CommandPredicateConstraint,
+    CommandSchema,
     Keyword,
     Parameter,
     ParameterSchema,
@@ -67,6 +68,7 @@ from minisky._internal.identifiers import normalize_command_name
 from minisky._internal.result import Err, Ok, Result
 
 if TYPE_CHECKING:
+    from minisky._internal.config import PluginId
     from minisky._internal.console import ConsoleIO
     from minisky._internal.navigation import AirportData, RunwayThresholdData, Waypoints
     from minisky._internal.plugin import PluginManager
@@ -366,6 +368,12 @@ class ScenarioData:
     commands: tuple[ScheduledCommand, ...]
 
 
+@dataclass(frozen=True, slots=True)
+class _RegisteredCommand:
+    owner: Literal["minisky"] | PluginId
+    command: Command
+
+
 @dataclass(slots=True)
 class _PendingCommand:
     task: asyncio.Future[Result[str, str]]
@@ -412,9 +420,18 @@ class CommandStack:
         self.scenario_root = scenario_root or Path(__file__).parent.parent.parent
         self.cmddict: dict[str, Command] = {}
         """Canonical command names and aliases mapped to compiled commands."""
+        self._commands: dict[str, _RegisteredCommand] = {}
+        """Canonical commands and the plugin that registered them."""
         self._queue_lock = Lock()
         self._pending_command: _PendingCommand | None = None
         self._reset_state()
+
+    def command_schemas(self) -> dict[str, CommandSchema]:
+        """Build schemas for core and currently loaded plugins."""
+        grouped: dict[str, list[Command]] = {}
+        for registration in self._commands.values():
+            grouped.setdefault(registration.owner, []).append(registration.command)
+        return {plugin: build_command_schema(commands) for plugin, commands in grouped.items()}
 
     @property
     def simulation(self) -> Simulation:
@@ -538,15 +555,19 @@ class CommandStack:
         self.validate_commands(prepared)
         return prepared
 
-    def mount_components(self, components: Iterable[object]) -> tuple[Command, ...]:
+    def mount_components(
+        self, components: Iterable[object], *, owner: Literal["minisky"] | PluginId
+    ) -> tuple[Command, ...]:
         """Prepare and install commands from provider components."""
         prepared = self.prepare_components(components)
-        self.install_commands(prepared)
+        self.install_commands(prepared, owner=owner)
         return prepared
 
-    def mount_component(self, component: object) -> tuple[Command, ...]:
+    def mount_component(
+        self, component: object, *, owner: Literal["minisky"] | PluginId
+    ) -> tuple[Command, ...]:
         """Install commands from a component after runtime initialization."""
-        return self.mount_components((component,))
+        return self.mount_components((component,), owner=owner)
 
     def validate_commands(self, commands: tuple[Command, ...]) -> None:
         """Reject command names already used by this stack or the same batch."""
@@ -559,15 +580,22 @@ class CommandStack:
                     raise ValueError(f"command already registered: {name}")
                 seen.add(name)
 
-    def install_commands(self, commands: tuple[Command, ...]) -> None:
+    def install_commands(
+        self, commands: tuple[Command, ...], *, owner: Literal["minisky"] | PluginId
+    ) -> None:
         """Install commands that were already constructed and validated."""
         for command_obj in commands:
+            self._commands[command_obj.name] = _RegisteredCommand(owner, command_obj)
             for name in command_obj.names:
                 self.cmddict[name] = command_obj
 
     def remove_commands(self, commands: tuple[Command, ...]) -> None:
-        """Remove command names only while they still refer to the same object."""
+        """Remove commands only while their canonical registration still matches."""
         for command_obj in commands:
+            registration = self._commands.get(command_obj.name)
+            if registration is None or registration.command is not command_obj:
+                continue
+            del self._commands[command_obj.name]
             for name in command_obj.names:
                 if self.cmddict.get(name) is command_obj:
                     del self.cmddict[name]

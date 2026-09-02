@@ -439,7 +439,7 @@ class CmdParser(Generic[ValueT_co]):
 
     Custom parsers may advance only the supplied cursor. `CmdParser` restores the
     cursor automatically when they return `Err`. The `input` object is also used
-    by runtime parse errors, the tracked command schema, and documentation rendering.
+    by runtime parse errors, generated command schemas, and documentation rendering.
     """
 
     func: ParseFunction[ValueT_co]
@@ -1830,9 +1830,3 @@ def _schema_form(form: CommandForm, definitions: dict[str, CommandDefinition]) -
         doc=form.help.strip(),
         examples=form.examples,
     )
-
-
-def load_command_schema(data: str | bytes) -> CommandSchema:
-    from pydantic import TypeAdapter
-
-    return TypeAdapter(CommandSchema).validate_json(data)

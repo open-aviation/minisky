@@ -343,13 +343,8 @@ class PluginManager:
         lifespan: AbstractAsyncContextManager[None] | None = None
         entered = False
         try:
-            declaration = plugin.entry_point.load()
-            if not isinstance(declaration, Plugin):
-                raise PluginError(
-                    f"plugin {plugin.plugin_name.lower()} entry point must export Plugin"
-                )
             key = plugin.plugin_name.lower()
-            spec = self._build(key, declaration)
+            spec = self._build(key, plugin.entry_point.load())
             prepared = self._prepare(key, spec)
             if spec.state is not None:
                 self.variables.validate_data_parent(key)
@@ -388,7 +383,10 @@ class PluginManager:
             traceback.print_exception(exc)
             return Err(f"Error loading {plugin.plugin_name}: {exc}")
 
-    def _build(self, key: str, declaration: Plugin) -> PluginSpec:
+    def _build(self, key: str, declaration: object) -> PluginSpec:
+        if not isinstance(declaration, Plugin):
+            raise PluginError(f"plugin {key} entry point must export Plugin")
+
         raw = deepcopy(self.config.plugins.get(key, {}))
         if declaration.config_class is None:
             if raw:
@@ -505,7 +503,7 @@ class PluginManager:
         try:
             for entity in prepared.entities:
                 entity._publish()
-            self.commands.install_commands(prepared.commands)
+            self.commands.install_commands(prepared.commands, owner=key)
             if prepared.spec.state is not None:
                 self.variables.register_data_parent(prepared.spec.state, key)
             self.runtime.replaceables.install(prepared.replacements)

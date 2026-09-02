@@ -1,18 +1,21 @@
-"""Load tracked command schemas for the documentation build."""
+"""Build stack-command documentation from live Python declarations."""
 
 from __future__ import annotations
 
 import ast
+import tomllib
 from pathlib import Path
 from typing import Any, NamedTuple
 
 from griffe import ExprCall, ExprKeyword, ExprName, Extension, Function
 from markdown import Markdown
+from minisky import MiniSky, MiniSkyConfig
 from minisky._internal.command import (
     CommandDefinition,
     CommandEntry,
+    CommandSchema,
     ParameterSchema,
-    load_command_schema,
+    build_command_schema,
 )
 from minisky._internal.identifiers import normalize_command_name
 from zensical.extensions.autorefs import AutorefsExtension
@@ -100,6 +103,22 @@ class StackCommands(Extension):
             func.extra["stack_command"] = reference
 
 
+def _repository_plugin_ids() -> tuple[str, ...]:
+    plugin_ids: set[str] = set()
+    for path in (_ROOT / "packages").glob("*/pyproject.toml"):
+        project = tomllib.loads(path.read_text()).get("project", {})
+        entry_points = project.get("entry-points", {})
+        plugin_ids.update(entry_points.get("minisky.plugins", {}))
+    return tuple(sorted(plugin_ids))
+
+
+def _plugin_schema(runtime: MiniSky, plugin_name: str) -> CommandSchema:
+    record = runtime.plugins.plugins[plugin_name.upper()]
+    spec = runtime.plugins._build(plugin_name, record.entry_point.load())
+    commands = runtime.commands.prepare_components(spec.components)
+    return build_command_schema(commands)
+
+
 class _CommandReference(NamedTuple):
     plugins: tuple[PluginReference, ...]
     definitions: dict[str, CommandDefinition]
@@ -108,12 +127,16 @@ class _CommandReference(NamedTuple):
 def _load_reference() -> _CommandReference:
     plugins: list[PluginReference] = []
     definitions: dict[str, CommandDefinition] = {}
-    for path in sorted((_ROOT / "packages").rglob("static/commands.json")):
-        schema = load_command_schema(path.read_bytes())
+    with MiniSky(MiniSkyConfig()) as runtime:
+        schemas = runtime.commands.command_schemas()
+        for plugin_name in _repository_plugin_ids():
+            schemas[plugin_name] = _plugin_schema(runtime, plugin_name)
+
+    for plugin_name, schema in schemas.items():
         definitions.update(schema.definitions)
         if schema.commands:
-            package = path.parent.parent.name
-            plugins.append(PluginReference(_plugin_id(package), schema.commands))
+            plugins.append(PluginReference(plugin_name, schema.commands))
+
     plugins.sort(key=lambda plugin: (plugin.name != "minisky", plugin.name))
     return _CommandReference(tuple(plugins), definitions)
 

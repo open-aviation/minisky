@@ -68,7 +68,7 @@ class TestQueueing:
                 runtime.commands.prepare_command(late, name="TESTLATE"),
             )
             runtime.commands.validate_commands(prepared)
-            runtime.commands.install_commands(prepared)
+            runtime.commands.install_commands(prepared, owner="minisky")
             try:
                 runtime.simulation.op()
                 start = runtime.simulation.simt
@@ -168,7 +168,7 @@ class TestCommandMounting:
                 return True
 
         with pytest.raises(ValueError, match="repeated in batch"):
-            runtime.commands.mount_components((First(), Second()))
+            runtime.commands.mount_components((First(), Second()), owner="minisky")
         assert "DUPLICATE" not in runtime.commands.cmddict
 
     def test_replaceable_dispatch_does_not_retain_previous_implementation(

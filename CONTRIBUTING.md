@@ -11,14 +11,6 @@ just sync
 
 ## Development
 
-When you modify a command (changing signatures, updating docstrings), remember to re-generate the command schema so the documentation and `HELP` command picks it up:
-
-```sh
-just gen-command-schema
-```
-
-Otherwise, CI will fail when stale.
-
 Code quality:
 
 ```sh
