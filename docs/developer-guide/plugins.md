@@ -183,7 +183,7 @@ Remember to mount the entity in the [`Plugin.build` function][minisky.Plugin.bui
 
 ## External resources
 
-In some cases, you may want to configure resources (e.g. `httpx.AsyncClient` or background threads) on plugin startup, and shut it down cleanly. To do so, use an **async context manager**, for example:
+In some cases, you may want to configure resources (e.g. `httpx2.AsyncClient` or background threads) on plugin startup, and shut it down cleanly. To do so, use an **async context manager**, for example:
 
 ```py
 @asynccontextmanager

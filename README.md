@@ -25,7 +25,7 @@ cd minisky
 # with uv
 uv sync --all-packages --all-extras
 # with pip
-pip install ./packages/minisky ./packages/minisky-xplane-navdata
+pip install './packages/minisky[cli]' ./packages/minisky-xplane-navdata
 ```
 
 Note that the `minisky` core alone does not come bundled with navigation data. The `minisky-xplane-navdata` package (licensed under GPL), when installed, will be automatically discovered by the core.
@@ -38,11 +38,12 @@ uv run minisky run --scenario scenarios/kl204.scn --speed 10
 # or, start a REST API (0.0.0.0:8000 by default)
 uv run minisky server
 
-uvx httpx "http://localhost:8000/stack/POS EHAM"
-uvx httpx "http://localhost:8000/stack/MCRE 3"
-uvx httpx "http://localhost:8000/all"
-uvx httpx "http://localhost:8000/conflicts"
-uvx httpx "http://localhost:8000/commands"
+uv tool install 'httpx2[cli]'
+httpx2 "http://localhost:8000/stack/POS EHAM"
+httpx2 "http://localhost:8000/stack/MCRE 3"
+httpx2 "http://localhost:8000/all"
+httpx2 "http://localhost:8000/conflicts"
+httpx2 "http://localhost:8000/commands"
 # with the REST API running, attach an interactive console
 uv run minisky console
 > POS EHAM  # show information about Schiphol

@@ -4,20 +4,19 @@ from __future__ import annotations
 
 import asyncio
 import json
-import subprocess
 import tomllib
 from pathlib import Path
-from pprint import pprint
 from typing import TYPE_CHECKING, Annotated, TypeAlias
 
-import requests
+import httpx2
 import typer
 import websockets
-from colorama import Fore, Style
-from prompt_toolkit import prompt
+from prompt_toolkit import PromptSession
 from prompt_toolkit.completion import NestedCompleter, PathCompleter
 from prompt_toolkit.history import FileHistory
+from prompt_toolkit.styles import Style
 from pydantic import ValidationError
+from rich.console import Console
 
 from minisky._internal.config import MiniSkyConfig, default_user_config_toml_path
 
@@ -25,6 +24,7 @@ if TYPE_CHECKING:
     from minisky._internal.runtime import MiniSky
 
 app = typer.Typer(help="MiniSky command-line tools.", no_args_is_help=True)
+console = Console()
 
 _ConfigOption: TypeAlias = Annotated[
     Path | None,
@@ -34,6 +34,7 @@ _ConfigOption: TypeAlias = Annotated[
 history_file = Path("/tmp/hacksky_console_history").expanduser()
 path_completer = PathCompleter()
 completer = NestedCompleter.from_nested_dict({"load": path_completer, "/load": path_completer})
+prompt_style = Style.from_dict({"prompt": "bold ansibrightgreen"})
 
 
 def _load_config(path: Path | None) -> MiniSkyConfig:
@@ -125,56 +126,63 @@ def console_cmd(
     port: Annotated[int, typer.Option(help="API server port.")] = 8000,
 ) -> None:
     """Run the interactive console client for a MiniSky API server."""
-    typer.echo(f"MiniSky Console, connect to {server}:{port}, use /exit to quit")
+    asyncio.run(_console(server, port))
 
+
+async def _console(server: str, port: int) -> None:
+    console.print(f"MiniSky Console, connect to {server}:{port}, use /exit to quit")
     root_url = f"{server}:{port}"
+    session = PromptSession[str](
+        completer=completer,
+        history=FileHistory(str(history_file)),
+        style=prompt_style,
+    )
 
-    while True:
-        print(Fore.LIGHTGREEN_EX + Style.BRIGHT, end="")
-        cmd = prompt("> ", completer=completer, history=FileHistory(str(history_file)))
-        print(Style.RESET_ALL, end="")
+    async with httpx2.AsyncClient(timeout=30.0) as client:
+        while True:
+            cmd = await session.prompt_async([("class:prompt", "> ")])
 
-        if cmd == "":
-            continue
+            if cmd == "":
+                continue
 
-        if cmd in ("/exit", "exit"):
-            break
+            if cmd in ("/exit", "exit"):
+                break
 
-        if cmd in ("/clear", "clear"):
-            subprocess.run(["clear"], check=False)
-            continue
+            if cmd in ("/clear", "clear"):
+                process = await asyncio.create_subprocess_exec("clear")
+                await process.wait()
+                continue
 
-        if cmd.startswith(("/load ", "load ")):
-            file_path = Path(cmd.split(" ", maxsplit=1)[1])
+            if cmd.startswith(("/load ", "load ")):
+                file_path = Path(cmd.split(" ", maxsplit=1)[1])
 
-            if file_path.is_file():
-                with file_path.open("rb") as f:
-                    files = {"file": (file_path.name, f)}
-                    response = requests.post(f"{root_url}/scn", files=files, timeout=30)
-                    typer.echo(response.json())
+                if file_path.is_file():
+                    contents = await asyncio.to_thread(file_path.read_bytes)
+                    files = {"file": (file_path.name, contents)}
+                    response = await client.post(f"{root_url}/scn", files=files)
+                    console.print(response.json())
+                else:
+                    console.print("File does not exist\n")
+                continue
+
+            if not cmd.startswith("/"):
+                response = await client.get(f"{root_url}/stack/{cmd}")
             else:
-                typer.echo("File does not exist\n")
-            continue
-
-        if not cmd.startswith("/"):
-            response = requests.get(f"{root_url}/stack/{cmd.strip('/')}", timeout=30).json()
-            pprint(response)
-        else:
-            response = requests.get(f"{root_url}/{cmd}", timeout=30).json()
-            pprint(response)
+                response = await client.get(f"{root_url}/{cmd.lstrip('/')}")
+            console.print(response.json())
 
 
 async def _stream_snapshots(url: str, raw: bool) -> None:
     async with websockets.connect(url) as ws:
-        typer.echo(f"connected to {url}")
+        console.print(f"connected to {url}")
         while True:
             snap = json.loads(await ws.recv())
             if raw:
-                typer.echo(json.dumps(snap))
+                console.print(json.dumps(snap))
                 continue
             info = snap["siminfo"]
             ac = snap["acdata"]
-            typer.echo(
+            console.print(
                 f"t={info['simt']:8.1f}s  state={info['state']}  "
                 f"ntraf={info['ntraf']}  speed={info['speed']}x  "
                 f"callsigns={ac['callsign']}"
@@ -193,4 +201,4 @@ def stream_cmd(
     try:
         asyncio.run(_stream_snapshots(url, raw))
     except KeyboardInterrupt:
-        typer.echo("\ndisconnected")
+        console.print("\ndisconnected")

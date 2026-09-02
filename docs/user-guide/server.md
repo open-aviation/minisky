@@ -3,6 +3,8 @@
 A [`MiniSky`][minisky.MiniSky] runtime can be controlled by standard tools like `curl` through an **experimental** REST API:
 
 ```bash
+# make sure to install the optional CLI dependencies
+uv add 'minisky[cli]'
 uv run minisky server
 ```
 

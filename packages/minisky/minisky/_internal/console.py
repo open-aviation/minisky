@@ -10,7 +10,6 @@ from collections.abc import Callable
 from typing import Annotated, Self
 
 from annotated_doc import Doc
-from colorama import Fore, Style
 
 from minisky._internal.command import Text, command
 
@@ -107,7 +106,8 @@ class ConsoleIO:
             # Blue to stand apart from uvicorn's green INFO:, only for
             # interactive terminals so redirected logs stay free of ANSI codes.
             tag = self.prefix.rstrip()
-            prefix = f"{Fore.BLUE}{tag}{Style.RESET_ALL}{self.prefix[len(tag) :]}"
+            # TODO(abraham): when we work on issue #56, do not colour it here.
+            prefix = f"\x1b[34m{tag}\x1b[0m{self.prefix[len(tag) :]}"
         for line in text.splitlines() or [""]:
             print(f"{prefix}{line}")
         print(text, file=self.output_buffer, end="")

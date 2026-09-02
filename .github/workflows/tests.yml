@@ -52,7 +52,7 @@ jobs:
           enable-cache: true
 
       - name: Install Python dependencies
-        run: uv sync --all-groups --all-packages
+        run: uv sync --all-groups --all-packages --all-extras
 
       - name: Check code quality
         run: |

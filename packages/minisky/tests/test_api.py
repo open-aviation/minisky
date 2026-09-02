@@ -3,16 +3,16 @@
 Use `just test-api`.
 
 The `/stack/{cmd}` endpoint requires the async runner loop and is not tested
-here because it is flaky under `TestClient`.
+here because it is flaky under the in-process ASGI client.
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import AsyncIterator
 
+import httpx2
 import pytest
 from fastapi import FastAPI
-from fastapi.testclient import TestClient
 from minisky import MiniSky, MiniSkyConfig
 from minisky.types import CasMps, StdPressureAltM
 
@@ -31,16 +31,16 @@ def runtime(server_app: FastAPI) -> MiniSky:
     return server_app.state.runtime
 
 
-@pytest.fixture(scope="module")
-def client(server_app: FastAPI) -> Iterator[TestClient]:
-    fastapi_testclient = pytest.importorskip("fastapi.testclient")
-
-    with fastapi_testclient.TestClient(server_app) as test_client:
+@pytest.fixture
+async def client(server_app: FastAPI) -> AsyncIterator[httpx2.AsyncClient]:
+    transport = httpx2.ASGITransport(app=server_app)
+    async with httpx2.AsyncClient(transport=transport, base_url="http://test") as test_client:
         yield test_client
 
 
-def test_commands_returns_structured_schema(client: TestClient) -> None:
-    resp = client.get("/commands")
+@pytest.mark.anyio
+async def test_commands_returns_structured_schema(client: httpx2.AsyncClient) -> None:
+    resp = await client.get("/commands")
 
     assert resp.status_code == 200
     schema = resp.json()["minisky"]
@@ -49,7 +49,8 @@ def test_commands_returns_structured_schema(client: TestClient) -> None:
     assert "CRE" in schema["commands"]
 
 
-def test_all_reflects_created_aircraft(client: TestClient, runtime: MiniSky) -> None:
+@pytest.mark.anyio
+async def test_all_reflects_created_aircraft(client: httpx2.AsyncClient, runtime: MiniSky) -> None:
     runtime.traffic.cre(
         "KL001",
         "A320",
@@ -59,7 +60,7 @@ def test_all_reflects_created_aircraft(client: TestClient, runtime: MiniSky) -> 
         alt=StdPressureAltM(3000.0),
         airspeed=CasMps(150.0),
     )
-    resp = client.get("/all")
+    resp = await client.get("/all")
     assert resp.status_code == 200
     aircraft = next(ac for ac in resp.json() if ac["callsign"] == "KL001")
     assert aircraft["selected airspeed"] == {"kind": "CAS", "mps": 150.0}
