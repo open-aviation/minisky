@@ -19,7 +19,7 @@ Once installed, the default runtime uses it automatically:
 from minisky import MiniSky
 
 runtime = MiniSky()
-# tries to load for minisky-xplane-navdata internally
+# tries to load minisky-xplane-navdata internally
 ```
 
 If you are running multiple runtimes, reuse the navigation and magnetic declination data to avoid repeated file I/O:

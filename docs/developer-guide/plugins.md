@@ -221,6 +221,8 @@ Here, code before `yield` runs during plugin startup, and cleans up after `yield
 
 Most plugins add behavior alongside minisky. However, in some cases you may want to replace an entire core implementation. For example, to override the internal autopilot implementation:
 
+<!-- TODO(abraham): show __init__ clearly -->
+
 ```python hl_lines="1 9"
 @replacement  # (1)!
 class CustomAutoPilot(Autopilot):

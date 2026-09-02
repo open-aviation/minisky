@@ -122,7 +122,7 @@ class FixedWingDragPolar:
 # seems like it is dead?
 ENG_TYPE_TF = 1  # turbofan, fixwing
 ENG_TYPE_TP = 2  # turboprop, fixwing
-ENG_TYPE_TS = 3  # turboshlft, rotor
+ENG_TYPE_TS = 3  # turboshaft, rotor
 
 OPENAP_DIR = data("performance/openap")
 

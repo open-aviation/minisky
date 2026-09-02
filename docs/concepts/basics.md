@@ -48,7 +48,7 @@ print(runtime.simulation.simt)
 1. Each step represents half a simulation second.
 2. Four steps advance two simulation seconds.
 
-Here, the time that `wait()` depends on the *playback speed* defined by the runner.
+Here, the duration of `wait()` depends on the *playback speed* defined by the runner.
 
 ```python hl_lines="1"
 runtime.runner.speed = 10

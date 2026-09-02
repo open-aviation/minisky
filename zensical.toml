@@ -31,8 +31,8 @@ nav = [
       { "aero" = "api/aero.md" },
       { "geo" = "api/geo.md" },
       { "Plugins" = [
-        { "minisky_example" = "api/example.md" },
         { "minisky_multicopter" = "api/multicopter.md" },
+        { "minisky_xplane_navdata" = "api/navdata.md" },
         { "minisky_tangram" = "api/minisky-tangram.md" },
         { "tangram_minisky" = "api/tangram-minisky.md" },
       ] },
@@ -93,7 +93,9 @@ custom_templates = "docs/templates"
 paths = [
   "packages/minisky",
   "packages/minisky-example/src",
+  "packages/minisky-example-customautopilot/src",
   "packages/minisky-multicopter/src",
+  "packages/minisky-xplane-navdata/src",
   "packages/minisky-tangram/src",
   "packages/tangram-minisky/src",
 ]

@@ -428,7 +428,7 @@ class ConflictResolution(TrafficArrays):
             return Ok(None)
         self.resodhrelative = True
         return Err(
-            "RSZONEH [height], e.g. RSZONEH 1500FT\nCan only set resolution factor when simulation contains aircraft with different HPZ,\nUse RFACV instead."
+            "RSZONEDH [height], e.g. RSZONEDH 1500FT\nCan only set resolution factor when simulation contains aircraft with different HPZ,\nUse RFACV instead."
         )
 
     @command(name="RSZONEDH", aliases=("RESOZONEDH",))

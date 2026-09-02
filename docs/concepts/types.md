@@ -16,7 +16,7 @@ In addition to units, minisky also distinguishes between various **quantity kind
 
 Calibrated airspeed, true airspeed and ground airspeed can all be expressed in `m/s`, but are not interchangeable.
 
-Likewise, standard pressure altitude, altitude above MSL, height above ground level all have the canonical SI unit of `m` but refer to different references/geoids.
+Likewise, standard pressure altitude, altitude above MSL, and height above ground level all have the canonical SI unit of `m` but refer to different references/geoids.
 
 Minisky provides developers with the [`minisky.quantities`][] and [`minisky.types`][] modules to help distinguish them.
 
@@ -37,7 +37,7 @@ Here are some commonly used quantity kinds:
     - [`MslAltM`][minisky.types.MslAltM] is altitude above mean sea level (QNH), e.g. `13000FT[MSL]`, or `4000M[MSL]`
     - [`q.AglHeightM`][minisky.quantities.AglHeightM] is the height above the terrain. minisky does not properly support parsing from a string.
 - Speed
-    - [Calibrated airspeed (CAS)][minisky.types.CasMps] is the indicated airspeed (IAS) corrected for instrument and position errors, for example, `130KT[CAS]`, `67M/S[CAS]`.
+    - [Calibrated airspeed (CAS)][minisky.types.CasMps] is the indicated airspeed (IAS) corrected for instrument and position errors, for example, `130KT[CAS]`, `67MPS[CAS]`.
     - [Mach][minisky.types.Mach] is the [true airspeed (TAS)][minisky.quantities.TrueAirspeedMps] divided by the local [speed of sound][minisky.quantities.SpeedOfSoundMps]. For example, `M.78`, `M0.78`.
 
 See the [API reference](../api/types.md) for the full list.

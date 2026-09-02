@@ -12,7 +12,7 @@ from minisky_multicopter.perf import MulticopterPerf
 from tests._types import RunCommand, StepUntil
 
 MAVIC_PMAX: q.PowerW = 4 * 66.9
-"""Installed power of the MAVIC entry in teh OpenAP rotor database"""
+"""Installed power of the MAVIC entry in the OpenAP rotor database"""
 
 MAVIC_MASS: q.MassKg = 0.5 * (0.494 + 0.734)
 """Effective mass of the MAVIC entry, mean of OEW and MTOW"""

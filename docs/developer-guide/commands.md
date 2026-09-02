@@ -6,7 +6,7 @@
 
     minisky also extracts Python annotations for runtime validation, much like [`pydantic`](https://pydantic.dev/docs/validation/latest/concepts/types/). It natively understands [custom constraints](#custom-constraints) (via [`annotated-types`](https://github.com/annotated-types/annotated-types)), [literals](#literals), [optional values](#optional-values) (`T | None`), [sum types](#sum-types) (`A | B`), [product types](#product-types) (`NamedTuple(a, b)`), [variadics](#variadic-parameters) (`*args`), [overloads](#overloads) and [custom parsers](#custom-parsers). [Document arguments](#documentation) with [`annotated_doc.Doc`](https://github.com/fastapi/annotated-doc/).
 
-    minisky defines a few [built-in types](#built-in-types), such as [`AcId`][minisky.AcId]/[`AcIdSelection`][minisky.AcIdSelection], as well as those in the [`minisky.types`][] (e.g. [`CasMps`][minisky.types.CasMps], [`Mach`][minisky.types.Mach]).
+    minisky defines a few [built-in types](#built-in-types), such as [`AcId`][minisky.AcId]/[`AcIdSelection`][minisky.AcIdSelection], as well as those in the [`minisky.types`][] module (e.g. [`CasMps`][minisky.types.CasMps], [`Mach`][minisky.types.Mach]).
 
 ## Basic Example
 
@@ -281,7 +281,7 @@ Args:
     tags(str)
 ```
 
-The same rule works for [product types](#product-types) too! For example, you can use `*windows: Windows`.
+The same rule works for [product types](#product-types) too! For example, you can use `*windows: Window`.
 
 ## Overloads
 

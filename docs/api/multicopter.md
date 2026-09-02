@@ -12,6 +12,14 @@
 
 ::: minisky_multicopter.entity.Multicopter
 
+::: minisky_multicopter.entity.get_multicopter
+
+::: minisky_multicopter.kinematics.MulticopterKinematics
+
+::: minisky_multicopter.aporasas.MulticopterAPorASAS
+
 ::: minisky_multicopter.autopilot.MulticopterAutopilot
+
+::: minisky_multicopter.activewp.MulticopterActiveWaypoint
 
 ::: minisky_multicopter.perf.MulticopterPerf

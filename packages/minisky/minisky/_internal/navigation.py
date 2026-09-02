@@ -1,5 +1,5 @@
 """Navigation data for MiniSky, including waypoint, airport, airway, FIR,
-fountry and runway data.
+country and runway data.
 
 Note that the exact storage format (e.g. parquet, CSV, JSON) or file I/O do not
 belong here. External providers should handle it.
