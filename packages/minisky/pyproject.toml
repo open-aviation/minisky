@@ -6,11 +6,9 @@ build-backend = "hatchling.build"
 name = "minisky"
 version = "0.0.1"
 description = "An air traffic simulation library derived from BlueSky"
+# BlueSky is written by Jacco M. Hoekstra and Joost Ellerbroek from TU Delft.
+# minisky would not exist without the awesome work put into bluesky!
 authors = [
-    { name = "Joost Ellerbroek", email = "j.ellerbroek@tudelft.nl" },
-    { name = "Jacco Hoekstra", email = "j.m.hoekstra@tudelft.nl" }
-]
-maintainers = [
     { name = "Abraham Cheung", email = "abraham@ylcheung.com" },
     { name = "Andres Morfin Veytia" }
 ]
