@@ -116,6 +116,7 @@ jobs:
           fi
 
           gh release create "$GITHUB_REF_NAME" release-bundle/dist/* \
+            --repo "$GITHUB_REPOSITORY" \
             --verify-tag \
             --title "$PACKAGE $VERSION" \
             "${notes[@]}"
