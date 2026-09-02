@@ -10,7 +10,7 @@ Plugins are **not auto-loaded** by default on startup. To see installed plugins 
 
 === "Python API"
 
-    ```pycon title="uv run python"
+    ```pycon
     >>> from minisky import MiniSky
     >>> async def main():
     ...     async with MiniSky() as runtime:
@@ -21,7 +21,7 @@ Plugins are **not auto-loaded** by default on startup. To see installed plugins 
     >>> import asyncio
     >>> asyncio.run(main())
     Loaded plugins: (none)
-    Available plugins: CUSTOMAUTOPILOT, EXAMPLE, MULTICOPTER, TANGRAM
+    Available plugins: MULTICOPTER
     Successfully loaded plugin MULTICOPTER
     ```
 
@@ -29,10 +29,10 @@ Plugins are **not auto-loaded** by default on startup. To see installed plugins 
 
     Use the [`PLUGINS` stack command][command.PLUGINS]:
 
-    ```text title="uv run minisky console"
+    ```text title="minisky console"
     > PLUGINS
     Loaded plugins: (none)
-    Available plugins: CUSTOMAUTOPILOT, EXAMPLE, MULTICOPTER, TANGRAM
+    Available plugins: MULTICOPTER
     > PLUGINS LOAD MULTICOPTER
     Successfully loaded plugin MULTICOPTER
     ```

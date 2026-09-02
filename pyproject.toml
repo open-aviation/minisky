@@ -9,7 +9,7 @@ dev = [
     "pyright>=1.1.390",
     "fakeredis>=2.26",
 ]
-docs = ["zensical>=0.0.47", "mkdocstrings-python>=2.0.5"]
+docs = ["zensical>=0.0.51", "mkdocstrings-python>=2.0.5"]
 
 [tool.pytest.ini_options]
 testpaths = [

@@ -29,7 +29,7 @@ class Example:
 
 Users can then run your command in the console:
 
-```command title="uv run minisky console"
+```command title="minisky console"
 > SET_SPEED 250
 speed set to 250
 > HELP SET_SPEED
@@ -56,7 +56,7 @@ The [`int`][] annotation instructs minisky to reject any input that cannot be co
     You can inspect the IR through the REST API:
 
     ```command
-    $ uv run minisky server
+    $ minisky server
     $ curl -s localhost:8000/commands | jq '.[] | .commands.SET_SPEED.forms[]? | {parameters, doc}'
     {
       "parameters": [
@@ -121,7 +121,7 @@ def set_speed(self, speed: MySpeed) -> Result[str, str]:
 
 Here, [`Annotated`][typing.Annotated] attaches metadata objects ([`Gt`, `Le`](https://github.com/annotated-types/annotated-types#gt-ge-lt-le)) to the runtime type (`int`). These metadata objects are used by minisky to *validate* the user input before calling the method:
 
-```command title="uv run minisky console"
+```command title="minisky console"
 > SET_SPEED 250
 speed set to 250 (int)
 > SET_SPEED -10
@@ -162,7 +162,7 @@ def set_mode(self, mode: Literal["AUTO", "MANUAL"]) -> Result[str, str]:
     return Ok(f"mode set to {mode!r}")
 ```
 
-```command title="uv run minisky console"
+```command title="minisky console"
 > MODE AUTO
 mode set to 'AUTO'
 > MODE CRUISE
@@ -189,7 +189,7 @@ def note(self, text: str | None = None) -> Result[str, str]:
     return Ok(f"note set to {text!r} ({type(text).__name__})")
 ```
 
-```command title="uv run minisky console"
+```command title="minisky console"
 > NOTE hello
 note set to 'hello' (str)
 > NOTE
@@ -214,7 +214,7 @@ def set_recording(self, target: bool | str) -> Result[str, str]:
 
 Internally, minisky tries each branch from left-to-right. In this case, it first tries to cast the user input with [`bool`][], and if it fails, falls back to [`str`][]:
 
-```command title="uv run minisky console"
+```command title="minisky console"
 > RECORD OFF
 recording target set to False (bool)
 > RECORD flight.csv
@@ -248,7 +248,7 @@ def set_window(self, window: Window) -> Result[str, str]:
     return Ok(f"window set to {window!r}")
 ```
 
-```command title="uv run minisky console"
+```command title="minisky console"
 > WINDOW 10,20
 window set to Window(start=10, end=20)
 > HELP WINDOW
@@ -271,7 +271,7 @@ def set_tags(self, *tags: str) -> Result[str, str]:
     return Ok(f"tags set to {tags!r}")
 ```
 
-```command title="uv run minisky console"
+```command title="minisky console"
 > TAGS HEAVY,PRIORITY
 tags set to ('HEAVY', 'PRIORITY')
 > HELP TAGS
@@ -303,7 +303,7 @@ def get_mass(self) -> Result[str, str]:
 
 Minisky will handle the dispatching automatically.
 
-```command title="uv run minisky console"
+```command title="minisky console"
 > MASS 42000
 mass set to 42000.0
 > MASS
@@ -354,7 +354,7 @@ def set_factor(
 
 Here, we also use a [`CommandField`][minisky.CommandField] to add examples to the documentation.
 
-```command title="uv run minisky console"
+```command title="minisky console"
 > FACTOR 80%
 factor set to 0.8 (float)
 > HELP FACTOR
@@ -391,7 +391,7 @@ def divert(self, airport: AirportIcao) -> Result[str, str]:
 
 The advantage with this approach is the reusability of `AirportIcao` across multiple methods, without the need to duplicate docstrings everywhere. It also makes the documentation available in the [`HELP` command][command.HELP]:
 
-```command title="uv run minisky console"
+```command title="minisky console"
 > DIVERT EHAM
 diverting to 'EHAM'
 > HELP DIVERT
@@ -421,7 +421,7 @@ def aircraft_index(self, idx: AcId) -> Result[str, str]:
 
 Internally, minisky checks that the aircraft callsign actually exists in the [traffic arrays][minisky.TrafficArrays].
 
-```command title="uv run minisky console"
+```command title="minisky console"
 > CRE KL204,A320,52,4,90,FL100,250KT[CAS]
 Aircraft KL204 created
 > AIRCRAFTINDEX KL204
@@ -469,7 +469,7 @@ def set_target_speed(
             return Ok(f"Mach set to {value!r}")
 ```
 
-```command title="uv run minisky console"
+```command title="minisky console"
 > TARGETSPD 250KT[CAS]
 CAS set to 128.61111111111111 m/s
 > TARGETSPD M0.78
@@ -514,7 +514,7 @@ def set_altitude(
             return Ok(f"MSL altitude set to {value!r} m")
 ```
 
-```command title="uv run minisky console"
+```command title="minisky console"
 > ALTITUDE FL100
 pressure altitude set to 3048.0 m
 > ALTITUDE 10000FT[MSL]

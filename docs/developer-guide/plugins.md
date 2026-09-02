@@ -104,7 +104,7 @@ class Example:
         return Ok(self.config.message)
 ```
 
-```text title="uv run minisky console"
+```text title="minisky console"
 > PLUGIN LOAD EXAMPLE
 Successfully loaded plugin EXAMPLE
 > HELLO

@@ -3,9 +3,9 @@
 A [`MiniSky`][minisky.MiniSky] runtime can be controlled by standard tools like `curl` through an **experimental** REST API:
 
 ```bash
-# make sure to install the optional CLI dependencies
-uv add 'minisky[cli]'
-uv run minisky server
+# make sure to install the optional CLI/server dependencies, e.g. from PyPI:
+pip install 'minisky[cli]' minisky-xplane-navdata
+minisky server
 ```
 
 The [OpenAPI reference](https://fastapi.tiangolo.com/reference/openapi/docs/) can then be accessed at the `/docs` HTTP endpoint.
@@ -21,7 +21,7 @@ You can also optionally customise the server through a configuration TOML file (
 Once you have a server running, attach an interactive console with:
 
 ```bash
-uv run minisky console
+minisky console
 ```
 
 To send [commands](../concepts/commands.md):
@@ -37,7 +37,7 @@ To send an HTTP request or a minisky operation, prefix it with `/`:
 ```text
 > /all
 > /conflicts
-> /load packages/minisky/scenarios/kl204.scn
+> /load example.scn
 > /clear
 > /exit
 ```
@@ -53,8 +53,8 @@ To send an HTTP request or a minisky operation, prefix it with `/`:
 To get WebSocket simulation snapshots on `/stream`, use:
 
 ```bash
-uv run minisky stream
-uv run minisky stream --raw
+minisky stream
+minisky stream --raw
 ```
 
 See [`Snapshot`][minisky.Snapshot], [`SimInfo`][minisky.SimInfo] and [`AcData`][minisky.AcData] API reference for more information.

@@ -6,7 +6,7 @@ This DSL is used by scenario files (`.scn`) and the [interactive console](../use
 
 === "Interactive console"
 
-    ```text title="uv run minisky console"
+    ```text title="minisky console"
     > CRE KL001 B738 52 4 90 FL100 250KT[CAS]
     > KL001 ALT FL200
     > POS KL001
@@ -26,7 +26,7 @@ This DSL is used by scenario files (`.scn`) and the [interactive console](../use
     Run with:
 
     ```bash
-    uv run minisky run --scenario example.scn --speed 10
+    minisky run --scenario example.scn --speed 10
     ```
 
     Here, `--speed 10` changes how quickly simulation time is paced against wall-clock time (see [basics](./basics.md) for more information).

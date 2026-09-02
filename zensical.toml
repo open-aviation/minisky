@@ -1,6 +1,7 @@
 [project]
 site_name = "MiniSky"
 site_description = "An air traffic simulation library derived from BlueSky"
+site_url = "https://mode-s.org/minisky/"
 repo_url = "https://github.com/open-aviation/minisky"
 repo_name = "open-aviation/minisky"
 nav = [

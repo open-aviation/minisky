@@ -1,5 +1,9 @@
 # minisky
 
+[![PyPI](https://img.shields.io/pypi/v/minisky.svg)](https://pypi.org/project/minisky/)
+[![Licence](https://img.shields.io/pypi/l/minisky.svg)](https://pypi.org/project/minisky/)
+[![Python versions](https://img.shields.io/pypi/pyversions/minisky.svg)](https://pypi.org/project/minisky/)
+
 minisky is an air traffic simulation library derived from [BlueSky](https://github.com/TUDelft-CNS-ATM/bluesky) and a successor to [AirTrafficSim](https://github.com/HKUST-OCTAD-LAB/AirTrafficSim). It removes much of the infrastructure tied to BlueSky's application, including the bundled GUI, distributed simulation nodes, and uncommon commands. The goal of minisky is to create a modern and compact library that is easy to understand and extend.
 
 minisky:
@@ -14,11 +18,19 @@ minisky:
 
 ## Quickstart
 
-minisky is currently under heavy development and is not yet available on PyPI.
-
-Install from a source checkout:
+To install the latest version from PyPI:
 
 ```bash
+pip install 'minisky[cli]' minisky-xplane-navdata
+```
+
+Note that the `minisky` core alone does not come with navigation data. The `minisky-xplane-navdata` package is distributed separately.
+
+## Development
+
+minisky is currently under heavy development. For a bleeding-edge version, install from a source checkout:
+
+```sh
 git clone https://github.com/open-aviation/minisky.git
 cd minisky
 
@@ -28,24 +40,24 @@ uv sync --all-packages --all-extras
 pip install './packages/minisky[cli]' ./packages/minisky-xplane-navdata
 ```
 
-Note that the `minisky` core alone does not come bundled with navigation data. The `minisky-xplane-navdata` package (data licensed under GPL-2.0-or-later), when installed, will be automatically discovered by the core.
+See CONTRIBUTING for more information.
 
 ### CLI Usage
 
 ```sh
 # run a scenario file at ten times real-time speed
-uv run minisky run --scenario packages/minisky/scenarios/kl204.scn --speed 10
+minisky run --scenario example.scn --speed 10
 # or, start a REST API (0.0.0.0:8000 by default)
-uv run minisky server
+minisky server
 
-uv tool install 'httpx2[cli]'
+pip install 'httpx2[cli]'
 httpx2 "http://localhost:8000/stack/POS EHAM"
 httpx2 "http://localhost:8000/stack/MCRE 3"
 httpx2 "http://localhost:8000/all"
 httpx2 "http://localhost:8000/conflicts"
 httpx2 "http://localhost:8000/commands"
 # with the REST API running, attach an interactive console
-uv run minisky console
+minisky console
 > POS EHAM  # show information about Schiphol
 > MCRE 3    # create random aircraft
 > /all
@@ -103,7 +115,7 @@ from minisky import MiniSky
 
 async def main() -> None:
     async with MiniSky() as runtime:
-        runtime.commands.load_scenario("packages/minisky/scenarios/kl204.scn")
+        runtime.commands.load_scenario("example.scn")
         runtime.runner.speed = 10
         await runtime.run()
 

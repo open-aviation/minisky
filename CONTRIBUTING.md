@@ -9,6 +9,13 @@ Prerequisites: uv, pnpm.
 just sync
 ```
 
+To run the CLI, use `uv run`, for example:
+
+```sh
+uv run minisky server
+uv run minisky run --scenario packages/minisky/scenarios/kl204.scn
+```
+
 ## Development
 
 Code quality:
