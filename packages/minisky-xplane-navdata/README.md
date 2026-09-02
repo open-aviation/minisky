@@ -8,7 +8,7 @@ Provides navigation data used by [minisky](https://github.com/open-aviation/mini
 
 Copyright: © 2013 Robin A. Peel (`robin@x-plane.com`).
 
-SPDX-License-Identifier: GPL-2.0-or-later
+License: The Python package code is MIT-licensed and the bundled navigation data is distributed under GPL-2.0-or-later.
 
 BlueSky originally added its `nav.dat`, `fix.dat`, and `awy.dat` navigation database in commit [`996de35`](https://github.com/TUDelft-CNS-ATM/bluesky/commit/996de352cb9f657ec2837581a6bcd2090ce70fcf).
 

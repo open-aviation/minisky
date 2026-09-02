@@ -3,9 +3,13 @@ name = "minisky-tangram"
 version = "0.1.0"
 description = "Example MiniSky plugin bridging simulator state to tangram over Redis"
 readme = { text = "A private example plugin for MiniSky.", content-type = "text/markdown" }
+license = "MIT"
 requires-python = ">=3.11"
 dependencies = ["minisky>=0.1.0", "pydantic>=2.0", "redis>=5.0"]
-classifiers = ["Private :: Do Not Upload"]
+classifiers = [
+    "Private :: Do Not Upload",
+    "License :: OSI Approved :: MIT License",
+]
 
 [build-system]
 requires = ["hatchling"]

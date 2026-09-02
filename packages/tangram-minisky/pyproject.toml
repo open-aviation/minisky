@@ -7,10 +7,14 @@ name = "tangram_minisky"
 version = "0.1.0"
 description = "tangram frontend plugin rendering live traffic from a MiniSky simulator"
 readme = "readme.md"
+license = "MIT"
 requires-python = ">=3.11"
 # NOTE: we depend on redis and pydantic which is already included in tangram core.
 dependencies = ["tangram_core>=0.5.0"]
-classifiers = ["Private :: Do Not Upload"]
+classifiers = [
+    "Private :: Do Not Upload",
+    "License :: OSI Approved :: MIT License",
+]
 authors = [{ name = "Andres Morfin Veytia" }]
 
 [project.entry-points."tangram_core.plugins"]

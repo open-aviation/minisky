@@ -111,3 +111,5 @@ asyncio.run(main())
 ```
 
 Visit the [documentation](https://mode-s.org/minisky/) for more details on the commands, scenarios, TOML configuration and plugins!
+
+License: MIT. Note that the `minisky-xplane-navdata` package is licensed under GPL-2.0-or-later.

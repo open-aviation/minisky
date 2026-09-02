@@ -10,11 +10,13 @@ authors = [
     { name = "Abraham Cheung", email = "abraham@ylcheung.com" },
 ]
 readme = "README.md"
-license = "GPL-3.0-only"
+license = "MIT AND GPL-2.0-or-later"
 requires-python = ">=3.11"
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: GNU General Public License v2 or later (GPLv2+)",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
