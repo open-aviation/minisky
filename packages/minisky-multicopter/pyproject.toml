@@ -1,21 +1,43 @@
-[project]
-name = "minisky-multicopter"
-version = "0.1.0"
-description = "MiniSky plugin flying small electric multirotors with decoupled track and heading"
-readme = { text = "A MiniSky plugin for simulating small electric multirotors.", content-type = "text/markdown" }
-requires-python = ">=3.11"
-dependencies = ["minisky>=0.1.0"]
-classifiers = ["Private :: Do Not Upload"]
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[project]
+name = "minisky-multicopter"
+version = "0.0.1"
+description = "MiniSky plugin flying small electric multirotors"
+authors = [
+    { name = "Andres Morfin Veytia" }
+]
+readme = "README.md"
+license = "GPL-3.0-only"
+requires-python = ">=3.11"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Scientific/Engineering",
+    "Typing :: Typed",
+]
+dependencies = ["minisky>=0.0.1"]
+
+[project.urls]
+Documentation = "https://mode-s.org/minisky/user-guide/multicopters/"
+Repository = "https://github.com/open-aviation/minisky"
+Issues = "https://github.com/open-aviation/minisky/issues"
+Changelog = "https://github.com/open-aviation/minisky/blob/main/CHANGELOG.md"
+
+[project.entry-points."minisky.plugins"]
+multicopter = "minisky_multicopter:plugin"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/minisky_multicopter"]
 
 [tool.uv.sources]
 minisky = { workspace = true }
-
-[project.entry-points."minisky.plugins"]
-multicopter = "minisky_multicopter:plugin"

@@ -1263,7 +1263,7 @@ wheels = [
 
 [[package]]
 name = "minisky"
-version = "0.1.0"
+version = "0.0.1"
 source = { editable = "packages/minisky" }
 dependencies = [
     { name = "annotated-doc" },
@@ -1327,7 +1327,7 @@ requires-dist = [{ name = "minisky", editable = "packages/minisky" }]
 
 [[package]]
 name = "minisky-multicopter"
-version = "0.1.0"
+version = "0.0.1"
 source = { editable = "packages/minisky-multicopter" }
 dependencies = [
     { name = "minisky" },
@@ -1355,7 +1355,7 @@ requires-dist = [
 
 [[package]]
 name = "minisky-xplane-navdata"
-version = "0.1.0"
+version = "0.0.1"
 source = { editable = "packages/minisky-xplane-navdata" }
 dependencies = [
     { name = "minisky" },

@@ -287,13 +287,13 @@ Numeric state constants for waypoint/condition types, flight phase, lift type, w
 - OpenAP speed limits now use the aircraft's current altitude. ([bluesky `86a1528`](https://github.com/TUDelft-CNS-ATM/bluesky/commit/86a15289aae6a905bf361e040d0ca82f59d76d9d), PR #52, c93774a)
 - MVP vertical resolution now sends equal-vertical-rate conflict pairs in opposite vertical directions. ([bluesky PR #661](https://github.com/TUDelft-CNS-ATM/bluesky/pull/661), PR #57)
 
-## `minisky-xplane-navdata` v0.1.0
+## `minisky-xplane-navdata` v0.0.1
 
 ### Added
 
 Provides the X-Plane 11 navigation dataset used by MiniSky, including waypoints/navaids, airways, and runway thresholds. When the `minisky-xplane-navdata` package is installed, MiniSky will discover it automatically when constructing the default runtime. See the [navigation-data guide](https://github.com/open-aviation/minisky/blob/b8e8fcf169ef238ac97d0601caff564ef8f6c0e9/docs/user-guide/navdata.md#L1-L40). (PR #53, b8e8fcf)
 
-## `minisky-multicopter` v0.1.0
+## `minisky-multicopter` v0.0.1
 
 ### Added
 

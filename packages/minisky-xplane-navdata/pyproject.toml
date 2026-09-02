@@ -4,12 +4,33 @@ build-backend = "hatchling.build"
 
 [project]
 name = "minisky-xplane-navdata"
-version = "0.1.0"
+version = "0.0.1"
 description = "X-Plane navigation data for MiniSky"
+authors = [
+    { name = "Abraham Cheung", email = "abraham@ylcheung.com" },
+]
 readme = "README.md"
 license = "GPL-3.0-only"
 requires-python = ">=3.11"
-dependencies = ["minisky>=0.1.0", "numpy>=2.2.2", "polars>=1.0"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Scientific/Engineering",
+    "Typing :: Typed",
+]
+dependencies = ["minisky>=0.0.1", "numpy>=2.2.2", "polars>=1.0"]
+
+[project.urls]
+Documentation = "https://mode-s.org/minisky/user-guide/navdata/"
+Repository = "https://github.com/open-aviation/minisky"
+Issues = "https://github.com/open-aviation/minisky/issues"
+Changelog = "https://github.com/open-aviation/minisky/blob/main/CHANGELOG.md"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/minisky_xplane_navdata"]

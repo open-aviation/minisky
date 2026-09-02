@@ -1,9 +1,30 @@
 [project]
 name = "minisky"
-version = "0.1.0"
+version = "0.0.1"
 description = "An air traffic simulation library derived from BlueSky"
-readme = { text = "MiniSky is an air traffic simulation library derived from BlueSky.", content-type = "text/markdown" }
+authors = [
+    { name = "Joost Ellerbroek", email = "j.ellerbroek@tudelft.nl" },
+    { name = "Jacco Hoekstra", email = "j.m.hoekstra@tudelft.nl" }
+]
+maintainers = [
+    { name = "Abraham Cheung", email = "abraham@ylcheung.com" },
+    { name = "Andres Morfin Veytia" }
+]
+readme = "README.md"
+license = "GPL-3.0-only"
 requires-python = ">=3.11"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Scientific/Engineering",
+    "Typing :: Typed",
+]
 dependencies = [
     "typer>=0.15.0",
     "colorama>=0.4.6",
@@ -18,6 +39,12 @@ dependencies = [
     "isqx>=0.1.2",
     "annotated-doc>=0.0.4",
 ]
+
+[project.urls]
+Documentation = "https://mode-s.org/minisky/"
+Repository = "https://github.com/open-aviation/minisky"
+Issues = "https://github.com/open-aviation/minisky/issues"
+Changelog = "https://github.com/open-aviation/minisky/blob/main/CHANGELOG.md"
 
 [project.scripts]
 minisky = "minisky.cli:app"
