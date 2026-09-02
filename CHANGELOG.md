@@ -285,6 +285,7 @@ Numeric state constants for waypoint/condition types, flight phase, lift type, w
 - Geographic matrix calculations use the midpoint latitude, and `latlondist_matrix()` returns metres. (PR #7, PR #9, f3d5a68, 530acaf)
 - Fixed-speed RTA calculations now use consistent distance/speed units. ([bluesky `1a1acd5`](https://github.com/TUDelft-CNS-ATM/bluesky/commit/1a1acd545d105e7a70975aee7b0b368269b2fcbd), PR #46, PR #47, b0fedb5, 66a8c93)
 - OpenAP speed limits now use the aircraft's current altitude. ([bluesky `86a1528`](https://github.com/TUDelft-CNS-ATM/bluesky/commit/86a15289aae6a905bf361e040d0ca82f59d76d9d), PR #52, c93774a)
+- MVP vertical resolution now sends equal-vertical-rate conflict pairs in opposite vertical directions. ([bluesky PR #661](https://github.com/TUDelft-CNS-ATM/bluesky/pull/661), PR #57)
 
 ## `minisky-xplane-navdata` v0.1.0
 

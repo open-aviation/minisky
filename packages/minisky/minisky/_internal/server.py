@@ -25,7 +25,6 @@ import asyncio
 import importlib.resources
 from contextlib import asynccontextmanager, suppress
 from io import StringIO
-from pathlib import Path
 from typing import Annotated, Literal, TypeAlias, TypedDict
 
 from fastapi import (
@@ -39,8 +38,6 @@ from fastapi import (
     WebSocket,
     WebSocketDisconnect,
 )
-from fastapi.responses import RedirectResponse
-from fastapi.staticfiles import StaticFiles
 
 from minisky import MiniSky
 from minisky import quantities as q
@@ -172,11 +169,6 @@ def create_app(runtime: MiniSky | None = None) -> FastAPI:
     app.state.runtime = runtime
     app.include_router(create_router())
 
-    # TODO(abraham): package static assets inside minisky and resolve them
-    # with importlib.resources for wheel installs
-    static_dir = Path(__file__).parent.parent.parent / "static"
-    static_dir.mkdir(parents=True, exist_ok=True)
-    app.mount("/static", StaticFiles(directory=static_dir), name="static")
     return app
 
 
@@ -347,11 +339,6 @@ async def scn(runtime: Runtime, file: Annotated[UploadFile, File()]) -> dict[str
     return {"msg": f"scenario {filename} loaded"}
 
 
-def show_map() -> RedirectResponse:
-    """Display the aircraft map viewer."""
-    return RedirectResponse(url="/static/display.html")
-
-
 def list_plugins(runtime: Runtime) -> ResultResponse:
     """List available and loaded plugins."""
     result = runtime.plugins.listing()
@@ -378,7 +365,6 @@ def create_router() -> APIRouter:
     router.add_api_websocket_route("/stream", stream)
     router.add_api_route("/scn", upload_form, methods=["GET"])
     router.add_api_route("/scn", scn, methods=["POST"])
-    router.add_api_route("/map", show_map, methods=["GET"])
     router.add_api_route("/plugins", list_plugins, methods=["GET"])
     router.add_api_route("/plugins/load/{name}", load_plugin, methods=["GET"])
     return router

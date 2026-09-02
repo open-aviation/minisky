@@ -28,7 +28,6 @@ FastAPI serves interactive OpenAPI docs at `http://localhost:8000/docs`. The ser
 | GET | `/commands` | List canonical stack commands and usage strings |
 | WebSocket | `/stream` | Receive rate-capped full simulation snapshots |
 | GET/POST | `/scn` | Upload and load a scenario file (GET serves a small upload form) |
-| GET | `/map` | Browser-based aircraft map viewer (served from `static/`) |
 | GET | `/plugins` | List available and loaded plugins |
 | GET | `/plugins/load/{name}` | Load a plugin by name |
 
