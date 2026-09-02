@@ -55,24 +55,35 @@ def _load_config(path: Path | None) -> MiniSkyConfig:
         ) from exc
 
 
-def _new_runtime(config: MiniSkyConfig, scenario: str | None = None) -> MiniSky:
+def _new_runtime(config: MiniSkyConfig) -> MiniSky:
     """Construct a runtime from validated configuration."""
     from minisky import MiniSky
 
-    return MiniSky(config=config, scenario=scenario)
+    return MiniSky(config=config)
 
 
-async def _run_scenario(scenario: str, speed: int, config_path: Path | None) -> None:
+async def _run_scenario(scenario: Path, speed: int, config_path: Path | None) -> None:
     """Initialise the simulator with a scenario and run it to completion."""
-    async with _new_runtime(_load_config(config_path), scenario) as runtime:
+    async with _new_runtime(_load_config(config_path)) as runtime:
         await runtime.plugins.load_configured()
+        runtime.commands.load_scenario(scenario)
         runtime.runner.speed = speed
         await runtime.run()
 
 
 @app.command("run")
 def run_cmd(
-    scenario: Annotated[str, typer.Option(help="Scenario (.scn) file to run.")],
+    scenario: Annotated[
+        Path,
+        typer.Option(
+            help="Scenario (.scn) file to run.",
+            exists=True,
+            file_okay=True,
+            dir_okay=False,
+            readable=True,
+            resolve_path=True,
+        ),
+    ],
     speed: Annotated[int, typer.Option(help="Simulation speed multiplier.")] = 1,
     config: _ConfigOption = None,
 ) -> None:

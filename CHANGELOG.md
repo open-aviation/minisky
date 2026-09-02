@@ -246,7 +246,7 @@ Numeric state constants for waypoint/condition types, flight phase, lift type, w
 
 - Changes to runtime ownership, configuration, plugins, commands, physical quantities, navigation data, geography, and optional values are covered in the migration guide above.
 - The default simulation timestep is now 1 second. Separate performance and ASAS update intervals are removed. (4ab00ae, PR #28, ff6ea7b)
-- `IC` now requires an absolute scenario path. (4ab00ae, PR #44, 44f78ac)
+- `IC` resolves relative scenario paths against the runtime scenario directory (the construction-time working directory by default). (4ab00ae, PR #44, 44f78ac)
 - `MCRE` now takes explicit geographic bounds instead of the radar viewport, defaults to `A320`, and generates three-digit callsign suffixes. (4ab00ae, 17b0de8, PR #47, b0b76b7)
 - Conflict detection now uses `scipy.spatial.cKDTree` for candidate selection. (issue #15, PR #16, 17c26b2)
 - Waypoint passing and route switching are vectorized across aircraft. (PR #12, PR #13, a830b2c, 44d3099)

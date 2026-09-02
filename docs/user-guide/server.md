@@ -42,7 +42,7 @@ To send an HTTP request or a minisky operation, prefix it with `/`:
 > /exit
 ```
 
-`/load` reads a [scenario file](../concepts/commands.md) on the client machine and uploads it to the server. `/clear` and `/exit` are handled by the console itself. Otherwise, all slash-prefixed paths are sent as HTTP `GET` requests.
+`/load` reads a [scenario file](../concepts/commands.md) on the client machine, relative to the console client's current working directory, and uploads its contents to the server. `/clear` and `/exit` are handled by the console itself. Otherwise, all slash-prefixed paths are sent as HTTP `GET` requests.
 
 ## Streaming
 

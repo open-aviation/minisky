@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import gc
 import weakref
-from io import StringIO
 
 import numpy as np
 import pytest
@@ -228,17 +227,16 @@ class TestTypedGrammar:
         assert issue.message == "argument `acidx`: expected an aircraft, but got 'group TEAM'"
 
 
-class TestReadscn:
+class TestParseScenario:
     def test_short_command_line_survives(self, runtime: MiniSky) -> None:
         # "0:00:00>OP" is only 10 characters; it used to be dropped by a
         # minimum-length check meant to skip empty lines.
-        lines = list(runtime.commands.readscn(StringIO("0:00:00>OP\n")))
-        assert lines == [ScheduledCommand(0.0, "OP")]
+        lines = runtime.commands._parse_scenario(["0:00:00>OP"])
+        assert lines == (ScheduledCommand(0.0, "OP"),)
 
     def test_blank_and_comment_lines_skipped(self, runtime: MiniSky) -> None:
-        scn = StringIO("# a comment\n\n0:00:01>HOLD\n")
-        lines = list(runtime.commands.readscn(scn))
-        assert lines == [ScheduledCommand(1.0, "HOLD")]
+        lines = runtime.commands._parse_scenario(["# a comment", "", "0:00:01>HOLD"])
+        assert lines == (ScheduledCommand(1.0, "HOLD"),)
 
 
 class TestVarExplorer:

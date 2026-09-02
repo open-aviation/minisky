@@ -72,7 +72,7 @@ In the MiniSky repo:
 just sync
 # Add [plugins.tangram] to the MiniSky user config file with redis_url
 # pointing at the same Redis instance tangram uses.
-minisky server        # or: minisky run --scenario scenarios/kl204.scn
+minisky server        # or: minisky run --scenario packages/minisky/scenarios/kl204.scn
 ```
 
 Debug the transport without any frontend:

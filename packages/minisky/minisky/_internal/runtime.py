@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from os import PathLike
+from pathlib import Path
 from random import Random
 from typing import Self
 
@@ -42,14 +44,16 @@ class MiniSky:
     When navigation data is omitted, MiniSky loads the optional
     `minisky-xplane-navdata` provider when installed and otherwise starts with
     empty aviation data.
-    Magnetic declination defaults to the bundled grid.
+    Magnetic declination defaults to the bundled grid. Relative scenario paths
+    are resolved against `scenario_dir`, which defaults to the working
+    directory captured when the runtime is constructed.
     """
 
     def __init__(
         self,
         config: MiniSkyConfig | None = None,
-        scenario: str | None = None,
         *,
+        scenario_dir: str | PathLike[str] | None = None,
         navdata: NavData | None = None,
         magnetic_declination: MagneticDeclination | None = None,
     ) -> None:
@@ -59,6 +63,8 @@ class MiniSky:
             except FileNotFoundError:
                 config = MiniSkyConfig()
         self.config = config
+        self.scenario_dir = Path.cwd() if scenario_dir is None else Path(scenario_dir).expanduser()
+        self.scenario_dir = self.scenario_dir.resolve()
         self._closed = False
         self.python_random = Random()
         self.numpy_random = np.random.RandomState()
@@ -132,6 +138,7 @@ class MiniSky:
             replaceables=self.replaceables,
             get_simulation=lambda: self.simulation,
             get_runner=lambda: self.runner,
+            scenario_dir=self.scenario_dir,
         )
         self.streaming = StreamHub(
             lambda: build_snapshot(self.simulation, self.traffic, self.runner, self.commands)
@@ -179,11 +186,6 @@ class MiniSky:
         )
 
         self.plugins.discover()
-
-        if scenario:
-            self.commands.stack(f"IC {scenario}")
-        else:
-            self.runner.prevent_shutdown()
 
     def _stop_runner(self) -> None:
         self.runner.stop()

@@ -34,7 +34,7 @@ Note that the `minisky` core alone does not come bundled with navigation data. T
 
 ```sh
 # run a scenario file at ten times real-time speed
-uv run minisky run --scenario scenarios/kl204.scn --speed 10
+uv run minisky run --scenario packages/minisky/scenarios/kl204.scn --speed 10
 # or, start a REST API (0.0.0.0:8000 by default)
 uv run minisky server
 
@@ -102,7 +102,8 @@ from minisky import MiniSky
 
 
 async def main() -> None:
-    async with MiniSky(scenario="scenarios/kl204.scn") as runtime:
+    async with MiniSky() as runtime:
+        runtime.commands.load_scenario("packages/minisky/scenarios/kl204.scn")
         runtime.runner.speed = 10
         await runtime.run()
 

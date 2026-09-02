@@ -23,7 +23,6 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import asynccontextmanager, suppress
-from io import StringIO
 from typing import Annotated, Literal, TypeAlias, TypedDict
 
 from fastapi import (
@@ -163,6 +162,7 @@ def create_app(runtime: MiniSky | None = None) -> FastAPI:
     """Create a FastAPI application owning a simulator runtime."""
     if runtime is None:
         runtime = MiniSky()
+    runtime.runner.prevent_shutdown()
 
     app = FastAPI(lifespan=lifespan)
     app.state.runtime = runtime
@@ -328,9 +328,8 @@ async def scn(runtime: Runtime, file: Annotated[UploadFile, File()]) -> dict[str
     """Load an uploaded scenario file into the running simulation."""
     runtime.console.event.clear()
     contents = await file.read()
-    scenario = StringIO(contents.decode("utf-8"))
     filename = file.filename or "uploaded.scn"
-    runtime.commands.ic_StringIO(scenario, filename)
+    runtime.commands.load_scenario_text(contents.decode("utf-8"), name=filename)
     return {"msg": f"scenario {filename} loaded"}
 
 

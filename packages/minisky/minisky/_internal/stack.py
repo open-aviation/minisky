@@ -33,7 +33,6 @@ from collections.abc import Awaitable, Callable, Iterable, Iterator
 from contextlib import suppress
 from dataclasses import dataclass
 from functools import partial
-from io import StringIO
 from pathlib import Path
 from threading import Lock
 from typing import TYPE_CHECKING, Any, Literal
@@ -404,7 +403,7 @@ class CommandStack:
         replaceables: ReplaceableManager,
         get_simulation: Callable[[], Simulation],
         get_runner: Callable[[], Runner],
-        scenario_root: Path | None = None,
+        scenario_dir: Path,
     ) -> None:
         self.traffic = traffic
         self.console = console
@@ -415,9 +414,8 @@ class CommandStack:
         self.parse_context = CommandParseContext(traffic, waypoints, airports, runway_thresholds)
         self._get_simulation = get_simulation
         self._get_runner = get_runner
-        # TODO(abraham): package bundled scenarios inside minisky and resolve
-        # them with importlib.resources for wheel installs.
-        self.scenario_root = scenario_root or Path(__file__).parent.parent.parent
+        self.scenario_dir = scenario_dir.resolve()
+        """Base directory captured for resolving relative scenario paths."""
         self.cmddict: dict[str, Command] = {}
         """Canonical command names and aliases mapped to compiled commands."""
         self._commands: dict[str, _RegisteredCommand] = {}
@@ -858,33 +856,16 @@ class CommandStack:
         with suppress(asyncio.CancelledError, Exception):
             await pending.task
 
-    def readscn(self, scn: str | Path | StringIO) -> Iterator[ScheduledCommand]:
-        """Read a scenario file and yield its timestamped commands.
+    def _parse_scenario(self, lines: Iterable[str]) -> tuple[ScheduledCommand, ...]:
+        """Parse scenario lines into timestamped commands.
 
-        Parses lines of the form `HH:MM:SS.hh>CMDLINE`, skips full-line comments,
-        supports continuation with a trailing backslash, and yields commands
-        in stable timestamp order. Path-like sources are normalized to a `.scn`
-        suffix; `StringIO` sources are read directly.
-
-        Yields:
-            A scheduled command containing its time and command text.
-
-        Raises:
-            TypeError: When scn is neither a path nor a StringIO object.
+        Lines use the form `HH:MM:SS.hh>CMDLINE`. Full-line comments and blank
+        lines are skipped, trailing backslashes continue onto the next line,
+        and commands are returned in stable timestamp order.
         """
-        if isinstance(scn, (str, Path)):
-            scn_path = Path(scn).with_suffix(".scn")
-
-            with scn_path.open() as fscen:
-                scn_input = StringIO(fscen.read())
-        elif isinstance(scn, StringIO):
-            scn_input = scn
-        else:
-            raise TypeError("scn must be a string or StringIO")
-
         commands: list[ScheduledCommand] = []
         prevline = ""
-        for line in scn_input:
+        for line in lines:
             line = line.strip()
             if not line or line[0] == "#":
                 continue
@@ -911,46 +892,60 @@ class CommandStack:
             except (ValueError, IndexError):
                 self.console.echo(f"Skipping invalid scenario line: {line}")
 
-        yield from sorted(commands, key=lambda command: command.time)
+        return tuple(sorted(commands, key=lambda command: command.time))
+
+    def _resolve_scenario_path(self, scn: str | Path) -> Path:
+        """Resolve a scenario path against this runtime's scenario directory."""
+        path = Path(scn).expanduser()
+        candidate = path if path.is_absolute() else self.scenario_dir / path
+        candidate = candidate.resolve()
+        if candidate.is_file():
+            return candidate
+
+        if not candidate.suffix:
+            fallback = candidate.with_suffix(".scn")
+            if fallback.is_file():
+                return fallback
+
+        raise FileNotFoundError(f"scenario file not found: {candidate}")
+
+    def _install_scenario(self, commands: tuple[ScheduledCommand, ...], *, name: str) -> None:
+        """Reset the simulation and install an already parsed scenario."""
+        self.simulation.reset()
+        self.scenario_commands.extend(commands)
+        self.scenname = name
+
+    def load_scenario(self, scn: str | Path) -> Path:
+        """Resolve, read, parse, and load a scenario file.
+
+        Relative paths are resolved against `scenario_dir`. The file is fully
+        read and parsed before the current simulation is reset.
+        """
+        scn_path = self._resolve_scenario_path(scn)
+        commands = self._parse_scenario(scn_path.read_text(encoding="utf-8").splitlines())
+        self._install_scenario(commands, name=scn_path.stem)
+        return scn_path
+
+    def load_scenario_text(self, text: str, *, name: str = "") -> None:
+        """Parse and load scenario text supplied by a non-filesystem boundary."""
+        commands = self._parse_scenario(text.splitlines())
+        scenario_name = Path(name).stem if name else ""
+        self._install_scenario(commands, name=scenario_name)
 
     @command(name="IC", aliases=("LOAD", "OPEN"))
     def ic(self, scn: Text) -> Result[str, str]:
         """Load a scenario file.
 
-        Resets the simulation, reads the scenario file relative to the project
-        root, and buffers its timestamped commands for execution when the
-        simulation time passes their timestamps.
+        Relative paths are resolved against the runtime scenario directory.
+        The supplied path is tried exactly first; if a suffixless path does not
+        exist, the same path with a `.scn` suffix is tried. The current
+        simulation is reset only after the file has been read and parsed.
         """
-
-        self.simulation.reset()
-
-        scn_path = self.scenario_root / scn
-        if not scn_path.exists():
-            return Err(f"IC: File not found: {scn_path}")
-
-        lines = self.readscn(scn_path)
-
-        self.scenario_commands.extend(lines)
-        self.scenname = scn_path.stem
-
+        try:
+            scn_path = self.load_scenario(scn)
+        except (OSError, UnicodeError) as exc:
+            return Err(f"IC: {exc}")
         return Ok(f"scenario {scn_path} loaded.")
-
-    def ic_StringIO(self, scn: StringIO, scn_name: str | None = None) -> Result[str, str]:
-        """Load a scenario from a StringIO object.
-
-        Resets the simulation, reads scenario lines from the `StringIO` object,
-        and buffers the timestamped commands for execution (see [`checkscen`][..checkscen]). An
-        optional `scn_name` becomes the current scenario name.
-        """
-
-        self.simulation.reset()
-
-        lines = self.readscn(scn)
-
-        self.scenario_commands.extend(lines)
-        self.scenname = scn_name or ""
-
-        return Ok(f"scenario {scn_name} loaded.")
 
     @command(name="SCENARIO", aliases=("SCEN",))
     def scenario(self, name: Text) -> Result[str, str]:
@@ -1084,8 +1079,8 @@ class CommandStack:
 
     def get_scenname(self) -> str:
         """Return the name of the current scenario.
-        This is either the name defined by the SCEN command,
-        or otherwise the filename of the scenario."""
+        This is either the name defined by the SCEN command or the loaded
+        scenario filename without its extension."""
         return self.scenname
 
     def get_scendata(self) -> ScenarioData:

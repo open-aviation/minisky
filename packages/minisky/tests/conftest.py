@@ -8,12 +8,15 @@ simulation state before use. Output from `ConsoleIO.echo()` is destructive:
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator
+from pathlib import Path
 
 import pytest
 from minisky import MiniSky
 from minisky._internal.config import MiniSkyConfig
 from minisky._internal.simulation import Simulation
 from tests._types import RunCommand, StepUntil
+
+_REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
 @pytest.fixture(scope="session")
@@ -26,7 +29,7 @@ def config() -> MiniSkyConfig:
 def runtime(config: MiniSkyConfig) -> Iterator[MiniSky]:
     from minisky_xplane_navdata import load
 
-    instance = MiniSky(config, navdata=load())
+    instance = MiniSky(config, scenario_dir=_REPO_ROOT, navdata=load())
     yield instance
     instance.close()
 

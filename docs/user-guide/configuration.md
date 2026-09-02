@@ -30,7 +30,7 @@ fp.write_text("")
     To explicitly pass a config:
 
     ```bash
-    uv run minisky run --scenario scenarios/kl204.scn --config ./experiment.toml
+    uv run minisky run --scenario packages/minisky/scenarios/kl204.scn --config ./experiment.toml
     uv run minisky server --config ./server.toml
     ```
 

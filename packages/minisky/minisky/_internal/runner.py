@@ -75,12 +75,13 @@ class Runner:
         self.speed = mult
         return Ok(f"Simulation speed set to {mult}x")
 
+    # TODO(abraham): delete mutable state allow_shutdown. prefer something like run() or run_forever()
     def prevent_shutdown(self) -> None:
         """Disable shutdown so that `stop` requests are ignored.
 
-        Used when the runtime starts without a scenario (e.g. behind the HTTP
-        API) and should keep accepting commands even after a `QUIT` command is
-        issued. The simulation still moves to `END` and simulated time stops
+        Used by long-lived applications such as the HTTP server, which should
+        keep accepting commands even after a `QUIT` command is issued. The
+        simulation still moves to `END` and simulated time stops
         advancing; resume with the `OP` command.
         """
         self.allow_shutdown = False
