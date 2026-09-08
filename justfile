@@ -31,3 +31,13 @@ docs-serve:
 
 docs-build:
     uv run --group docs zensical build
+
+_docs-illustration name:
+    typst compile --input theme=light docs/assets/illustrations/{{name}}.typ docs/assets/illustrations/{{name}}-light.svg
+    typst compile --input theme=dark docs/assets/illustrations/{{name}}.typ docs/assets/illustrations/{{name}}-dark.svg
+    typst compile --input theme=light --format png docs/assets/illustrations/{{name}}.typ docs/assets/illustrations/{{name}}-light.png
+    typst compile --input theme=dark --format png docs/assets/illustrations/{{name}}.typ docs/assets/illustrations/{{name}}-dark.png
+
+docs-illustrations:
+    just _docs-illustration traffic-arrays
+    just _docs-illustration simulation-timing

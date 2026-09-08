@@ -1,6 +1,6 @@
 # Minisky 101: Basics
 
-Minisky is a discrete-time simulator. At each timestep $i$, it takes the current state $x_i$ and computes the next state $x_{i+1}$ with some timestep $\Delta t$:
+Minisky is a fixed-step, discrete-time simulator. At each timestep $i$, it takes the current state $x_i$ and computes the next state $x_{i+1}$ with some timestep $\Delta t$:
 $$
 x_{i+1} = f(x_i, \Delta t).
 $$
@@ -10,9 +10,12 @@ This page focuses on how the state $x_i$ is represented internally and how the t
 
 minisky stores most core aircraft state in what we call "traffic arrays", inside [`minisky.Traffic`][].
 
-Unlike typical game engines that model a list of objects, minisky uses the struct-of-arrays (SoA) architecture, where the *attributes* of an aircraft (e.g. its position, speed, altitude) are the "columns" of a table.
+Unlike typical game engines that model a list of objects, minisky uses the struct-of-arrays (SoA) architecture, where an aircraft is represented as the `i`th entry of each attribute array:
 
-<!-- TODO(abraham): add an image here -->
+<span class="theme-illustration">
+  <img class="theme-illustration--light" src="../assets/illustrations/traffic-arrays-light.svg">
+  <img class="theme-illustration--dark" src="../assets/illustrations/traffic-arrays-dark.svg">
+</span>
 
 Take a simple example of creating an aircraft:
 
@@ -30,9 +33,14 @@ This SoA architecture is also used in many minisky subsystems, including autopil
 
 ## Stepping
 
-<!-- TODO(abraham): we need a graphic for this -->
+minisky defaults to `simdt = 1s` and `speed = 1`. [`simdt`][minisky.Simulation.simdt] controls how much *simulation time* $\Delta t$ each step advances, with smaller values giving finer temporal resolution. [`speed`][minisky.Runner.speed] on the other hand, controls how quickly those steps are played back, with larger values reducing the *wall-clock* wait time between steps:
 
-When you execute [`MiniSky.run()`][minisky.MiniSky.run], the [**runner**][minisky.Runner] repeatedly calls [`Simulation.step()`][minisky.Simulation.step], which updates the state and advances the *simulation time* by the timestep [`simdt` $\Delta t$][minisky.Simulation.simdt]. Conceptually:
+<span class="theme-illustration">
+  <img class="theme-illustration--light" src="../assets/illustrations/simulation-timing-light.svg">
+  <img class="theme-illustration--dark" src="../assets/illustrations/simulation-timing-dark.svg">
+</span>
+
+Internally, when you execute [`MiniSky.run()`][minisky.MiniSky.run], the [runner][minisky.Runner] repeatedly calls [`Simulation.step()`][minisky.Simulation.step], which updates the state and advances the *simulation time* by [`simdt` $\Delta t$][minisky.Simulation.simdt]. Conceptually:
 
 ```python hl_lines="1 4"
 runtime.simulation.simdt = 0.5  # (1)!
@@ -54,7 +62,3 @@ Here, the duration of `wait()` depends on the *playback speed* defined by the ru
 runtime.runner.speed = 10
 await runtime.run()
 ```
-
-With these settings, the runner targets 10 simulation seconds per real second, i.e. one step every 0.05 real seconds.
-
-<!-- TODO(abraham): we really should update the terminology -->

@@ -1,0 +1,22 @@
+.theme-illustration {
+  display: block;
+}
+
+.theme-illustration > img {
+  display: block;
+  height: auto;
+  margin-inline: auto;
+  max-width: 100%;
+}
+
+.theme-illustration .theme-illustration--dark {
+  display: none;
+}
+
+[data-md-color-scheme="slate"] .theme-illustration .theme-illustration--light {
+  display: none;
+}
+
+[data-md-color-scheme="slate"] .theme-illustration .theme-illustration--dark {
+  display: block;
+}

@@ -13,6 +13,9 @@ __pycache__/
 /.cache/
 /site/
 
+# typst
+docs/assets/illustrations/*.png
+
 # misc
 .vscode/
 .DS_Store
