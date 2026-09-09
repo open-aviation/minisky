@@ -1,99 +1,106 @@
-#let dark = sys.inputs.at("theme", default: "light") == "dark"
-
-#let text-fg = if dark { oklch(92%, 0, 0deg) } else { oklch(25%, 0, 0deg) }
-#let text-muted = if dark { oklch(65%, 0, 0deg) } else { oklch(45%, 0, 0deg) }
-#let panel = if dark { oklch(18%, 0.01, 260deg) } else { oklch(98%, 0.005, 260deg) }
-#let border = if dark { oklch(30%, 0.01, 260deg) } else { oklch(85%, 0.01, 260deg) }
-#let entity-accent = if dark { oklch(75%, 0.16, 250deg) } else { oklch(45%, 0.16, 250deg) }
-#let attribute-accent = if dark { oklch(75%, 0.16, 145deg) } else { oklch(45%, 0.16, 145deg) }
-#let text-size = 12pt
-#let padding-x = 24pt
-#let padding-y = 12pt
-
-#let cell = (width: 80pt, height: 24pt)
-#let row-gap-y = 6pt
-#let index-above-y = 16pt
-#let attribute-left-x = 8pt
-#let label-left-x = 50pt
-#let brace-width = 6pt
-#let brace-gap-x = 8pt
-#let attribute-note-width = 60pt
-#let continuation-gap-x = 8pt
-#let continuation-gap-y = 6pt
-#let rows = (
-  ([callsign], ([KLM204], [BAW17], [CPA8747])),
-  ([lat], ([52.31], [51.47], [22.29])),
-  ([lon], ([4.76], [-0.46], [114.14])),
-  ([altitude], ([12000], [9500], [2000])),
+#let colours-light = (
+  colour-border: oklch(85%, 0.01, 260deg),
+  colour-entity: oklch(45%, 0.16, 250deg),
+  colour-attribute: oklch(45%, 0.16, 145deg),
+)
+#let colours-dark = (
+  colour-border: oklch(30%, 0.01, 260deg),
+  colour-entity: oklch(75%, 0.16, 250deg),
+  colour-attribute: oklch(75%, 0.16, 145deg),
 )
 
-#let entity-count = rows.first().last().len()
-#let table-width = entity-count * cell.width
-#let table-height = rows.len() * cell.height + (rows.len() - 1) * row-gap-y
-#let table-left = attribute-note-width + brace-gap-x + brace-width + attribute-left-x + label-left-x
-#let diagram-width = table-left + table-width + continuation-gap-x + cell.width / 2
-#let diagram-height = index-above-y + table-height + continuation-gap-y + cell.height
+#let main(
+  style,
+  size-text: 12pt,
+  p-x: 24pt,
+  p-y: 12pt,
+  w-cell: 80pt,
+  h-cell: 24pt,
+  gap-y-row: 6pt,
+  y-table: 16pt,
+  gap-x-attribute: 8pt,
+  w-label: 50pt,
+  w-brace: 6pt,
+  gap-x-brace: 8pt,
+  w-attribute-note: 60pt,
+  gap-x-continuation: 8pt,
+  gap-y-continuation: 6pt,
+  rows: (
+    ([callsign], ([KLM204], [BAW17], [CPA8747])),
+    ([lat], ([52.31], [51.47], [22.29])),
+    ([lon], ([4.76], [-0.46], [114.14])),
+    ([altitude], ([12000], [9500], [2000])),
+  ),
+) = {
+  let entity-count = rows.first().last().len()
+  let w-table = entity-count * w-cell
+  let h-table = rows.len() * h-cell + (rows.len() - 1) * gap-y-row
+  let x-table = w-attribute-note + gap-x-brace + w-brace + gap-x-attribute + w-label
+  let w-diagram = x-table + w-table + gap-x-continuation + w-cell / 2
+  let h-diagram = y-table + h-table + gap-y-continuation + h-cell
 
-#set text(size: text-size, fill: text-fg, font: "Inter")
-#set page(width: auto, height: auto, margin: 0pt, fill: none)
+  let data-cell(body) = rect(
+    width: w-cell,
+    height: h-cell,
+    inset: 0pt,
+    fill: style.colour-panel,
+    stroke: style.colour-border,
+  )[#align(center + horizon)[#text(font: style.font-mono)[#body]]]
 
-#let data-cell(body) = rect(
-  width: cell.width,
-  height: cell.height,
-  inset: 0pt,
-  fill: panel,
-  stroke: border,
-)[#align(center + horizon)[#text(font: "JetBrainsMonoNL NF")[#body]]]
+  set text(size: size-text, fill: style.colour-text, font: style.font-body)
 
-#pad(x: padding-x, y: padding-y)[
-  #block(width: diagram-width, height: diagram-height)[
-    #place(top + left, dy: index-above-y, box(
-      width: attribute-note-width,
-      height: table-height,
-    )[#align(right + horizon)[#text(fill: attribute-accent)[
-      attributes are arrays
-    ]]])
+  pad(x: p-x, y: p-y)[
+    #block(width: w-diagram, height: h-diagram)[
+      #place(top + left, dy: y-table, box(
+        width: w-attribute-note,
+        height: h-table,
+      )[#align(right + horizon)[#text(fill: style.colour-attribute)[attributes are arrays]]])
 
-    #place(top + left, dx: attribute-note-width + brace-gap-x, dy: index-above-y, box(
-      width: brace-width,
-      height: table-height,
-    )[#align(center + horizon)[
-      #text(fill: attribute-accent)[$ stretch(\{, size: #table-height) $]
-    ]])
+      #place(top + left, dx: w-attribute-note + gap-x-brace, dy: y-table, box(
+        width: w-brace,
+        height: h-table,
+      )[#align(center + horizon)[#text(fill: style.colour-attribute)[$ stretch(\{, size: #h-table) $]]])
 
-    #for entity-i in range(entity-count) {
-      place(top + left, dx: table-left + entity-i * cell.width, box(
-        width: cell.width,
-      )[#align(center)[#text(fill: entity-accent)[aircraft #entity-i]]])
-    }
-    #place(
-      top + left,
-      dx: table-left + table-width + continuation-gap-x,
-      box(width: cell.width / 2)[#text(fill: entity-accent)[...]],
-    )
-
-    #for (row-i, (name, values)) in rows.enumerate() {
-      let y = index-above-y + row-i * (cell.height + row-gap-y)
-      place(top + left, dx: table-left - attribute-left-x - label-left-x, dy: y, box(
-        width: label-left-x,
-        height: cell.height,
-      )[#align(right + horizon)[#text(fill: attribute-accent, weight: "bold")[#name]]])
-      for (entity-i, value) in values.enumerate() {
-        place(
-          top + left,
-          dx: table-left + entity-i * cell.width,
-          dy: y,
-          data-cell(value),
-        )
+      #for entity-i in range(entity-count) {
+        place(top + left, dx: x-table + entity-i * w-cell, box(
+          width: w-cell,
+        )[#align(center)[#text(fill: style.colour-entity)[aircraft #entity-i]]])
       }
-    }
-    #place(
-      top + left,
-      dx: table-left - attribute-left-x - label-left-x,
-      dy: index-above-y + table-height + continuation-gap-y,
-      box(width: label-left-x, height: cell.height)[
-        #align(right + horizon)[#text(fill: attribute-accent)[#sym.dots.v]]
-      ],
-    )
+      #place(
+        top + left,
+        dx: x-table + w-table + gap-x-continuation,
+        box(width: w-cell / 2)[#text(fill: style.colour-entity)[...]],
+      )
+
+      #for (row-i, (name, values)) in rows.enumerate() {
+        let y = y-table + row-i * (h-cell + gap-y-row)
+        place(top + left, dx: x-table - gap-x-attribute - w-label, dy: y, box(
+          width: w-label,
+          height: h-cell,
+        )[#align(right + horizon)[#text(fill: style.colour-attribute, weight: "bold")[#name]]])
+        for (entity-i, value) in values.enumerate() {
+          place(
+            top + left,
+            dx: x-table + entity-i * w-cell,
+            dy: y,
+            data-cell(value),
+          )
+        }
+      }
+      #place(
+        top + left,
+        dx: x-table - gap-x-attribute - w-label,
+        dy: y-table + h-table + gap-y-continuation,
+        box(width: w-label, height: h-cell)[
+          #align(right + horizon)[#text(fill: style.colour-attribute)[#sym.dots.v]]
+        ],
+      )
+    ]
   ]
-]
+}
+
+#let preview-input = sys.inputs.at("x-preview", default: none)
+#if preview-input != none {
+  import "render.typ": preview
+  preview(main, colours-light, colours-dark, preview-input)
+}

@@ -1,111 +1,131 @@
-#let dark = sys.inputs.at("theme", default: "light") == "dark"
-
-#let text-fg = if dark { oklch(92%, 0, 0deg) } else { oklch(25%, 0, 0deg) }
-#let text-muted = if dark { oklch(48%, 0, 0deg) } else { oklch(58%, 0, 0deg) }
-#let axis = if dark { oklch(42%, 0.01, 260deg) } else { oklch(80%, 0.01, 260deg) }
-#let step-accent = if dark { oklch(68%, 0.16, 250deg) } else { oklch(40%, 0.16, 250deg) }
-#let wait-accent = if dark { oklch(30%, 0.01, 260deg) } else { oklch(91%, 0.008, 260deg) }
-#let text-size = 11pt
-#let padding-x = 24pt
-#let padding-y = 16pt
-
-#let label-width = 170pt
-#let label-gap-x = 18pt
-#let wall-second-width = 112pt
-#let simulation-duration = 3
-#let legend-height = 28pt
-#let axis-label-height = 15pt
-#let axis-gap-y = 10pt
-#let row-gap-y = 30pt
-#let bar-height = 13pt
-#let step-width = 3pt
-#let rows = (
-  (speed: 1, simdt: 0.5),
-  (speed: 1, simdt: 0.1),
-  (speed: 2, simdt: 0.5),
-  (speed: 8, simdt: 0.5),
+#let colours-light = (
+  colour-text-subtle: oklch(58%, 0, 0deg),
+  colour-axis: oklch(80%, 0.01, 260deg),
+  colour-step: oklch(40%, 0.16, 250deg),
+  colour-wait: oklch(91%, 0.008, 260deg),
 )
-#let baseline = rows.first()
-
-#let wall-duration = simulation-duration / baseline.speed
-#let timeline-width = wall-duration * wall-second-width
-#let diagram-width = label-width + timeline-width
-#let axis-y = legend-height + axis-label-height
-#let first-row-y = axis-y + axis-gap-y
-#let last-row-y = first-row-y + (rows.len() - 1) * row-gap-y
-#let diagram-height = last-row-y + bar-height
-#let guide-height = diagram-height - axis-y
-
-#set text(size: text-size, fill: text-fg, font: "Inter")
-#set page(width: auto, height: auto, margin: 0pt, fill: none)
-
-#let legend-item(color, label) = grid(
-  columns: (9pt, auto),
-  column-gutter: 5pt,
-  align: horizon,
-  rect(width: 9pt, height: 5pt, radius: 1pt, fill: color), text(fill: text-fg, size: text-size - 1pt, label),
+#let colours-dark = (
+  colour-text-subtle: oklch(48%, 0, 0deg),
+  colour-axis: oklch(42%, 0.01, 260deg),
+  colour-step: oklch(68%, 0.16, 250deg),
+  colour-wait: oklch(30%, 0.01, 260deg),
 )
-#let parameter-label(name, value, baseline-value) = {
-  let body = [#name = #value]
-  if value != baseline-value { strong(body) } else { body }
-}
-#pad(x: padding-x, y: padding-y)[
-  #block(width: diagram-width, height: diagram-height)[
-    #place(top + left, dx: label-width, box(width: timeline-width, height: legend-height)[
-      #align(right + horizon)[
-        #grid(
-          columns: (auto, auto, auto),
-          column-gutter: 14pt,
-          align: horizon,
-          text(fill: text-fg, size: text-size - 1pt)[#simulation-duration s simulated],
-          legend-item(step-accent, [step]),
-          legend-item(wait-accent, [wait]),
-        )
-      ]
-    ])
 
-    #place(top + left, dy: legend-height, box(
-      width: label-width - label-gap-x,
-      height: axis-label-height,
-    )[#align(right + horizon)[#text(fill: text-muted)[wall-clock time]]])
-    #for second in range(int(wall-duration) + 1) {
-      let x = label-width + second * wall-second-width
-      place(
-        top + left,
-        dx: x,
-        dy: axis-y,
-        line(length: guide-height, angle: 90deg, stroke: 0.7pt + axis),
-      )
-      place(
-        top + left,
-        dx: x - wall-second-width / 2,
-        dy: legend-height,
-        box(width: wall-second-width, height: axis-label-height)[
-          #align(center + horizon)[#text(fill: text-muted)[#second s]]
-        ],
-      )
-    }
+#let main(
+  style,
+  size-text: 11pt,
+  p-x: 24pt,
+  p-y: 16pt,
+  w-label: 170pt,
+  gap-x-label: 18pt,
+  w-wall-second: 112pt,
+  simulation-duration: 3,
+  h-legend: 28pt,
+  h-axis-label: 15pt,
+  gap-y-axis: 10pt,
+  gap-y-row: 30pt,
+  h-bar: 13pt,
+  w-step: 3pt,
+  rows: (
+    (speed: 1, simdt: 0.5),
+    (speed: 1, simdt: 0.1),
+    (speed: 2, simdt: 0.5),
+    (speed: 8, simdt: 0.5),
+  ),
+) = {
+  let baseline = rows.first()
+  let duration-wall = simulation-duration / baseline.speed
+  let w-timeline = duration-wall * w-wall-second
+  let w-diagram = w-label + w-timeline
+  let y-axis = h-legend + h-axis-label
+  let y-row-first = y-axis + gap-y-axis
+  let y-row-last = y-row-first + (rows.len() - 1) * gap-y-row
+  let h-diagram = y-row-last + h-bar
+  let h-guide = h-diagram - y-axis
 
-    #for (row-i, row) in rows.enumerate() {
-      let y = first-row-y + row-i * row-gap-y
-      let wall-interval = row.simdt / row.speed
-      let interval-width = wall-interval * wall-second-width
-      let step-count = int(simulation-duration / row.simdt)
-      let speed-label = parameter-label("speed", row.speed, baseline.speed)
-      let simdt-label = parameter-label("simdt", row.simdt, baseline.simdt)
+  let legend-item(colour, label) = grid(
+    columns: (9pt, auto),
+    column-gutter: 5pt,
+    align: horizon,
+    rect(width: 9pt, height: 5pt, radius: 1pt, fill: colour), text(fill: style.colour-text, size: size-text - 1pt, label),
+  )
+  let parameter-label(name, value, baseline-value) = {
+    let body = [#name = #value]
+    if value != baseline-value { strong(body) } else { body }
+  }
 
-      place(top + left, dy: y, box(width: label-width - label-gap-x, height: bar-height)[
-        #align(right + horizon)[#text(font: "JetBrainsMonoNL NF")[#speed-label, #simdt-label]]
+  set text(size: size-text, fill: style.colour-text, font: style.font-body)
+
+  pad(x: p-x, y: p-y)[
+    #block(width: w-diagram, height: h-diagram)[
+      #place(top + left, dx: w-label, box(width: w-timeline, height: h-legend)[
+        #align(right + horizon)[
+          #grid(
+            columns: (auto, auto, auto),
+            column-gutter: 14pt,
+            align: horizon,
+            text(fill: style.colour-text, size: size-text - 1pt)[#simulation-duration s simulated],
+            legend-item(style.colour-step, [step]),
+            legend-item(style.colour-wait, [wait]),
+          )
+        ]
       ])
 
-      for i in range(step-count) {
-        let x = label-width + i * interval-width
-        place(top + left, dx: x, dy: y, grid(
-          columns: (step-width, interval-width - step-width),
-          rect(width: step-width, height: bar-height, fill: step-accent, stroke: none, radius: 1pt),
-          rect(width: interval-width - step-width, height: bar-height, fill: wait-accent, stroke: none, radius: 1pt),
-        ))
+      #place(top + left, dy: h-legend, box(
+        width: w-label - gap-x-label,
+        height: h-axis-label,
+      )[#align(right + horizon)[#text(fill: style.colour-text-subtle)[wall-clock time]]])
+      #for second in range(int(duration-wall) + 1) {
+        let x = w-label + second * w-wall-second
+        place(
+          top + left,
+          dx: x,
+          dy: y-axis,
+          line(length: h-guide, angle: 90deg, stroke: 0.7pt + style.colour-axis),
+        )
+        place(
+          top + left,
+          dx: x - w-wall-second / 2,
+          dy: h-legend,
+          box(width: w-wall-second, height: h-axis-label)[
+            #align(center + horizon)[#text(fill: style.colour-text-subtle)[#second s]]
+          ],
+        )
       }
-    }
+
+      #for (row-i, row) in rows.enumerate() {
+        let y = y-row-first + row-i * gap-y-row
+        let interval-wall = row.simdt / row.speed
+        let w-interval = interval-wall * w-wall-second
+        let step-count = int(simulation-duration / row.simdt)
+        let speed-label = parameter-label("speed", row.speed, baseline.speed)
+        let simdt-label = parameter-label("simdt", row.simdt, baseline.simdt)
+
+        place(top + left, dy: y, box(width: w-label - gap-x-label, height: h-bar)[
+          #align(right + horizon)[#text(font: style.font-mono)[#speed-label, #simdt-label]]
+        ])
+
+        for i in range(step-count) {
+          let x = w-label + i * w-interval
+          place(top + left, dx: x, dy: y, grid(
+            columns: (w-step, w-interval - w-step),
+            rect(width: w-step, height: h-bar, fill: style.colour-step, stroke: none, radius: 1pt),
+            rect(
+              width: w-interval - w-step,
+              height: h-bar,
+              fill: style.colour-wait,
+              stroke: none,
+              radius: 1pt,
+            ),
+          ))
+        }
+      }
+    ]
   ]
-]
+}
+
+#let preview-input = sys.inputs.at("x-preview", default: none)
+#if preview-input != none {
+  import "render.typ": preview
+  preview(main, colours-light, colours-dark, preview-input)
+}

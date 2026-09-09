@@ -49,6 +49,7 @@ extra_javascript = [
 ]
 extra_css = [
   "assets/stylesheets/commands.css",
+  "assets/stylesheets/illustrations.css",
   "https://cdn.jsdelivr.net/npm/katex@0.17.0/dist/katex.min.css",
 ]
 

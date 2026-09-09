@@ -32,11 +32,14 @@ docs-serve:
 docs-build:
     uv run --group docs zensical build
 
+_docs-illustration-output name theme format:
+    printf '#import "/docs/assets/illustrations/render.typ": render\n#import "/docs/assets/illustrations/{{name}}.typ": main, colours-{{theme}}\n#render(main, colours-{{theme}}, "{{theme}}")\n' | typst compile --root . --format {{format}} - docs/assets/illustrations/{{name}}-{{theme}}.{{format}}
+
 _docs-illustration name:
-    typst compile --input theme=light docs/assets/illustrations/{{name}}.typ docs/assets/illustrations/{{name}}-light.svg
-    typst compile --input theme=dark docs/assets/illustrations/{{name}}.typ docs/assets/illustrations/{{name}}-dark.svg
-    typst compile --input theme=light --format png docs/assets/illustrations/{{name}}.typ docs/assets/illustrations/{{name}}-light.png
-    typst compile --input theme=dark --format png docs/assets/illustrations/{{name}}.typ docs/assets/illustrations/{{name}}-dark.png
+    just _docs-illustration-output {{name}} light svg
+    just _docs-illustration-output {{name}} dark svg
+    just _docs-illustration-output {{name}} light png
+    just _docs-illustration-output {{name}} dark png
 
 docs-illustrations:
     just _docs-illustration traffic-arrays
