@@ -18,6 +18,9 @@ nav = [
     { "Using plugins" = "user-guide/plugins.md" },
     { "Multicopter Plugin" = "user-guide/multicopters.md" },
   ] },
+  { "Examples" = [
+    { "Trajectory reconstruction" = "examples/trajectory-reconstruction.md" },
+  ] },
   { "Developer Guide" = [
     { "Writing plugins" = "developer-guide/plugins.md" },
     { "Adding commands" = "developer-guide/commands.md" },
