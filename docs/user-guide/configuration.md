@@ -1,6 +1,6 @@
 # Configuration
 
-Minisky can be customised with a TOML file. Minisky (by default) expects it under your user config directory:
+Minisky can be customised with a TOML file. The CLI looks for it under your user config directory by default:
 
 | System | Default path |
 | --- | --- |
@@ -24,7 +24,6 @@ fp.write_text("")
 
     MiniSky comes with reasonable runtime defaults, a config file is not mandatory. To learn more about the expected key value pairs and the defaults, read the [`MiniSkyConfig` API][minisky.MiniSkyConfig] reference.
 
-
 === "CLI"
 
     To explicitly pass a config:
@@ -36,24 +35,23 @@ fp.write_text("")
 
 === "Python"
 
+    Construct the configuration explicitly:
+
     ```python
-    from minisky import MiniSky, MiniSkyConfig
+    from minisky import MagneticDeclinationGrid, MiniSky, MiniSkyConfig, NavData
 
-    # if unspecified, it tries to load from the default user path,
-    # and if it doesn't exist, use defaults.
-    with MiniSky() as runtime:
-        ...
-
-    # to explicitly pass a config:
-    with MiniSky(config=MiniSkyConfig.from_path("experiment.toml")) as runtime:
-        ...
-
-    # or, forcefully use built-in defaults
-    with MiniSky(config=MiniSkyConfig()) as runtime:
+    config = MiniSkyConfig.from_path("experiment.toml")
+    with MiniSky(
+        config,
+        navdata=NavData(),
+        magnetic_declination=MagneticDeclinationGrid.load_default(),
+    ) as runtime:
         ...
     ```
 
-Note that all key value pairs are validated on runtime with the [pydantic](https://github.com/pydantic/pydantic) library.
+    To use the default configuration values, use `MiniSkyConfig()`.
+
+Note that all key value pairs are validated on runtime against the [`MiniSkyConfig` class][minisky.MiniSkyConfig].
 
 ## Configure plugins
 

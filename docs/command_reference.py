@@ -9,7 +9,7 @@ from typing import Any, NamedTuple
 
 from griffe import ExprCall, ExprKeyword, ExprName, Extension, Function
 from markdown import Markdown
-from minisky import MiniSky, MiniSkyConfig
+from minisky import MagneticDeclinationGrid, MiniSky, MiniSkyConfig, NavData
 from minisky._internal.command import (
     CommandDefinition,
     CommandEntry,
@@ -127,7 +127,11 @@ class _CommandReference(NamedTuple):
 def _load_reference() -> _CommandReference:
     plugins: list[PluginReference] = []
     definitions: dict[str, CommandDefinition] = {}
-    with MiniSky(MiniSkyConfig()) as runtime:
+    with MiniSky(
+        MiniSkyConfig(),
+        navdata=NavData(),
+        magnetic_declination=MagneticDeclinationGrid.load_default(),
+    ) as runtime:
         schemas = runtime.commands.command_schemas()
         for plugin_name in _repository_plugin_ids():
             schemas[plugin_name] = _plugin_schema(runtime, plugin_name)

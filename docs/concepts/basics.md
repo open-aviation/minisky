@@ -20,10 +20,7 @@ Unlike typical game engines that model a list of objects, minisky uses the struc
 Take a simple example of creating an aircraft:
 
 ```py
-from minisky import MiniSky
-
-
-with MiniSky() as runtime:
+with MiniSky(...) as runtime:
     runtime.traffic.cre(...)
 ```
 

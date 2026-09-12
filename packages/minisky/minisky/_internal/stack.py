@@ -33,6 +33,7 @@ from collections.abc import Awaitable, Callable, Iterable, Iterator
 from contextlib import suppress
 from dataclasses import dataclass
 from functools import partial
+from os import PathLike
 from pathlib import Path
 from threading import Lock
 from typing import TYPE_CHECKING, Any, Literal
@@ -403,7 +404,6 @@ class CommandStack:
         replaceables: ReplaceableManager,
         get_simulation: Callable[[], Simulation],
         get_runner: Callable[[], Runner],
-        scenario_dir: Path,
     ) -> None:
         self.traffic = traffic
         self.console = console
@@ -414,8 +414,6 @@ class CommandStack:
         self.parse_context = CommandParseContext(traffic, waypoints, airports, runway_thresholds)
         self._get_simulation = get_simulation
         self._get_runner = get_runner
-        self.scenario_dir = scenario_dir.resolve()
-        """Base directory captured for resolving relative scenario paths."""
         self.cmddict: dict[str, Command] = {}
         """Canonical command names and aliases mapped to compiled commands."""
         self._commands: dict[str, _RegisteredCommand] = {}
@@ -894,37 +892,22 @@ class CommandStack:
 
         return tuple(sorted(commands, key=lambda command: command.time))
 
-    def _resolve_scenario_path(self, scn: str | Path) -> Path:
-        """Resolve a scenario path against this runtime's scenario directory."""
-        path = Path(scn).expanduser()
-        candidate = path if path.is_absolute() else self.scenario_dir / path
-        candidate = candidate.resolve()
-        if candidate.is_file():
-            return candidate
-
-        if not candidate.suffix:
-            fallback = candidate.with_suffix(".scn")
-            if fallback.is_file():
-                return fallback
-
-        raise FileNotFoundError(f"scenario file not found: {candidate}")
-
     def _install_scenario(self, commands: tuple[ScheduledCommand, ...], *, name: str) -> None:
         """Reset the simulation and install an already parsed scenario."""
         self.simulation.reset()
         self.scenario_commands.extend(commands)
         self.scenname = name
 
-    def load_scenario(self, scn: str | Path) -> Path:
-        """Resolve, read, parse, and load a scenario file.
+    def load_scenario(self, path: str | PathLike[str]) -> Path:
+        """Read and load a scenario from an explicit filesystem path.
 
-        Relative paths are resolved against `scenario_dir`. The file is fully
-        read and parsed before the current simulation is reset.
+        Relative paths are resolved against the current process working directory.
+        Prefer using absolute paths.
         """
-        scn_path = self._resolve_scenario_path(scn)
-        commands = self._parse_scenario(scn_path.read_text(encoding="utf-8").splitlines())
-        self._install_scenario(commands, name=scn_path.stem)
-        return scn_path
+        path = Path(path).expanduser()
+        commands = self._parse_scenario(path.read_text(encoding="utf-8").splitlines())
+        self._install_scenario(commands, name=path.stem)
+        return path
 
     def load_scenario_text(self, text: str, *, name: str = "") -> None:
         """Parse and load scenario text supplied by a non-filesystem boundary."""
@@ -934,18 +917,16 @@ class CommandStack:
 
     @command(name="IC", aliases=("LOAD", "OPEN"))
     def ic(self, scn: Text) -> Result[str, str]:
-        """Load a scenario file.
+        """Load a scenario file from an explicit filesystem path.
 
-        Relative paths are resolved against the runtime scenario directory.
-        The supplied path is tried exactly first; if a suffixless path does not
-        exist, the same path with a `.scn` suffix is tried. The current
-        simulation is reset only after the file has been read and parsed.
+        Relative paths are resolved against the server process working directory.
+        Prefer using absolute paths.
         """
         try:
-            scn_path = self.load_scenario(scn)
+            path = self.load_scenario(scn)
         except (OSError, UnicodeError) as exc:
             return Err(f"IC: {exc}")
-        return Ok(f"scenario {scn_path} loaded.")
+        return Ok(f"scenario {path} loaded.")
 
     @command(name="SCENARIO", aliases=("SCEN",))
     def scenario(self, name: Text) -> Result[str, str]:

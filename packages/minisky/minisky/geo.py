@@ -11,6 +11,7 @@ Matrix variants (suffixed with `_matrix`) operate on vectors of positions
 and return results for every combination of the input positions.
 """
 
+from os import PathLike
 from pathlib import Path
 from typing import Protocol, Self
 
@@ -509,13 +510,18 @@ class MagneticDeclinationGrid(MagneticDeclination):
         Based on original version created by  : Yaofu Zhou
         Modified to read at init and use linear interpolation by J.M. Hoekstra
         """
-        from minisky._internal.config import data
+        from importlib.resources import as_file, files
 
-        return cls.from_csv(data("geo") / "geo_declination_data.csv")
+        resource = files("minisky").joinpath("data", "geo", "geo_declination_data.csv")
+        with as_file(resource) as path:
+            return cls.from_csv(path)
 
     @classmethod
-    def from_csv(cls, path: Path) -> Self:
+    def from_csv(cls, path: str | PathLike[str]) -> Self:
         """Read a NOAA/WMM CSV (a 181x361 lookup grid).
+
+        Relative paths are resolved against the current process working directory.
+        Prefer using an absolute path.
 
         The source table is expected to contain one row per whole-degree point
         for latitude +89 through -90 and longitude -180 through +179, with
@@ -523,6 +529,7 @@ class MagneticDeclinationGrid(MagneticDeclination):
         column are derived from the adjacent/wrapped source values.
         """
         # NOTE(abraham): shape hardcoding is inherited from bluesky, reconsider
+        path = Path(path).expanduser()
         source = np.genfromtxt(
             path, delimiter=",", comments="#", usecols=(4,), dtype=float
         ).reshape((180, 360))

@@ -11,7 +11,7 @@ from collections.abc import Callable, Iterator
 from pathlib import Path
 
 import pytest
-from minisky import MiniSky
+from minisky import MagneticDeclinationGrid, MiniSky
 from minisky._internal.config import MiniSkyConfig
 from minisky._internal.simulation import Simulation
 from tests._types import RunCommand, StepUntil
@@ -29,7 +29,11 @@ def config() -> MiniSkyConfig:
 def runtime(config: MiniSkyConfig) -> Iterator[MiniSky]:
     from minisky_xplane_navdata import load
 
-    instance = MiniSky(config, scenario_dir=_REPO_ROOT, navdata=load())
+    instance = MiniSky(
+        config,
+        navdata=load(),
+        magnetic_declination=MagneticDeclinationGrid.load_default(),
+    )
     yield instance
     instance.close()
 

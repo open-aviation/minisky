@@ -16,8 +16,10 @@ from minisky import (
     Autopilot,
     Entity,
     Err,
+    MagneticDeclinationGrid,
     MiniSky,
     MiniSkyConfig,
+    NavData,
     Ok,
     Plugin,
     PluginContext,
@@ -33,6 +35,16 @@ from minisky._internal.simulation import Simulation
 from minisky._internal.traffic import Traffic
 from minisky.types import CasMps, StdPressureAltM
 from pydantic import BaseModel
+
+_MAGNETIC_DECLINATION = MagneticDeclinationGrid.load_default()
+
+
+def _new_runtime(config: MiniSkyConfig) -> MiniSky:
+    return MiniSky(
+        config,
+        navdata=NavData(),
+        magnetic_declination=_MAGNETIC_DECLINATION,
+    )
 
 
 @pytest.fixture
@@ -50,7 +62,7 @@ class TestDiscovery:
 
         module = importlib.import_module("minisky._internal.plugin")
         monkeypatch.setattr(module.metadata, "entry_points", lambda *, group: (LazyEntryPoint(),))
-        runtime = MiniSky(MiniSkyConfig())
+        runtime = _new_runtime(MiniSkyConfig())
         try:
             assert "LAZY" in runtime.plugins.plugins
         finally:
@@ -118,7 +130,7 @@ async def test_entity_backfill_follows_lifespan_startup(
         return context.finish(lifespan=lifespan)
 
     install(monkeypatch, FakeEntryPoint("callsigns", Plugin(build=build)))
-    runtime = MiniSky(MiniSkyConfig())
+    runtime = _new_runtime(MiniSkyConfig())
     load_task = asyncio.create_task(runtime.plugins.load("CALLSIGNS"))
     try:
         await entered.wait()
@@ -151,7 +163,7 @@ async def test_typed_declaration_builds_validated_runtime_state(
         return context.finish()
 
     install(monkeypatch, FakeEntryPoint("typed", Plugin(build=build, config_class=Config)))
-    runtime = MiniSky(MiniSkyConfig(plugins={"typed": {"value": 7}}))
+    runtime = _new_runtime(MiniSkyConfig(plugins={"typed": {"value": 7}}))
     try:
         result = await runtime.plugins.load("TYPED")
         assert result.is_ok(), result.err()
@@ -185,7 +197,7 @@ async def test_mount_binds_command_to_exact_instance_and_respects_annotation(
         return context.finish()
 
     install(monkeypatch, FakeEntryPoint("mounted", Plugin(build=build)))
-    runtime = MiniSky(MiniSkyConfig())
+    runtime = _new_runtime(MiniSkyConfig())
     try:
         assert "SAVE" not in runtime.commands.cmddict
         result = await runtime.plugins.load("MOUNTED")
@@ -225,7 +237,7 @@ async def test_multiple_hook_declarations_keep_independent_timing(
         return context.finish()
 
     install(monkeypatch, FakeEntryPoint("hooks", Plugin(build=build)))
-    runtime = MiniSky(MiniSkyConfig())
+    runtime = _new_runtime(MiniSkyConfig())
     try:
         result = await runtime.plugins.load("HOOKS")
         assert result.is_ok(), result.err()
@@ -261,7 +273,7 @@ async def test_failing_hook_is_disabled_without_disabling_plugin(
         return context.finish()
 
     install(monkeypatch, FakeEntryPoint("hooks", Plugin(build=build)))
-    runtime = MiniSky(MiniSkyConfig())
+    runtime = _new_runtime(MiniSkyConfig())
     try:
         result = await runtime.plugins.load("HOOKS")
         assert result.is_ok(), result.err()
@@ -298,7 +310,7 @@ async def test_replacement_arrays_size_existing_traffic(
         return context.finish(replacements=(ArrayAutopilot,))
 
     install(monkeypatch, FakeEntryPoint("arrays", Plugin(build=build)))
-    runtime = MiniSky(MiniSkyConfig())
+    runtime = _new_runtime(MiniSkyConfig())
     try:
         runtime.traffic.cre("KL001", alt=StdPressureAltM(3000.0), airspeed=CasMps(150.0))
         result = await runtime.plugins.load("ARRAYS")
@@ -347,7 +359,7 @@ async def test_lifespan_wraps_publication_and_runtime_is_revoked(
         return context.finish(lifespan=lifespan)
 
     install(monkeypatch, FakeEntryPoint("lifecycle", Plugin(build=build)))
-    runtime = MiniSky(MiniSkyConfig())
+    runtime = _new_runtime(MiniSkyConfig())
     result = await runtime.plugins.load("LIFECYCLE")
     assert result.is_ok(), result.err()
     assert events == [("enter", False)]
@@ -387,7 +399,7 @@ async def test_shutdown_cancels_pending_command_before_lifespan_exit(
         return context.finish(lifespan=lifespan)
 
     install(monkeypatch, FakeEntryPoint("blocked", Plugin(build=build)))
-    runtime = MiniSky(MiniSkyConfig())
+    runtime = _new_runtime(MiniSkyConfig())
     result = await runtime.plugins.load("BLOCKED")
     assert result.is_ok(), result.err()
     runtime.commands.stack("BLOCK")
@@ -425,7 +437,7 @@ async def test_failed_lifespan_startup_is_atomic(
         return context.finish(lifespan=lifespan)
 
     install(monkeypatch, FakeEntryPoint("failedstart", Plugin(build=build)))
-    runtime = MiniSky(MiniSkyConfig())
+    runtime = _new_runtime(MiniSkyConfig())
     result = await runtime.plugins.load("FAILEDSTART")
 
     assert result.is_err()
@@ -456,7 +468,7 @@ async def test_load_configured_continues_after_failure(
         FakeEntryPoint("broken", object()),
         FakeEntryPoint("last", Plugin(build=build)),
     )
-    runtime = MiniSky(MiniSkyConfig(plugins={"first": {}, "broken": {}, "last": {}}))
+    runtime = _new_runtime(MiniSkyConfig(plugins={"first": {}, "broken": {}, "last": {}}))
     try:
         loaded = await runtime.plugins.load_configured()
         assert loaded == ("FIRST", "LAST")
@@ -494,7 +506,7 @@ async def test_shutdown_is_reverse_order_and_aggregates_failures(
         FakeEntryPoint("first", declaration("first")),
         FakeEntryPoint("second", declaration("second")),
     )
-    runtime = MiniSky(MiniSkyConfig())
+    runtime = _new_runtime(MiniSkyConfig())
     assert (await runtime.plugins.load("FIRST")).is_ok()
     assert (await runtime.plugins.load("SECOND")).is_ok()
 
@@ -511,7 +523,7 @@ async def test_shutdown_is_reverse_order_and_aggregates_failures(
 
 @pytest.mark.anyio
 async def test_concurrent_duplicate_loads_are_serialized() -> None:
-    runtime = MiniSky(MiniSkyConfig())
+    runtime = _new_runtime(MiniSkyConfig())
     try:
         results = await asyncio.gather(
             runtime.plugins.load("EXAMPLE"),
@@ -527,7 +539,7 @@ async def test_concurrent_duplicate_loads_are_serialized() -> None:
 
 @pytest.mark.anyio
 async def test_plugin_stack_load_uses_awaitable_command_boundary() -> None:
-    runtime = MiniSky(MiniSkyConfig())
+    runtime = _new_runtime(MiniSkyConfig())
     try:
         runtime.commands.stack("PLUGINS LOAD EXAMPLE")
         assert runtime.simulation.step() is False

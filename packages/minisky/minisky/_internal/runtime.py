@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from os import PathLike
-from pathlib import Path
 from random import Random
 from typing import Self
 
@@ -11,7 +9,7 @@ import numpy as np
 
 from minisky._internal.active_waypoint import ActiveWaypoint
 from minisky._internal.autopilot import Autopilot
-from minisky._internal.config import MiniSkyConfig, default_user_config_toml_path
+from minisky._internal.config import MiniSkyConfig
 from minisky._internal.conflict.detection import ConflictDetection
 from minisky._internal.conflict.mvp import MVP
 from minisky._internal.conflict.resolution import ConflictResolution
@@ -31,55 +29,22 @@ from minisky._internal.streaming import StreamHub, build_snapshot
 from minisky._internal.traffic import Traffic
 from minisky._internal.traffic_arrays import ReplaceableManager
 from minisky._internal.variables import VariableExplorer
-from minisky.geo import MagneticDeclination, MagneticDeclinationGrid
+from minisky.geo import MagneticDeclination
 
 
-# TODO: we should reconsider whether we really want implicit defaults.
 class MiniSky:
-    """Own the primary objects that make up a simulator runtime.
-
-    When `config` is omitted, MiniSky loads the optional default user
-    config and otherwise falls back to [`MiniSkyConfig`][minisky.MiniSkyConfig]
-    defaults.
-    When navigation data is omitted, MiniSky loads the optional
-    `minisky-xplane-navdata` provider when installed and otherwise starts with
-    empty aviation data.
-    Magnetic declination defaults to the bundled grid. Relative scenario paths
-    are resolved against `scenario_dir`, which defaults to the working
-    directory captured when the runtime is constructed.
-    """
-
     def __init__(
         self,
-        config: MiniSkyConfig | None = None,
+        config: MiniSkyConfig,
         *,
-        scenario_dir: str | PathLike[str] | None = None,
-        navdata: NavData | None = None,
-        magnetic_declination: MagneticDeclination | None = None,
+        navdata: NavData,
+        magnetic_declination: MagneticDeclination,
     ) -> None:
-        if config is None:
-            try:
-                config = MiniSkyConfig.from_path(default_user_config_toml_path())
-            except FileNotFoundError:
-                config = MiniSkyConfig()
         self.config = config
-        self.scenario_dir = Path.cwd() if scenario_dir is None else Path(scenario_dir).expanduser()
-        self.scenario_dir = self.scenario_dir.resolve()
         self._closed = False
         self.python_random = Random()
         self.numpy_random = np.random.RandomState()
         self.console = ConsoleIO(lambda: self.simulation.state == SimulationState.OP)
-        if navdata is None:
-            try:
-                from minisky_xplane_navdata import load
-            except ModuleNotFoundError as exc:
-                if exc.name != "minisky_xplane_navdata":
-                    raise
-                navdata = NavData()
-            else:
-                navdata = load()
-        if magnetic_declination is None:
-            magnetic_declination = MagneticDeclinationGrid.load_default()
         self.magnetic_declination = magnetic_declination
         self.waypoints = Waypoints(navdata.waypoints)
         self.airports = navdata.airports
@@ -138,7 +103,6 @@ class MiniSky:
             replaceables=self.replaceables,
             get_simulation=lambda: self.simulation,
             get_runner=lambda: self.runner,
-            scenario_dir=self.scenario_dir,
         )
         self.streaming = StreamHub(
             lambda: build_snapshot(self.simulation, self.traffic, self.runner, self.commands)

@@ -45,9 +45,6 @@ class MiniSkyConfig(BaseModel):
             return cls.model_validate(tomllib.load(file))
 
 
-PACKAGE_DATA_DIR = Path(__file__).parent.parent / "data"
-
-
 def default_user_config_dir() -> Path:
     """Return the platform-specific default MiniSky config directory."""
     from platformdirs import user_config_path
@@ -58,8 +55,3 @@ def default_user_config_dir() -> Path:
 def default_user_config_toml_path() -> Path:
     """Return the optional default MiniSky TOML config path."""
     return default_user_config_dir() / "config.toml"
-
-
-def data(path: str) -> Path:
-    """Return an absolute path inside the package data directory."""
-    return PACKAGE_DATA_DIR / path

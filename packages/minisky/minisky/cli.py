@@ -21,6 +21,9 @@ from rich.console import Console
 from minisky._internal.config import MiniSkyConfig, default_user_config_toml_path
 
 if TYPE_CHECKING:
+    from fastapi import FastAPI
+
+    from minisky import MagneticDeclination, NavData
     from minisky._internal.runtime import MiniSky
 
 app = typer.Typer(help="MiniSky command-line tools.", no_args_is_help=True)
@@ -29,6 +32,20 @@ console = Console()
 _ConfigOption: TypeAlias = Annotated[
     Path | None,
     typer.Option(help="Config TOML file. Overrides the default user config path."),
+]
+_MagneticDeclinationOption: TypeAlias = Annotated[
+    Path | None,
+    typer.Option(
+        help=(
+            "Magnetic-declination CSV. Overrides the grid bundled with MiniSky. "
+            "Relative paths use the process working directory. Prefer using an absolute path."
+        ),
+        exists=True,
+        file_okay=True,
+        dir_okay=False,
+        readable=True,
+        resolve_path=True,
+    ),
 ]
 
 history_file = Path("/tmp/hacksky_console_history").expanduser()
@@ -55,16 +72,65 @@ def _load_config(path: Path | None) -> MiniSkyConfig:
         ) from exc
 
 
-def _new_runtime(config: MiniSkyConfig) -> MiniSky:
-    """Construct a runtime from validated configuration."""
+def _load_navdata() -> NavData:
+    from minisky import NavData
+
+    try:
+        from minisky_xplane_navdata import load
+    except ModuleNotFoundError as exc:
+        if exc.name != "minisky_xplane_navdata":
+            raise
+        return NavData()
+    return load()
+
+
+def _load_magnetic_declination(path: Path | None) -> MagneticDeclination:
+    from minisky import MagneticDeclinationGrid
+
+    if path is None:
+        return MagneticDeclinationGrid.load_default()
+    return MagneticDeclinationGrid.from_csv(path)
+
+
+def _new_runtime(
+    config: MiniSkyConfig,
+    *,
+    navdata: NavData,
+    magnetic_declination: MagneticDeclination,
+) -> MiniSky:
     from minisky import MiniSky
 
-    return MiniSky(config=config)
+    return MiniSky(
+        config,
+        navdata=navdata,
+        magnetic_declination=magnetic_declination,
+    )
 
 
-async def _run_scenario(scenario: Path, speed: int, config_path: Path | None) -> None:
+def default_server_app() -> FastAPI:
+    from minisky._internal.server import create_app
+
+    return create_app(
+        _new_runtime(
+            _load_config(None),
+            navdata=_load_navdata(),
+            magnetic_declination=_load_magnetic_declination(None),
+        )
+    )
+
+
+async def _run_scenario(
+    scenario: Path,
+    speed: int,
+    config_path: Path | None,
+    magnetic_declination_path: Path | None,
+) -> None:
     """Initialise the simulator with a scenario and run it to completion."""
-    async with _new_runtime(_load_config(config_path)) as runtime:
+    async with _new_runtime(
+        _load_config(config_path),
+        navdata=_load_navdata(),
+        magnetic_declination=_load_magnetic_declination(magnetic_declination_path),
+    ) as runtime:
         await runtime.plugins.load_configured()
         runtime.commands.load_scenario(scenario)
         runtime.runner.speed = speed
@@ -86,9 +152,17 @@ def run_cmd(
     ],
     speed: Annotated[int, typer.Option(help="Simulation speed multiplier.")] = 1,
     config: _ConfigOption = None,
+    magnetic_declination: _MagneticDeclinationOption = None,
 ) -> None:
     """Run a scenario file without interaction."""
-    asyncio.run(_run_scenario(scenario, speed, config))
+    asyncio.run(
+        _run_scenario(
+            scenario,
+            speed,
+            config,
+            magnetic_declination,
+        )
+    )
 
 
 @app.command("server")
@@ -97,16 +171,13 @@ def server_cmd(
     port: Annotated[int | None, typer.Option(help="TCP port to bind.")] = None,
     reload: Annotated[bool, typer.Option(help="Enable uvicorn auto-reload.")] = False,
     config: _ConfigOption = None,
+    magnetic_declination: _MagneticDeclinationOption = None,
 ) -> None:
     """Start the REST and WebSocket API server."""
     import uvicorn
 
-    # NOTE(abraham): we want config to be explicit.
-    if reload and config is not None:
-        raise typer.BadParameter(
-            "--config cannot be combined with --reload yet",
-            param_hint="--config",
-        )
+    if reload and any(value is not None for value in (config, magnetic_declination)):
+        raise typer.BadParameter("runtime overrides cannot be combined with --reload yet")
 
     loaded_config = _load_config(config)
     host = host if host is not None else loaded_config.server.host
@@ -114,7 +185,7 @@ def server_cmd(
 
     if reload:
         uvicorn.run(
-            "minisky._internal.server:create_app",
+            "minisky.cli:default_server_app",
             factory=True,
             host=host,
             port=port,
@@ -125,7 +196,13 @@ def server_cmd(
     from minisky._internal.server import create_app
 
     uvicorn.run(
-        create_app(_new_runtime(loaded_config)),
+        create_app(
+            _new_runtime(
+                loaded_config,
+                navdata=_load_navdata(),
+                magnetic_declination=_load_magnetic_declination(magnetic_declination),
+            )
+        ),
         host=host,
         port=port,
     )

@@ -1,5 +1,5 @@
 import numpy as np
-from minisky import MiniSky
+from minisky import MagneticDeclinationGrid, MiniSky, MiniSkyConfig
 from minisky import quantities as q
 from minisky_xplane_navdata import load, load_airways, load_waypoints
 
@@ -19,7 +19,11 @@ def test_xplane_navdata_units() -> None:
 
 
 def test_xplane_navdata_runtime() -> None:
-    runtime = MiniSky(navdata=load())
+    runtime = MiniSky(
+        MiniSkyConfig(),
+        navdata=load(),
+        magnetic_declination=MagneticDeclinationGrid.load_default(),
+    )
     try:
         assert isinstance(runtime.waypoints.latitudes, np.ndarray)
         assert "SPY" in runtime.waypoints.identifiers

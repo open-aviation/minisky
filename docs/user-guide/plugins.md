@@ -10,16 +10,17 @@ Plugins are **not auto-loaded** by default on startup. To see installed plugins 
 
 === "Python API"
 
+    First, construct [`MiniSky`][minisky.MiniSky] instance as `runtime`:
+
     ```pycon
-    >>> from minisky import MiniSky
-    >>> async def main():
-    ...     async with MiniSky() as runtime:
+    >>> async def main(runtime):
+    ...     async with runtime:
     ...         # show all plugins
     ...         print(runtime.plugins.listing().unwrap())
     ...         # manually load one plugin
     ...         print((await runtime.plugins.load("MULTICOPTER")).unwrap())
     >>> import asyncio
-    >>> asyncio.run(main())
+    >>> asyncio.run(main(runtime))
     Loaded plugins: (none)
     Available plugins: MULTICOPTER
     Successfully loaded plugin MULTICOPTER
@@ -50,7 +51,7 @@ Add any plugin-specific settings into the same table.
     Explicitly load all configured plugins on startup.
 
     ```py
-    async with MiniSky() as runtime:
+    async with runtime:
         await runtime.plugins.load_configured()
         ...
     ```

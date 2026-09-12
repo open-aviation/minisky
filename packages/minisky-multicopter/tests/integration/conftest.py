@@ -13,14 +13,18 @@ import asyncio
 from collections.abc import Callable, Iterator
 
 import pytest
-from minisky import MiniSky, MiniSkyConfig, Simulation
+from minisky import MagneticDeclinationGrid, MiniSky, MiniSkyConfig, NavData, Simulation
 from tests._types import RunCommand, StepUntil
 
 
 @pytest.fixture(scope="module")
 def mcruntime() -> Iterator[MiniSky]:
     """Module-wide MiniSky runtime with the MULTICOPTER plugin loaded."""
-    instance = MiniSky(MiniSkyConfig())
+    instance = MiniSky(
+        MiniSkyConfig(),
+        navdata=NavData(),
+        magnetic_declination=MagneticDeclinationGrid.load_default(),
+    )
     result = asyncio.run(instance.plugins.load("MULTICOPTER"))
     assert result.is_ok(), result.err()
     yield instance

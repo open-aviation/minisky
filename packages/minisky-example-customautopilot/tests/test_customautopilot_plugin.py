@@ -1,14 +1,30 @@
 """Integration tests owned by the custom-autopilot example package."""
 
 import pytest
-from minisky import Autopilot, MiniSky, MiniSkyConfig
+from minisky import (
+    Autopilot,
+    MagneticDeclinationGrid,
+    MiniSky,
+    MiniSkyConfig,
+    NavData,
+)
 from minisky_example_customautopilot import CustomAutoPilot
+
+_MAGNETIC_DECLINATION = MagneticDeclinationGrid.load_default()
+
+
+def _new_runtime() -> MiniSky:
+    return MiniSky(
+        MiniSkyConfig(),
+        navdata=NavData(),
+        magnetic_declination=_MAGNETIC_DECLINATION,
+    )
 
 
 @pytest.mark.anyio
 async def test_replacement_is_runtime_local_and_removed_on_shutdown() -> None:
-    runtime_a = MiniSky(MiniSkyConfig())
-    runtime_b = MiniSky(MiniSkyConfig())
+    runtime_a = _new_runtime()
+    runtime_b = _new_runtime()
     try:
         assert runtime_a.replaceables.select("AUTOPILOT", "CUSTOMAUTOPILOT").is_err()
         assert runtime_b.replaceables.select("AUTOPILOT", "CUSTOMAUTOPILOT").is_err()

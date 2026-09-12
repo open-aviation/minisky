@@ -13,7 +13,7 @@ from collections.abc import AsyncIterator
 import httpx2
 import pytest
 from fastapi import FastAPI
-from minisky import MiniSky, MiniSkyConfig
+from minisky import MagneticDeclinationGrid, MiniSky, MiniSkyConfig, NavData
 from minisky.types import CasMps, StdPressureAltM
 
 pytestmark = pytest.mark.api
@@ -23,7 +23,13 @@ pytestmark = pytest.mark.api
 def server_app(config: MiniSkyConfig) -> FastAPI:
     from minisky._internal.server import create_app
 
-    return create_app(MiniSky(config))
+    return create_app(
+        MiniSky(
+            config,
+            navdata=NavData(),
+            magnetic_declination=MagneticDeclinationGrid.load_default(),
+        )
+    )
 
 
 @pytest.fixture(scope="module")

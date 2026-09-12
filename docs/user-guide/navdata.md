@@ -13,26 +13,17 @@ pip install minisky minisky-xplane-navdata
 
     --8<-- "packages/minisky-xplane-navdata/README.md:3"
 
-Once installed, the default runtime uses it automatically:
+Once installed, construct the navdata provider explicitly and pass it to the runtime:
 
 ```python
-from minisky import MiniSky
-
-runtime = MiniSky()
-# tries to load minisky-xplane-navdata internally
-```
-
-If you are running multiple runtimes, reuse the navigation and magnetic declination data to avoid repeated file I/O:
-
-```python
-from minisky import MagneticDeclinationGrid, MiniSky
+from minisky import MagneticDeclinationGrid, MiniSky, MiniSkyConfig
 from minisky_xplane_navdata import load
 
 navdata = load()
 magnetic_declination = MagneticDeclinationGrid.load_default()
+# you can also supply your own with MagneticDeclinationgrid.from_csv()
 
-runtime_a = MiniSky(navdata=navdata, magnetic_declination=magnetic_declination)
-runtime_b = MiniSky(navdata=navdata, magnetic_declination=magnetic_declination)
+runtime = MiniSky(MiniSkyConfig(), navdata=navdata, magnetic_declination=magnetic_declination)
 ```
 
 See: [`WaypointData`][minisky.WaypointData], [`AirportData`][minisky.AirportData], [`AirwayData`][minisky.AirwayData], [`FirData`][minisky.FirData], and [`CountryData`][minisky.CountryData].

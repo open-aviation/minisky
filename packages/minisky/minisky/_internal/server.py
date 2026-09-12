@@ -158,10 +158,8 @@ async def lifespan(app: FastAPI):
             raise ExceptionGroup("MiniSky server shutdown failed", errors)
 
 
-def create_app(runtime: MiniSky | None = None) -> FastAPI:
+def create_app(runtime: MiniSky) -> FastAPI:
     """Create a FastAPI application owning a simulator runtime."""
-    if runtime is None:
-        runtime = MiniSky()
     runtime.runner.prevent_shutdown()
 
     app = FastAPI(lifespan=lifespan)

@@ -13,13 +13,13 @@ import warnings
 from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import IntEnum
+from importlib.resources import files
 from typing import Literal, TypeAlias, cast
 
 import numpy as np
 from openap import WRAP, drag, prop
 
 from minisky import quantities as q
-from minisky._internal.config import data
 from minisky.types import AircraftTypeCode, IcaoAircraftTypeCode
 
 EngineModelIdentifier: TypeAlias = str
@@ -124,7 +124,7 @@ ENG_TYPE_TF = 1  # turbofan, fixwing
 ENG_TYPE_TP = 2  # turboprop, fixwing
 ENG_TYPE_TS = 3  # turboshaft, rotor
 
-OPENAP_DIR = data("performance/openap")
+OPENAP_DIR = files("minisky").joinpath("data", "performance", "openap")
 
 
 WrapStatistic = Literal["default", "minimum", "maximum"]
@@ -217,7 +217,7 @@ class Coefficient:
         # NOTE(abraham): this legacy rotor JSON has mixed units: mass is kg,
         # speeds are m/s and altitude is m, but engine power is kW and range is
         # km. we normalise it at this boundary
-        with (OPENAP_DIR / "rotor/aircraft.json").open() as file:
+        with OPENAP_DIR.joinpath("rotor", "aircraft.json").open() as file:
             raw = json.load(file)
         raw.pop("__comment")
 

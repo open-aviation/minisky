@@ -70,11 +70,15 @@ minisky console
 Manually step through a simulation for 50 seconds, with intervals of 10 seconds using the *typed API*:
 
 ```py
-from minisky import MiniSky
+from minisky import MagneticDeclinationGrid, MiniSky, MiniSkyConfig, NavData
 from minisky import quantities as q
 from minisky.types import CasMps, StdPressureAltM
 
-with MiniSky() as runtime:
+with MiniSky(
+    MiniSkyConfig(),
+    navdata=NavData(),
+    magnetic_declination=MagneticDeclinationGrid.load_default(),
+) as runtime:
     runtime.traffic.cre(
         "KL315",
         lat=52.0,
@@ -97,7 +101,7 @@ Alternatively, use the scenario command language:
 ```py
 from minisky import MiniSky
 
-with MiniSky() as runtime:
+with MiniSky(...) as runtime:
     runtime.commands.stack("CRE KL315 A320 52 4 45 FL050 250KT[CAS]")
     runtime.commands.stack("KL315 ADDWPT HELEN FL100 250KT[CAS]")
     runtime.simulation.step()
@@ -114,7 +118,7 @@ from minisky import MiniSky
 
 
 async def main() -> None:
-    async with MiniSky() as runtime:
+    async with MiniSky(...) as runtime:
         runtime.commands.load_scenario("example.scn")
         runtime.runner.speed = 10
         await runtime.run()

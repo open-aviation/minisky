@@ -4,7 +4,7 @@ import asyncio
 from pathlib import Path
 
 import pytest
-from minisky import MiniSky, MiniSkyConfig
+from minisky import MagneticDeclinationGrid, MiniSky, MiniSkyConfig, NavData
 from minisky_multicopter.config import load_type_table
 from minisky_multicopter.entity import get_multicopter
 from minisky_multicopter.perf import MulticopterPerf
@@ -46,7 +46,11 @@ def test_user_defined_type(user_toml: Path) -> None:
     config = MiniSkyConfig.model_validate(
         {"plugins": {"multicopter": {"performance_path": str(user_toml)}}}
     )
-    instance = MiniSky(config)
+    instance = MiniSky(
+        config,
+        navdata=NavData(),
+        magnetic_declination=MagneticDeclinationGrid.load_default(),
+    )
     try:
         result = asyncio.run(instance.plugins.load("MULTICOPTER"))
         assert result.is_ok(), result.err()

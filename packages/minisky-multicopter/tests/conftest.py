@@ -11,12 +11,16 @@ from __future__ import annotations
 from collections.abc import Iterator
 
 import pytest
-from minisky import MiniSky, MiniSkyConfig, Simulation
+from minisky import MagneticDeclinationGrid, MiniSky, MiniSkyConfig, NavData, Simulation
 
 
 @pytest.fixture(scope="session")
 def runtime() -> Iterator[MiniSky]:
-    instance = MiniSky(MiniSkyConfig())
+    instance = MiniSky(
+        MiniSkyConfig(),
+        navdata=NavData(),
+        magnetic_declination=MagneticDeclinationGrid.load_default(),
+    )
     yield instance
     instance.close()
 
