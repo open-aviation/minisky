@@ -28,6 +28,42 @@ class TestQueueing:
         assert runtime.traffic.ntraf == 1
         assert runtime.traffic.callsign[0] == "KL204"
 
+    def test_submissions_complete_independently(self, runtime: MiniSky, sim: Simulation) -> None:
+        async def exercise() -> None:
+            release = asyncio.Event()
+
+            async def first() -> Ok[str]:
+                await release.wait()
+                return Ok("first")
+
+            def second() -> Err[str]:
+                return Err("second")
+
+            prepared = (
+                runtime.commands.prepare_command(first, name="TESTFIRST"),
+                runtime.commands.prepare_command(second, name="TESTSECOND"),
+            )
+            runtime.commands.install_commands(prepared, owner="minisky")
+            try:
+                first_invocation = runtime.commands.submit("TESTFIRST")
+                second_invocation = runtime.commands.submit("TESTSECOND")
+
+                assert first_invocation.id != second_invocation.id
+                assert not runtime.commands.process()
+
+                release.set()
+                assert await first_invocation == Ok("first")
+
+                # result is avialable but the stack still owns the async command
+                assert runtime.commands.command_pending
+                assert runtime.commands.process()
+
+                assert await second_invocation == Err("second")
+            finally:
+                runtime.commands.remove_commands(prepared)
+
+        asyncio.run(exercise())
+
     def test_command_stacked_during_processing_is_kept(
         self, runtime: MiniSky, sim: Simulation
     ) -> None:

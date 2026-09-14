@@ -30,13 +30,14 @@ import asyncio
 import inspect
 import traceback
 from collections.abc import Awaitable, Callable, Iterable, Iterator
+from concurrent.futures import Future
 from contextlib import suppress
 from dataclasses import dataclass
 from functools import partial
 from os import PathLike
 from pathlib import Path
 from threading import Lock
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, NewType, TypeAlias
 
 import numpy as np
 
@@ -345,12 +346,58 @@ def _parse_form(
     return Ok(tuple(arguments))
 
 
+CommandId = NewType("CommandId", int)
+CommandResult: TypeAlias = Result[str, str]
+
+
+def _command_result(result: Result[str, str | ArgumentIssue]) -> CommandResult:
+    if isinstance(result, Ok):
+        return result
+    error = result.err()
+    return Err(error.message if isinstance(error, ArgumentIssue) else error)
+
+
+@dataclass(frozen=True, slots=True)
+class CommandInvocation:
+    """The receive side of a queued command's one-shot completion."""
+
+    id: CommandId
+    text: str
+    _future: Future[CommandResult]
+
+    async def wait(self) -> CommandResult:
+        """Wait until the command has executed."""
+        return await asyncio.shield(asyncio.wrap_future(self._future))
+
+    def __await__(self):
+        return self.wait().__await__()
+
+
+@dataclass(frozen=True, slots=True)
+class _CommandCompletion:
+    """The send side of a command invocation's one-shot completion."""
+
+    _future: Future[CommandResult]
+
+    def set_result(self, result: CommandResult) -> None:
+        self._future.set_result(result)
+
+    def set_exception(self, error: BaseException) -> None:
+        self._future.set_exception(error)
+
+    def cancel(self) -> None:
+        self._future.cancel()
+
+
 @dataclass(frozen=True, slots=True)
 class QueuedCommand:
-    """A queued command line paired with its optional sender route."""
-
-    text: str
+    invocation: CommandInvocation
+    completion: _CommandCompletion
     sender_id: bytes | None
+
+    @property
+    def text(self) -> str:
+        return self.invocation.text
 
 
 @dataclass(frozen=True, slots=True)
@@ -379,7 +426,6 @@ class _PendingCommand:
     task: asyncio.Future[Result[str, str]]
     name: str
     argstring: str
-    command: Command
 
 
 class CommandStack:
@@ -419,6 +465,8 @@ class CommandStack:
         self._commands: dict[str, _RegisteredCommand] = {}
         """Canonical commands and the plugin that registered them."""
         self._queue_lock = Lock()
+        self._next_command_id = 0
+        self.cmdstack: list[QueuedCommand] = []
         self._pending_command: _PendingCommand | None = None
         self._reset_state()
 
@@ -601,12 +649,13 @@ class CommandStack:
         self.current = ""
         """Command line currently being processed."""
         with self._queue_lock:
-            self.cmdstack = []
+            queued, self.cmdstack = self.cmdstack, []
             """Queued commands awaiting processing."""
+        for queued_command in queued:
+            queued_command.completion.cancel()
         pending, self._pending_command = self._pending_command, None
         if pending is not None and not pending.task.done():
             pending.task.cancel()
-            pending.task.add_done_callback(_consume_task_result)
 
         self.scenname = ""
         """Name of the currently loaded scenario."""
@@ -630,6 +679,7 @@ class CommandStack:
         for queued in self._take_commands():
             self.current = queued.text
             self.sender_rte = queued.sender_id
+            queued.completion.cancel()
             yield queued.text
 
     @command(name="DEL", aliases=("DELETE",))
@@ -723,7 +773,9 @@ class CommandStack:
             cursor = CommandCursor(cmdline)
             parsed_result = cursor.next_value("a command")
             if isinstance(parsed_result, Err):
-                self.console.echo(_format_argument_issue(cmdline, parsed_result.err()))
+                issue = parsed_result.err()
+                queued.completion.set_result(Err(issue.message))
+                self.console.echo(_format_argument_issue(cmdline, issue))
                 continue
             cmd = parsed_result.ok().value
             argument_start = cursor.pos
@@ -743,7 +795,9 @@ class CommandStack:
                 else:
                     parsed_result = cursor.next_value("a command")
                     if isinstance(parsed_result, Err):
-                        self.console.echo(_format_argument_issue(cmdline, parsed_result.err()))
+                        issue = parsed_result.err()
+                        queued.completion.set_result(Err(issue.message))
+                        self.console.echo(_format_argument_issue(cmdline, issue))
                         continue
                     cmd = parsed_result.ok().value
                     argstring = f"{acid} {cursor.remaining}"
@@ -758,6 +812,7 @@ class CommandStack:
                     else f"unknown command: {cmd}"
                 )
                 issue = ArgumentIssue(message, parsed_result.ok().span)
+                queued.completion.set_result(Err(issue.message))
                 self.console.echo(_format_argument_issue(cmdline, issue))
                 continue
 
@@ -766,6 +821,7 @@ class CommandStack:
                     cmdobj._invoke(cmdline, argument_start) if direct_source else cmdobj(argstring)
                 )
             except Exception as exc:  # ruff: ignore[BLE001] commands are arbitrary callbacks
+                queued.completion.set_exception(exc)
                 self._echo_command_exception(cmdu, argstring, exc)
                 continue
 
@@ -775,19 +831,22 @@ class CommandStack:
                 except RuntimeError:
                     if inspect.iscoroutine(result):
                         result.close()
-                    self.console.echo("asynchronous stack commands require a running event loop")
+                    error = "asynchronous stack commands require a running event loop"
+                    queued.completion.set_result(Err(error))
+                    self.console.echo(error)
                     continue
                 # NOTE(abraham): an awaitable owns the stack. later commands stay
                 # at the same simulation timestamp until it finishes.
-                # TODO(abraham): add per-caller completion handles if callers need
-                # responses independent of console output.
                 task = asyncio.ensure_future(result)
-                self._pending_command = _PendingCommand(task, cmdu, argstring, cmdobj)
+                task.add_done_callback(partial(_complete_invocation, completion=queued.completion))
+                self._pending_command = _PendingCommand(task, cmdu, argstring)
                 self._prepend_commands(pending[index + 1 :])
                 return False
 
             # NOTE: `KL204 ALT BAD` can produce a bad diagnostic `ALT KL204 BAD`
-            self._echo_command_result(result, cmdline if direct_source else None)
+            source = cmdline if direct_source else None
+            queued.completion.set_result(_command_result(result))
+            self._echo_command_result(result, source)
         return True
 
     def _finish_pending_command(self) -> bool:
@@ -845,7 +904,12 @@ class CommandStack:
             await asyncio.wait((pending.task,))
 
     async def aclose(self) -> None:
-        """Cancel and await the stack-owned asynchronous command."""
+        """Cancel queued and stack-owned asynchronous commands."""
+        with self._queue_lock:
+            queued, self.cmdstack = self.cmdstack, []
+        for queued_command in queued:
+            queued_command.completion.cancel()
+
         pending, self._pending_command = self._pending_command, None
         if pending is None:
             return
@@ -1031,7 +1095,7 @@ class CommandStack:
                 commands separated by ";".
             sender_id: Optional network route/id of the command sender.
         """
-        queued: list[QueuedCommand] = []
+        commands: list[str] = []
         for cmdline in cmdlines:
             cursor = CommandCursor(cmdline)
             while True:
@@ -1042,9 +1106,27 @@ class CommandStack:
                 line = result.ok()
                 if line is None:
                     break
-                queued.append(QueuedCommand(line.value, sender_id))
+                commands.append(line.value)
         with self._queue_lock:
-            self.cmdstack.extend(queued)
+            self.cmdstack.extend(self._new_queued_command(text, sender_id) for text in commands)
+
+    def submit(self, command: str, *, sender_id: bytes | None = None) -> CommandInvocation:
+        """Queue a command and return a handle for its eventual result.
+
+        Unlike [`stack`][.stack], this method does not split semicolon-delimited
+        batches.
+        """
+        with self._queue_lock:
+            queued = self._new_queued_command(command, sender_id)
+            self.cmdstack.append(queued)
+        return queued.invocation
+
+    def _new_queued_command(self, text: str, sender_id: bytes | None) -> QueuedCommand:
+        future: Future[CommandResult] = Future()
+        invocation = CommandInvocation(CommandId(self._next_command_id), text, future)
+        completion = _CommandCompletion(future)
+        self._next_command_id += 1
+        return QueuedCommand(invocation, completion, sender_id)
 
     def sender(self):
         """Return the sender of the currently executed stack command.
@@ -1073,6 +1155,14 @@ class CommandStack:
         self.scenario_commands = sorted(data.commands, key=lambda command: command.time)
 
 
-def _consume_task_result(task: asyncio.Future[Any]) -> None:
-    with suppress(asyncio.CancelledError, Exception):
-        task.result()
+def _complete_invocation(
+    task: asyncio.Future[CommandResult], *, completion: _CommandCompletion
+) -> None:
+    try:
+        result = task.result()
+    except asyncio.CancelledError:
+        completion.cancel()
+    except Exception as exc:  # ruff: ignore[BLE001] commands are arbitrary callbacks
+        completion.set_exception(exc)
+    else:
+        completion.set_result(result)

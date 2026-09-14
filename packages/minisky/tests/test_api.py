@@ -1,9 +1,6 @@
 """Smoke tests for the FastAPI endpoints.
 
 Use `just test-api`.
-
-The `/stack/{cmd}` endpoint requires the async runner loop and is not tested
-here because it is flaky under the in-process ASGI client.
 """
 
 from __future__ import annotations

@@ -85,7 +85,7 @@ from minisky._internal.runner import Runner
 from minisky._internal.runtime import MiniSky
 from minisky._internal.shapes import Shapes
 from minisky._internal.simulation import Simulation, SimulationState
-from minisky._internal.stack import CommandStack
+from minisky._internal.stack import CommandId, CommandInvocation, CommandStack
 from minisky._internal.streaming import AcData, SimInfo, Snapshot
 from minisky._internal.traffic import Traffic
 from minisky._internal.traffic_arrays import (
@@ -106,6 +106,8 @@ __all__ = (  # noqa: RUF022 - public API and docs use this semantic order
     "Simulation",
     "SimulationState",
     "Runner",
+    "CommandId",
+    "CommandInvocation",
     "CommandStack",
     "ConsoleIO",
     "ConsoleSubscription",

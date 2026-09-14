@@ -86,9 +86,6 @@ class SelectedMachResponse(TypedDict):
 SelectedAirspeedResponse: TypeAlias = SelectedCasResponse | SelectedMachResponse
 
 
-StackResponse = TypedDict("StackResponse", {"command to minisky": str, "message": str})
-
-
 AircraftResponse = TypedDict(
     "AircraftResponse",
     {
@@ -267,14 +264,9 @@ def conflicts(runtime: Runtime) -> list[ConflictResponse] | dict[str, str]:
     return conflict_info
 
 
-async def stack(cmd: str, runtime: Runtime) -> StackResponse:
-    """Execute a stack command and return the output."""
-    runtime.console.event.clear()
-    runtime.commands.stack(cmd)
-    await runtime.console.event.wait()
-    msg = runtime.console.read_output_buffer()
-    runtime.console.event.clear()
-    return {"command to minisky": cmd, "message": msg}
+async def stack(cmd: str, runtime: Runtime) -> ResultResponse:
+    """Execute a stack command and return its completion result."""
+    return _result_response(await runtime.commands.submit(cmd))
 
 
 def commands(runtime: Runtime) -> dict[str, CommandSchema]:
