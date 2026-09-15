@@ -13,7 +13,7 @@ import asyncio
 from collections.abc import Callable, Iterator
 
 import pytest
-from minisky import MagneticDeclinationGrid, MiniSky, MiniSkyConfig, NavData, Simulation
+from minisky import Err, MagneticDeclinationGrid, MiniSky, MiniSkyConfig, NavData, Ok, Simulation
 from tests._types import RunCommand, StepUntil
 
 
@@ -41,13 +41,20 @@ def mcsim(mcruntime: MiniSky) -> Simulation:
 
 @pytest.fixture
 def run_mc(mcruntime: MiniSky, mcsim: Simulation) -> RunCommand:
-    """Queue a stack command, step the sim, and return the last echoed output."""
+    """Submit a command, step the sim, and return its direct response."""
 
     def _run(cmd: str, steps: int = 1) -> str:
-        mcruntime.commands.stack(cmd)
-        for _ in range(steps):
-            mcruntime.simulation.step()
-        return mcruntime.console.read_output_buffer()
+        async def execute() -> str:
+            invocation = mcruntime.commands.submit(cmd)
+            for _ in range(steps):
+                mcruntime.simulation.step()
+            match await invocation:
+                case Ok(value):
+                    return value
+                case Err(error):
+                    return error
+
+        return asyncio.run(execute())
 
     return _run
 

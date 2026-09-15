@@ -1,17 +1,17 @@
 """Shared fixtures for MiniSky integration tests.
 
 One explicit runtime is constructed for the test session. Each test resets the
-simulation state before use. Output from `ConsoleIO.echo()` is destructive:
-`read_output_buffer()` returns only the most recently echoed message.
+simulation state before use.
 """
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Callable, Iterator
 from pathlib import Path
 
 import pytest
-from minisky import MagneticDeclinationGrid, MiniSky
+from minisky import Err, MagneticDeclinationGrid, MiniSky, Ok
 from minisky._internal.config import MiniSkyConfig
 from minisky._internal.simulation import Simulation
 from tests._types import RunCommand, StepUntil
@@ -48,13 +48,20 @@ def sim(runtime: MiniSky) -> Simulation:
 
 @pytest.fixture
 def run_cmd(runtime: MiniSky, sim: Simulation) -> RunCommand:
-    """Queue a stack command, step the sim, and return the last echoed output."""
+    """Submit a command, step the sim, and return its direct response."""
 
     def _run(cmd: str, steps: int = 1) -> str:
-        runtime.commands.stack(cmd)
-        for _ in range(steps):
-            runtime.simulation.step()
-        return runtime.console.read_output_buffer()
+        async def execute() -> str:
+            invocation = runtime.commands.submit(cmd)
+            for _ in range(steps):
+                runtime.simulation.step()
+            match await invocation:
+                case Ok(value):
+                    return value
+                case Err(error):
+                    return error
+
+        return asyncio.run(execute())
 
     return _run
 
