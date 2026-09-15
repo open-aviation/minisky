@@ -4,7 +4,7 @@ from collections.abc import AsyncIterator
 from typing import cast
 
 import pytest
-from minisky import Err, MagneticDeclinationGrid, MiniSky, MiniSkyConfig, NavData
+from minisky import Err, MagneticDeclinationGrid, MiniSky, MiniSkyConfig, NavData, Ok
 from minisky.types import CasMps, StdPressureAltM
 from minisky_example import Example
 
@@ -22,10 +22,14 @@ async def runtime() -> AsyncIterator[MiniSky]:
     await runtime.aclose()
 
 
-def run_command(runtime: MiniSky, command: str) -> str:
-    runtime.commands.stack(command)
+async def run_command(runtime: MiniSky, command: str) -> str:
+    invocation = runtime.commands.submit(command)
     runtime.simulation.step()
-    return runtime.console.read_output_buffer()
+    match await invocation:
+        case Ok(value):
+            return value
+        case Err(error):
+            return error
 
 
 @pytest.mark.anyio
@@ -36,11 +40,11 @@ async def test_commands_and_entity_are_runtime_owned(runtime: MiniSky) -> None:
     assert record.loaded
     assert tuple(runtime.plugins.loaded_plugins) == ("EXAMPLE",)
 
-    run_command(runtime, "CRE KL001,A320,52,4,90,FL100,250KT[CAS]")
-    assert "150" in run_command(runtime, "PASSENGERS KL001 150")
-    assert "150" in run_command(runtime, "PASSENGERS KL001")
-    assert "expected" in run_command(runtime, "PASSENGERS KL001 -1").lower()
-    assert "150" in run_command(runtime, "PASSENGERS KL001")
+    await run_command(runtime, "CRE KL001,A320,52,4,90,FL100,250KT[CAS]")
+    assert "150" in await run_command(runtime, "PASSENGERS KL001 150")
+    assert "150" in await run_command(runtime, "PASSENGERS KL001")
+    assert "expected" in (await run_command(runtime, "PASSENGERS KL001 -1")).lower()
+    assert "150" in await run_command(runtime, "PASSENGERS KL001")
 
     again = await runtime.plugins.load("EXAMPLE")
     assert again == Err("Plugin EXAMPLE already loaded")

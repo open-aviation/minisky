@@ -1333,8 +1333,9 @@ def set_rta(
     return True
 
 
-def listrte(traffic: Traffic, acidx: AircraftIndex, ipagetxt: str = "0") -> Result[None, str]:
-    """Show the route of an aircraft in the console, page by page.
+# TODO: instead of rendering a stringified version, return structured data that implements __str__
+def listrte(traffic: Traffic, acidx: AircraftIndex, ipagetxt: str = "0") -> Result[str, str]:
+    """Return a page of an aircraft route.
 
     Each line shows the waypoint name (active waypoint marked with `*`),
     its altitude constraint (ft or FL), airspeed constraint
@@ -1350,6 +1351,7 @@ def listrte(traffic: Traffic, acidx: AircraftIndex, ipagetxt: str = "0") -> Resu
     if n_wpt <= 0:
         return Err("Aircraft has no route.")
 
+    lines: list[str] = []
     for i in range(ipage * 7, ipage * 7 + 7):
         if 0 <= i < n_wpt:
             if i == acrte.iactwp:
@@ -1386,9 +1388,9 @@ def listrte(traffic: Traffic, acidx: AircraftIndex, ipagetxt: str = "0") -> Resu
             else:  # FLYOVER
                 txt += "[|]"
 
-            traffic.console.echo(txt)
+            lines.append(txt)
 
-    return Ok(None)
+    return Ok("\n".join(lines))
 
 
 def delrte(traffic: Traffic, acidx: AircraftIndex) -> Result[str, str]:
@@ -1860,8 +1862,8 @@ class RouteCommands:
         return Ok("")
 
     @command(name="LISTRTE")
-    def listrte(self, acidx: AcId, ipagetxt: Keyword = "0") -> Result[None, str]:
-        """Show an aircraft route in the console."""
+    def listrte(self, acidx: AcId, ipagetxt: Keyword = "0") -> Result[str, str]:
+        """Return a page of an aircraft route."""
         return listrte(self.traffic, acidx, ipagetxt)
 
     @command(name="DELRTE", aliases=("DELROUTE",))

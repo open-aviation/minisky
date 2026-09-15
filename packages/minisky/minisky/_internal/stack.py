@@ -350,13 +350,6 @@ CommandId = NewType("CommandId", int)
 CommandResult: TypeAlias = Result[str, str]
 
 
-def _command_result(result: Result[str, str | ArgumentIssue]) -> CommandResult:
-    if isinstance(result, Ok):
-        return result
-    error = result.err()
-    return Err(error.message if isinstance(error, ArgumentIssue) else error)
-
-
 @dataclass(frozen=True, slots=True)
 class CommandInvocation:
     """The receive side of a queued command's one-shot completion."""
@@ -774,7 +767,7 @@ class CommandStack:
             parsed_result = cursor.next_value("a command")
             if isinstance(parsed_result, Err):
                 issue = parsed_result.err()
-                queued.completion.set_result(Err(issue.message))
+                queued.completion.set_result(Err(_format_argument_issue(cmdline, issue)))
                 self.console.echo(_format_argument_issue(cmdline, issue))
                 continue
             cmd = parsed_result.ok().value
@@ -796,7 +789,7 @@ class CommandStack:
                     parsed_result = cursor.next_value("a command")
                     if isinstance(parsed_result, Err):
                         issue = parsed_result.err()
-                        queued.completion.set_result(Err(issue.message))
+                        queued.completion.set_result(Err(_format_argument_issue(cmdline, issue)))
                         self.console.echo(_format_argument_issue(cmdline, issue))
                         continue
                     cmd = parsed_result.ok().value
@@ -812,7 +805,7 @@ class CommandStack:
                     else f"unknown command: {cmd}"
                 )
                 issue = ArgumentIssue(message, parsed_result.ok().span)
-                queued.completion.set_result(Err(issue.message))
+                queued.completion.set_result(Err(_format_argument_issue(cmdline, issue)))
                 self.console.echo(_format_argument_issue(cmdline, issue))
                 continue
 
@@ -845,7 +838,16 @@ class CommandStack:
 
             # NOTE: `KL204 ALT BAD` can produce a bad diagnostic `ALT KL204 BAD`
             source = cmdline if direct_source else None
-            queued.completion.set_result(_command_result(result))
+            if isinstance(result, Ok):
+                command_result: CommandResult = result
+            else:
+                error = result.err()
+                command_result = Err(
+                    _format_argument_issue(cmdline, error)
+                    if isinstance(error, ArgumentIssue)
+                    else error
+                )
+            queued.completion.set_result(command_result)
             self._echo_command_result(result, source)
         return True
 
