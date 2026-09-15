@@ -56,90 +56,51 @@ def degto180(angle: q.AngleDeg) -> q.AngleDeg:
     return (angle + 180.0) % 360 - 180.0
 
 
-# TODO(abraham): return None if parsing fails
-def txt2lat(lattxt: str) -> q.LatitudeDeg[float]:
-    """Convert a latitude text to degrees.
-
-    Accepts decimal degrees or degrees/minutes/seconds separated by
-    quotes or the degree symbol, with N/S prefix (North positive, South
-    negative). Example inputs: "N52'14'13.5", "N52", "N52'", "-52.25".
-
-    Returns:
-        0.0 when DMS parsing fails.
-    """
-    txt = lattxt.upper().replace("N", "").replace("S", "-")  # North positive, South negative
-    neg = txt.count("-") > 0
-
-    # Use of "'" and '"' as delimiter for degrees/minutes/seconds
-    # (also accept degree symbol chr(176))
-    if txt.count("'") > 0 or txt.count('"') > 0 or txt.count(chr(176)) > 0:
-        txt = txt.replace('"', "'").replace(chr(176), "'")  # replace " or degree symbol and  by a '
-        degs = txt.split("'")
-        div = 1
-        lat = 0
-        f = -1.0 if neg else 1.0
-        for xtxt in degs:
-            if len(xtxt) > 0:
-                try:
-                    lat = lat + f * abs(float(xtxt)) / float(div)
-                    div = div * 60
-                except ValueError:
-                    print("txt2lat value error:", lattxt)
-                    return 0.0
-    else:
-        lat = float(txt)
-    return lat
-
-
-# TODO(abraham): return None if parsing fails
-def txt2lon(lontxt: str) -> q.LongitudeDeg[float]:
-    """Convert a longitude text to degrees.
-
-    Accepts decimal degrees or degrees/minutes/seconds separated by
-    quotes or the degree symbol, with E/W prefix (East positive, West
-    negative). Example inputs: "E004'23'10", "W65", "4.5".
-
-    Returns:
-        0.0 when DMS parsing fails.
-    """
-    # It should first be checked if lontxt is a regular float, to avoid removing
-    # the 'e' in a scientific-notation number.
+def _parse_coordinate(text: str, positive: str, negative: str) -> float:
+    raw = text.strip().upper()
     try:
-        lon = float(lontxt)
-
-    # Leading E will trigger error ansd means simply East,just as  W = West = Negative
+        return float(raw)
     except ValueError:
-        txt = lontxt.upper().replace("E", "").replace("W", "-")  # East positive, West negative
-        neg = txt.count("-") > 0
+        pass
 
-        # Use of "'" and '"' as delimiter for degrees/minutes/seconds
-        # (also accept degree symbol chr(176)). Also "W002'"
-        if txt.count("'") > 0 or txt.count('"') or txt.count(chr(176)) > 0:
-            # replace " or degree symbol and  by a '
-            txt = txt.replace('"', "'").replace(chr(176), "'")
-            degs = txt.split("'")
-            div = 1
-            lon = 0.0
-            f = -1.0 if neg else 1.0
-            for xtxt in degs:
-                if len(xtxt) > 0.0:
-                    try:
-                        lon = lon + f * abs(float(xtxt)) / float(div)
-                    except ValueError:
-                        print("txt2lon value error:", lontxt)
-                        return 0.0
+    sign = 1.0
+    if raw.startswith(positive):
+        raw = raw[1:]
+    elif raw.startswith((negative, "-")):
+        sign = -1.0
+        raw = raw[1:]
 
-                div = div * 60
-        else:  # Cope with "W65"without "'" or '"', also "-65" or "--65"
-            try:
-                neg = txt.count("-") > 0
-                f = -1.0 if neg else 1.0
-                lon = f * abs(float(txt))
-            except ValueError:
-                print("txt2lon value error:", lontxt)
-                return 0.0
+    raw = raw.replace('"', "'").replace(chr(176), "'")
+    parts = [part for part in raw.split("'") if part]
+    if not parts:
+        raise ValueError(f"could not parse coordinate {text!r}")
 
-    return lon
+    try:
+        values = [abs(float(part)) for part in parts]
+    except ValueError:
+        raise ValueError(f"could not parse coordinate {text!r}") from None
+    if len(values) > 3:
+        raise ValueError(f"could not parse coordinate {text!r}")
+
+    return sign * sum(value / (60**index) for index, value in enumerate(values))
+
+
+def txt2lat(lattxt: str) -> q.LatitudeDeg[float]:
+    """Convert latitude text to decimal degrees.
+
+    Raises:
+        ValueError: When the text cannot be parsed as a latitude.
+    """
+    return _parse_coordinate(lattxt, "N", "S")
+
+
+def txt2lon(lontxt: str) -> q.LongitudeDeg[float]:
+    """Convert longitude text to decimal degrees.
+
+    Raises:
+        ValueError: When the text cannot be parsed as a longitude.
+    """
+    return _parse_coordinate(lontxt, "E", "W")
 
 
 def lat2txt(lat: q.LatitudeDeg[float]) -> str:

@@ -314,6 +314,17 @@ class TestErrors:
         assert output.endswith("      ^^^^^^")
         assert runtime.traffic.ntraf == 0
 
+    def test_invalid_coordinate_is_a_command_error(
+        self, runtime: MiniSky, run_cmd: RunCommand
+    ) -> None:
+        output = run_cmd("CRE BAD A320 N52'BAD 4 90 FL100 250KT[CAS]")
+
+        assert "argument `position`" in output
+        assert "N52'BAD" in output
+        assert " --> <command>:1:14" in output
+        assert output.endswith("^^^^^^^")
+        assert runtime.traffic.ntraf == 0
+
     def test_sim_survives_bad_command(self, runtime: MiniSky, run_cmd: RunCommand) -> None:
         run_cmd("THISDOESNOTEXIST")
         run_cmd("CRE KL204,B744,52,4,45,FL250,350KT[CAS]")
