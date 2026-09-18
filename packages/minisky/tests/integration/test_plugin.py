@@ -169,7 +169,7 @@ async def test_typed_declaration_builds_validated_runtime_state(
         assert result.is_ok(), result.err()
         state = State(7, runtime.python_random)
         assert runtime.variables.varlist["typed"] == (state, ["value", "random"])
-        assert runtime.plugins.plugins["TYPED"].spec == PluginSpec((state,), state)
+        assert runtime.plugins.loaded_plugins["TYPED"].spec == PluginSpec((state,), state)
     finally:
         await runtime.aclose()
 
@@ -444,7 +444,6 @@ async def test_failed_lifespan_startup_is_atomic(
     assert "startup failed" in result.unwrap_err()
     assert "FAILEDSTART" not in runtime.commands.cmddict
     assert "failedstart" not in runtime.variables.varlist
-    assert not runtime.plugins.plugins["FAILEDSTART"].loaded
     assert "FAILEDSTART" not in runtime.plugins.loaded_plugins
     assert capability is not None
     with pytest.raises(RuntimeError, match="revoked"):
@@ -473,7 +472,7 @@ async def test_load_configured_continues_after_failure(
         loaded = await runtime.plugins.load_configured()
         assert loaded == ("FIRST", "LAST")
         assert tuple(runtime.plugins.loaded_plugins) == ("FIRST", "LAST")
-        assert not runtime.plugins.plugins["BROKEN"].loaded
+        assert "BROKEN" not in runtime.plugins.loaded_plugins
     finally:
         await runtime.aclose()
 
@@ -546,6 +545,6 @@ async def test_plugin_stack_load_uses_awaitable_command_boundary() -> None:
         assert runtime.commands.command_pending
         await runtime.commands.wait_for_pending()
         assert runtime.simulation.step() is True
-        assert runtime.plugins.plugins["EXAMPLE"].loaded
+        assert "EXAMPLE" in runtime.plugins.loaded_plugins
     finally:
         await runtime.aclose()
