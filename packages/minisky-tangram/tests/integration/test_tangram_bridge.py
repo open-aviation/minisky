@@ -38,9 +38,9 @@ def bridge(
     )
     # TODO(abraham): load tangram through PluginManager when thread shutdown
     # ownership is hardened.
-    plugin_runtime = runtime.plugins._plugin_runtime()
+    plugin_runtime = runtime.plugins._plugin_runtime("tangram")
     plugin_runtime._activate()
-    plugin_runtime.subscribe_console(bridge.capture_console)
+    plugin_runtime.subscribe_events(bridge.capture_event)
     result = bridge.start(plugin_runtime)
     assert result.is_ok(), result.err()
     # The I/O thread subscribes asynchronously; commands published before the
@@ -158,6 +158,7 @@ def test_console_relay(
     runtime: MiniSky, sim: Simulation, bridge: TangramBridge, observer: Observer
 ) -> None:
     _, pubsub = observer
-    runtime.console.echo("hello tangram")
+    runtime.commands.stack("ECHO hello tangram")
+    runtime.simulation.step()
     payload = wait_for(pubsub, ":console", lambda p: "hello tangram" in p["lines"])
     assert payload["lines"]

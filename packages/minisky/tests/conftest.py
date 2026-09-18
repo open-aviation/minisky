@@ -42,7 +42,6 @@ def runtime(config: MiniSkyConfig) -> Iterator[MiniSky]:
 def sim(runtime: MiniSky) -> Simulation:
     """Fresh simulation state for each test."""
     runtime.simulation.reset()
-    runtime.console.read_output_buffer()  # drain "Simulation reset" echo
     return runtime.simulation
 
 

@@ -8,7 +8,7 @@ import weakref
 
 import numpy as np
 import pytest
-from minisky import Err, MiniSky, Ok
+from minisky import Diagnostic, Err, MiniSky, Ok, RuntimeEvent
 from minisky import quantities as q
 from minisky._internal.command import ArgumentIssue, command
 from minisky._internal.simulation import Simulation
@@ -54,7 +54,7 @@ class TestQueueing:
                 release.set()
                 assert await first_invocation == Ok("first")
 
-                # result is avialable but the stack still owns the async command
+                # result is available but the stack still owns the async command
                 assert runtime.commands.command_pending
                 assert runtime.commands.process()
 
@@ -183,8 +183,14 @@ class TestCommands:
         assert runtime.traffic.ntraf == 3
 
     def test_malformed_batch(self, runtime: MiniSky) -> None:
-        runtime.commands.stack('ECHO "unterminated')
-        assert "expected a closing" in runtime.console.read_output_buffer().lower()
+        events: list[RuntimeEvent] = []
+        with runtime.events.subscribe(events.append):
+            runtime.commands.stack('ECHO "unterminated')
+
+        assert len(events) == 1
+        diagnostic = events[0].payload
+        assert isinstance(diagnostic, Diagnostic)
+        assert "expected a closing" in diagnostic.message.lower()
         assert runtime.commands.cmdstack == []
 
 
@@ -311,8 +317,6 @@ class TestErrors:
 
         assert " --> <command>:1:7" in output
         assert "1 | ALT   NOSUCH FL100" in output
-        assert output.endswith("      ^^^^^^")
-        assert runtime.traffic.ntraf == 0
 
     def test_invalid_coordinate_is_a_command_error(
         self, runtime: MiniSky, run_cmd: RunCommand

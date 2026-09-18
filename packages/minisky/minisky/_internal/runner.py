@@ -15,15 +15,14 @@ from annotated_types import IsFinite
 
 from minisky import quantities as q
 from minisky._internal.command import command
+from minisky._internal.events import Diagnostic, EventEmitter, Severity
 from minisky._internal.result import Ok, Result
 from minisky.types import Gt0
 
 if TYPE_CHECKING:
-    from minisky._internal.console import ConsoleIO
     from minisky._internal.simulation import Simulation
 
 # TODO(abraham): make this configurable.
-
 MIN_UPDATE_INTERVAL: q.DurationS[float] = 0.0001
 
 # A fast-forward jump ends this many timesteps short of the requested time, so
@@ -42,9 +41,9 @@ class Runner:
     the target simulation time is reached as fast as possible.
     """
 
-    def __init__(self, simulation: Simulation, console: ConsoleIO, speed: float = 1) -> None:
+    def __init__(self, simulation: Simulation, events: EventEmitter, speed: float = 1) -> None:
         self.simulation = simulation
-        self.console = console
+        self.events = events
         self.running: bool = False
         self.allow_shutdown: bool = True
         """Whether `stop` may end the runner loop."""
@@ -99,7 +98,7 @@ class Runner:
         if self.running:
             raise RuntimeError("Simulation runner is already running")
 
-        self.console.echo("Starting simulation")
+        self.events.emit(Diagnostic(Severity.INFO, "simulation runner started"))
         self.running = True
         try:
             while self.running:
@@ -124,7 +123,7 @@ class Runner:
         finally:
             self.running = False
 
-        self.console.echo("Simulation completed")
+        self.events.emit(Diagnostic(Severity.INFO, "simulation runner stopped"))
 
     def shutdown(self) -> None:
         """Stop the run loop regardless of scenario shutdown policy."""
@@ -140,4 +139,4 @@ class Runner:
         if self.allow_shutdown:
             self.running = False
         else:
-            self.console.echo("Shutdown is prevented")
+            self.events.emit(Diagnostic(Severity.WARNING, "shutdown is prevented"))

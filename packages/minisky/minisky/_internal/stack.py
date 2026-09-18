@@ -28,7 +28,6 @@ from __future__ import annotations
 
 import asyncio
 import inspect
-import traceback
 from collections.abc import Awaitable, Callable, Iterable, Iterator
 from concurrent.futures import Future
 from contextlib import suppress
@@ -37,6 +36,7 @@ from functools import partial
 from os import PathLike
 from pathlib import Path
 from threading import Lock
+from traceback import TracebackException
 from typing import TYPE_CHECKING, Any, Literal, NewType, TypeAlias
 
 import numpy as np
@@ -65,12 +65,12 @@ from minisky._internal.command import (
     compile_parameter,
     declared_commands,
 )
+from minisky._internal.events import Diagnostic, EventEmitter, Severity
 from minisky._internal.identifiers import normalize_command_name
 from minisky._internal.result import Err, Ok, Result
 
 if TYPE_CHECKING:
     from minisky._internal.config import PluginId
-    from minisky._internal.console import ConsoleIO
     from minisky._internal.navigation import AirportData, RunwayThresholdData, Waypoints
     from minisky._internal.plugin import PluginManager
     from minisky._internal.runner import Runner
@@ -367,7 +367,7 @@ class CommandInvocation:
 
 
 @dataclass(frozen=True, slots=True)
-class _CommandCompletion:
+class _InvocationCompletion:
     """The send side of a command invocation's one-shot completion."""
 
     _future: Future[CommandResult]
@@ -383,14 +383,31 @@ class _CommandCompletion:
 
 
 @dataclass(frozen=True, slots=True)
-class QueuedCommand:
-    invocation: CommandInvocation
-    completion: _CommandCompletion
+class _QueuedCommand:
+    text: str
     sender_id: bytes | None
+    completion: _InvocationCompletion | None = None
+    """Whether the command was executed detached (i.e. via scn)."""
 
-    @property
-    def text(self) -> str:
-        return self.invocation.text
+    def set_result(self, result: CommandResult, events: EventEmitter) -> None:
+        if self.completion is not None:
+            self.completion.set_result(result)
+            return
+        if isinstance(result, Err):
+            events.emit(
+                Diagnostic(
+                    Severity.ERROR,
+                    f"detached command failed: {self.text!r}\n{result.err()}",
+                )
+            )
+
+    def set_exception(self, error: BaseException) -> None:
+        if self.completion is not None:
+            self.completion.set_exception(error)
+
+    def cancel(self) -> None:
+        if self.completion is not None:
+            self.completion.cancel()
 
 
 @dataclass(frozen=True, slots=True)
@@ -436,7 +453,7 @@ class CommandStack:
         waypoints: Waypoints,
         airports: AirportData,
         runway_thresholds: RunwayThresholdData,
-        console: ConsoleIO,
+        events: EventEmitter,
         shapes: Shapes,
         variables: VariableExplorer,
         plugins: PluginManager,
@@ -445,7 +462,7 @@ class CommandStack:
         get_runner: Callable[[], Runner],
     ) -> None:
         self.traffic = traffic
-        self.console = console
+        self.events = events
         self.shapes = shapes
         self.variables = variables
         self.plugins = plugins
@@ -459,7 +476,7 @@ class CommandStack:
         """Canonical commands and the plugin that registered them."""
         self._queue_lock = Lock()
         self._next_command_id = 0
-        self.cmdstack: list[QueuedCommand] = []
+        self.cmdstack: list[_QueuedCommand] = []
         self._pending_command: _PendingCommand | None = None
         self._reset_state()
 
@@ -524,7 +541,7 @@ class CommandStack:
                     f"command {command_name} has required keyword-only argument {parameter.name}"
                 )
         # Optional keyword-only arguments are implementation controls, such as
-        # ConsoleIO.echo(flag=...). They keep their Python defaults and are not
+        # EventCommands.echo(flag=...). They keep their Python defaults and are not
         # part of the positional BlueSky command grammar.
         command_parameters = tuple(
             parameter
@@ -645,7 +662,7 @@ class CommandStack:
             queued, self.cmdstack = self.cmdstack, []
             """Queued commands awaiting processing."""
         for queued_command in queued:
-            queued_command.completion.cancel()
+            queued_command.cancel()
         pending, self._pending_command = self._pending_command, None
         if pending is not None and not pending.task.done():
             pending.task.cancel()
@@ -657,7 +674,7 @@ class CommandStack:
         self.sender_rte = None
         """Sender route associated with the command currently being processed."""
 
-    def _take_commands(self) -> list[QueuedCommand]:
+    def _take_commands(self) -> list[_QueuedCommand]:
         """Detach the current queue while preserving each command's sender.
 
         Commands stacked while the detached batch is executing remain in the
@@ -672,7 +689,7 @@ class CommandStack:
         for queued in self._take_commands():
             self.current = queued.text
             self.sender_rte = queued.sender_id
-            queued.completion.cancel()
+            queued.cancel()
             yield queued.text
 
     @command(name="DEL", aliases=("DELETE",))
@@ -767,8 +784,7 @@ class CommandStack:
             parsed_result = cursor.next_value("a command")
             if isinstance(parsed_result, Err):
                 issue = parsed_result.err()
-                queued.completion.set_result(Err(_format_argument_issue(cmdline, issue)))
-                self.console.echo(_format_argument_issue(cmdline, issue))
+                queued.set_result(Err(_format_argument_issue(cmdline, issue)), self.events)
                 continue
             cmd = parsed_result.ok().value
             argument_start = cursor.pos
@@ -789,8 +805,7 @@ class CommandStack:
                     parsed_result = cursor.next_value("a command")
                     if isinstance(parsed_result, Err):
                         issue = parsed_result.err()
-                        queued.completion.set_result(Err(_format_argument_issue(cmdline, issue)))
-                        self.console.echo(_format_argument_issue(cmdline, issue))
+                        queued.set_result(Err(_format_argument_issue(cmdline, issue)), self.events)
                         continue
                     cmd = parsed_result.ok().value
                     argstring = f"{acid} {cursor.remaining}"
@@ -805,8 +820,7 @@ class CommandStack:
                     else f"unknown command: {cmd}"
                 )
                 issue = ArgumentIssue(message, parsed_result.ok().span)
-                queued.completion.set_result(Err(_format_argument_issue(cmdline, issue)))
-                self.console.echo(_format_argument_issue(cmdline, issue))
+                queued.set_result(Err(_format_argument_issue(cmdline, issue)), self.events)
                 continue
 
             try:
@@ -814,8 +828,8 @@ class CommandStack:
                     cmdobj._invoke(cmdline, argument_start) if direct_source else cmdobj(argstring)
                 )
             except Exception as exc:  # ruff: ignore[BLE001] commands are arbitrary callbacks
-                queued.completion.set_exception(exc)
-                self._echo_command_exception(cmdu, argstring, exc)
+                queued.set_exception(exc)
+                self._report_command_exception(cmdu, argstring, exc)
                 continue
 
             if inspect.isawaitable(result):
@@ -825,19 +839,19 @@ class CommandStack:
                     if inspect.iscoroutine(result):
                         result.close()
                     error = "asynchronous stack commands require a running event loop"
-                    queued.completion.set_result(Err(error))
-                    self.console.echo(error)
+                    queued.set_result(Err(error), self.events)
                     continue
                 # NOTE(abraham): an awaitable owns the stack. later commands stay
                 # at the same simulation timestamp until it finishes.
                 task = asyncio.ensure_future(result)
-                task.add_done_callback(partial(_complete_invocation, completion=queued.completion))
+                task.add_done_callback(
+                    partial(_complete_async_command, command=queued, events=self.events)
+                )
                 self._pending_command = _PendingCommand(task, cmdu, argstring)
                 self._prepend_commands(pending[index + 1 :])
                 return False
 
             # NOTE: `KL204 ALT BAD` can produce a bad diagnostic `ALT KL204 BAD`
-            source = cmdline if direct_source else None
             if isinstance(result, Ok):
                 command_result: CommandResult = result
             else:
@@ -847,8 +861,7 @@ class CommandStack:
                     if isinstance(error, ArgumentIssue)
                     else error
                 )
-            queued.completion.set_result(command_result)
-            self._echo_command_result(result, source)
+            queued.set_result(command_result, self.events)
         return True
 
     def _finish_pending_command(self) -> bool:
@@ -859,42 +872,26 @@ class CommandStack:
             return False
         self._pending_command = None
         try:
-            result = pending.task.result()
+            pending.task.result()
         except asyncio.CancelledError:
             return True
         except Exception as exc:  # ruff: ignore[BLE001] commands are arbitrary callbacks
-            self._echo_command_exception(pending.name, pending.argstring, exc)
-        else:
-            self._echo_command_result(result)
+            self._report_command_exception(pending.name, pending.argstring, exc)
         return True
 
-    def _prepend_commands(self, commands: list[QueuedCommand]) -> None:
+    def _prepend_commands(self, commands: list[_QueuedCommand]) -> None:
         if not commands:
             return
         with self._queue_lock:
             self.cmdstack[0:0] = commands
 
-    def _echo_command_result(
-        self, result: Result[str, str | ArgumentIssue], source: str | None = None
-    ) -> None:
-        if isinstance(result, Ok):
-            text = result.ok()
-        else:
-            error = result.err()
-            if isinstance(error, ArgumentIssue) and source is not None:
-                text = _format_argument_issue(source, error)
-            else:
-                text = f"error: {error}" if error else ""
-        if text:
-            self.console.echo(text)
-
-    def _echo_command_exception(self, name: str, argstring: str, error: Exception) -> None:
-        header = "" if not argstring else error.args[0] if error.args else "Function error."
-        self.console.echo(
-            f"Error calling function implementation of {name}: {header}\n"
-            "Traceback printed to terminal."
+    def _report_command_exception(self, name: str, argstring: str, error: Exception) -> None:
+        message = f"command {name} callback failed"
+        if argstring:
+            message += f" while handling {argstring!r}"
+        self.events.emit(
+            Diagnostic(Severity.ERROR, message, TracebackException.from_exception(error))
         )
-        traceback.print_exception(error)
 
     @property
     def command_pending(self) -> bool:
@@ -910,7 +907,7 @@ class CommandStack:
         with self._queue_lock:
             queued, self.cmdstack = self.cmdstack, []
         for queued_command in queued:
-            queued_command.completion.cancel()
+            queued_command.cancel()
 
         pending, self._pending_command = self._pending_command, None
         if pending is None:
@@ -954,7 +951,9 @@ class CommandStack:
 
                 commands.append(ScheduledCommand(cmdtime, line[icmdline + 1 :]))
             except (ValueError, IndexError):
-                self.console.echo(f"Skipping invalid scenario line: {line}")
+                self.events.emit(
+                    Diagnostic(Severity.WARNING, f"skipping invalid scenario line: {line}")
+                )
 
         return tuple(sorted(commands, key=lambda command: command.time))
 
@@ -1088,9 +1087,11 @@ class CommandStack:
         del self.scenario_commands[:index]
 
     def stack(self, *cmdlines: str, sender_id: bytes | None = None) -> None:
-        """Stack commands separated by ";".
+        """Queue detached commands separated by ";".
 
-        The queued commands are executed on the next call to [`process`][..process].
+        Detached commands have no requesting caller: successful return values are
+        discarded and expected command failures are emitted as diagnostics. The
+        queued commands execute on the next call to [`process`][..process].
 
         Args:
             *cmdlines: Command line strings; each may contain multiple
@@ -1103,32 +1104,29 @@ class CommandStack:
             while True:
                 result = cursor.next_command()
                 if isinstance(result, Err):
-                    self.console.echo(_format_argument_issue(cmdline, result.err()))
+                    self.events.emit(
+                        Diagnostic(Severity.ERROR, _format_argument_issue(cmdline, result.err()))
+                    )
                     break
                 line = result.ok()
                 if line is None:
                     break
                 commands.append(line.value)
         with self._queue_lock:
-            self.cmdstack.extend(self._new_queued_command(text, sender_id) for text in commands)
+            self.cmdstack.extend(_QueuedCommand(text, sender_id) for text in commands)
 
     def submit(self, command: str, *, sender_id: bytes | None = None) -> CommandInvocation:
-        """Queue a command and return a handle for its eventual result.
+        """Queue a request/response command and return its completion handle.
 
         Unlike [`stack`][.stack], this method does not split semicolon-delimited
         batches.
         """
-        with self._queue_lock:
-            queued = self._new_queued_command(command, sender_id)
-            self.cmdstack.append(queued)
-        return queued.invocation
-
-    def _new_queued_command(self, text: str, sender_id: bytes | None) -> QueuedCommand:
         future: Future[CommandResult] = Future()
-        invocation = CommandInvocation(CommandId(self._next_command_id), text, future)
-        completion = _CommandCompletion(future)
+        invocation = CommandInvocation(CommandId(self._next_command_id), command, future)
         self._next_command_id += 1
-        return QueuedCommand(invocation, completion, sender_id)
+        with self._queue_lock:
+            self.cmdstack.append(_QueuedCommand(command, sender_id, _InvocationCompletion(future)))
+        return invocation
 
     def sender(self):
         """Return the sender of the currently executed stack command.
@@ -1157,14 +1155,14 @@ class CommandStack:
         self.scenario_commands = sorted(data.commands, key=lambda command: command.time)
 
 
-def _complete_invocation(
-    task: asyncio.Future[CommandResult], *, completion: _CommandCompletion
+def _complete_async_command(
+    task: asyncio.Future[CommandResult], *, command: _QueuedCommand, events: EventEmitter
 ) -> None:
     try:
         result = task.result()
     except asyncio.CancelledError:
-        completion.cancel()
+        command.cancel()
     except Exception as exc:  # ruff: ignore[BLE001] commands are arbitrary callbacks
-        completion.set_exception(exc)
+        command.set_exception(exc)
     else:
-        completion.set_result(result)
+        command.set_result(result, events)

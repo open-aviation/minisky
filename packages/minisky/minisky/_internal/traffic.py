@@ -87,7 +87,7 @@ from minisky.types import (
 )
 
 if TYPE_CHECKING:
-    from minisky._internal.console import ConsoleIO
+    from minisky._internal.events import EventEmitter
     from minisky._internal.navigation import (
         AirportData,
         AirwayData,
@@ -161,7 +161,7 @@ class Traffic(TrafficArrays):
         countries: CountryData,
         runway_thresholds: RunwayThresholdData,
         magnetic_declination: geo.MagneticDeclination,
-        console: ConsoleIO,
+        events: EventEmitter,
         get_simulation: Callable[[], Simulation],
         stack_command: Callable[..., None],
         select_implementation: Callable[[str, str], Result[str, str]],
@@ -177,7 +177,7 @@ class Traffic(TrafficArrays):
         self.countries = countries
         self.runway_thresholds = runway_thresholds
         self.magnetic_declination = magnetic_declination
-        self.console = console
+        self.events = events
         self._get_simulation = get_simulation
         self.stack_command = stack_command
         self.select_implementation = select_implementation

@@ -49,7 +49,21 @@ from minisky._internal.config import (
 )
 from minisky._internal.conflict.detection import ConflictDetection
 from minisky._internal.conflict.resolution import ConflictResolution
-from minisky._internal.console import ConsoleIO, ConsoleSubscription
+from minisky._internal.events import (
+    Diagnostic,
+    EventEmitter,
+    EventFilter,
+    EventPath,
+    EventSink,
+    EventSource,
+    EventStream,
+    EventSubscription,
+    PluginSource,
+    RuntimeEvent,
+    RuntimeSource,
+    Severity,
+    TextOutput,
+)
 from minisky._internal.geo_commands import GeoCommands
 from minisky._internal.groups import TrafficGroups
 from minisky._internal.guidance import APorASAS
@@ -109,8 +123,21 @@ __all__ = (  # noqa: RUF022 - public API and docs use this semantic order
     "CommandId",
     "CommandInvocation",
     "CommandStack",
-    "ConsoleIO",
-    "ConsoleSubscription",
+    # event
+    "RuntimeEvent",
+    "EventEmitter",
+    "EventSubscription",
+    "EventSink",
+    "EventStream",
+    "EventFilter",
+    "EventPath",
+    "EventSource",
+    "RuntimeSource",
+    "PluginSource",
+    "TextOutput",
+    "Diagnostic",
+    "Severity",
+    # core
     "Traffic",
     "NavData",
     "WaypointData",

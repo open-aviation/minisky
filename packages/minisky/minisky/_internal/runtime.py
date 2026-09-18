@@ -13,7 +13,7 @@ from minisky._internal.config import MiniSkyConfig
 from minisky._internal.conflict.detection import ConflictDetection
 from minisky._internal.conflict.mvp import MVP
 from minisky._internal.conflict.resolution import ConflictResolution
-from minisky._internal.console import ConsoleIO
+from minisky._internal.events import EventCommands, EventStream, RuntimeSource, _EventBus
 from minisky._internal.geo_commands import GeoCommands
 from minisky._internal.guidance import APorASAS
 from minisky._internal.kinematics import Kinematics
@@ -23,7 +23,7 @@ from minisky._internal.plugin import PluginManager
 from minisky._internal.route import RouteCommands
 from minisky._internal.runner import Runner
 from minisky._internal.shapes import Shapes
-from minisky._internal.simulation import Simulation, SimulationState
+from minisky._internal.simulation import Simulation
 from minisky._internal.stack import CommandStack
 from minisky._internal.streaming import StreamHub, build_snapshot
 from minisky._internal.traffic import Traffic
@@ -44,7 +44,11 @@ class MiniSky:
         self._closed = False
         self.python_random = Random()
         self.numpy_random = np.random.RandomState()
-        self.console = ConsoleIO(lambda: self.simulation.state == SimulationState.OP)
+        event_bus = _EventBus()
+        self.events = EventStream(event_bus)
+        runtime_events = event_bus._emitter(RuntimeSource())
+        command_events = runtime_events.child("commands")
+        self._event_commands = EventCommands(command_events)
         self.magnetic_declination = magnetic_declination
         self.waypoints = Waypoints(navdata.waypoints)
         self.airports = navdata.airports
@@ -65,7 +69,7 @@ class MiniSky:
             countries=self.countries,
             runway_thresholds=self.runway_thresholds,
             magnetic_declination=self.magnetic_declination,
-            console=self.console,
+            events=runtime_events.child("traffic"),
             get_simulation=lambda: self.simulation,
             stack_command=lambda *args, **kwargs: self.commands.stack(*args, **kwargs),
             select_implementation=lambda base, impl: self.replaceables.select(base, impl),
@@ -85,7 +89,9 @@ class MiniSky:
         )
         self.plugins = PluginManager(
             config=config,
-            console=self.console,
+            event_bus=event_bus,
+            events=self.events,
+            diagnostics=runtime_events.child("plugins"),
             variables=self.variables,
             get_runtime=lambda: self,
             get_simulation=lambda: self.simulation,
@@ -96,7 +102,7 @@ class MiniSky:
             waypoints=self.waypoints,
             airports=self.airports,
             runway_thresholds=self.runway_thresholds,
-            console=self.console,
+            events=command_events,
             shapes=self.shapes,
             variables=self.variables,
             plugins=self.plugins,
@@ -112,7 +118,7 @@ class MiniSky:
             waypoints=self.waypoints,
             python_random=self.python_random,
             numpy_random=self.numpy_random,
-            console=self.console,
+            events=runtime_events.child("simulation"),
             command_stack=self.commands,
             shapes=self.shapes,
             plugins=self.plugins,
@@ -120,13 +126,13 @@ class MiniSky:
             stop_runner=self._stop_runner,
             publish_tick=self.streaming.publish_tick,
         )
-        self.runner = Runner(self.simulation, self.console)
+        self.runner = Runner(self.simulation, runtime_events.child("runner"))
         self.route_commands = RouteCommands(self.traffic)
         self.geo_commands = GeoCommands(self.magnetic_declination)
         self.variables.init(self.simulation, self.traffic)
         self.commands.mount_components(
             (
-                self.console,
+                self._event_commands,
                 self.waypoints,
                 self.shapes,
                 self.variables,

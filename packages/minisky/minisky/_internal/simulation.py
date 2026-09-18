@@ -20,11 +20,11 @@ from annotated_types import Ge, Le
 
 from minisky import quantities as q
 from minisky._internal.command import CommandField, Converter, command
+from minisky._internal.events import Diagnostic, EventEmitter, Severity
 from minisky._internal.result import Err, Ok, Result
 from minisky._internal.stack import ScenarioData
 
 if TYPE_CHECKING:
-    from minisky._internal.console import ConsoleIO
     from minisky._internal.navigation import Waypoints
     from minisky._internal.plugin import PluginManager
     from minisky._internal.shapes import Shapes
@@ -93,7 +93,7 @@ class Simulation:
         waypoints: Waypoints,
         python_random: Random,
         numpy_random: np.random.RandomState,
-        console: ConsoleIO,
+        events: EventEmitter,
         command_stack: CommandStack,
         shapes: Shapes,
         plugins: PluginManager,
@@ -105,7 +105,7 @@ class Simulation:
         self.waypoints = waypoints
         self.python_random = python_random
         self.numpy_random = numpy_random
-        self.console = console
+        self.events = events
         self.commands = command_stack
         self.shapes = shapes
         self.plugins = plugins
@@ -195,7 +195,7 @@ class Simulation:
         """
         self.syst = time.time() + self.simdt
         self.state = SimulationState.OP
-        self.console.echo("Simulation running")
+        self.events.emit(Diagnostic(Severity.INFO, "simulation running"))
 
     @command(name="HOLD", aliases=("PAUSE",))
     def hold(self) -> None:
@@ -208,7 +208,7 @@ class Simulation:
         self.syst = time.time() + self.simdt
         self.state = SimulationState.HOLD
         self.plugins.hold()
-        self.console.echo("Simulation paused")
+        self.events.emit(Diagnostic(Severity.INFO, "simulation paused"))
 
     @command(name="RESET")
     def reset(self) -> None:
@@ -217,7 +217,7 @@ class Simulation:
         Returns the simulation to its initial state: simulation time back to
         0 s, timestep back to 1 s, the simulated UTC clock to today at
         00:00:00, and all traffic, stack, scenario waypoints, area filters,
-        console output, replaceable entities (autopilot, performance models,
+        replaceable entities (autopilot, performance models,
         etc.) and plugin timers/hooks reset to their defaults.
         """
         self.state = SimulationState.INIT
@@ -231,10 +231,9 @@ class Simulation:
         self.traffic.reset()
         self.commands.reset()
         self.shapes.reset()
-        self.console.reset()
         self.replaceables.reset()
         self.plugins.reset()
-        self.console.echo("Simulation reset")
+        self.events.emit(Diagnostic(Severity.INFO, "simulation reset"))
 
     def event(
         self,
@@ -339,4 +338,4 @@ class Simulation:
         """
         self.python_random.seed(value)
         self.numpy_random.seed(value)
-        self.console.echo("random seed set")
+        self.events.emit(Diagnostic(Severity.INFO, "random seed set"))

@@ -50,6 +50,8 @@ from datetime import UTC, datetime
 from typing import Any, TypedDict
 
 from minisky import (
+    CommandInvocation,
+    Diagnostic,
     Err,
     Ok,
     Plugin,
@@ -58,12 +60,15 @@ from minisky import (
     PluginSpec,
     PluginStatus,
     Result,
+    RuntimeEvent,
+    Severity,
     SimulationState,
     Snapshot,
     command,
     hook,
 )
 from minisky import quantities as q
+from minisky._internal.events import _render_event
 from pydantic import BaseModel, ConfigDict
 
 
@@ -243,7 +248,7 @@ class TangramBridge:
 
         self._snapshot_builder: Callable[[], Snapshot] | None = None
         self._status_builder: Callable[[], PluginStatus] | None = None
-        self._stack_command: Callable[[str], None] | None = None
+        self._submit_command: Callable[[str], CommandInvocation] | None = None
         self._last_build = 0.0
         self._last_payload: TangramPayload | None = None
         self._snapshots: queue.Queue[TangramPayload] = queue.Queue(maxsize=4)
@@ -268,7 +273,7 @@ class TangramBridge:
 
         self._snapshot_builder = runtime.snapshot
         self._status_builder = runtime.status
-        self._stack_command = runtime.stack_command
+        self._submit_command = runtime.submit
         self._stop.clear()
         self.ready.clear()
         self._thread = threading.Thread(target=self._run, name="tangram-bridge", daemon=True)
@@ -287,7 +292,7 @@ class TangramBridge:
         self.ready.clear()
         self._snapshot_builder = None
         self._status_builder = None
-        self._stack_command = None
+        self._submit_command = None
 
     @command(name="TANGRAM")
     def status(self) -> Result[str, str]:
@@ -322,7 +327,11 @@ class TangramBridge:
         self._last_payload = None
         self._enqueue(convert_snapshot(snapshot_builder()))
 
-    def capture_console(self, text: str) -> None:
+    def capture_event(self, event: RuntimeEvent) -> None:
+        """Queue a text rendering for Tangram's legacy console channel."""
+        # TODO: replace this legacy text bridge with structured RuntimeEvent
+        # transport once Tangram owns event serialization and subscriptions.
+        text = _render_event(event)
         if text:
             self._console.extend(text.splitlines())
 
@@ -389,9 +398,11 @@ class TangramBridge:
                                 if isinstance(payload, (str, bytes))
                                 else None
                             )
-                            stack_command = self._stack_command
-                            if command and stack_command is not None:
-                                stack_command(command)
+                            submit_command = self._submit_command
+                            if command and submit_command is not None:
+                                # TODO: the replacement Tangram transport must keep this
+                                # handle and return its Result to the requesting client.
+                                submit_command(command)
 
                     published = False
                     while True:
@@ -415,10 +426,12 @@ class TangramBridge:
                         while self._console:
                             lines.append(self._console.popleft())
                         client.publish(console_topic, json.dumps({"lines": lines}))
-            except Exception as exc:  # noqa: BLE001 - reconnect after transport failure
+            except Exception as exc:  # ruff: ignore[BLE001] transport clients are arbitrary
                 self.connected = False
                 self.ready.clear()
                 self.last_error = str(exc)
+                # TODO: the replacement transport should publish typed connection
+                # state from the runtime thread instead of treating failures as logs.
                 if self._stop.wait(timeout=2.0):
                     return
 
@@ -435,12 +448,12 @@ def build(context: PluginContext[TangramConfig]) -> PluginSpec:
 
     @asynccontextmanager
     async def lifespan(runtime: PluginRuntime) -> AsyncGenerator[None]:
-        runtime.subscribe_console(bridge.capture_console)
+        runtime.subscribe_events(bridge.capture_event)
         match bridge.start(runtime):
             case Ok(message):
-                runtime.echo(message)
+                runtime.events.emit(Diagnostic(Severity.INFO, message))
             case Err(message):
-                runtime.echo(message)
+                runtime.events.emit(Diagnostic(Severity.ERROR, message))
                 raise RuntimeError(message)
         try:
             yield
