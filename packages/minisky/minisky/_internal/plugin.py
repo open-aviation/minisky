@@ -232,20 +232,26 @@ class _PreparedPlugin:
             entity._abort()
 
 
-@dataclass
-class _PluginRecord:
-    """Entry-point metadata and active state for a runtime."""
+@dataclass(frozen=True, slots=True)
+class _PluginEntry:
+    """Discovered plugin entry point."""
 
     entry_point: metadata.EntryPoint
     plugin_name: str
-    loaded: bool = False
-    spec: PluginSpec | None = None
-    commands: tuple[Command, ...] = ()
-    hooks: tuple[_Hook, ...] = ()
-    entities: tuple[Entity, ...] = ()
-    replacements: tuple[PreparedReplacement, ...] = ()
-    lifespan: AbstractAsyncContextManager[None] | None = None
-    runtime: PluginRuntime | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class _LoadedPlugin:
+    """Fully initialised plugin resources owned by the runtime."""
+
+    plugin_name: str
+    spec: PluginSpec
+    commands: tuple[Command, ...]
+    hooks: tuple[_Hook, ...]
+    entities: tuple[Entity, ...]
+    replacements: tuple[PreparedReplacement, ...]
+    lifespan: AbstractAsyncContextManager[None]
+    runtime: PluginRuntime
 
 
 class _ManagerState(Enum):
@@ -272,8 +278,8 @@ class PluginManager:
         self._get_runtime = get_runtime
         self._get_simulation = get_simulation
         self._get_command_stack = get_command_stack
-        self.plugins: dict[str, _PluginRecord] = {}
-        self.loaded_plugins: dict[str, _PluginRecord] = {}
+        self.plugins: dict[str, _PluginEntry] = {}
+        self.loaded_plugins: dict[str, _LoadedPlugin] = {}
         self._lock = asyncio.Lock()
         self._state = _ManagerState.OPEN
 
@@ -315,14 +321,11 @@ class PluginManager:
             entries[plugin_name] = entry_point
 
         for plugin_name, entry_point in entries.items():
-            existing = self.plugins.get(plugin_name)
-            if existing is not None and existing.loaded:
-                continue
-            self.plugins[plugin_name] = _PluginRecord(entry_point, plugin_name)
+            if plugin_name not in self.loaded_plugins:
+                self.plugins[plugin_name] = _PluginEntry(entry_point, plugin_name)
 
         for plugin_name in duplicates:
-            existing = self.plugins.get(plugin_name)
-            if existing is None or not existing.loaded:
+            if plugin_name not in self.loaded_plugins:
                 self.plugins.pop(plugin_name, None)
 
     async def load(self, name: str) -> Result[str, str]:
@@ -330,14 +333,15 @@ class PluginManager:
         async with self._lock:
             if self._state is not _ManagerState.OPEN:
                 return Err("Plugin manager is closed")
-            plugin = self.plugins.get(name.upper())
+            plugin_name = name.upper()
+            if plugin_name in self.loaded_plugins:
+                return Err(f"Plugin {plugin_name} already loaded")
+            plugin = self.plugins.get(plugin_name)
             if plugin is None:
                 return Err(f"Error loading plugin: plugin {name} not found.")
-            if plugin.loaded:
-                return Err(f"Plugin {plugin.plugin_name} already loaded")
             return await self._load(plugin)
 
-    async def _load(self, plugin: _PluginRecord) -> Result[str, str]:
+    async def _load(self, plugin: _PluginEntry) -> Result[str, str]:
         prepared: _PreparedPlugin | None = None
         plugin_runtime: PluginRuntime | None = None
         lifespan: AbstractAsyncContextManager[None] | None = None
@@ -358,15 +362,16 @@ class PluginManager:
             plugin_runtime._activate()
             self._publish(key, prepared)
 
-            plugin.loaded = True
-            plugin.spec = spec
-            plugin.commands = prepared.commands
-            plugin.hooks = prepared.hooks
-            plugin.entities = prepared.entities
-            plugin.replacements = prepared.replacements
-            plugin.lifespan = lifespan
-            plugin.runtime = plugin_runtime
-            self.loaded_plugins[plugin.plugin_name] = plugin
+            self.loaded_plugins[plugin.plugin_name] = _LoadedPlugin(
+                plugin.plugin_name,
+                spec,
+                prepared.commands,
+                prepared.hooks,
+                prepared.entities,
+                prepared.replacements,
+                lifespan,
+                plugin_runtime,
+            )
             return Ok(f"Successfully loaded plugin {plugin.plugin_name}")
         except BaseException as exc:
             if prepared is not None:
@@ -605,31 +610,28 @@ class PluginManager:
             self._state = _ManagerState.CLOSING
             errors: list[Exception] = []
             for plugin in reversed(tuple(self.loaded_plugins.values())):
-                if plugin.runtime is not None:
-                    plugin.runtime._revoke()
+                plugin.runtime._revoke()
                 try:
                     self._remove(plugin)
                 except Exception as exc:  # ruff: ignore[BLE001] aggregate removal failures
                     errors.append(exc)
 
-                if plugin.lifespan is not None:
-                    try:
-                        await plugin.lifespan.__aexit__(None, None, None)
-                    except Exception as exc:  # ruff: ignore[BLE001] plugin lifespan is arbitrary
-                        errors.append(exc)
-                self._clear(plugin)
+                try:
+                    await plugin.lifespan.__aexit__(None, None, None)
+                except Exception as exc:  # ruff: ignore[BLE001] plugin lifespan is arbitrary
+                    errors.append(exc)
 
             self.loaded_plugins.clear()
             self._state = _ManagerState.CLOSED
             if errors:
                 raise ExceptionGroup("Plugin shutdown failed", errors)
 
-    def _remove(self, plugin: _PluginRecord) -> None:
+    def _remove(self, plugin: _LoadedPlugin) -> None:
         errors: list[Exception] = []
         cleanups: list[Callable[[], None]] = [
             lambda: self.commands.remove_commands(plugin.commands),
         ]
-        state = plugin.spec.state if plugin.spec is not None else None
+        state = plugin.spec.state
         if state is not None:
             cleanups.append(
                 lambda: self.variables.unregister_data_parent(
@@ -645,17 +647,6 @@ class PluginManager:
                 errors.append(exc)
         if errors:
             raise ExceptionGroup(f"Plugin {plugin.plugin_name} removal failed", errors)
-
-    @staticmethod
-    def _clear(plugin: _PluginRecord) -> None:
-        plugin.loaded = False
-        plugin.spec = None
-        plugin.commands = ()
-        plugin.hooks = ()
-        plugin.entities = ()
-        plugin.replacements = ()
-        plugin.lifespan = None
-        plugin.runtime = None
 
     def close(self) -> None:
         """Close a manager with no active plugin lifespans."""

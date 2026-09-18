@@ -36,8 +36,6 @@ async def run_command(runtime: MiniSky, command: str) -> str:
 async def test_commands_and_entity_are_runtime_owned(runtime: MiniSky) -> None:
     result = await runtime.plugins.load("EXAMPLE")
     assert result.is_ok(), result.err()
-    record = runtime.plugins.plugins["EXAMPLE"]
-    assert record.loaded
     assert tuple(runtime.plugins.loaded_plugins) == ("EXAMPLE",)
 
     await run_command(runtime, "CRE KL001,A320,52,4,90,FL100,250KT[CAS]")
@@ -63,7 +61,7 @@ async def test_entity_sizes_existing_traffic_and_retires(runtime: MiniSky) -> No
     )
     result = await runtime.plugins.load("EXAMPLE")
     assert result.is_ok(), result.err()
-    record = runtime.plugins.plugins["EXAMPLE"]
+    record = runtime.plugins.loaded_plugins["EXAMPLE"]
     entity = cast(Example, record.entities[0])
     assert record.entities == (entity,)
     assert len(entity.npassengers) == 1
