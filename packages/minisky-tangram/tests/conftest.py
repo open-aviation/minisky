@@ -22,7 +22,6 @@ def runtime() -> Iterator[MiniSky]:
 @pytest.fixture
 def sim(runtime: MiniSky) -> Simulation:
     runtime.simulation.reset()
-    runtime.console.read_output_buffer()
     return runtime.simulation
 
 

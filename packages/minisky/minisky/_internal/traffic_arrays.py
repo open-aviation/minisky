@@ -306,7 +306,7 @@ class VariantArray(Generic[ArrayValueT]):
         kind=np.array([SpeedVariant.MACH, SpeedVariant.CAS])
     )
     # then some time in the future, to extract all Mach numbers:
-    print(speed.values[np.where(speed.kind == SpeedVariant.MACH)])
+    mach = speed.values[np.where(speed.kind == SpeedVariant.MACH)]
     ```
 
     In this case, when traffic arrays creates a new aircraft it will have a

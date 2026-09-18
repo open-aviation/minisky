@@ -14,8 +14,10 @@ import numpy as np
 import pytest
 from minisky import (
     Autopilot,
+    Diagnostic,
     Entity,
     Err,
+    EventPath,
     MagneticDeclinationGrid,
     MiniSky,
     MiniSkyConfig,
@@ -24,8 +26,11 @@ from minisky import (
     Plugin,
     PluginContext,
     PluginRuntime,
+    PluginSource,
     PluginSpec,
     Result,
+    RuntimeEvent,
+    TextOutput,
     command,
     hook,
     replacement,
@@ -274,13 +279,22 @@ async def test_failing_hook_is_disabled_without_disabling_plugin(
 
     install(monkeypatch, FakeEntryPoint("hooks", Plugin(build=build)))
     runtime = _new_runtime(MiniSkyConfig())
+    published: list[RuntimeEvent] = []
     try:
-        result = await runtime.plugins.load("HOOKS")
-        assert result.is_ok(), result.err()
-        runtime.plugins.update()
-        runtime.plugins.update()
+        with runtime.events.subscribe(published.append):
+            result = await runtime.plugins.load("HOOKS")
+            assert result.is_ok(), result.err()
+            runtime.plugins.update()
+            runtime.plugins.update()
         assert calls == {"broken": 1, "healthy": 2}
         assert tuple(runtime.plugins.loaded_plugins) == ("HOOKS",)
+        diagnostics = [event for event in published if isinstance(event.payload, Diagnostic)]
+        assert len(diagnostics) == 1
+        diagnostic = diagnostics[0]
+        assert diagnostic.source == PluginSource("hooks")
+        assert diagnostic.payload.exception is not None
+        assert diagnostic.payload.exception.exc_type is RuntimeError
+        assert diagnostic.payload.exception.stack[-1].name == "update"
     finally:
         await runtime.aclose()
 
@@ -333,7 +347,9 @@ async def test_lifespan_wraps_publication_and_runtime_is_revoked(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     events: list[tuple[str, bool]] = []
+    published: list[RuntimeEvent] = []
     capability: PluginRuntime | None = None
+    child_events = None
 
     class Component:
         @command(name="LIFECYCLE")
@@ -342,16 +358,20 @@ async def test_lifespan_wraps_publication_and_runtime_is_revoked(
 
     @asynccontextmanager
     async def lifespan(runtime_api: PluginRuntime) -> AsyncGenerator[None]:
-        nonlocal capability
+        nonlocal capability, child_events
         capability = runtime_api
+        child_events = runtime_api.events.child("lifespan")
+        child_events.emit(TextOutput("starting"))
         events.append(("enter", "LIFECYCLE" in runtime.commands.cmddict))
         with pytest.raises(RuntimeError, match="not published"):
-            runtime_api.stack_command("LIFECYCLE")
+            runtime_api.submit("LIFECYCLE")
         try:
             yield
         finally:
-            with pytest.raises(RuntimeError, match="revoked"):
-                runtime_api.status()
+            runtime_api.status()
+            with pytest.raises(RuntimeError, match="not published"):
+                runtime_api.submit("LIFECYCLE")
+            child_events.emit(TextOutput("stopping"))
             events.append(("exit", "LIFECYCLE" in runtime.commands.cmddict))
 
     def build(context: PluginContext[object]) -> PluginSpec:
@@ -360,16 +380,26 @@ async def test_lifespan_wraps_publication_and_runtime_is_revoked(
 
     install(monkeypatch, FakeEntryPoint("lifecycle", Plugin(build=build)))
     runtime = _new_runtime(MiniSkyConfig())
-    result = await runtime.plugins.load("LIFECYCLE")
-    assert result.is_ok(), result.err()
-    assert events == [("enter", False)]
-    assert "LIFECYCLE" in runtime.commands.cmddict
-    assert capability is not None
-    capability.stack_command("LIFECYCLE")
-    assert runtime.simulation.step()
+    with runtime.events.subscribe(published.append):
+        result = await runtime.plugins.load("LIFECYCLE")
+        assert result.is_ok(), result.err()
+        assert events == [("enter", False)]
+        assert "LIFECYCLE" in runtime.commands.cmddict
+        assert capability is not None
+        capability.submit("LIFECYCLE")
+        assert runtime.simulation.step()
+        await runtime.aclose()
 
-    await runtime.aclose()
+    assert published == [
+        RuntimeEvent(PluginSource("lifecycle", EventPath("lifespan")), TextOutput("starting")),
+        RuntimeEvent(PluginSource("lifecycle", EventPath("lifespan")), TextOutput("stopping")),
+    ]
     assert events == [("enter", False), ("exit", False)]
+    with pytest.raises(RuntimeError, match="event emitter is revoked"):
+        capability.events.emit(TextOutput("too late"))
+    assert child_events is not None
+    with pytest.raises(RuntimeError, match="event emitter is revoked"):
+        child_events.emit(TextOutput("also too late"))
 
 
 @pytest.mark.anyio
@@ -417,7 +447,7 @@ async def test_failed_lifespan_startup_is_atomic(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     capability: PluginRuntime | None = None
-    console_messages: list[str] = []
+    events: list[RuntimeEvent] = []
 
     class Component:
         @command(name="FAILEDSTART")
@@ -428,7 +458,7 @@ async def test_failed_lifespan_startup_is_atomic(
     async def lifespan(runtime_api: PluginRuntime) -> AsyncGenerator[None]:
         nonlocal capability
         capability = runtime_api
-        runtime_api.subscribe_console(console_messages.append)
+        runtime_api.subscribe_events(events.append)
         raise RuntimeError("startup failed")
         yield
 
@@ -449,8 +479,8 @@ async def test_failed_lifespan_startup_is_atomic(
     with pytest.raises(RuntimeError, match="revoked"):
         capability.status()
 
-    runtime.console.echo("after failed startup")
-    assert console_messages == []
+    runtime.simulation.reset()
+    assert events == []
     await runtime.aclose()
 
 
@@ -472,7 +502,6 @@ async def test_load_configured_continues_after_failure(
         loaded = await runtime.plugins.load_configured()
         assert loaded == ("FIRST", "LAST")
         assert tuple(runtime.plugins.loaded_plugins) == ("FIRST", "LAST")
-        assert "BROKEN" not in runtime.plugins.loaded_plugins
     finally:
         await runtime.aclose()
 
@@ -490,8 +519,9 @@ async def test_shutdown_is_reverse_order_and_aggregates_failures(
             try:
                 yield
             finally:
-                with pytest.raises(RuntimeError, match="revoked"):
-                    runtime_api.status()
+                runtime_api.status()
+                with pytest.raises(RuntimeError, match="not published"):
+                    runtime_api.submit("HELP")
                 events.append(f"exit {name}")
                 raise RuntimeError(f"{name} shutdown failed")
 

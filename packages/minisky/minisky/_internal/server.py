@@ -316,7 +316,6 @@ def upload_form() -> Response:
 
 async def scn(runtime: Runtime, file: Annotated[UploadFile, File()]) -> dict[str, str]:
     """Load an uploaded scenario file into the running simulation."""
-    runtime.console.event.clear()
     contents = await file.read()
     filename = file.filename or "uploaded.scn"
     runtime.commands.load_scenario_text(contents.decode("utf-8"), name=filename)

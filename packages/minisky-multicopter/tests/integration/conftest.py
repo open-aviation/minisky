@@ -35,7 +35,6 @@ def mcruntime() -> Iterator[MiniSky]:
 def mcsim(mcruntime: MiniSky) -> Simulation:
     """Fresh simulation state; the plugin reset hook re-selects the impls."""
     mcruntime.simulation.reset()
-    mcruntime.console.read_output_buffer()  # drain "Simulation reset" echo
     return mcruntime.simulation
 
 

@@ -23,7 +23,7 @@ from minisky._internal.config import MiniSkyConfig, default_user_config_toml_pat
 if TYPE_CHECKING:
     from fastapi import FastAPI
 
-    from minisky import MagneticDeclination, NavData
+    from minisky import MagneticDeclination, NavData, RuntimeEvent
     from minisky._internal.runtime import MiniSky
 
 app = typer.Typer(help="MiniSky command-line tools.", no_args_is_help=True)
@@ -92,6 +92,14 @@ def _load_magnetic_declination(path: Path | None) -> MagneticDeclination:
     return MagneticDeclinationGrid.from_csv(path)
 
 
+def _terminal_sink(event: RuntimeEvent) -> None:
+    from minisky._internal.events import _render_event
+
+    prefix = "MINISKY:  "
+    for line in _render_event(event).splitlines() or [""]:
+        console.print(f"{prefix}{line}")
+
+
 def _new_runtime(
     config: MiniSkyConfig,
     *,
@@ -100,11 +108,13 @@ def _new_runtime(
 ) -> MiniSky:
     from minisky import MiniSky
 
-    return MiniSky(
+    runtime = MiniSky(
         config,
         navdata=navdata,
         magnetic_declination=magnetic_declination,
     )
+    runtime.events.subscribe(_terminal_sink)
+    return runtime
 
 
 def default_server_app() -> FastAPI:

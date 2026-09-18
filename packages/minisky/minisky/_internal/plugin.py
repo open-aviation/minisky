@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import inspect
 import math
-import traceback
 from collections.abc import AsyncGenerator, Awaitable, Callable, Iterable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from copy import deepcopy
@@ -14,12 +13,19 @@ from datetime import datetime
 from enum import Enum, auto
 from importlib import metadata
 from random import Random
+from traceback import TracebackException
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Generic, Literal, TypeVar
 
 from pydantic import TypeAdapter
 
 from minisky._internal.command import Keyword, command
+from minisky._internal.events import (
+    Diagnostic,
+    EventEmitter,
+    PluginSource,
+    Severity,
+)
 from minisky._internal.identifiers import validate_plugin_id
 from minisky._internal.plugin_decorators import HookName, declared_hooks, declared_replacement
 from minisky._internal.plugin_entity import Entity
@@ -29,10 +35,16 @@ from minisky._internal.traffic_arrays import PreparedReplacement, TrafficArrays
 
 if TYPE_CHECKING:
     from minisky._internal.config import MiniSkyConfig
-    from minisky._internal.console import ConsoleIO, ConsoleSubscription
+    from minisky._internal.events import (
+        EventFilter,
+        EventSink,
+        EventStream,
+        EventSubscription,
+        _EventBus,
+    )
     from minisky._internal.runtime import MiniSky
     from minisky._internal.simulation import Simulation
-    from minisky._internal.stack import Command, CommandStack
+    from minisky._internal.stack import Command, CommandInvocation, CommandStack
     from minisky._internal.variables import VariableExplorer
 
 ConfigT = TypeVar("ConfigT")
@@ -60,6 +72,7 @@ class PluginStatus:
 class _PluginRuntimeState(Enum):
     STARTING = auto()
     PUBLISHED = auto()
+    STOPPING = auto()
     REVOKED = auto()
 
 
@@ -71,16 +84,16 @@ class PluginRuntime:
         *,
         status: Callable[[], PluginStatus],
         snapshot: Callable[[], Snapshot],
-        echo: Callable[[str], None],
-        subscribe_console: Callable[[Callable[[str], None]], ConsoleSubscription],
-        stack_command: Callable[[str], None],
+        events: EventEmitter,
+        event_stream: EventStream,
+        submit_command: Callable[[str], CommandInvocation],
     ) -> None:
         self._status = status
         self._snapshot = snapshot
-        self._echo = echo
-        self._subscribe_console = subscribe_console
-        self._stack_command = stack_command
-        self._subscriptions: list[ConsoleSubscription] = []
+        self.events = events
+        self._event_stream = event_stream
+        self._submit_command = submit_command
+        self._subscriptions: list[EventSubscription] = []
         self._state = _PluginRuntimeState.STARTING
 
     def status(self) -> PluginStatus:
@@ -91,19 +104,19 @@ class PluginRuntime:
         self._raise_if_revoked()
         return self._snapshot()
 
-    def echo(self, text: str) -> None:
-        self._raise_if_revoked()
-        self._echo(text)
-
-    def stack_command(self, command: str) -> None:
+    def submit(self, command: str) -> CommandInvocation:
+        """Submit the command and return its completion handle."""
         self._raise_if_revoked()
         if self._state is not _PluginRuntimeState.PUBLISHED:
             raise RuntimeError("plugin runtime is not published")
-        self._stack_command(command)
+        return self._submit_command(command)
 
-    def subscribe_console(self, callback: Callable[[str], None]) -> ConsoleSubscription:
+    def subscribe_events(
+        self, sink: EventSink, *, where: EventFilter | None = None
+    ) -> EventSubscription:
+        """Subscribe to matching runtime events for this plugin's lifetime."""
         self._raise_if_revoked()
-        subscription = self._subscribe_console(callback)
+        subscription = self._event_stream.subscribe(sink, where=where)
         self._subscriptions.append(subscription)
         return subscription
 
@@ -111,10 +124,15 @@ class PluginRuntime:
         self._raise_if_revoked()
         self._state = _PluginRuntimeState.PUBLISHED
 
+    def _begin_shutdown(self) -> None:
+        if self._state is not _PluginRuntimeState.REVOKED:
+            self._state = _PluginRuntimeState.STOPPING
+
     def _revoke(self) -> None:
         if self._state is _PluginRuntimeState.REVOKED:
             return
         self._state = _PluginRuntimeState.REVOKED
+        self.events._revoke()
         for subscription in reversed(self._subscriptions):
             subscription.close()
         self._subscriptions.clear()
@@ -266,14 +284,18 @@ class PluginManager:
     def __init__(
         self,
         config: MiniSkyConfig,
-        console: ConsoleIO,
+        event_bus: _EventBus,
+        events: EventStream,
+        diagnostics: EventEmitter,
         variables: VariableExplorer,
         get_runtime: Callable[[], MiniSky],
         get_simulation: Callable[[], Simulation],
         get_command_stack: Callable[[], CommandStack],
     ) -> None:
         self.config = config
-        self.console = console
+        self._event_bus = event_bus
+        self.events = events
+        self._events = diagnostics
         self.variables = variables
         self._get_runtime = get_runtime
         self._get_simulation = get_simulation
@@ -307,7 +329,12 @@ class PluginManager:
             try:
                 plugin_id = validate_plugin_id(entry_point.name)
             except ValueError as exc:
-                self.console.echo(f"Ignoring plugin entry point {entry_point.name!r}: {exc}")
+                self._events.emit(
+                    Diagnostic(
+                        Severity.WARNING,
+                        f"ignoring plugin entry point {entry_point.name!r}: {exc}",
+                    )
+                )
                 continue
 
             plugin_name = plugin_id.upper()
@@ -316,7 +343,11 @@ class PluginManager:
             if plugin_name in entries:
                 entries.pop(plugin_name)
                 duplicates.add(plugin_name)
-                self.console.echo(f"Ignoring duplicate plugin entry point: {plugin_id}")
+                self._events.emit(
+                    Diagnostic(
+                        Severity.WARNING, f"ignoring duplicate plugin entry point: {plugin_id}"
+                    )
+                )
                 continue
             entries[plugin_name] = entry_point
 
@@ -353,7 +384,7 @@ class PluginManager:
             if spec.state is not None:
                 self.variables.validate_data_parent(key)
 
-            plugin_runtime = self._plugin_runtime()
+            plugin_runtime = self._plugin_runtime(key)
             lifespan = spec.lifespan(plugin_runtime)
             await lifespan.__aenter__()
             entered = True
@@ -362,7 +393,7 @@ class PluginManager:
             plugin_runtime._activate()
             self._publish(key, prepared)
 
-            self.loaded_plugins[plugin.plugin_name] = _LoadedPlugin(
+            loaded = _LoadedPlugin(
                 plugin.plugin_name,
                 spec,
                 prepared.commands,
@@ -372,20 +403,35 @@ class PluginManager:
                 lifespan,
                 plugin_runtime,
             )
+            self.loaded_plugins[plugin.plugin_name] = loaded
             return Ok(f"Successfully loaded plugin {plugin.plugin_name}")
         except BaseException as exc:
+            if plugin_runtime is not None:
+                plugin_runtime._begin_shutdown()
             if prepared is not None:
                 prepared.abort()
-            if plugin_runtime is not None:
-                plugin_runtime._revoke()
             if entered and lifespan is not None:
                 try:
                     await lifespan.__aexit__(type(exc), exc, exc.__traceback__)
-                except BaseException as cleanup_error:  # ruff: ignore[BLE001] lifespan cleanup is arbitrary
-                    traceback.print_exception(cleanup_error)
+                except BaseException as cleanup_error:  # ruff: ignore[BLE001] plugin cleanup is arbitrary
+                    self._events.emit(
+                        Diagnostic(
+                            Severity.ERROR,
+                            f"plugin {plugin.plugin_name} lifespan cleanup failed",
+                            TracebackException.from_exception(cleanup_error),
+                        )
+                    )
+            if plugin_runtime is not None:
+                plugin_runtime._revoke()
             if not isinstance(exc, Exception):
                 raise
-            traceback.print_exception(exc)
+            self._events.emit(
+                Diagnostic(
+                    Severity.ERROR,
+                    f"plugin {plugin.plugin_name} load failed",
+                    TracebackException.from_exception(exc),
+                )
+            )
             return Err(f"Error loading {plugin.plugin_name}: {exc}")
 
     def _build(self, key: str, declaration: object) -> PluginSpec:
@@ -481,7 +527,7 @@ class PluginManager:
             raise PluginError(f"plugin {key} hook {name} has incompatible signature") from exc
         return _Hook(callback, phase, interval, name, accepts_dt)
 
-    def _plugin_runtime(self) -> PluginRuntime:
+    def _plugin_runtime(self, plugin: str) -> PluginRuntime:
         runtime = self.runtime
         return PluginRuntime(
             status=lambda: PluginStatus(
@@ -499,9 +545,9 @@ class PluginManager:
                 runtime.runner,
                 runtime.commands,
             ),
-            echo=self.console.echo,
-            subscribe_console=self.console.subscribe,
-            stack_command=self.commands.stack,
+            events=self._event_bus._emitter(PluginSource(plugin)),
+            event_stream=self.events,
+            submit_command=self.commands.submit,
         )
 
     def _publish(self, key: str, prepared: _PreparedPlugin) -> None:
@@ -523,12 +569,12 @@ class PluginManager:
         """Attempt every configured plugin and return those loaded successfully."""
         loaded: list[str] = []
         for plugin_name in self.config.plugins:
-            match await self.load(plugin_name):
-                case Ok(message):
-                    self.console.echo(message)
-                    loaded.append(plugin_name.upper())
-                case Err(message):
-                    self.console.echo(message)
+            discovered = plugin_name.upper() in self.plugins
+            result = await self.load(plugin_name)
+            if isinstance(result, Ok):
+                loaded.append(plugin_name.upper())
+            elif not discovered:
+                self._events.emit(Diagnostic(Severity.ERROR, result.err()))
         return tuple(loaded)
 
     def listing(self) -> Result[str, str]:
@@ -596,10 +642,12 @@ class PluginManager:
                         hook.callback()
                 except Exception as exc:  # ruff: ignore[BLE001] plugin hooks are arbitrary
                     hook.enabled = False
-                    traceback.print_exception(exc)
-                    self.console.echo(
-                        f"Plugin {plugin.plugin_name} disabled failing {phase} hook "
-                        f"{hook.name}: {exc}"
+                    plugin.runtime.events.emit(
+                        Diagnostic(
+                            Severity.ERROR,
+                            f"disabled failing {phase} hook {hook.name}",
+                            TracebackException.from_exception(exc),
+                        )
                     )
 
     async def aclose(self) -> None:
@@ -610,7 +658,7 @@ class PluginManager:
             self._state = _ManagerState.CLOSING
             errors: list[Exception] = []
             for plugin in reversed(tuple(self.loaded_plugins.values())):
-                plugin.runtime._revoke()
+                plugin.runtime._begin_shutdown()
                 try:
                     self._remove(plugin)
                 except Exception as exc:  # ruff: ignore[BLE001] aggregate removal failures
@@ -620,6 +668,8 @@ class PluginManager:
                     await plugin.lifespan.__aexit__(None, None, None)
                 except Exception as exc:  # ruff: ignore[BLE001] plugin lifespan is arbitrary
                     errors.append(exc)
+                finally:
+                    plugin.runtime._revoke()
 
             self.loaded_plugins.clear()
             self._state = _ManagerState.CLOSED
