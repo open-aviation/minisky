@@ -44,3 +44,4 @@ _docs-illustration name:
 docs-illustrations:
     just _docs-illustration traffic-arrays
     just _docs-illustration simulation-timing
+    just _docs-illustration trajectory-reconstruction
