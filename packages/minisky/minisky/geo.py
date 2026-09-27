@@ -103,12 +103,14 @@ def qdrdist(
     lat2 = np.radians(latd2)
     lon2 = np.radians(lond2)
 
-    # Corrected to avoid "nan" at westward direction
-    d = r * np.arccos(
-        np.cos(lat1) * np.cos(lat2) * np.cos(lon2 - lon1) + np.sin(lat1) * np.sin(lat2)
-    )
     coslat1 = np.cos(lat1)
     coslat2 = np.cos(lat2)
+
+    # Haversine distance; clipped since rounding can push it just above 1.
+    sindlat2 = np.sin(0.5 * (lat2 - lat1))
+    sindlon2 = np.sin(0.5 * (lon2 - lon1))
+    root = np.clip(sindlat2 * sindlat2 + coslat1 * coslat2 * sindlon2 * sindlon2, 0.0, 1.0)
+    d = 2.0 * r * np.arctan2(np.sqrt(root), np.sqrt(1.0 - root))
 
     qdr = np.degrees(
         np.arctan2(
@@ -214,7 +216,9 @@ def latlondist(
     r1 = rwgs84(latd1)
     r2 = rwgs84(latd2)
     res2 = (
-        0.5 * (abs(latd1) * (r1 + a) + abs(latd2) * (r2 + a)) / (abs(latd1) + abs(latd2))
+        0.5
+        * (abs(latd1) * (r1 + a) + abs(latd2) * (r2 + a))
+        / (np.maximum(0.000001, abs(latd1) + abs(latd2)))
     )  # different hemisphere
 
     sw = latd1 * latd2 >= 0.0
@@ -376,10 +380,17 @@ def kwikdist_matrix(
 
     """
 
+    # Convert inputs to 2-D row arrays, so that .T gives column arrays and
+    # broadcasting yields a result for every combination of positions.
+    lata = np.atleast_2d(np.asarray(lata))
+    lona = np.atleast_2d(np.asarray(lona))
+    latb = np.atleast_2d(np.asarray(latb))
+    lonb = np.atleast_2d(np.asarray(lonb))
+
     re = _MEAN_EARTH_RADIUS
     dlat = np.radians(latb - lata.T)
     dlon = np.radians(((lonb - lona.T) + 180) % 360 - 180)
-    cavelat = np.cos(np.radians(lata + latb.T) * 0.5)
+    cavelat = np.cos(np.radians(lata.T + latb) * 0.5)
 
     dangle = np.sqrt(
         np.multiply(dlat, dlat)
@@ -430,6 +441,13 @@ def kwikqdrdist_matrix(
 
     Bearings are normalized to [0, 360).
     """
+
+    # Convert inputs to 2-D row arrays, so that .T gives column arrays and
+    # broadcasting yields a result for every combination of positions.
+    lata = np.atleast_2d(np.asarray(lata))
+    lona = np.atleast_2d(np.asarray(lona))
+    latb = np.atleast_2d(np.asarray(latb))
+    lonb = np.atleast_2d(np.asarray(lonb))
 
     re = _MEAN_EARTH_RADIUS
     dlat = np.radians(latb - lata.T)
