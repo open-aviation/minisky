@@ -135,7 +135,7 @@ class ConflictDetection(TrafficArrays):
         """Default interval during which conflict detection is suppressed after resolution."""
         self.global_dtnolook = True
         """Whether every aircraft uses the default no-look interval."""
-        self.activate = True
+        self.activate = False
         """Whether conflict detection runs during traffic updates."""
 
         self.confpairs: list[ConflictPair] = []
