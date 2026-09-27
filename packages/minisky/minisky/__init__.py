@@ -51,6 +51,7 @@ from minisky._internal.conflict.detection import ConflictDetection
 from minisky._internal.conflict.resolution import ConflictResolution
 from minisky._internal.events import (
     Diagnostic,
+    EventBus,
     EventEmitter,
     EventFilter,
     EventPath,
@@ -125,6 +126,7 @@ __all__ = (  # noqa: RUF022 - public API and docs use this semantic order
     "CommandStack",
     # event
     "RuntimeEvent",
+    "EventBus",
     "EventEmitter",
     "EventSubscription",
     "EventSink",
