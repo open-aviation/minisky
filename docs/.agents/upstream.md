@@ -102,3 +102,38 @@ Fixed to wrap longitude into `[-180, 180)` every step, and past a pole mirror
 latitude and flip heading, track, autopilot track, active leg direction and
 ground speed components 180°, since local north/east point the other way
 there, matching upstream's fix.
+
+### PR [#665](https://github.com/TUDelft-CNS-ATM/bluesky/pull/665) — remove unused `SSD.detect` (2026-09-27)
+
+Nothing to apply it to: the SSD/ASAS plugin was already removed from MiniSky
+entirely, same bucket as #647/#650.
+
+### PR [#663](https://github.com/TUDelft-CNS-ATM/bluesky/pull/663) — geo backend consistency (2026-09-27)
+
+Most of this PR doesn't apply: the compiled C geo extension and the
+`prefer_compiled`/backend-selection machinery it fixes were already removed
+from MiniSky, same as #650.
+
+The Python-only accuracy fixes were real, independently-reproduced bugs in
+`geo.py` and were ported directly rather than recorded as rejected:
+- `qdrdist` used the law-of-cosines distance formula, which loses all
+  precision at short range (two points 10 cm apart came out 0 m apart).
+  Switched to the haversine formula already used by `qdrdist_matrix`.
+- `latlondist`'s different-hemisphere branch divided by
+  `abs(lat1) + abs(lat2)` with no floor, so two points on the equator (both
+  latitudes 0) produced `nan` — the boolean hemisphere switch multiplies by
+  0 but does not mask an already-`nan` term. Added the same
+  `np.maximum(0.000001, ...)` floor `qdrdist`'s equivalent branch already had.
+- `kwikdist_matrix`/`kwikqdrdist_matrix` never got the `atleast_2d`
+  row/column broadcasting treatment `qdrdist_matrix`/`latlondist_matrix` did,
+  so two differently-sized position vectors silently produced a
+  wrong-shaped, elementwise result instead of an `(n1, n2)` matrix.
+  `kwikdist_matrix` also averaged the wrong pair of latitudes
+  (`lata + latb.T` instead of `lata.T + latb`); `kwikqdrdist_matrix` already
+  had the correct order. Both fixed to build 2-D row arrays first, matching
+  upstream's fix; the averaging order in `kwikdist_matrix` now matches
+  `kwikqdrdist_matrix`.
+
+Upstream's other fixes (matrix earth radius at mean vs. sum of latitudes,
+the different-hemisphere divisor guard in the matrix variants) were already
+correct here, in the same vein as #653/#654.

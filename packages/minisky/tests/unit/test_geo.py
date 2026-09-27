@@ -27,6 +27,15 @@ class TestQdrDist:
         _, dist = geo.qdrdist(52.0, 4.0, 52.0, 4.0)
         assert dist == pytest.approx(0.0, abs=1e-6)
 
+    def test_short_range_precision(self) -> None:
+        # Regression: the law-of-cosines formula lost all precision at short
+        # range (10 cm apart came out as 0 m); haversine keeps it. Ported
+        # from https://github.com/TUDelft-CNS-ATM/bluesky/pull/663.
+        lat1 = 52.0
+        dlat = np.degrees(0.1 / geo.rwgs84(lat1))
+        _, dist = geo.qdrdist(lat1, 4.0, lat1 + dlat, 4.0)
+        assert dist == pytest.approx(0.1, abs=1e-3)
+
 
 class TestDistanceFunctions:
     def test_latlondist_matches_qdrdist(self) -> None:
@@ -44,6 +53,15 @@ class TestDistanceFunctions:
         kqdr, kdist = geo.kwikqdrdist(52.0, 4.0, 52.1, 4.1)
         assert kqdr == pytest.approx(qdr, abs=1.0)
         assert kdist == pytest.approx(dist, rel=0.01)
+
+    def test_latlondist_on_equator(self) -> None:
+        # Regression: the different-hemisphere branch divided by
+        # abs(lat1) + abs(lat2), which is 0/0 (nan) for two equator points,
+        # and the boolean hemisphere switch does not mask an already-nan
+        # term. Ported from https://github.com/TUDelft-CNS-ATM/bluesky/pull/663.
+        dist = geo.latlondist(0.0, 0.0, 0.0, 1.0)
+        assert not np.isnan(dist)
+        assert dist == pytest.approx(q.nmi_to_m(60.1), abs=q.nmi_to_m(0.5))
 
 
 class TestMatrixVariants:
@@ -85,6 +103,46 @@ class TestMatrixVariants:
                 sqdr, sdist = geo.qdrdist(self.LAT1[i], self.LON1[i], self.LAT2[j], self.LON2[j])
                 assert qdr[i, j] == pytest.approx(sqdr, abs=1e-9)
                 assert dist[i, j] == pytest.approx(sdist, rel=1e-3)
+
+    def test_kwikdist_matrix_matches_scalar(self) -> None:
+        dist = geo.kwikdist_matrix(self.LAT1, self.LON1, self.LAT2, self.LON2)
+        assert dist.shape == (2, 2)
+        for i in range(2):
+            for j in range(2):
+                expected = geo.kwikdist(self.LAT1[i], self.LON1[i], self.LAT2[j], self.LON2[j])
+                assert dist[i, j] == pytest.approx(expected, rel=1e-9)
+
+    def test_kwikdist_matrix_different_sizes(self) -> None:
+        # Regression: without atleast_2d, mismatched a/b vector lengths
+        # silently returned a wrong-shaped (elementwise) result instead of
+        # an (n1, n2) matrix. Ported from
+        # https://github.com/TUDelft-CNS-ATM/bluesky/pull/663.
+        lata, lona = np.array([0.0, 10.0]), np.array([0.0, 0.0])
+        latb, lonb = np.array([5.0]), np.array([1.0])
+        dist = geo.kwikdist_matrix(lata, lona, latb, lonb)
+        assert dist.shape == (2, 1)
+        for i in range(2):
+            expected = geo.kwikdist(lata[i], lona[i], latb[0], lonb[0])
+            assert dist[i, 0] == pytest.approx(expected, rel=1e-9)
+
+    def test_kwikqdrdist_matrix_matches_scalar(self) -> None:
+        qdr, dist = geo.kwikqdrdist_matrix(self.LAT1, self.LON1, self.LAT2, self.LON2)
+        assert qdr.shape == (2, 2)
+        assert dist.shape == (2, 2)
+        for i in range(2):
+            for j in range(2):
+                sqdr, sdist = geo.kwikqdrdist(
+                    self.LAT1[i], self.LON1[i], self.LAT2[j], self.LON2[j]
+                )
+                assert qdr[i, j] == pytest.approx(sqdr, abs=1e-9)
+                assert dist[i, j] == pytest.approx(sdist, rel=1e-9)
+
+    def test_kwikqdrdist_matrix_different_sizes(self) -> None:
+        lata, lona = np.array([0.0, 10.0]), np.array([0.0, 0.0])
+        latb, lonb = np.array([5.0]), np.array([1.0])
+        qdr, dist = geo.kwikqdrdist_matrix(lata, lona, latb, lonb)
+        assert qdr.shape == (2, 1)
+        assert dist.shape == (2, 1)
 
 
 class TestProjection:
