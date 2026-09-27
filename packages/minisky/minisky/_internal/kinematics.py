@@ -196,6 +196,29 @@ class Kinematics(TrafficArrays):
             traf.aporasas.alt,
         )
         traf.lat = traf.lat + np.degrees(simdt * traf.gsnorth / Rearth)
+
+        # Past a pole, continue on the opposite meridian (lon + 180), where the
+        # local north and east directions point the other way: turn headings by 180 deg
+        # Ref. https://en.wikipedia.org/wiki/Local_tangent_plane_coordinates
+        overpole = np.abs(traf.lat) > 90.0
+
+        if np.any(overpole):
+            traf.lat[overpole] = np.sign(traf.lat[overpole]) * 180.0 - traf.lat[overpole]
+            traf.lon[overpole] += 180.0
+            # Without wind, trk is just set to hdg (update_groundspeed()), so updating hdg
+            # here doesn't also update trk - it needs its own line below.
+            traf.hdg = np.where(overpole, (traf.hdg + 180.0) % 360.0, traf.hdg)
+            traf.trk = np.where(overpole, (traf.trk + 180.0) % 360.0, traf.trk)
+            traf.ap.trk = np.where(overpole, (traf.ap.trk + 180.0) % 360.0, traf.ap.trk)
+            haslegdir = overpole & traf.actwp.curlegdir.present
+            traf.actwp.curlegdir.set(
+                haslegdir, (traf.actwp.curlegdir.values[haslegdir] + 180.0) % 360.0
+            )
+            traf.gsnorth[overpole] = -traf.gsnorth[overpole]
+            traf.gseast[overpole] = -traf.gseast[overpole]
+
         traf.coslat = np.cos(np.deg2rad(traf.lat))
         traf.lon = traf.lon + np.degrees(simdt * traf.gseast / traf.coslat / Rearth)
+        # Keep longitude in [-180, 180), e.g. when crossing the antimeridian
+        traf.lon = (traf.lon + 180.0) % 360.0 - 180.0
         traf.distflown += traf.gs * simdt

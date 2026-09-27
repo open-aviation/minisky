@@ -90,3 +90,15 @@ relative altitude, then aircraft index, as an antisymmetric tiebreaker,
 matching upstream's fix. (Upstream's other fix in the same PR — an
 `asasalttemp` sentinel blowing up for non-conflicting aircraft — was already
 avoided here via the `has_resolution_time` mask in `MVP.resolve()`.)
+
+### PR [#664](https://github.com/TUDelft-CNS-ATM/bluesky/pull/664) — wrap aircraft positions at the poles and antimeridian (2026-09-27)
+
+Ported directly rather than recorded as rejected: `Kinematics.update_pos`
+integrated latitude/longitude with a flat Euler step and never normalised the
+result, so longitude drifted unbounded past ±180° and latitude past ±90°
+(division by zero at the poles, broken guidance near them; independently
+found in [minisky#14](https://github.com/open-aviation/minisky/issues/14)).
+Fixed to wrap longitude into `[-180, 180)` every step, and past a pole mirror
+latitude and flip heading, track, autopilot track, active leg direction and
+ground speed components 180°, since local north/east point the other way
+there, matching upstream's fix.
