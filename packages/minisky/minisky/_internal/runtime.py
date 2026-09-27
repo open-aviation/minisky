@@ -13,7 +13,7 @@ from minisky._internal.config import MiniSkyConfig
 from minisky._internal.conflict.detection import ConflictDetection
 from minisky._internal.conflict.mvp import MVP
 from minisky._internal.conflict.resolution import ConflictResolution
-from minisky._internal.events import EventCommands, EventStream, RuntimeSource, _EventBus
+from minisky._internal.events import EventBus, EventCommands, RuntimeSource
 from minisky._internal.geo_commands import GeoCommands
 from minisky._internal.guidance import APorASAS
 from minisky._internal.kinematics import Kinematics
@@ -44,9 +44,9 @@ class MiniSky:
         self._closed = False
         self.python_random = Random()
         self.numpy_random = np.random.RandomState()
-        event_bus = _EventBus()
-        self.events = EventStream(event_bus)
-        runtime_events = event_bus._emitter(RuntimeSource())
+        event_bus = EventBus()
+        self.events = event_bus.stream
+        runtime_events = event_bus.emitter(RuntimeSource())
         command_events = runtime_events.child("commands")
         self._event_commands = EventCommands(command_events)
         self.magnetic_declination = magnetic_declination
@@ -90,7 +90,6 @@ class MiniSky:
         self.plugins = PluginManager(
             config=config,
             event_bus=event_bus,
-            events=self.events,
             diagnostics=runtime_events.child("plugins"),
             variables=self.variables,
             get_runtime=lambda: self,

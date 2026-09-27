@@ -1118,8 +1118,8 @@ class CommandStack:
     def submit(self, command: str, *, sender_id: bytes | None = None) -> CommandInvocation:
         """Queue a request/response command and return its completion handle.
 
-        Unlike [`stack`][.stack], this method does not split semicolon-delimited
-        batches.
+        Unlike [`CommandStack.stack`][minisky.CommandStack.stack], this method does not
+        split semicolon-delimited batches.
         """
         future: Future[CommandResult] = Future()
         invocation = CommandInvocation(CommandId(self._next_command_id), command, future)

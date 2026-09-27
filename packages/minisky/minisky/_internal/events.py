@@ -91,11 +91,13 @@ EventFilter: TypeAlias = Callable[[RuntimeEvent], bool]
 
 @dataclass(slots=True)
 class _EmitterLease:
-    events: _EventBus | None
+    events: EventBus | None
 
 
 @dataclass(frozen=True, slots=True)
 class EventEmitter:
+    """Source-pinned emission capability created by `EventBus.emitter`."""
+
     _lease: _EmitterLease
     _source: EventSource
 
@@ -115,8 +117,8 @@ class EventEmitter:
 
 
 class EventSubscription:
-    def __init__(self, events: _EventBus, token: int) -> None:
-        self._events: _EventBus | None = events
+    def __init__(self, events: EventBus, token: int) -> None:
+        self._events: EventBus | None = events
         self._token = token
 
     def close(self) -> None:
@@ -137,7 +139,9 @@ class _Subscriber:
     where: EventFilter | None
 
 
-class _EventBus:
+class EventBus:
+    """In-process event fan-out and factory for observation/emission capabilities."""
+
     def __init__(self) -> None:
         self._subscribers: dict[int, _Subscriber] = {}
         self._next_subscription = 0
@@ -153,10 +157,16 @@ class _EventBus:
             except Exception:  # ruff: ignore[BLE001] subscribers are external observers
                 self._unsubscribe(token)
 
-    def _emitter(self, source: EventSource) -> EventEmitter:
+    @property
+    def stream(self) -> EventStream:
+        """Return an observation-only view of this event bus."""
+        return EventStream(self)
+
+    def emitter(self, source: EventSource) -> EventEmitter:
+        """Create an emitter pinned to `source`."""
         return EventEmitter(_EmitterLease(self), source)
 
-    def subscribe(self, sink: EventSink, *, where: EventFilter | None = None) -> EventSubscription:
+    def _subscribe(self, sink: EventSink, *, where: EventFilter | None = None) -> EventSubscription:
         with self._lock:
             token = self._next_subscription
             self._next_subscription += 1
@@ -172,11 +182,11 @@ class _EventBus:
 class EventStream:
     """Observation-only view of runtime events."""
 
-    _bus: _EventBus
+    _bus: EventBus
 
     def subscribe(self, sink: EventSink, *, where: EventFilter | None = None) -> EventSubscription:
         """Register a sink, optionally filtering events."""
-        return self._bus.subscribe(sink, where=where)
+        return self._bus._subscribe(sink, where=where)
 
 
 class EventCommands:

@@ -36,11 +36,11 @@ from minisky._internal.traffic_arrays import PreparedReplacement, TrafficArrays
 if TYPE_CHECKING:
     from minisky._internal.config import MiniSkyConfig
     from minisky._internal.events import (
+        EventBus,
         EventFilter,
         EventSink,
         EventStream,
         EventSubscription,
-        _EventBus,
     )
     from minisky._internal.runtime import MiniSky
     from minisky._internal.simulation import Simulation
@@ -284,8 +284,7 @@ class PluginManager:
     def __init__(
         self,
         config: MiniSkyConfig,
-        event_bus: _EventBus,
-        events: EventStream,
+        event_bus: EventBus,
         diagnostics: EventEmitter,
         variables: VariableExplorer,
         get_runtime: Callable[[], MiniSky],
@@ -294,7 +293,7 @@ class PluginManager:
     ) -> None:
         self.config = config
         self._event_bus = event_bus
-        self.events = events
+        self.events = event_bus.stream
         self._events = diagnostics
         self.variables = variables
         self._get_runtime = get_runtime
@@ -545,7 +544,7 @@ class PluginManager:
                 runtime.runner,
                 runtime.commands,
             ),
-            events=self._event_bus._emitter(PluginSource(plugin)),
+            events=self._event_bus.emitter(PluginSource(plugin)),
             event_stream=self.events,
             submit_command=self.commands.submit,
         )
