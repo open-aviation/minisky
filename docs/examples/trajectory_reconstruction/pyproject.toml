@@ -1,0 +1,17 @@
+[project]
+name = "minisky-trajectory-reconstruction-example"
+version = "0.0.0"
+requires-python = ">=3.11"
+dependencies = [
+    "minisky",
+    "polars>=1.0",
+    "traj-dist-rs==1.0.0rc5", # for measuring reconstruction error
+    "matplotlib>=3.10",
+    "httpx2>=2.0.0", # downloads traffic jsonl to local output/
+]
+
+[tool.uv]
+package = false
+
+[tool.uv.sources]
+minisky = { workspace = true }
