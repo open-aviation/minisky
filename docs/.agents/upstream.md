@@ -24,11 +24,7 @@ question isn't reopened every time someone diffs against upstream.
 - One row per upstream PR merge or direct commit to `master`, newest first;
   add new rows at the top of the current year's table and bump **Synced
   through**. Commits inside a PR branch are covered by the PR's row.
-- BlueSky merges PRs out of number order, and `6590c3c` (2025-12-18) merged a
-  long-lived side branch into `master`. Rows from that branch (2025-06-17 to
-  2025-11-20) are listed at their own commit/merge date. To enumerate upstream,
-  walk first parents from `master` back to the baseline, and follow *both*
-  parents of merges that aren't PR merges.
+- Rows are ordered by the date a change landed upstream, not by PR number.
 - BlueSky column: `#N` is a BlueSky PR, a hash is a BlueSky commit. MiniSky
   column: `#N` is a MiniSky PR, a hash is a MiniSky commit on `main`.
 - When a 🔴 row is resolved, flip it to 🟢 or 🔵 and fill in the MiniSky
