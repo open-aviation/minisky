@@ -1,6 +1,6 @@
 # Trajectory reconstruction
 
-Recent trajectory generation methods like Krauth et al. (2023)[^krauth2023] and Motte et al. (2025)[^motte2025] can generate trajectories that match the statistical distribution of the observed traffic, but do not guarantee that the generated trajectories are physically flyable. In this example, we demonstrate how to evaluate the physical "flyability" of a trajectory following the approach described in Olive et al. (2021)[^olive2021].
+Recent trajectory generation methods like Krauth et al. (2023)[^krauth2023] and Motte et al. (2025)[^motte2025] can generate trajectories that match the statistical distribution of the observed traffic, but do not guarantee that the generated trajectories are physically flyable. In this example, we demonstrate how to evaluate the physical "flyability" of a trajectory following the approach described in Olive et al. (2021)[^olive2021] and Ren et al. (2026)[^ren2026].
 
 <figure class="theme-illustration" markdown="1">
   <img class="theme-illustration--light" src="../assets/illustrations/trajectory-reconstruction-light.svg" alt="Trajectory reconstruction process">
@@ -132,6 +132,8 @@ Overall, the reconstructed trajectory $\hat{y}$ (in orange) matches the original
 [^motte2025]: A. Motte, X. Olive, and J. Morio, "Conditional Variational Autoencoders for aircraft type-specific trajectory generation," 2025.
 
 [^olive2021]: X. Olive, J. Sun, M. C. R. Murça, and T. Krauth, "A Framework to Evaluate Aircraft Trajectory Generation Methods," *Proceedings of the 14th USA/Europe Air Traffic Management Research and Development Seminar*, 2021.
+
+[^ren2026]: R. Ren, T. Huang, R. Wang, W. Cong, C. Hurter, and X. Olive, "A Controlled Benchmark of Generative Models for ADS-B Aircraft Trajectories," *14th OpenSky Symposium*, 2026 (preprint).
 
 [^reconstruction_error_note]: The reconstruction error should be interpreted with care because it also depends on the capabilities of the simulator. A real, physically flyable trajectory may still reconstruct poorly in minisky due to limitations in minisky's simulator dynamics. For example, minisky's simplified altitude guidance cannot reproduce the changing vertical rate that may result from an `FLCH SPD` climb.
 
