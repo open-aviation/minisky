@@ -25,11 +25,12 @@ from __future__ import annotations
 import asyncio
 import time
 from collections.abc import Callable
-from typing import TYPE_CHECKING, TypedDict
+from typing import TYPE_CHECKING, Literal, TypeAlias, TypedDict
 
 import numpy as np
 
 from minisky import quantities as q
+from minisky._internal.traffic_arrays import OptionalArray, VariantArray
 from minisky.types import AircraftCallsign, AircraftTypeCode
 
 if TYPE_CHECKING:
@@ -90,6 +91,71 @@ def _tolist(arr) -> list[float]:
         values: list[float] = arr.tolist()
         return values
     return list(arr)
+
+
+def serialize_array(value: object) -> list:
+    """Convert a registered traffic array (any of its supported kinds) to JSON.
+
+    Public so REST endpoints exposing arbitrary traffic arrays (core or
+    plugin-added) can reuse the same conversion as the stream extras below.
+    """
+    if isinstance(value, VariantArray):
+        return _tolist(value.values)
+    if isinstance(value, OptionalArray):
+        return _tolist(value.values)
+    return _tolist(value)  # type: ignore[arg-type]
+
+
+class RouteWaypoint(TypedDict):
+    """One waypoint on an aircraft's route."""
+
+    name: str
+    type: str
+    lat: q.LatitudeDeg[float]
+    lon: q.LongitudeDeg[float]
+    alt: q.PressureAltitudeM[float] | None
+    flyby: bool
+
+
+class RouteSnapshot(TypedDict):
+    """Full route of a single aircraft, by callsign."""
+
+    callsign: AircraftCallsign
+    active_index: int | None
+    waypoints: list[RouteWaypoint]
+
+
+def build_route_snapshot(traffic: Traffic, callsign: AircraftCallsign) -> RouteSnapshot | None:
+    """Serialize one aircraft's route, or `None` if `callsign` is unknown."""
+    idx = traffic.idx(callsign)
+    if idx is None:
+        return None
+
+    route = traffic.ap.route[idx]
+    waypoints: list[RouteWaypoint] = [
+        {
+            "name": str(name),
+            "type": str(wptype),
+            "lat": float(lat),
+            "lon": float(lon),
+            "alt": float(alt) if alt is not None else None,
+            "flyby": bool(flyby),
+        }
+        for name, wptype, lat, lon, alt, flyby in zip(
+            route.wpname,
+            route.wptype,
+            route.wplat,
+            route.wplon,
+            route.wpalt,
+            route.wpflyby,
+            strict=True,
+        )
+    ]
+    return {
+        "callsign": callsign,
+        "active_index": route.iactwp,
+        "waypoints": waypoints,
+    }
 
 
 def build_snapshot(
@@ -216,3 +282,87 @@ class StreamHub:
         self._closed = True
         self._subscribers = 0
         self._event.set()
+
+
+class RouteTopic(TypedDict):
+    """Subscribe to one aircraft's route, layered onto the shared stream."""
+
+    kind: Literal["route"]
+    callsign: AircraftCallsign
+
+
+class ArrayTopic(TypedDict):
+    """Subscribe to a registered traffic array, optionally for one aircraft."""
+
+    kind: Literal["array"]
+    name: str
+    callsign: AircraftCallsign | None
+
+
+Topic: TypeAlias = RouteTopic | ArrayTopic
+
+
+def _topic_key(topic: Topic) -> str:
+    """A stable string key identifying `topic`, used both to dedupe subscriptions
+    and as the `extras` payload key so clients can tell topics apart."""
+    if topic["kind"] == "route":
+        return f"route:{topic['callsign']}"
+    return f"array:{topic['name']}:{topic['callsign'] or ''}"
+
+
+class ConnectionSubscriptions:
+    """Per-connection extra topics layered onto the shared stream snapshot.
+
+    Each topic lives until explicitly removed or, if given a `ttl`, until
+    that many seconds have elapsed. Expired entries are pruned lazily, on the
+    next `active_topics()` call.
+    """
+
+    def __init__(self) -> None:
+        self._topics: dict[str, tuple[Topic, float | None]] = {}
+
+    def subscribe(self, topic: Topic, ttl: q.DurationS[float] | None = None) -> None:
+        """Add or replace a subscription, optionally expiring after `ttl` seconds."""
+        expiry = time.monotonic() + ttl if ttl is not None else None
+        self._topics[_topic_key(topic)] = (topic, expiry)
+
+    def unsubscribe(self, topic: Topic) -> None:
+        """Remove a subscription; a no-op if it isn't active."""
+        self._topics.pop(_topic_key(topic), None)
+
+    def active_topics(self) -> list[tuple[str, Topic]]:
+        """Currently active (key, topic) pairs, pruning any that have expired."""
+        now = time.monotonic()
+        expired = [
+            key for key, (_, expiry) in self._topics.items() if expiry is not None and expiry <= now
+        ]
+        for key in expired:
+            del self._topics[key]
+        return [(key, topic) for key, (topic, _) in self._topics.items()]
+
+
+def build_extras(subscriptions: ConnectionSubscriptions, traffic: Traffic) -> dict[str, object]:
+    """Build the per-connection `extras` payload for `subscriptions`' active topics.
+
+    A topic that no longer resolves (deleted aircraft, unregistered array
+    name) is silently omitted rather than raising.
+    """
+    extras: dict[str, object] = {}
+    for key, topic in subscriptions.active_topics():
+        if topic["kind"] == "route":
+            route = build_route_snapshot(traffic, topic["callsign"])
+            if route is not None:
+                extras[key] = route
+            continue
+
+        array = traffic.find_array(topic["name"])
+        if array is None:
+            continue
+        values = serialize_array(array)
+        if topic["callsign"] is None:
+            extras[key] = values
+            continue
+        idx = traffic.idx(topic["callsign"])
+        if idx is not None:
+            extras[key] = values[idx]
+    return extras

@@ -491,6 +491,32 @@ class TrafficArrays:
             or name in self._OptionalVars
         )
 
+    def array_names(self) -> list[str]:
+        """List every registered array name in this object's subtree.
+
+        Includes arrays registered on `self` and on every descendant (e.g.
+        `traf.cd.tcpamax` is reachable from `traf`), so this also surfaces
+        arrays added dynamically by plugins.
+        """
+        names = [*self._LstVars, *self._ArrVars, *self._VariantVars, *self._OptionalVars]
+        for child in self._children:
+            names.extend(child.array_names())
+        return names
+
+    def find_array(self, name: str) -> object | None:
+        """Find a registered array by name anywhere in this object's subtree.
+
+        Returns the first match (`self` before descendants), or `None` if no
+        node in the subtree has registered `name`.
+        """
+        if self.istrafarray(name):
+            return self.__dict__[name]
+        for child in self._children:
+            found = child.find_array(name)
+            if found is not None:
+                return found
+        return None
+
     def create_children(self, n: int = 1) -> None:
         """Call create (aircraft create) recursively on all children."""
         for child in self._children:

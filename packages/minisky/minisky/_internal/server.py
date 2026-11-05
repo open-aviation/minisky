@@ -41,6 +41,17 @@ from minisky import MiniSky
 from minisky import quantities as q
 from minisky._internal.command import CommandSchema
 from minisky._internal.result import Err, Ok, Result
+from minisky._internal.streaming import (
+    ArrayTopic,
+    ConnectionSubscriptions,
+    RouteSnapshot,
+    RouteTopic,
+    Snapshot,
+    Topic,
+    build_extras,
+    build_route_snapshot,
+    serialize_array,
+)
 from minisky.types import AircraftTypeCode, AirspeedKind
 
 
@@ -264,6 +275,38 @@ def conflicts(runtime: Runtime) -> list[ConflictResponse] | dict[str, str]:
     return conflict_info
 
 
+def traffic_arrays(runtime: Runtime) -> list[str]:
+    """List every traffic array name currently registered, core or plugin-added."""
+    return runtime.traffic.array_names()
+
+
+def traffic_array(name: str, runtime: Runtime) -> list[float] | dict[str, str]:
+    """Get the full values of one registered traffic array."""
+    array = runtime.traffic.find_array(name)
+    if array is None:
+        return {"msg": f"no traffic array named {name!r}"}
+    return serialize_array(array)
+
+
+def traffic_array_value(name: str, callsign: str, runtime: Runtime) -> float | dict[str, str]:
+    """Get one aircraft's value from a registered traffic array."""
+    array = runtime.traffic.find_array(name)
+    if array is None:
+        return {"msg": f"no traffic array named {name!r}"}
+    idx = runtime.traffic.idx(callsign)
+    if idx is None:
+        return {"msg": f"no aircraft with callsign {callsign!r}"}
+    return serialize_array(array)[idx]
+
+
+def traffic_route(callsign: str, runtime: Runtime) -> RouteSnapshot | dict[str, str]:
+    """Get one aircraft's route (waypoints and the active-waypoint index)."""
+    route = build_route_snapshot(runtime.traffic, callsign)
+    if route is None:
+        return {"msg": f"no aircraft with callsign {callsign!r}"}
+    return route
+
+
 async def stack(cmd: str, runtime: Runtime) -> ResultResponse:
     """Execute a stack command and return its completion result."""
     return _result_response(await runtime.commands.submit(cmd))
@@ -274,6 +317,40 @@ def commands(runtime: Runtime) -> dict[str, CommandSchema]:
     return runtime.commands.command_schemas()
 
 
+def _parse_topic(data: object) -> Topic | None:
+    """Parse a client-provided `topic` object, or `None` if it's malformed."""
+    if not isinstance(data, dict):
+        return None
+    kind = data.get("kind")
+    if kind == "route":
+        callsign = data.get("callsign")
+        if not isinstance(callsign, str):
+            return None
+        return RouteTopic(kind="route", callsign=callsign)
+    if kind == "array":
+        name = data.get("name")
+        callsign = data.get("callsign")
+        if not isinstance(name, str) or (callsign is not None and not isinstance(callsign, str)):
+            return None
+        return ArrayTopic(kind="array", name=name, callsign=callsign)
+    return None
+
+
+def _handle_control_message(subscriptions: ConnectionSubscriptions, message: object) -> None:
+    """Apply a client control frame (subscribe/unsubscribe), ignoring malformed ones."""
+    if not isinstance(message, dict):
+        return
+    topic = _parse_topic(message.get("topic"))
+    if topic is None:
+        return
+    action = message.get("action")
+    if action == "subscribe":
+        ttl = message.get("ttl")
+        subscriptions.subscribe(topic, ttl=float(ttl) if isinstance(ttl, (int, float)) else None)
+    elif action == "unsubscribe":
+        subscriptions.unsubscribe(topic)
+
+
 async def stream(websocket: WebSocket) -> None:
     """Push a full simulation snapshot once per simulation step in SI units.
 
@@ -282,23 +359,68 @@ async def stream(websocket: WebSocket) -> None:
     and `acdata` fields.
     The most recent snapshot is sent immediately on connect so a new client is
     not left blank until the next tick.
+
+    A connected client may also send small JSON control frames to layer
+    per-connection extras onto its own outgoing ticks, under an `extras` key,
+    until it sends a matching `unsubscribe` (or its optional `ttl` elapses):
+
+    ```json
+    {"action": "subscribe", "topic": {"kind": "route", "callsign": "KL001"}}
+    {"action": "subscribe", "topic": {"kind": "array", "name": "tcpamax", "callsign": "KL001"}, "ttl": 30}
+    {"action": "unsubscribe", "topic": {"kind": "route", "callsign": "KL001"}}
+    ```
+
+    Clients that never send a control frame see no `extras` key: the tick
+    payload is unchanged from the base snapshot.
     """
     runtime: MiniSky = websocket.app.state.runtime
     hub = runtime.streaming
+    subscriptions = ConnectionSubscriptions()
     await websocket.accept()
     hub.subscribe()
+
+    def outgoing() -> Snapshot | dict[str, object]:
+        assert hub.latest is not None
+        extras = build_extras(subscriptions, runtime.traffic)
+        return {**hub.latest, "extras": extras} if extras else hub.latest
+
+    tick_task = asyncio.create_task(hub.wait())
+    recv_task = asyncio.create_task(websocket.receive_json())
     try:
         if hub.latest is not None:
-            await websocket.send_json(hub.latest)
+            await websocket.send_json(outgoing())
         while True:
-            await hub.wait()
-            if hub.latest is not None:
-                await websocket.send_json(hub.latest)
+            done, _pending = await asyncio.wait(
+                {tick_task, recv_task}, return_when=asyncio.FIRST_COMPLETED
+            )
+            if tick_task in done:
+                tick_task.result()  # re-raises RuntimeError once the hub is closed
+                if hub.latest is not None:
+                    await websocket.send_json(outgoing())
+                tick_task = asyncio.create_task(hub.wait())
+            if recv_task in done:
+                try:
+                    message = recv_task.result()
+                except WebSocketDisconnect:
+                    raise
+                except Exception:  # ruff: ignore[BLE001] malformed control frame, not a disconnect
+                    message = None
+                if message is not None:
+                    _handle_control_message(subscriptions, message)
+                recv_task = asyncio.create_task(websocket.receive_json())
     except (WebSocketDisconnect, RuntimeError):
         # RuntimeError: the transport closed between the disconnect and our
         # next send (uvicorn raises it instead of WebSocketDisconnect).
         pass
     finally:
+        # Deliberately not awaited: this coroutine may itself be getting torn
+        # down under cancellation right now (e.g. a client disconnecting),
+        # and awaiting here would re-raise whatever exception either task
+        # already carries (which could be a stale WebSocketDisconnect, not a
+        # fresh CancelledError) over the original exception. `cancel()` alone
+        # is enough for asyncio to reap both tasks without complaint.
+        tick_task.cancel()
+        recv_task.cancel()
         hub.unsubscribe()
 
 
@@ -343,6 +465,10 @@ def create_router() -> APIRouter:
     router.add_api_route("/speed/{speed}", speedup, methods=["GET"])
     router.add_api_route("/forward/{seconds}", forward, methods=["GET"])
     router.add_api_route("/conflicts", conflicts, methods=["GET"])
+    router.add_api_route("/traffic/arrays", traffic_arrays, methods=["GET"])
+    router.add_api_route("/traffic/arrays/{name}", traffic_array, methods=["GET"])
+    router.add_api_route("/traffic/arrays/{name}/{callsign}", traffic_array_value, methods=["GET"])
+    router.add_api_route("/traffic/route/{callsign}", traffic_route, methods=["GET"])
     router.add_api_route("/stack/{cmd:path}", stack, methods=["GET"])
     router.add_api_route("/commands", commands, methods=["GET"])
     router.add_api_websocket_route("/stream", stream)
